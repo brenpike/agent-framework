@@ -29,12 +29,16 @@ Inside Claude Code, add the marketplace then install the plugin:
    - Versioning configuration (bump triggers, changelogs, tag prefixes)
    - Architecture and code style notes
 
-3. Create `AGENTS.md` with project-specific Codex review guidance:
+3. Create `AGENTS.md` at the project root with project-specific Codex review guidance. Use `governance/AGENTS.template.md` as a starting point and adapt:
    - Review focus areas
    - Severity definitions
    - Project-specific conventions for reviewers
 
 That is all. The orchestrator is automatically the default agent. All skills are available namespaced as `agent-framework:<skill-name>`.
+
+## Recommended companion plugins
+
+- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `mem-search` skill referenced by the planner, coder, and designer for cross-session memory and continuity. Install separately as a Claude Code plugin. The agent framework works without it; if installed, planning will use prior context where relevant.
 
 ## After cloning a project that uses this plugin
 
@@ -75,7 +79,7 @@ Reference documentation in `governance/`:
 | `branching-pr-workflow.md` | Branch taxonomy, naming rules, commit and PR policy |
 | `pr-review-remediation-loop.md` | External PR review feedback handling and classification |
 | `versioning.md` | SemVer rules, bump triggers, changelog and tag policy |
-| `AGENTS.md` | Template for project-specific Codex reviewer guidance |
+| `AGENTS.template.md` | Template for project-specific Codex reviewer guidance |
 
 Governance rules are embedded in agent definitions. These files are reference material for humans and for agents that need to re-read specific rules.
 

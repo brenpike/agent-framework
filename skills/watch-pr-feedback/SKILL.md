@@ -20,8 +20,8 @@ This skill detects and routes. It must not directly edit files, commit, push, re
 
 Follow:
 
-- `agent-system-policy.md`
-- `pr-review-remediation-loop.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
 - Read github-pr-review-graphql.md in this skill's directory for the complete GraphQL operations reference.
 
 ## Invocation Boundary
@@ -147,4 +147,4 @@ Issues:
 - None
 ```
 
-Use the blocked report contract from `agent-system-policy.md` for blocked states.
+Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states.

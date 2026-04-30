@@ -1,5 +1,6 @@
 {
   "name": "brenpike",
+  "description": "Brennan Pike's Claude Code plugin marketplace.",
   "owner": {
     "name": "Brennan Pike"
   },
@@ -7,7 +8,7 @@
     {
       "name": "agent-framework",
       "source": "./",
-      "description": "Claude Code agent framework: orchestrator, planner, coder, designer agents + workflow skills"
+      "description": "Claude Code plugin providing a structured multi-agent framework with orchestrator, planner, coder, and designer agents plus workflow skills for git branching, commits, PRs, and code review remediation."
     }
   ]
 }

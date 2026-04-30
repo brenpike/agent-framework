@@ -2,22 +2,42 @@
 
 ## Purpose
 
-This repository follows trunk-based development. The canonical trunk is `main`.
-
-This workflow is mandatory for all agent activity unless the user explicitly overrides it for a specific task.
+This document defines a generic trunk-based branching/PR workflow for projects using the agent framework.
 
 The approved plan is the unit of branch ownership, execution, checkpoint-commit decisions, PR submission, and external review remediation.
 
-## Non-Optional Rules
+This workflow is mandatory for all agent activity unless overridden by project policy or by an explicit user instruction for a specific task.
 
-1. Never commit directly to `main`.
-2. Never push directly to `main`.
-3. Develop all changes on a non-`main` working branch.
-4. One approved plan = one working branch by default.
-5. One completed approved plan = one PR by default.
-6. PRs target `main` unless the user explicitly says otherwise.
-7. Merges to `main` use squash merge.
-8. Main must remain stable and deployable.
+## Resolution Order for Branch / Merge / Review Policy
+
+When a policy decision is needed, resolve in this order. Use the first source that defines the value:
+
+1. Explicit user override for the current task.
+2. Project `CLAUDE.md` (e.g. `trunk branch`, `merge strategy`, `review policy`).
+3. Repo metadata at runtime:
+   - GitHub default branch: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`
+   - Branch protection / required reviews: `gh api repos/{owner}/{repo}/branches/{branch}/protection` when accessible.
+4. Framework defaults below.
+
+If a value cannot be resolved from sources 1-3, use the framework default and note it in the orchestrator's report.
+
+## Framework Defaults
+
+These defaults apply when sources 1-3 are silent:
+
+- Trunk branch: `main`.
+- Merge strategy into trunk: squash merge.
+- Review requirement: at least one human review before merge.
+- One approved plan = one working branch = one PR.
+- PR target: the resolved trunk branch.
+- Trunk must remain stable and deployable.
+
+## Hard Rules (apply regardless of resolution source)
+
+1. Never commit directly to the resolved trunk branch.
+2. Never push directly to the resolved trunk branch.
+3. Develop all changes on a non-trunk working branch.
+4. Workers must not perform git write actions unless explicitly delegated and allowed by policy.
 
 ## Branch Taxonomy
 
@@ -58,12 +78,12 @@ Use multiple branches/PRs only when the planner explicitly decomposes the reques
 Before implementation begins, the orchestrator must define:
 
 - work classification
-- base branch
+- base branch (resolved per resolution order)
 - working branch name
 - whether the branch exists or must be created
 - whether worktrees are used
 - checkpoint commit policy
-- intended PR target
+- intended PR target (resolved per resolution order)
 
 If any item is undefined, implementation must not begin.
 
@@ -123,9 +143,10 @@ The orchestrator opens PRs using `open-plan-pr` only when:
 - required validation passed
 - outputs are coherent and in scope
 - required version/release metadata is included
+- the working branch has been pushed
 - the branch is ready to merge into the target branch
 
-Default target: `main`.
+Default target: the resolved trunk branch (per resolution order above).
 
 Use draft PRs only when explicitly requested or when the planner split staged reviewable deliverables.
 
@@ -151,18 +172,19 @@ The orchestrator owns review replies, resolution, re-review requests, remediatio
 
 ## Merge Policy
 
-Changes reach `main` only through PR.
+Changes reach the resolved trunk only through PR.
 
-Before merge readiness:
+Before merge readiness, all of the following must be satisfied per the resolution order:
 
 - required CI passes
 - required validation passes
 - required version/release metadata is present
-- at least one human review is obtained
+- the project's review requirement is met (framework default: at least one human review)
+- the project's merge strategy is followed (framework default: squash merge)
 
 ## Syncing With Trunk
 
-When a branch falls behind `main`, prefer rebase when practical. Avoid unnecessary merge commits.
+When a branch falls behind the resolved trunk, prefer rebase when practical. Avoid unnecessary merge commits.
 
 If conflict resolution changes scope or risk materially, stop and reassess.
 
@@ -170,11 +192,11 @@ If conflict resolution changes scope or risk materially, stop and reassess.
 
 For urgent production fixes:
 
-1. create `hotfix/<topic>` from `main`
+1. create `hotfix/<topic>` from the resolved trunk
 2. implement minimal safe change
 3. validate
-4. open PR to `main`
-5. squash merge after required approval unless the user explicitly directs a different emergency process
+4. open PR to the resolved trunk
+5. merge per the project's merge strategy after required approval, unless the user explicitly directs a different emergency process
 
 ## Worktrees
 

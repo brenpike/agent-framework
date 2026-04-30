@@ -16,7 +16,7 @@ allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh pr comment *)
   - Bash(gh api *)
-  - Agent(planner, coder, designer)
+  - Agent(agent-framework:planner, agent-framework:coder, agent-framework:designer)
   - Skill
 shell: powershell
 ---
@@ -27,10 +27,10 @@ Fix one-time generic, human, non-Codex, or ambiguous PR feedback.
 
 Follow:
 
-- `agent-system-policy.md`
-- `branching-pr-workflow.md`
-- `versioning.md`
-- `pr-review-remediation-loop.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
 - Read github-pr-review-graphql.md in this skill's directory for the complete GraphQL operations reference.
 
 ## Invocation Boundary
@@ -63,8 +63,8 @@ Optional:
 3. Identify the target comment.
    - If exactly one unresolved/actionable candidate exists, process it.
    - If multiple unrelated candidates exist and the user did not identify one, return blocked with candidates.
-4. Classify feedback using `pr-review-remediation-loop.md`.
-5. Route to planner/coder/designer according to policy.
+4. Classify feedback using `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
+5. Route to `agent-framework:planner` / `agent-framework:coder` / `agent-framework:designer` according to policy.
 6. Apply the smallest correct fix.
 7. Run relevant validation when feasible.
 8. Commit and push when a change was made and policy allows.
@@ -110,4 +110,4 @@ Issues:
 - None
 ```
 
-Use the blocked report contract from `agent-system-policy.md` for blocked states.
+Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states.

@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(git branch *)
   - Bash(git log *)
   - Bash(git diff *)
+  - Bash(git push *)
   - Bash(gh pr create *)
   - Bash(gh pr view *)
   - Bash(gh repo view *)
@@ -15,16 +16,20 @@ shell: powershell
 
 Open a pull request for the completed approved plan.
 
-Follow `branching-pr-workflow.md` and `versioning.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` and `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.
 
 ## Requirements
 
-1. Confirm current branch and default base branch.
-2. Confirm current branch is not `main`.
+1. Confirm current branch and resolved trunk branch (per branching-pr-workflow resolution order).
+2. Confirm current branch is not the resolved trunk branch.
 3. Confirm no unexpected unstaged changes.
 4. Confirm required validation has passed.
 5. Confirm required version/release metadata is included or not required.
-6. Create PR with:
+6. Push the current branch to the remote:
+   - if upstream is not set: `git push -u origin <branch>`
+   - otherwise: `git push`
+   - if the push fails (non-fast-forward, auth, protected branch), stop and report blocked.
+7. Create PR with:
    - clear title
    - concise summary
    - validation notes
@@ -45,6 +50,7 @@ Follow `branching-pr-workflow.md` and `versioning.md`.
 Status: complete | blocked
 Base:
 Head:
+Pushed: yes | no
 PR title:
 PR URL:
 Warnings:

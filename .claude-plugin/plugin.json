@@ -1,6 +1,7 @@
 {
   "name": "agent-framework",
-  "description": "Claude Code agent framework: orchestrator, planner, coder, designer agents + workflow skills",
+  "version": "0.1.0",
+  "description": "Claude Code plugin providing a structured multi-agent framework with orchestrator, planner, coder, and designer agents plus workflow skills for git branching, commits, PRs, and code review remediation.",
   "author": {
     "name": "brenpike"
   },

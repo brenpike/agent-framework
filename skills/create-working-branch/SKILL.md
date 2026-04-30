@@ -8,12 +8,13 @@ allowed-tools:
   - Bash(git rev-parse *)
   - Bash(git checkout *)
   - Bash(git switch *)
+  - Bash(gh repo view *)
 shell: powershell
 ---
 
 Create or confirm the working branch for the current approved plan.
 
-Follow `branching-pr-workflow.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
 
 ## Requirements
 

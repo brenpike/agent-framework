@@ -14,11 +14,11 @@ shell: powershell
 
 Create a checkpoint commit for the current approved plan.
 
-Follow `branching-pr-workflow.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
 
 ## Requirements
 
-1. Confirm current branch is not `main`.
+1. Confirm current branch is not the resolved trunk branch.
 2. Review staged and unstaged diff.
 3. Stage only files that belong to the completed phase, milestone, version bump, or review-remediation item.
 4. Create a clear conventional-style commit message.
@@ -29,7 +29,7 @@ Follow `branching-pr-workflow.md`.
 - push
 - open a PR
 - include unrelated files
-- commit on `main`
+- commit on the resolved trunk branch
 
 ## Output
 
