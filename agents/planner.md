@@ -67,7 +67,7 @@ Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PL
 - assign work to any agent except `coder` or `designer`
 - use vague file scopes such as "relevant files"
 - rely on memory instead of current repo inspection when correctness requires inspection
-- invoke any skill other than `claude-mem:mem-search` — the `Skill` tool is granted solely so Memory-First Planning can run when `claude-mem` is installed. Workflow skills (`create-working-branch`, `checkpoint-commit`, `open-plan-pr`, `request-codex-review`, `address-pr-feedback`, `watch-pr-feedback`) belong to the orchestrator. If you need their effect, surface the need in the plan.
+- invoke any skill other than `claude-mem:mem-search` — the `Skill` tool is granted solely so Memory-First Planning can run when `claude-mem` is installed. Workflow skills (`agent-framework:create-working-branch`, `agent-framework:checkpoint-commit`, `agent-framework:open-plan-pr`, `agent-framework:request-codex-review`, `agent-framework:address-pr-feedback`, `agent-framework:watch-pr-feedback`) belong to the orchestrator. If you need their effect, surface the need in the plan.
 
 ## Memory-First Planning
 

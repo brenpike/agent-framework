@@ -10,7 +10,7 @@ This workflow is mandatory for all agent activity unless overridden by project p
 
 ## Resolution Order for Branch / Merge / Review Policy
 
-The orchestrator owns resolution. Workflow skills (`create-working-branch`, `checkpoint-commit`, `open-plan-pr`) do not resolve these values themselves; they receive resolved values as explicit inputs from the orchestrator and stop blocked if any are missing.
+The orchestrator owns resolution. Workflow skills (`agent-framework:create-working-branch`, `agent-framework:checkpoint-commit`, `agent-framework:open-plan-pr`) do not resolve these values themselves; they receive resolved values as explicit inputs from the orchestrator and stop blocked if any are missing.
 
 When a policy decision is needed, resolve in this order. Use the first source that defines the value:
 
@@ -98,7 +98,7 @@ The orchestrator creates or confirms the working branch only after:
 - implementation is ready to begin
 - repo state is safe
 
-Use the `create-working-branch` skill when creating/switching branches.
+Use the `agent-framework:create-working-branch` skill when creating/switching branches.
 
 ## Commit Policy
 
@@ -112,7 +112,7 @@ Checkpoint commits are allowed only when:
 - a review-remediation fix is complete, validated, and ready to push
 - a version bump is complete and verified
 
-Default commit owner: orchestrator through `checkpoint-commit`.
+Default commit owner: orchestrator through `agent-framework:checkpoint-commit`.
 
 Coder may commit only when explicitly delegated. Designer never commits.
 
@@ -139,7 +139,7 @@ Version bumps are included in the same PR as the triggering change unless the us
 
 ## Pull Requests
 
-The orchestrator opens PRs using `open-plan-pr` only when:
+The orchestrator opens PRs using `agent-framework:open-plan-pr` only when:
 
 - the approved plan is complete
 - required validation passed

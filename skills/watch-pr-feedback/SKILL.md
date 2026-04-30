@@ -35,7 +35,7 @@ Use only when the user explicitly asks to:
 - loop on Codex/human review feedback
 - use Monitor for PR feedback
 
-Do not use for one-time requests like `fix PR comment on PR #N`; use `address-pr-feedback`.
+Do not use for one-time requests like `fix PR comment on PR #N`; use `agent-framework:address-pr-feedback`.
 
 ## Required Inputs
 
@@ -75,7 +75,7 @@ Optional:
    - human reviewer feedback
    - CI/system feedback
    - ambiguous
-7. Route generic/human/ambiguous feedback → `address-pr-feedback`.
+7. Route generic/human/ambiguous feedback → `agent-framework:address-pr-feedback`.
 8. Stop on policy stop conditions.
 
 ## Monitor Rules
