@@ -1,63 +1,89 @@
 # agent-framework
 
-Claude Code plugin providing a multi-agent framework with orchestrator, planner, coder, and designer agents plus workflow skills for git branching, commits, PRs, and review remediation.
+Claude Code plugin providing a structured multi-agent framework with orchestrator, planner, coder, and designer agents plus workflow skills for git branching, commits, PRs, and code review remediation.
 
 ## Install
 
+Install once, globally:
+
 ```bash
-claude plugin add brenpike/agent-framework
+claude plugin install https://github.com/brenpike/agent-framework
 ```
 
-## Per-Project Setup
+## Per-project setup
 
-After installing the plugin, each project that uses it needs:
-
-1. **Enable the plugin** in your project's `.claude/settings.json`:
+1. Enable the plugin in `.claude/settings.json`:
 
 ```json
 {
-  "enabledPlugins": ["agent-framework"]
+  "enabledPlugins": {
+    "agent-framework@brenpike": true
+  }
 }
 ```
 
-2. **Create a `CLAUDE.md`** at your project root with project-specific paths, commands, packages, artifact rules, and versioning configuration. The agents reference `CLAUDE.md` for project-specific adapter details.
+2. Create `CLAUDE.md` with project-specific details:
+   - Build/test commands
+   - Package names and version file paths
+   - Versioning configuration (bump triggers, changelogs, tag prefixes)
+   - Architecture and code style notes
 
-3. **Create an `AGENTS.md`** at your project root if you use external AI reviewers (e.g., Codex). Copy `governance/AGENTS.md` as a starting point and customize for your project's review focus.
+3. Create `AGENTS.md` with project-specific Codex review guidance:
+   - Review focus areas
+   - Severity definitions
+   - Project-specific conventions for reviewers
+
+That is all. The orchestrator is automatically the default agent. All skills are available namespaced as `agent-framework:<skill-name>`.
+
+## After cloning a project that uses this plugin
+
+```bash
+claude plugin install https://github.com/brenpike/agent-framework
+```
 
 ## Agents
 
 | Agent | Role |
 |---|---|
-| **orchestrator** | Control plane. Coordinates planner, coder, and designer. Owns task routing, git preflight, branch/worktree decisions, checkpoint commits, PR submission, versioning decisions, and external review-feedback routing. Does not implement code. |
-| **planner** | Creates implementation plans by researching the codebase, identifying risks and edge cases, assigning explicit file scopes, and recommending delivery shape. Does not modify files. |
-| **coder** | Implements code, fixes bugs, refactors safely, updates assigned tests/release metadata, and validates behavior within explicitly assigned file scope. |
-| **designer** | Handles presentational UI/UX work, design tokens, layout, accessibility presentation, and visual states within explicitly assigned file scope. |
-
-The default agent is `orchestrator` (configured in `settings.json`).
+| `agent-framework:orchestrator` | Default agent. Coordinates all work, owns git workflow, branch/PR decisions, versioning decisions, and external review routing. |
+| `agent-framework:planner` | Research and implementation planning. Read-only — no file writes. |
+| `agent-framework:coder` | Implementation within explicitly assigned file scope. |
+| `agent-framework:designer` | Presentational UI/UX work within explicitly assigned file scope. |
 
 ## Skills
 
-| Skill | Description |
+All skills are invoked as `agent-framework:<skill-name>`:
+
+| Skill | Purpose |
 |---|---|
-| `create-working-branch` | Create or confirm the compliant working branch before implementation begins. |
-| `checkpoint-commit` | Create a checkpoint commit after a completed phase, milestone, version bump, or review remediation item. |
-| `open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass. |
-| `request-codex-review` | Request Codex review on an existing pushed PR. |
-| `address-pr-feedback` | Fix a specific generic, human, or ambiguous PR comment (non-Codex). |
-| `run-codex-review-loop` | Run the bounded Codex review remediation and re-review loop. |
-| `watch-pr-feedback` | Watch a PR for new unresolved review feedback and route to remediation skills. |
+| `create-working-branch` | Create or confirm a compliant working branch before implementation |
+| `checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
+| `open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
+| `address-pr-feedback` | Fix a specific generic or human PR comment (one-time) |
+| `request-codex-review` | Request Codex review on an existing pushed PR |
+| `run-codex-review-loop` | Bounded Codex review remediation loop |
+| `watch-pr-feedback` | Monitor a PR for new review feedback and route to remediation skills |
 
 ## Governance
 
-The `governance/` directory contains shared policy documents referenced by agents and skills:
+Reference documentation in `governance/`:
 
-- `agent-system-policy.md` -- cross-agent constraints, authority matrix, role boundaries, escalation rules
-- `branching-pr-workflow.md` -- trunk-based development, branch taxonomy, commit policy, PR workflow
-- `pr-review-remediation-loop.md` -- external PR review feedback handling, classification, routing, fix rules
-- `versioning.md` -- SemVer rules, bump triggers, changelog, tags
-- `AGENTS.md` -- guidance for external AI reviewers (e.g., Codex)
+| File | Contents |
+|---|---|
+| `agent-system-policy.md` | Cross-agent constraints, authority matrix, allowed agent topology |
+| `branching-pr-workflow.md` | Branch taxonomy, naming rules, commit and PR policy |
+| `pr-review-remediation-loop.md` | External PR review feedback handling and classification |
+| `versioning.md` | SemVer rules, bump triggers, changelog and tag policy |
+| `AGENTS.md` | Template for project-specific Codex reviewer guidance |
 
-These documents define mandatory behavior for all agents. Project-specific overrides belong in each project's `CLAUDE.md`.
+Governance rules are embedded in agent definitions. These files are reference material for humans and for agents that need to re-read specific rules.
+
+## Plugin limitations
+
+The following agent frontmatter fields are not supported by the Claude Code plugin system and are omitted from plugin agent definitions:
+
+- `mcpServers` — configure MCP servers (context7, claude-mem, etc.) at the project or global level instead
+- `permissionMode` — the planner enforces read-only behavior via its instructions
 
 ## License
 
