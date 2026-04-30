@@ -31,7 +31,7 @@ Follow:
 - `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`
 - `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`
 - `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
-- Read github-pr-review-graphql.md in this skill's directory for the complete GraphQL operations reference.
+- Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` for the complete GraphQL operations reference.
 
 ## Invocation Boundary
 
@@ -59,7 +59,7 @@ Optional:
 ## Procedure
 
 1. Confirm PR exists, target branch, head branch, current branch, and safe working tree.
-2. Fetch top-level PR comments, inline review comments, unresolved review threads, and review summaries using github-pr-review-graphql.md where GraphQL review-thread data is required.
+2. Fetch top-level PR comments, inline review comments, unresolved review threads, and review summaries using `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` where GraphQL review-thread data is required.
 3. Identify the target comment.
    - If exactly one unresolved/actionable candidate exists, process it.
    - If multiple unrelated candidates exist and the user did not identify one, return blocked with candidates.

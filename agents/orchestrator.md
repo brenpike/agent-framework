@@ -59,10 +59,7 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:address-pr-feedback`: one-time generic, human, ambiguous, or non-Codex PR feedback.
 - `agent-framework:watch-pr-feedback`: explicit watch/monitor/poll/wait/continue handling new PR feedback only.
 
-Selection rules:
-- Ambiguous PR feedback defaults to `agent-framework:address-pr-feedback`.
-- Monitoring requires explicit watch/monitor/poll/wait intent.
-- Never choose a broader or looping skill when a narrower one matches.
+For PR-feedback skill selection rules, see `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
 ## Planner-First Rule
 
@@ -79,23 +76,11 @@ If in doubt, call planner.
 
 ## Mandatory Git Preflight
 
-Before implementation delegation, explicitly establish:
-
-- work classification: `feature|bugfix|hotfix|refactor|chore|docs|test|ci`
-- base branch
-- working branch name
-- branch exists vs create
-- worktree: yes/no
-- checkpoint commit policy
-- PR target
-
-If any are undefined, do not begin implementation.
+Before implementation delegation, establish the git preflight items defined in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight). If any are undefined, do not begin implementation.
 
 ## Monitor Use
 
-Use Monitor only for explicit watch/monitor/wait/poll/loop requests.
-
-Monitor commands must be read-only, deterministic, bounded, and parser-stable per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
+Use Monitor only for explicit watch/monitor/wait/poll/loop requests. See `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy).
 
 If Monitor cannot start or cannot be trusted, do one manual check when safe and report `Monitoring: not active`.
 
