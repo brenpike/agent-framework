@@ -1,7 +1,7 @@
 ---
 name: checkpoint-commit
 description: Create a checkpoint commit for the current approved plan after a completed phase, milestone, version bump, or review remediation item.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   - Bash(git status *)
   - Bash(git diff *)

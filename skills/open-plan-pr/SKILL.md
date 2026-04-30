@@ -1,7 +1,7 @@
 ---
 name: open-plan-pr
 description: Open a pull request for a successfully completed approved plan after final verification.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)
