@@ -1,7 +1,9 @@
 {
   "name": "agent-framework",
   "description": "Claude Code agent framework: orchestrator, planner, coder, designer agents + workflow skills",
-  "author": "brenpike",
+  "author": {
+    "name": "brenpike"
+  },
   "license": "MIT",
   "repository": "https://github.com/brenpike/agent-framework"
 }
