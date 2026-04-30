@@ -61,6 +61,16 @@ Invoke skills on demand. Use the narrowest matching skill.
 
 For PR-feedback skill selection rules, see `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
+## Skill Inputs
+
+You own resolution of trunk, base, target, and working-branch values per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Resolution Order). Skills do not resolve these on their own. Pass them as explicit inputs:
+
+- `agent-framework:create-working-branch`: `base`, `working_branch`, `classification`.
+- `agent-framework:checkpoint-commit`: `trunk`.
+- `agent-framework:open-plan-pr`: `base` (PR target / resolved trunk), `head` (working branch), optional `push_remote`.
+
+If you cannot resolve a required value, do not invoke the skill. Stop and report blocked.
+
 ## Planner-First Rule
 
 Call `agent-framework:planner` first by default.

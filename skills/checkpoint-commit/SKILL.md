@@ -16,9 +16,15 @@ Create a checkpoint commit for the current approved plan.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
 
+## Required Inputs
+
+The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Resolution Order). The skill does not resolve them on its own.
+
+- `trunk`: resolved trunk branch name (the branch that must not be committed to directly).
+
 ## Requirements
 
-1. Confirm current branch is not the resolved trunk branch.
+1. Confirm current branch is not `trunk`.
 2. Review staged and unstaged diff.
 3. Stage only files that belong to the completed phase, milestone, version bump, or review-remediation item.
 4. Create a clear conventional-style commit message.
@@ -29,7 +35,7 @@ Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
 - push
 - open a PR
 - include unrelated files
-- commit on the resolved trunk branch
+- commit on `trunk`
 
 ## Output
 
