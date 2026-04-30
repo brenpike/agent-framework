@@ -129,11 +129,9 @@ Do not mix unrelated changes. Stage only files that belong to the completed phas
 
 ## Version Bumps
 
-`versioning.md` is canonical.
+See `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.
 
 A PR is not ready to merge until required version/release metadata changes are included.
-
-Version bumps are included in the same PR as the triggering change unless the user explicitly directs otherwise.
 
 ## Pull Requests
 

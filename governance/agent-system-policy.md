@@ -128,9 +128,7 @@ No agent may commit or push directly to the resolved trunk branch.
 
 ## Versioning Enforcement
 
-`versioning.md` is mandatory for versioned artifacts.
-
-The orchestrator owns bump detection and bump type decisions. The coder may edit version/release metadata only when explicitly delegated.
+`versioning.md` is mandatory for versioned artifacts. See `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.
 
 A PR that requires a version bump is not ready until required version/release metadata is included.
 
