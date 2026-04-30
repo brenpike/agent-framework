@@ -149,13 +149,13 @@ Do not commit the ledger unless the user or project policy explicitly requests i
 
 Use the narrowest matching skill:
 
-- `address-pr-feedback` for generic PR comments, human reviewer comments, ambiguous reviewer feedback, or one-off fixes
-- `watch-pr-feedback` only for explicit watch/monitor/wait/poll/loop/continue requests
+- `agent-framework:address-pr-feedback` for generic PR comments, human reviewer comments, ambiguous reviewer feedback, or one-off fixes
+- `agent-framework:watch-pr-feedback` only for explicit watch/monitor/wait/poll/loop/continue requests
 
 ## Monitoring
 
 A remediation skill is not a monitor. A monitor detects new feedback and routes to remediation skills.
 
-See `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy).
+Monitoring must be read-only, deterministic, bounded, parser-stable, and truthfully reported. Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy).
 
-Use `watch-pr-feedback` for monitor-backed behavior.
+Use `agent-framework:watch-pr-feedback` for monitor-backed behavior. If Monitor, `/loop`, scheduling support, or the approved parser strategy is unavailable, fall back to manual remediation or return `blocked`.

@@ -58,16 +58,16 @@ That is all. The orchestrator is automatically the default agent. All skills are
 
 ## Skills
 
-All skills are invoked as `agent-framework:<skill-name>`:
+All skills are invoked using the namespaced form:
 
 | Skill | Purpose |
 |---|---|
-| `create-working-branch` | Create or confirm a compliant working branch before implementation |
-| `checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
-| `open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
-| `address-pr-feedback` | Fix a specific generic or human PR comment (one-time) |
-| `request-codex-review` | Request Codex review on an existing pushed PR |
-| `watch-pr-feedback` | Monitor a PR for new review feedback and route to remediation skills |
+| `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
+| `agent-framework:checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
+| `agent-framework:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
+| `agent-framework:address-pr-feedback` | Fix a specific generic or human PR comment (one-time) |
+| `agent-framework:request-codex-review` | Request Codex review on an existing pushed PR |
+| `agent-framework:watch-pr-feedback` | Monitor a PR for new review feedback and route to remediation skills |
 
 ## Governance
 
