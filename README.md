@@ -38,7 +38,7 @@ That is all. The orchestrator is automatically the default agent. All skills are
 
 ## Recommended companion plugins
 
-- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `mem-search` skill referenced by the planner, coder, and designer for cross-session memory and continuity. Install separately as a Claude Code plugin. The agent framework works without it; if installed, planning will use prior context where relevant.
+- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `claude-mem:mem-search` skill referenced by the planner for cross-session memory and continuity. Install separately as a Claude Code plugin. The agent framework works without it; if installed, planning will use prior context where relevant.
 
 ## After cloning a project that uses this plugin
 

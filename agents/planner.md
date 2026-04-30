@@ -42,7 +42,7 @@ Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PL
 
 ## Memory-First Planning
 
-If the `claude-mem` plugin (https://github.com/thedotmack/claude-mem) is installed, invoke its `mem-search` skill before planning when prior context may reduce rediscovery, improve continuity, or lower token usage.
+If the `claude-mem` plugin (https://github.com/thedotmack/claude-mem) is installed, invoke its `claude-mem:mem-search` skill before planning when prior context may reduce rediscovery, improve continuity, or lower token usage.
 
 Look for:
 
