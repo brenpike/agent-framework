@@ -156,6 +156,6 @@ Use the narrowest matching skill:
 
 A remediation skill is not a monitor. A monitor detects new feedback and routes to remediation skills.
 
-See `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy).
+Monitoring must be read-only, deterministic, bounded, parser-stable, and truthfully reported. Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy).
 
-Use `watch-pr-feedback` for monitor-backed behavior.
+Use `watch-pr-feedback` for monitor-backed behavior. If Monitor, `/loop`, scheduling support, or the approved parser strategy is unavailable, fall back to manual remediation or return `blocked`.

@@ -56,12 +56,31 @@ External reviewers, CI, GitHub, Codex, and other services are not Claude Code su
 
 ## Role Boundaries
 
-Authority Matrix above is canonical. Per-agent details:
+Authority Matrix above is canonical. Per-agent files in `${CLAUDE_PLUGIN_ROOT}/agents/` define role-specific deltas.
 
-- orchestrator — coordination, sequencing, branch/PR/version/review-routing decisions; never implements directly. See `${CLAUDE_PLUGIN_ROOT}/agents/orchestrator.md`.
-- planner — plans only; never modifies files, branches, commits, PRs, or review threads. See `${CLAUDE_PLUGIN_ROOT}/agents/planner.md`.
-- coder — implements assigned code/tests/docs/release metadata within explicit file scope; never decides bump type or owns review threads. See `${CLAUDE_PLUGIN_ROOT}/agents/coder.md`.
-- designer — implements assigned presentational UI/UX and static accessibility within explicit file scope; never implements business logic, runtime behavior, or version metadata. See `${CLAUDE_PLUGIN_ROOT}/agents/designer.md`.
+### orchestrator
+
+Coordinates the workflow. Owns delegation, sequencing, branch/worktree decisions, checkpoint-commit decisions, PR submission, version bump decisions, and external review-feedback routing.
+
+The orchestrator must not implement product/application changes directly. The orchestrator must not use Write, Edit, or implementation Bash commands to make source changes — implementation belongs to `coder` or `designer`.
+
+### planner
+
+Plans only. Reads and researches, assigns exact file scopes, identifies risks, dependencies, delivery shape, versioning implications, and open questions.
+
+The planner must not modify files, create branches, commit, push, open PRs, or resolve review threads.
+
+### coder
+
+Implements assigned code, tests, docs, build/package/release metadata, runtime behavior, and assigned review-remediation fixes within explicit file scope.
+
+The coder must not silently expand scope, decide version bump type, reply to review threads, resolve review threads, request external review, or invent visual design.
+
+### designer
+
+Implements assigned presentational UI/UX, design tokens, layout, semantic markup, static ARIA, visual states, responsive presentation, and presentation accessibility within explicit file scope.
+
+The designer must not implement business logic, data flow, persistence, routing, state derivation, runtime keyboard behavior, runtime focus movement, live-region behavior, or version/release metadata changes.
 
 ## Explicit Scope Rule
 
@@ -103,7 +122,17 @@ Coder owns runtime accessibility:
 
 `branching-pr-workflow.md` is mandatory. See `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
 
-Required preflight items: see `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
+Before implementation begins, the orchestrator must explicitly establish:
+
+- work classification: `feature|bugfix|hotfix|refactor|chore|docs|test|ci`
+- base branch
+- working branch name
+- branch exists vs create
+- worktree decision
+- checkpoint commit policy
+- PR target
+
+If any are undefined, do not begin implementation. Full preflight detail: `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
 
 Workers must stop and report `blocked` if required git context is missing, inconsistent, or unsafe.
 
@@ -113,6 +142,8 @@ No agent may commit or push directly to the resolved trunk branch.
 
 `versioning.md` is mandatory for versioned artifacts. See `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.
 
+The orchestrator owns bump detection and bump type decisions. The coder may edit version/release metadata only when explicitly delegated.
+
 A PR that requires a version bump is not ready until required version/release metadata is included.
 
 If project-specific version paths or canonical version sources are unclear, stop and ask the user.
@@ -121,7 +152,16 @@ If project-specific version paths or canonical version sources are unclear, stop
 
 `pr-review-remediation-loop.md` is mandatory for external PR feedback. See `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
-Workers must not reply to or resolve review threads unless explicitly delegated and allowed by policy.
+The orchestrator owns review feedback classification, routing, replies, resolution, and re-review requests.
+
+Skills may perform classification only as orchestrator-invoked workflow steps. Ownership remains with the orchestrator.
+
+Workers may remediate assigned feedback within explicit file scope. They must not reply to or resolve review threads unless explicitly delegated and allowed by policy.
+
+Use the narrowest matching skill:
+
+- `address-pr-feedback` — one-time generic, human, ambiguous, or non-Codex PR feedback
+- `watch-pr-feedback` — explicit watch, monitor, wait, poll, loop, or continue-handling-new-feedback request
 
 ## Tool and MCP Policy
 
