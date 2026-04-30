@@ -61,7 +61,6 @@ All skills are invoked as `agent-framework:<skill-name>`:
 | `open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `address-pr-feedback` | Fix a specific generic or human PR comment (one-time) |
 | `request-codex-review` | Request Codex review on an existing pushed PR |
-| `run-codex-review-loop` | Bounded Codex review remediation loop |
 | `watch-pr-feedback` | Monitor a PR for new review feedback and route to remediation skills |
 
 ## Governance

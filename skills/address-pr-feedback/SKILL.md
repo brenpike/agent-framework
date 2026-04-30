@@ -42,8 +42,6 @@ Use for:
 - `fix the unresolved comment`
 - ambiguous PR feedback requests
 
-Do not use for explicit Codex review loops. Use `run-codex-review-loop` only when Codex is explicitly requested.
-
 ## Required Inputs
 
 At minimum:

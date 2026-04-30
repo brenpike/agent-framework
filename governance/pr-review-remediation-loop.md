@@ -150,10 +150,7 @@ Do not commit the ledger unless the user or project policy explicitly requests i
 Use the narrowest matching skill:
 
 - `address-pr-feedback` for generic PR comments, human reviewer comments, ambiguous reviewer feedback, or one-off fixes
-- `run-codex-review-loop` only for explicit Codex review feedback, Codex threads, Codex re-review, or the bounded Codex loop
 - `watch-pr-feedback` only for explicit watch/monitor/wait/poll/loop/continue requests
-
-Ambiguous requests such as `fix PR comment on PR #80` must not trigger the Codex loop by default.
 
 ## Monitoring
 

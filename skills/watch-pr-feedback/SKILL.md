@@ -72,13 +72,10 @@ Optional:
 4. Start Monitor when available using one deterministic, read-only feedback-detection command based on github-pr-review-graphql.md. Detection must cover review threads, top-level PR comments, and review summaries (reviews with `CHANGES_REQUESTED` or `COMMENTED` state whose body contains actionable feedback not captured in inline threads). Fetch and ledger review summary IDs and states alongside thread and comment IDs.
 5. Track seen comment/thread/review IDs in a session-local ledger.
 6. When new feedback appears, classify source:
-   - Codex feedback
    - human reviewer feedback
    - CI/system feedback
    - ambiguous
-7. Route:
-   - explicit Codex loop request → `run-codex-review-loop`
-   - generic/human/ambiguous feedback → `address-pr-feedback`
+7. Route generic/human/ambiguous feedback → `address-pr-feedback`.
 8. Stop on policy stop conditions.
 
 ## Monitor Rules
@@ -136,7 +133,6 @@ Watch:
 
 Routed:
 - address-pr-feedback: [count]
-- run-codex-review-loop: [count]
 - None
 
 Stopped because:

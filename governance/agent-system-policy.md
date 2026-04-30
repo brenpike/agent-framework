@@ -156,7 +156,6 @@ Workers may remediate assigned feedback within explicit file scope. They must no
 Use the narrowest matching skill:
 
 - `address-pr-feedback` — one-time generic, human, ambiguous, or non-Codex PR feedback
-- `run-codex-review-loop` — explicit Codex review remediation/re-review loop
 - `watch-pr-feedback` — explicit watch, monitor, wait, poll, loop, or continue-handling-new-feedback request
 
 ## Tool and MCP Policy

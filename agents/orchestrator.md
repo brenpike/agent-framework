@@ -57,12 +57,10 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:open-plan-pr`: open a PR only after completion, validation, and versioning gates pass.
 - `agent-framework:request-codex-review`: request Codex review on an existing pushed PR.
 - `agent-framework:address-pr-feedback`: one-time generic, human, ambiguous, or non-Codex PR feedback.
-- `agent-framework:run-codex-review-loop`: explicit Codex review remediation or Codex re-review loop only.
 - `agent-framework:watch-pr-feedback`: explicit watch/monitor/poll/wait/continue handling new PR feedback only.
 
 Selection rules:
 - Ambiguous PR feedback defaults to `agent-framework:address-pr-feedback`.
-- Codex loop requires explicit Codex intent.
 - Monitoring requires explicit watch/monitor/poll/wait intent.
 - Never choose a broader or looping skill when a narrower one matches.
 
