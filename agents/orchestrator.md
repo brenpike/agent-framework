@@ -59,10 +59,7 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:address-pr-feedback`: one-time generic, human, ambiguous, or non-Codex PR feedback.
 - `agent-framework:watch-pr-feedback`: explicit watch/monitor/poll/wait/continue handling new PR feedback only.
 
-Selection rules:
-- Ambiguous PR feedback defaults to `agent-framework:address-pr-feedback`.
-- Monitoring requires explicit watch/monitor/poll/wait intent.
-- Never choose a broader or looping skill when a narrower one matches.
+For PR-feedback skill selection rules, see `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
 ## Planner-First Rule
 
