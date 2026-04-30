@@ -22,7 +22,7 @@ Follow:
 
 - `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
 - `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
-- Read github-pr-review-graphql.md in this skill's directory for the complete GraphQL operations reference.
+- Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` for the complete GraphQL operations reference.
 
 ## Invocation Boundary
 
@@ -69,7 +69,7 @@ Optional:
 1. Confirm PR exists and is open using `gh pr view --json state --jq .state`.
 2. Confirm GitHub CLI access works.
 3. Confirm current branch and working tree state.
-4. Start Monitor when available using one deterministic, read-only feedback-detection command based on github-pr-review-graphql.md. Detection must cover review threads, top-level PR comments, and review summaries (reviews with `CHANGES_REQUESTED` or `COMMENTED` state whose body contains actionable feedback not captured in inline threads). Fetch and ledger review summary IDs and states alongside thread and comment IDs.
+4. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, and review summaries (reviews with `CHANGES_REQUESTED` or `COMMENTED` state whose body contains actionable feedback not captured in inline threads). Fetch and ledger review summary IDs and states alongside thread and comment IDs.
 5. Track seen comment/thread/review IDs in a session-local ledger.
 6. When new feedback appears, classify source:
    - human reviewer feedback
