@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(git log *)
   - Bash(git diff *)
   - Bash(git rev-parse *)
+  - Bash(git config --get *)
   - Bash(git push *)
   - Bash(gh pr create *)
   - Bash(gh pr view *)
@@ -37,7 +38,11 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
    - if `push_remote` is provided: `git push -u <push_remote> <head>`. On failure, stop blocked.
    - else if upstream tracking is set: run `git push`.
      - on success: continue with that remote.
-     - on **non-fast-forward** failure: retry once with a refspec-scoped force-with-lease against the tracked upstream ref. Capture the full upstream ref with `git rev-parse --abbrev-ref --symbolic-full-name @{u}` (yields `<remote>/<upstream_branch>`); split into `<remote>` (before first `/`) and `<upstream_branch>` (after first `/`). Run `git push --force-with-lease <remote> HEAD:<upstream_branch>`. The explicit `HEAD:<upstream_branch>` refspec targets the actual tracked branch — not the same-named branch on the remote, which may differ when the local branch tracks a renamed upstream (`push.default=upstream` or explicit branch mapping). Force-with-lease without a value uses the remote-tracking ref as expected, so it succeeds only when the remote tip matches what the local clone last fetched, which covers intentional history rewrites (rebase, amend) without overwriting concurrent pushes.
+     - on **non-fast-forward** failure: retry once with a refspec-scoped force-with-lease against the tracked upstream ref. Read remote and upstream ref via git plumbing (string-splitting on `/` is unsafe — branch names like `feature/foo` and rare remote names with `/` make any single-slash split incorrect):
+       - `<remote>` = `git config --get branch.<head>.remote`
+       - `<upstream_ref>` = `git config --get branch.<head>.merge` (yields `refs/heads/<upstream_branch>`)
+       - `<upstream_branch>` = `<upstream_ref>` with the `refs/heads/` prefix stripped
+       Run `git push --force-with-lease <remote> HEAD:<upstream_branch>`. The explicit `HEAD:<upstream_branch>` refspec targets the actual tracked branch — not the same-named branch on the remote, which may differ when the local branch tracks a renamed upstream (`push.default=upstream` or explicit branch mapping). Force-with-lease without a value uses the remote-tracking ref as expected, so it succeeds only when the remote tip matches what the local clone last fetched, which covers intentional history rewrites (rebase, amend) without overwriting concurrent pushes.
        - on FWL success: continue.
        - on FWL failure: stop blocked. Remote has commits the local clone has not seen.
      - on **auth / read-only / protected branch** failure: record warning and continue. `gh pr create` may route to a fork or alternate remote.
