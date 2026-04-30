@@ -26,9 +26,10 @@ Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` and `${CLAUDE
 4. Confirm required validation has passed.
 5. Confirm required version/release metadata is included or not required.
 6. Ensure the current branch is pushed to a remote that `gh pr create` can target:
-   - if upstream tracking is already set: run `git push` and stop blocked on failure (non-fast-forward, auth, protected branch).
+   - if upstream tracking is already set: run `git push`. On success, record the remote and continue. On failure (non-fast-forward, auth, protected branch, upstream not writable), record a warning and continue — `gh pr create` in step 7 can route to a different remote or fork when the tracked upstream is read-only.
    - if upstream tracking is not set: do not hard-code `origin`. Let `gh pr create` handle the push in step 7. `gh pr create` prompts for the push target when the branch is unpushed and can fork the base repository when the user lacks push access to `origin` (fork-based workflows).
    - if the user has explicitly requested a specific remote, push to that remote with `git push -u <remote> <branch>` and stop blocked on failure.
+   - block only when neither `git push` nor `gh pr create` can place the branch on a usable remote.
 7. Create PR with:
    - clear title
    - concise summary
