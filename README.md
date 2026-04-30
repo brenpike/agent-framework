@@ -7,7 +7,7 @@ Claude Code plugin providing a structured multi-agent framework with orchestrato
 Inside Claude Code, add the marketplace then install the plugin:
 
 ```text
-/plugin marketplace add brenpike/agent-framework
+/plugin marketplace add https://github.com/brenpike/agent-framework.git
 /plugin install agent-framework@brenpike
 ```
 
@@ -39,7 +39,7 @@ That is all. The orchestrator is automatically the default agent. All skills are
 ## After cloning a project that uses this plugin
 
 ```text
-/plugin marketplace add brenpike/agent-framework
+/plugin marketplace add https://github.com/brenpike/agent-framework.git
 /plugin install agent-framework@brenpike
 ```
 

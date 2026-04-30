@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "agent-framework",
-      "source": ".",
+      "source": "./",
       "description": "Claude Code agent framework: orchestrator, planner, coder, designer agents + workflow skills"
     }
   ]
