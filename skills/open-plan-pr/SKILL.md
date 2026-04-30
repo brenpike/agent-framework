@@ -37,7 +37,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
    - if `push_remote` is provided: `git push -u <push_remote> <head>`. On failure, stop blocked.
    - else if upstream tracking is set: run `git push`.
      - on success: continue with that remote.
-     - on **non-fast-forward** failure: retry once with `git push --force-with-lease`. Force-with-lease is safe — it succeeds only when the remote tip matches what the local clone last fetched, which covers intentional history rewrites (rebase, amend) without overwriting concurrent pushes.
+     - on **non-fast-forward** failure: retry once with a refspec-scoped force-with-lease. Capture the upstream remote name with `git rev-parse --abbrev-ref --symbolic-full-name @{u}` (yields `<remote>/<branch>`; take the part before the first `/`), then run `git push --force-with-lease <remote> <head>`. Pass remote and refspec explicitly — bare `git push --force-with-lease` would apply to whatever refs `push.default` or `remote.<name>.push` selects and could rewrite unrelated remote branches. Force-with-lease succeeds only when the remote tip matches what the local clone last fetched, which covers intentional history rewrites (rebase, amend) without overwriting concurrent pushes.
        - on FWL success: continue.
        - on FWL failure: stop blocked. Remote has commits the local clone has not seen.
      - on **auth / read-only / protected branch** failure: record warning and continue. `gh pr create` may route to a fork or alternate remote.
