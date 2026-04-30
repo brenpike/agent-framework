@@ -40,7 +40,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
      - on **non-fast-forward** failure: stop blocked. Local HEAD is behind remote; PR would be stale or wrong.
      - on **auth / read-only / protected branch** failure: record warning and continue. `gh pr create` may route to a fork or alternate remote.
    - else (no upstream, no `push_remote`): defer to `gh pr create` in step 7. It prompts for push target and can fork the base repo.
-7. Run `gh pr create --base <base> --head <head> ...` with title, summary, validation notes, version/release notes, and unresolved issues.
+7. Run `gh pr create --base <base> ...` with title, summary, validation notes, version/release notes, and unresolved issues. Do not pass `--head` — `--head` makes `gh` skip its push/fork fallback, which defeats step 6's fork-based and unpushed-branch handling. `gh pr create` uses the current branch as head by default; confirm step 1 already verified current branch matches the intended `head`.
 8. Verify the PR head SHA matches local HEAD captured in step 5: `gh pr view <pr> --json headRefOid --jq .headRefOid`. If mismatch, stop blocked — the PR points at a stale or wrong commit.
 
 ## Do Not
