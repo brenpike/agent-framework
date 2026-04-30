@@ -6,10 +6,38 @@ tools:
   - Read
   - Glob
   - Grep
-  - Bash
+  - LSP
   - WebSearch
   - WebFetch
   - Skill
+  - Bash(git status *)
+  - Bash(git branch)
+  - Bash(git branch --list*)
+  - Bash(git branch -a*)
+  - Bash(git branch -v*)
+  - Bash(git branch --show-current)
+  - Bash(git log *)
+  - Bash(git diff *)
+  - Bash(git show *)
+  - Bash(git blame *)
+  - Bash(git rev-parse *)
+  - Bash(git ls-files *)
+  - Bash(git ls-tree *)
+  - Bash(git remote -v)
+  - Bash(git remote show *)
+  - Bash(git config --get *)
+  - Bash(git config --list *)
+  - Bash(git stash list *)
+  - Bash(git tag)
+  - Bash(git tag -l*)
+  - Bash(git tag --list*)
+  - Bash(git fetch *)
+  - Bash(gh pr view *)
+  - Bash(gh pr list *)
+  - Bash(gh pr diff *)
+  - Bash(gh issue view *)
+  - Bash(gh issue list *)
+  - Bash(gh repo view *)
 ---
 
 You create plans only. You do not write or edit code.
@@ -39,6 +67,7 @@ Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PL
 - assign work to any agent except `coder` or `designer`
 - use vague file scopes such as "relevant files"
 - rely on memory instead of current repo inspection when correctness requires inspection
+- invoke any skill other than `claude-mem:mem-search` — the `Skill` tool is granted solely so Memory-First Planning can run when `claude-mem` is installed. Workflow skills (`create-working-branch`, `checkpoint-commit`, `open-plan-pr`, `request-codex-review`, `address-pr-feedback`, `watch-pr-feedback`) belong to the orchestrator. If you need their effect, surface the need in the plan.
 
 ## Memory-First Planning
 
