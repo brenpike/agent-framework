@@ -10,6 +10,8 @@ This workflow is mandatory for all agent activity unless overridden by project p
 
 ## Resolution Order for Branch / Merge / Review Policy
 
+The orchestrator owns resolution. Workflow skills (`create-working-branch`, `checkpoint-commit`, `open-plan-pr`) do not resolve these values themselves; they receive resolved values as explicit inputs from the orchestrator and stop blocked if any are missing.
+
 When a policy decision is needed, resolve in this order. Use the first source that defines the value:
 
 1. Explicit user override for the current task.

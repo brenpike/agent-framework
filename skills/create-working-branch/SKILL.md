@@ -1,14 +1,14 @@
 ---
 name: create-working-branch
 description: Create or confirm the compliant working branch for the current approved plan before implementation begins.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)
   - Bash(git rev-parse *)
   - Bash(git checkout *)
   - Bash(git switch *)
-  - Bash(gh repo view *)
+  - Bash(git fetch *)
 shell: powershell
 ---
 
@@ -16,13 +16,21 @@ Create or confirm the working branch for the current approved plan.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
 
+## Required Inputs
+
+The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Resolution Order). The skill does not resolve them on its own.
+
+- `base`: base branch the working branch is created from (typically the resolved trunk; may differ for stacked work).
+- `working_branch`: requested working branch name (must follow branch taxonomy and naming rules).
+- `classification`: work classification (`feature|bugfix|hotfix|refactor|chore|docs|test|ci`).
+
 ## Requirements
 
 1. Confirm current branch.
-2. Confirm base branch exists.
-3. Confirm requested working branch name follows the branch taxonomy and naming rules.
+2. Confirm `base` exists locally or fetch it.
+3. Confirm `working_branch` follows the branch taxonomy and naming rules.
 4. Confirm there are no unexpected unstaged/uncommitted changes that make switching unsafe.
-5. Create or switch to the requested working branch from the requested base branch.
+5. Create or switch to `working_branch` from `base`.
 
 ## Do Not
 
@@ -31,6 +39,7 @@ Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
 - push
 - open a PR
 - continue when branch state is unsafe or ambiguous
+- invent values for `base`, `working_branch`, or `classification` — return blocked if any are missing
 
 ## Output
 

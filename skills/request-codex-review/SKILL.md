@@ -1,7 +1,7 @@
 ---
 name: request-codex-review
 description: Request Codex review on the current pull request.
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh pr comment *)
