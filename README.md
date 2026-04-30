@@ -81,7 +81,7 @@ Governance rules are embedded in agent definitions. These files are reference ma
 
 The following agent frontmatter fields are not supported by the Claude Code plugin system and are omitted from plugin agent definitions:
 
-- `mcpServers` — configure MCP servers (context7, claude-mem, etc.) at the project or global level instead
+- `mcpServers` — configure MCP servers at the project or global level instead
 - `permissionMode` — the planner enforces read-only behavior via its instructions
 
 ## License

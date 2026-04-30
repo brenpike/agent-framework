@@ -162,7 +162,7 @@ Use the narrowest matching skill:
 
 | Tool / MCP | orchestrator | planner | coder | designer | Notes |
 |---|---|---|---|---|---|
-| Context7 | optional | use when relevant | use when relevant | use when relevant | current framework/library/platform docs |
+| WebFetch/WebSearch | optional | use when relevant | use when relevant | use when relevant | current framework/library/platform docs |
 | claude-mem | optional | first step when context matters | use when relevant | use when relevant | continuity and token efficiency |
 | local repo tools | minimal/orchestration | read-only | role-appropriate | role-appropriate | respect ownership |
 | GitHub CLI/API | orchestration/review | read-only only | delegated only | no | respect PR/review ownership |

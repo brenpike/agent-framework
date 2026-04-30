@@ -59,7 +59,7 @@ If memory is unavailable or irrelevant, continue normally. Memory is an accelera
 
 - Use local repo inspection first for codebase understanding.
 - Use Bash only for read-only inspection.
-- Use Context7 when external framework/library/API docs materially improve accuracy.
+- Use external doc lookup tools (WebFetch/WebSearch) when framework/library/API docs materially improve accuracy.
 - Use Web tools only when external non-doc research is actually needed.
 - Retry transient tool failures once, then use safe fallback or return blocked.
 
