@@ -118,20 +118,13 @@ Coder owns runtime accessibility:
 
 ## Git Workflow Enforcement
 
-`branching-pr-workflow.md` is mandatory.
+`branching-pr-workflow.md` is mandatory. See `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
 
-Before implementation begins, the orchestrator must explicitly establish:
-
-- work classification
-- base branch
-- working branch
-- worktree decision
-- checkpoint commit policy
-- PR target
+Required preflight items: see `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
 
 Workers must stop and report `blocked` if required git context is missing, inconsistent, or unsafe.
 
-No agent may commit or push directly to `main`.
+No agent may commit or push directly to the resolved trunk branch.
 
 ## Versioning Enforcement
 

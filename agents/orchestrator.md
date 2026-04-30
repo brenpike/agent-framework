@@ -79,17 +79,7 @@ If in doubt, call planner.
 
 ## Mandatory Git Preflight
 
-Before implementation delegation, explicitly establish:
-
-- work classification: `feature|bugfix|hotfix|refactor|chore|docs|test|ci`
-- base branch
-- working branch name
-- branch exists vs create
-- worktree: yes/no
-- checkpoint commit policy
-- PR target
-
-If any are undefined, do not begin implementation.
+Before implementation delegation, establish the git preflight items defined in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight). If any are undefined, do not begin implementation.
 
 ## Monitor Use
 
