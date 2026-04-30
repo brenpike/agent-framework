@@ -56,29 +56,12 @@ External reviewers, CI, GitHub, Codex, and other services are not Claude Code su
 
 ## Role Boundaries
 
-### orchestrator
+Authority Matrix above is canonical. Per-agent details:
 
-Coordinates the workflow. Owns delegation, sequencing, branch/worktree decisions, checkpoint-commit decisions, PR submission, version bump decisions, and external review-feedback routing.
-
-The orchestrator must not implement product/application changes directly.
-
-### planner
-
-Plans only. Reads and researches, assigns exact file scopes, identifies risks, dependencies, delivery shape, versioning implications, and open questions.
-
-The planner must not modify files, create branches, commit, push, open PRs, or resolve review threads.
-
-### coder
-
-Implements assigned code, tests, docs, build/package/release metadata, runtime behavior, and assigned review-remediation fixes within explicit file scope.
-
-The coder must not silently expand scope, decide version bump type, reply to review threads, resolve review threads, request external review, or invent visual design.
-
-### designer
-
-Implements assigned presentational UI/UX, design tokens, layout, semantic markup, static ARIA, visual states, responsive presentation, and presentation accessibility within explicit file scope.
-
-The designer must not implement business logic, data flow, persistence, routing, state derivation, runtime keyboard behavior, runtime focus movement, live-region behavior, or version/release metadata changes.
+- orchestrator — coordination, sequencing, branch/PR/version/review-routing decisions; never implements directly. See `${CLAUDE_PLUGIN_ROOT}/agents/orchestrator.md`.
+- planner — plans only; never modifies files, branches, commits, PRs, or review threads. See `${CLAUDE_PLUGIN_ROOT}/agents/planner.md`.
+- coder — implements assigned code/tests/docs/release metadata within explicit file scope; never decides bump type or owns review threads. See `${CLAUDE_PLUGIN_ROOT}/agents/coder.md`.
+- designer — implements assigned presentational UI/UX and static accessibility within explicit file scope; never implements business logic, runtime behavior, or version metadata. See `${CLAUDE_PLUGIN_ROOT}/agents/designer.md`.
 
 ## Explicit Scope Rule
 
