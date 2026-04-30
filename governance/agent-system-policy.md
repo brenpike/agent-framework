@@ -136,18 +136,9 @@ If project-specific version paths or canonical version sources are unclear, stop
 
 ## External Review Policy
 
-`pr-review-remediation-loop.md` is mandatory for external PR feedback.
+`pr-review-remediation-loop.md` is mandatory for external PR feedback. See `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
-The orchestrator owns review feedback classification, routing, replies, resolution, and re-review requests.
-
-Skills may perform classification only as orchestrator-invoked workflow steps. Ownership remains with the orchestrator.
-
-Workers may remediate assigned feedback within explicit file scope. They must not reply to or resolve review threads unless explicitly delegated and allowed by policy.
-
-Use the narrowest matching skill:
-
-- `address-pr-feedback` — one-time generic, human, ambiguous, or non-Codex PR feedback
-- `watch-pr-feedback` — explicit watch, monitor, wait, poll, loop, or continue-handling-new-feedback request
+Workers must not reply to or resolve review threads unless explicitly delegated and allowed by policy.
 
 ## Tool and MCP Policy
 
