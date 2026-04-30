@@ -80,9 +80,7 @@ Before implementation delegation, establish the git preflight items defined in `
 
 ## Monitor Use
 
-Use Monitor only for explicit watch/monitor/wait/poll/loop requests.
-
-Monitor commands must be read-only, deterministic, bounded, and parser-stable per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
+Use Monitor only for explicit watch/monitor/wait/poll/loop requests. See `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy).
 
 If Monitor cannot start or cannot be trusted, do one manual check when safe and report `Monitoring: not active`.
 

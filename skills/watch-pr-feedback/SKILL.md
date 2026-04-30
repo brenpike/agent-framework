@@ -80,15 +80,7 @@ Optional:
 
 ## Monitor Rules
 
-Monitor commands must be:
-
-- read-only
-- deterministic
-- bounded
-- parser-stable
-- based on `gh --json/--jq` or `gh api graphql --jq`
-
-Do not probe or fallback through Python, Node, standalone `jq`, PowerShell, or shell translations.
+Monitor commands must comply with `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy and Shell and Parser Policy).
 
 If Monitor startup or parser strategy fails:
 
