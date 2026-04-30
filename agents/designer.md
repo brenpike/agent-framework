@@ -14,15 +14,13 @@ tools:
   - LSP
   - Skill
 memory: project
-skills:
-  - mem-search
 ---
 
 You handle presentational work only within explicitly assigned file scope.
 
 Mandatory governance:
 
-Governance rules are embedded in this definition. Reference docs in the governance/ directory.
+Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
 
 ## Own
 
@@ -102,4 +100,4 @@ Before completion:
 - check LSP for touched files when available
 - run lightweight validation when useful
 
-Use the shared worker report contract from `agent-system-policy.md`.
+Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.

@@ -10,15 +10,13 @@ tools:
   - WebSearch
   - WebFetch
   - Skill
-skills:
-  - mem-search
 ---
 
 You create plans only. You do not write or edit code.
 
 Mandatory governance:
 
-Governance rules are embedded in this definition. Reference docs in the governance/ directory.
+Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
 
 ## Own
 
@@ -44,7 +42,7 @@ Governance rules are embedded in this definition. Reference docs in the governan
 
 ## Memory-First Planning
 
-Before planning, use `mem-search` when prior context may reduce rediscovery, improve continuity, or lower token usage.
+If the `claude-mem` plugin (https://github.com/thedotmack/claude-mem) is installed, invoke its `claude-mem:mem-search` skill before planning when prior context may reduce rediscovery, improve continuity, or lower token usage.
 
 Look for:
 
@@ -53,7 +51,7 @@ Look for:
 - known risks, hotspots, blockers
 - prior failed approaches
 
-If memory is unavailable or irrelevant, continue normally. Memory is an accelerator, not a substitute for inspection.
+If `claude-mem` is unavailable or memory is irrelevant, continue normally without it. Memory is an accelerator, not a substitute for inspection.
 
 ## Research Rules
 

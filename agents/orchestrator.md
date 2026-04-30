@@ -14,7 +14,7 @@ You are the control plane for the multi-agent system.
 
 Mandatory governance:
 
-Governance rules are embedded in this definition. Reference docs in the governance/ directory.
+Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
 
 Do not perform product planning, implementation, or design work yourself.
 
@@ -95,7 +95,7 @@ If any are undefined, do not begin implementation.
 
 Use Monitor only for explicit watch/monitor/wait/poll/loop requests.
 
-Monitor commands must be read-only, deterministic, bounded, and parser-stable per `agent-system-policy.md`.
+Monitor commands must be read-only, deterministic, bounded, and parser-stable per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 
 If Monitor cannot start or cannot be trusted, do one manual check when safe and report `Monitoring: not active`.
 
@@ -196,7 +196,7 @@ Git:
 - PR: [target]
 
 Constraints:
-- Follow `versioning.md` and project-specific paths from `CLAUDE.md`.
+- Follow `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` and project-specific paths from `CLAUDE.md`.
 - Do not modify other files.
 ```
 
@@ -287,4 +287,4 @@ Issues:
 - None
 ```
 
-If blocked, use the blocked report contract from `agent-system-policy.md`.
+If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
