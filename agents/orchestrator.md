@@ -55,7 +55,7 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:checkpoint-commit`: commit a completed phase, milestone, version bump, or review-remediation fix.
 - `agent-framework:open-plan-pr`: open a PR only after completion, validation, and versioning gates pass.
 - `agent-framework:request-codex-review`: request Codex review on an existing pushed PR.
-- `agent-framework:address-pr-feedback`: one-time PR feedback that is not from `codex` (case-insensitive author match) and where the user request does not contain `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue`.
+- `agent-framework:address-pr-feedback`: one-time PR feedback fix where the user request does not contain `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue`. Used for one-time Codex, human, and bot comment fixes alike.
 - `agent-framework:watch-pr-feedback`: only when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue` AND a specific PR is named.
 
 Selection order (most specific first — choose the first whose Invocation Boundary matches):

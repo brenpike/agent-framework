@@ -82,14 +82,16 @@ A visual decision is material when it requires one of:
 
 Visual changes that reuse existing tokens, scales, and documented patterns are not material.
 
-### Ambiguous (PR feedback routing)
+### One-time vs watch routing (PR feedback)
 
-Feedback is "ambiguous" — and therefore routes to `agent-framework:address-pr-feedback` — when both of the following are true:
+Two skills handle PR feedback. Choose by user-request keywords only — the comment author never decides which skill is used:
 
-- the comment author is not literally `codex` (case-insensitive), AND
-- the user request does not contain any of the keywords: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`
+- `agent-framework:watch-pr-feedback` — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`
+- `agent-framework:address-pr-feedback` — every other PR-feedback request, including one-time fixes for Codex, human, or bot comments
 
-The term has no other meaning in this framework. Do not use "ambiguous" as a hedge in any rule; replace each occurrence with the concrete fallback test it is gating.
+The author of the comment (Codex, human reviewer, bot, automated reviewer) affects classification per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), not skill selection.
+
+Do not use the word "ambiguous" as a hedge anywhere in this framework. Where a rule must gate on missing context, enumerate the concrete missing inputs instead.
 
 ## Mandatory Governance Files
 

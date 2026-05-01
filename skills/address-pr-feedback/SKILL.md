@@ -1,6 +1,6 @@
 ---
 name: address-pr-feedback
-description: Fix a specific generic GitHub PR comment or reviewer comment on an existing pull request. Use for non-Codex or ambiguous PR feedback requests.
+description: Fix a specific generic GitHub PR comment or reviewer comment on an existing pull request. Use for one-time fixes of Codex, human reviewer, or bot comments — anything that is not a watch/monitor/poll/wait/loop/continue request.
 disable-model-invocation: false
 allowed-tools:
   - Read
@@ -23,7 +23,7 @@ shell: powershell
 
 # Address PR Feedback
 
-Fix one-time generic, human, non-Codex, or ambiguous PR feedback.
+Fix one-time PR feedback (Codex, human reviewer, or bot comments alike).
 
 Follow:
 
@@ -35,12 +35,11 @@ Follow:
 
 ## Invocation Boundary
 
-Use when both are true:
+Use when the user request does not contain any of: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`.
 
-- the comment author is not literally `codex` (case-insensitive)
-- the user request does not contain any of: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`
+The comment author does not affect skill selection — this skill handles one-time fixes for Codex, human reviewer, and bot comments alike. Author affects classification, not routing.
 
-Typical user phrasings that match: `fix PR comment on PR #N`, `address reviewer feedback`, `fix the unresolved comment`.
+Typical user phrasings that match: `fix PR comment on PR #N`, `address reviewer feedback`, `fix the unresolved comment`, `fix Codex comment on PR #N`, `address Codex feedback on this PR`.
 
 ## Required Inputs
 

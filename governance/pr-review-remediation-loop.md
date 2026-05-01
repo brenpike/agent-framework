@@ -152,10 +152,10 @@ Do not commit the ledger unless the user or project policy explicitly requests i
 
 ## Skill Selection
 
-Use the narrowest matching skill:
+Skill selection depends only on user-request keywords; the comment author (Codex, human reviewer, bot) does not affect which skill is used.
 
-- `agent-framework:address-pr-feedback`: when the comment author is not literally `codex` (case-insensitive) AND the user request does not contain `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue`
-- `agent-framework:watch-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue` AND a specific PR is named
+- `agent-framework:watch-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue` AND a specific PR is named.
+- `agent-framework:address-pr-feedback`: every other PR-feedback request — one-time fixes for Codex, human reviewer, or bot comments. Use this for `fix Codex comment on PR #N`, `address reviewer feedback`, `fix the unresolved comment`, etc.
 
 ## Monitoring
 
