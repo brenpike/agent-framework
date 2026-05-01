@@ -1,0 +1,13 @@
+{
+  "rule": "Orchestrator cannot implement",
+  "source": {
+    "file": "plugin/governance/agent-system-policy.md",
+    "pattern": "The orchestrator must not implement product/application changes directly"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "use Write/Edit or Bash to implement product/application changes"
+    }
+  ]
+}

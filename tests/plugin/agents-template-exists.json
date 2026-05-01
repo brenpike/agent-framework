@@ -1,0 +1,6 @@
+{
+  "check": "AGENTS.template.md exists and is referenced in README.md",
+  "type": "file-exists-and-referenced",
+  "file": "plugin/governance/AGENTS.template.md",
+  "referenced-in": "README.md"
+}

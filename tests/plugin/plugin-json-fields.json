@@ -1,0 +1,6 @@
+{
+  "check": "plugin.json has required fields: name, version, description",
+  "type": "json-fields",
+  "file": "plugin/.claude-plugin/plugin.json",
+  "required": ["name", "version", "description"]
+}

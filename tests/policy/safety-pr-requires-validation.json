@@ -1,0 +1,17 @@
+{
+  "rule": "PR requires validation pass",
+  "source": {
+    "file": "plugin/governance/branching-pr-workflow.md",
+    "pattern": "the Validation procedure returned either every declared command passed"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "open a PR only after completion, validation, and versioning gates pass"
+    },
+    {
+      "file": "plugin/skills/open-plan-pr/SKILL.md",
+      "pattern": "Stop blocked if the procedure returned the Blocked Report Contract"
+    }
+  ]
+}

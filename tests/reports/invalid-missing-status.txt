@@ -1,0 +1,11 @@
+Changed:
+- src/middleware/auth.ts
+
+Validated:
+- npm test: pass
+
+Need scope change:
+- None
+
+Issues:
+- None

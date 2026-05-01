@@ -1,0 +1,14 @@
+{
+  "rule": "Planner cannot write files",
+  "source": {
+    "file": "plugin/governance/agent-system-policy.md",
+    "pattern": "The planner must not modify files, create branches, commit, push, open PRs"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/planner.md",
+      "pattern": "Write",
+      "absent": true
+    }
+  ]
+}

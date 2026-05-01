@@ -1,0 +1,8 @@
+{
+  "check": "marketplace.json has plugins array and source field = ./plugin",
+  "type": "json-field-value",
+  "file": ".claude-plugin/marketplace.json",
+  "field": "source",
+  "expected": "./plugin",
+  "required-arrays": ["plugins"]
+}

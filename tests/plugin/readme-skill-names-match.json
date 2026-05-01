@@ -1,0 +1,7 @@
+{
+  "check": "Each skill directory name (excluding _shared) is mentioned in README.md",
+  "type": "dir-names-in-file",
+  "dir": "plugin/skills/",
+  "exclude": "_shared",
+  "file": "README.md"
+}

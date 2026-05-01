@@ -1,0 +1,13 @@
+{
+  "rule": "Blocked validation blocks PR",
+  "source": {
+    "file": "plugin/governance/branching-pr-workflow.md",
+    "pattern": "PR is not opened if the procedure returned Blocked or any command failed"
+  },
+  "consumers": [
+    {
+      "file": "plugin/skills/open-plan-pr/SKILL.md",
+      "pattern": "open PR if the Validation procedure returned the Blocked Report Contract"
+    }
+  ]
+}
