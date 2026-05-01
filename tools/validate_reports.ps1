@@ -610,6 +610,18 @@ function Test-PrOutputReport {
         }
     }
 
+    # Check Status value against open-plan-pr contract (complete | blocked)
+    $validPrOutputStatusValues = @('complete', 'blocked')
+    foreach ($line in $Lines) {
+        if ($line -match '^Status:\s*(.+)$') {
+            $prStatusValue = $Matches[1].Trim()
+            if ($prStatusValue -cnotin $validPrOutputStatusValues) {
+                $Diagnostics.Add("Invalid PR output Status value '$prStatusValue' (must be one of: $($validPrOutputStatusValues -join ', '))")
+            }
+            break
+        }
+    }
+
     # Check required list sections
     Test-RequiredListSections -Lines $Lines -RequiredSections $prOutputListSections -AllLabelPrefixes $allLabelPrefixes -Diagnostics $Diagnostics
 
@@ -758,7 +770,7 @@ function Test-RequiredListSections {
                     break
                 }
             }
-            if ($Lines[$j] -match '^\s*-\s') {
+            if ($Lines[$j] -match '^\s*(-|\d+\.)\s') {
                 $hasListItem = $true
                 break
             }
