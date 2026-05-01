@@ -9,6 +9,11 @@
       "file": "plugin/agents/planner.md",
       "pattern": "Write",
       "absent": true
+    },
+    {
+      "file": "plugin/agents/planner.md",
+      "pattern": "Edit",
+      "absent": true
     }
   ]
 }

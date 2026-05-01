@@ -8,6 +8,16 @@
     {
       "file": "plugin/agents/orchestrator.md",
       "pattern": "use Write/Edit or Bash to implement product/application changes"
+    },
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "Write",
+      "absent": true
+    },
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "Edit",
+      "absent": true
     }
   ]
 }
