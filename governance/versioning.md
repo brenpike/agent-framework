@@ -81,7 +81,16 @@ A change "matches a row" when both:
   - for the MAJOR, MINOR, and PATCH rows: at least one bullet in Bump Trigger above is satisfied by the change
   - for the No-bump row: the change matches one or more bullets in the "No bump is required by default" list above and matches no bullet in Bump Trigger
 
-To compute the dominant row: read each commit's full subject and body via `git log --format='%H%n%s%n%b%n--END--' <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight). For each commit:
+To compute the dominant row: read each commit's full subject and body via `git log --format='%H%n%s%n%b%n--END--' <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
+
+**Revert pre-pass.** Before mapping rows, drop revert pairs from the set:
+
+- A revert commit is one whose subject matches `^Revert "(.+)"$` (git default) or `^revert(\([^)]*\))?:\s*(.+)$` (Conventional Commits).
+- For each revert commit, capture the quoted/trailing subject as the reverted-original-subject.
+- If any other commit in the same `<base>..HEAD` range has a subject that exactly matches the reverted-original-subject (after trimming surrounding whitespace), drop **both** that original commit and the revert commit from row-mapping.
+- If no match is found, keep the revert commit and map it by step 3 below (most conventional reverts use `revert:` or `chore:` and resolve to PATCH or No-bump).
+
+Then for each remaining commit:
 
 1. If the subject contains `!` immediately before `:` (e.g., `feat!:`, `refactor!:`), map the commit to the MAJOR row regardless of subject type.
 2. Else if any line of the subject or body matches `^BREAKING CHANGE:` or `^BREAKING-CHANGE:`, map the commit to the MAJOR row regardless of subject type.
