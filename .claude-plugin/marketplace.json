@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "agent-framework",
-      "source": "./",
+      "source": "./plugin",
       "description": "Claude Code plugin providing a structured multi-agent framework with orchestrator, planner, coder, and designer agents plus workflow skills for git branching, commits, PRs, and code review remediation."
     }
   ]

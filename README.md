@@ -38,7 +38,7 @@ Or run the setup skill once to apply the required keys automatically:
    - Versioning configuration (bump triggers, changelogs, tag prefixes)
    - Architecture and code style notes
 
-3. Create `AGENTS.md` at the project root with project-specific Codex review guidance. Use `governance/AGENTS.template.md` as a starting point and adapt:
+3. Create `AGENTS.md` at the project root with project-specific Codex review guidance. Use `plugin/governance/AGENTS.template.md` as a starting point and adapt:
    - Review focus areas
    - Severity definitions
    - Project-specific conventions for reviewers
@@ -55,6 +55,22 @@ Once configured, the orchestrator is the session default agent. All skills are a
 /plugin marketplace add https://github.com/brenpike/agent-framework.git
 /plugin install agent-framework@brenpike
 ```
+
+## Repository layout
+
+```
+.claude-plugin/
+  marketplace.json          # marketplace manifest (lives at repo root; points to ./plugin)
+plugin/                     # plugin root — everything Claude Code loads lives here
+  .claude-plugin/
+    plugin.json             # plugin manifest
+  agents/                   # agent definitions
+  skills/                   # skill definitions (incl. _shared/ helpers)
+  governance/               # reference docs loaded via ${CLAUDE_PLUGIN_ROOT}/governance/
+README.md
+```
+
+`${CLAUDE_PLUGIN_ROOT}` resolves to the `plugin/` directory at runtime, so all internal cross-references (e.g. `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`) resolve correctly without per-consumer configuration.
 
 ## Agents
 
@@ -81,7 +97,7 @@ All skills are invoked using the namespaced form:
 
 ## Governance
 
-Reference documentation in `governance/`:
+Reference documentation in `plugin/governance/`:
 
 | File | Contents |
 |---|---|
@@ -98,7 +114,7 @@ Governance rules are embedded in agent definitions. These files are reference ma
 The following agent frontmatter fields are not supported by the Claude Code plugin system and are omitted from plugin agent definitions:
 
 - `mcpServers` — configure MCP servers at the project or global level instead
-- `permissionMode` — read-only enforcement is achieved by limiting the planner's `tools` frontmatter to read-only commands; see the planner's `tools` list in `agents/planner.md`
+- `permissionMode` — read-only enforcement is achieved by limiting the planner's `tools` frontmatter to read-only commands; see the planner's `tools` list in `plugin/agents/planner.md`
 
 ## License
 
