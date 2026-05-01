@@ -95,12 +95,11 @@ If `claude-mem` is not installed or returns no relevant results, continue withou
 
 ## Review Remediation Planning
 
-Planner is required when the orchestrator's delegation states the feedback's classification (per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification) is one of:
+Planner is required when the orchestrator's delegation routes feedback to planner per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing). That routing fires for:
 
-- `architecture-or-contract-concern`
-- `version-or-release-concern`
-- `actionable-test-change` whose remediation Smallest-correct-fix touches more than one file
-- `actionable-code-change` whose remediation Smallest-correct-fix touches files in two or more planner steps
+- feedback whose Classification is `architecture-or-contract-concern`
+- feedback whose Classification is `version-or-release-concern`
+- any actionable-* feedback whose Smallest correct fix would touch files in two or more planner steps (regardless of subclass — `actionable-code-change`, `actionable-test-change`, or `actionable-doc-change`)
 
 Identify the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). User approval is required when the remediation requires a public API change, a version bump, or files outside the approved plan's scope.
 
