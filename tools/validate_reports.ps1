@@ -230,45 +230,16 @@ function Get-ReportType {
         [AllowNull()][string]$StatusValue
     )
 
-    # 1. Blocked: first Status value is "blocked"
-    if ($StatusValue -eq 'blocked') {
-        return 'blocked'
-    }
-
-    # 2. Worker: Status is complete/partial AND no Watch: AND no Feedback: AND
-    #    not a PR output (none of the PR-output-specific fields present)
-    if ($StatusValue -in @('complete', 'partial')) {
-        $hasWatch = $false
-        $hasFeedback = $false
-        $hasPrSignature = $false
-        foreach ($line in $Lines) {
-            if ($line -match '^Watch:\s*') { $hasWatch = $true }
-            if ($line -match '^Feedback:\s*') { $hasFeedback = $true }
-            if ($line -match '^(PR head SHA|PR title|Head verified|Local HEAD|Push remote):\s*') { $hasPrSignature = $true }
-        }
-        if (-not $hasWatch -and -not $hasFeedback -and -not $hasPrSignature) {
-            return 'worker'
-        }
-    }
-
-    # 3. Planner: first non-blank line is exactly "Plan"
-    foreach ($line in $Lines) {
-        if (-not [string]::IsNullOrWhiteSpace($line)) {
-            if ($line.Trim() -eq 'Plan') {
-                return 'planner'
-            }
-            break
-        }
-    }
-
-    # 4. PR output: contains any PR-output-specific field
+    # 1. PR output: contains any PR-output-exclusive field (check before blocked/worker
+    #    so blocked PR-output reports route to Test-PrOutputReport)
     foreach ($line in $Lines) {
         if ($line -match '^(PR head SHA|PR title|Head verified|Local HEAD|Push remote):\s*') {
             return 'pr-output'
         }
     }
 
-    # 5. address-pr-feedback: Feedback: section with Classification: sub-field
+    # 2. address-pr-feedback: Feedback: section with Classification: sub-field
+    #    (check before blocked/worker so blocked feedback reports route correctly)
     $inFeedback = $false
     foreach ($line in $Lines) {
         if ($line -match '^Feedback:\s*') {
@@ -283,7 +254,8 @@ function Get-ReportType {
         }
     }
 
-    # 6. watch-pr-feedback: Watch: section with Monitoring: sub-field
+    # 3. watch-pr-feedback: Watch: section with Monitoring: sub-field
+    #    (check before blocked/worker so blocked watch reports route correctly)
     $inWatch = $false
     foreach ($line in $Lines) {
         if ($line -match '^Watch:\s*') {
@@ -295,6 +267,34 @@ function Get-ReportType {
         }
         if ($inWatch -and $line -match '^[A-Z][^:]*:\s*' -and $line -notmatch '^\s*-') {
             $inWatch = $false
+        }
+    }
+
+    # 4. Blocked: first Status value is "blocked"
+    if ($StatusValue -eq 'blocked') {
+        return 'blocked'
+    }
+
+    # 5. Worker: Status is complete/partial AND no Watch: AND no Feedback:
+    if ($StatusValue -in @('complete', 'partial')) {
+        $hasWatch = $false
+        $hasFeedback = $false
+        foreach ($line in $Lines) {
+            if ($line -match '^Watch:\s*') { $hasWatch = $true }
+            if ($line -match '^Feedback:\s*') { $hasFeedback = $true }
+        }
+        if (-not $hasWatch -and -not $hasFeedback) {
+            return 'worker'
+        }
+    }
+
+    # 6. Planner: first non-blank line is exactly "Plan"
+    foreach ($line in $Lines) {
+        if (-not [string]::IsNullOrWhiteSpace($line)) {
+            if ($line.Trim() -eq 'Plan') {
+                return 'planner'
+            }
+            break
         }
     }
 
@@ -575,6 +575,26 @@ function Test-PlannerReport {
     Test-RequiredSubFields -Lines $Lines -SubFieldMap $plannerCompactSubFields -Diagnostics $Diagnostics
     if ($isFullPlan) {
         Test-RequiredSubFields -Lines $Lines -SubFieldMap $plannerFullExtraSubFields -Diagnostics $Diagnostics
+    }
+
+    # ── Check for standalone prose lines ────────────────────────────────
+
+    $fieldActive = $false
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        $lineNum = $i + 1
+
+        # INVARIANT: "Plan" on the first non-blank line is the report heading, not prose.
+        if ($line.Trim() -eq 'Plan') {
+            $fieldActive = $false
+            continue
+        }
+
+        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes -FieldActive ([ref]$fieldActive)) {
+            continue
+        }
+
+        $Diagnostics.Add("Line $lineNum`: standalone prose: $line")
     }
 }
 
