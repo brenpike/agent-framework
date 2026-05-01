@@ -33,7 +33,7 @@ Git state is unsafe if any of the following is true at the moment of the check:
 
 - current branch is the resolved trunk branch
 - HEAD is detached
-- index contains conflict markers (any line beginning `<<<<<<<`, `=======`, `>>>>>>>` in a tracked file's working-tree content)
+- the index has unmerged paths (`git ls-files -u` returns non-empty output, or `git status --porcelain=v1` reports any file with `U` in its XY status)
 - a rebase, merge, cherry-pick, or bisect is in progress (`.git/MERGE_HEAD`, `.git/REBASE_HEAD`, `.git/CHERRY_PICK_HEAD`, `.git/BISECT_LOG` exists)
 - the working tree contains uncommitted changes to files outside the agent's currently assigned file scope
 - the resolved trunk branch cannot be identified
@@ -178,7 +178,15 @@ If another file is required:
 
 No agent may silently expand scope.
 
-For mixed presentation-and-behavior files, default owner is `coder`. Designer is the owner only when (a) the assignment names files matching `*.css`, `*.scss`, `*.less`, `*.module.css`, `*.style.*`, or files in directories named `styles/`, `tokens/`, or `theme/`; AND (b) the orchestrator's delegation explicitly states "Do not modify behavior, state, handlers, imports, or non-style logic."
+For mixed presentation-and-behavior files, default owner is `coder`. Designer is the owner when both:
+
+(a) the assignment names files matching one of:
+- stylesheet/token files: `*.css`, `*.scss`, `*.sass`, `*.less`, `*.module.css`, `*.style.*`, or files inside directories named `styles/`, `tokens/`, or `theme/`
+- markup/component files: `*.html`, `*.htm`, `*.svg`, `*.vue`, `*.svelte`, `*.astro`, `*.mdx`, `*.jsx`, `*.tsx`
+
+(b) the orchestrator's delegation states one of:
+- "Do not modify behavior, state, handlers, imports, or non-style logic." (for stylesheet/token files), OR
+- "Modify only presentational markup, semantic tags, accessibility attributes (`role`, `aria-*`, `tabindex`, `lang`, `alt`, `title`, `for`/`id` linkages), `className`/`class` values, inline style attributes, and visual ordering of existing elements. Do not modify state, event handlers, imports, props, hooks, business logic, data flow, or runtime behavior." (for markup/component files)
 
 ## Accessibility Ownership Split
 
