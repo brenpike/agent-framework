@@ -236,8 +236,8 @@ function Test-ValidLine {
         Valid lines: blank, heading (#), labeled field (Field: value),
         or list item (- ) that appears under an active labeled field.
         FieldActive tracks whether a labeled field has been seen; list items
-        are only valid when a field is active. Blank lines and headings do not
-        reset the active-field context.
+        are only valid when a field is active. Headings reset the active-field
+        context so that list items after a heading require a new labeled field.
     #>
     param(
         [string]$Line,
@@ -250,8 +250,9 @@ function Test-ValidLine {
         return $true
     }
 
-    # Heading
+    # Heading — resets active-field context
     if ($Line -match '^\s*#+\s') {
+        $FieldActive.Value = $false
         return $true
     }
 
