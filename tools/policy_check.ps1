@@ -200,35 +200,61 @@ if (-not $check2Found) {
 Write-Host ''
 Write-Host '=== CHECK 3: Skill names exist ==='
 
-$orchestratorPath = Join-Path (Join-Path $pluginRoot 'agents') 'orchestrator.md'
-$orchestratorContent = Get-Content -Path $orchestratorPath -Raw -Encoding UTF8
-
 $skillPattern = [regex]'agent-framework:([a-zA-Z0-9_-]+)'
-$skillMatches = $skillPattern.Matches($orchestratorContent)
-
 $agentNames = @('orchestrator', 'planner', 'coder', 'designer')
-$skillNames = @()
-foreach ($matchItem in $skillMatches) {
-    $refName = $matchItem.Groups[1].Value
-    if ($refName -eq '_shared') { continue }
-    if ($agentNames -contains $refName) { continue }
-    if ($skillNames -notcontains $refName) {
-        $skillNames += $refName
+
+# Collect scan sources: all plugin/agents/*.md and plugin/skills/**/SKILL.md (excluding _shared/).
+$scanFiles = @()
+$agentsDir = Join-Path $pluginRoot 'agents'
+$skillsDir = Join-Path $pluginRoot 'skills'
+$scanFiles += Get-ChildItem -Path $agentsDir -Filter '*.md' -File
+$scanFiles += Get-ChildItem -Path $skillsDir -Filter 'SKILL.md' -Recurse -File |
+    Where-Object { $_.FullName -notmatch '[/\\]_shared[/\\]' }
+
+# Extract all agent-framework:* references with their source file.
+# Keys: ref name. Values: list of source file paths that contain the reference.
+$skillRefSources = @{}
+$agentRefSources = @{}
+
+foreach ($scanFile in $scanFiles) {
+    $scanContent = Get-Content -Path $scanFile.FullName -Raw -Encoding UTF8
+    $scanMatches = $skillPattern.Matches($scanContent)
+    foreach ($matchItem in $scanMatches) {
+        $refName = $matchItem.Groups[1].Value
+        if ($refName -eq '_shared') { continue }
+        if ($agentNames -contains $refName) {
+            if ($refName -eq 'orchestrator') { continue }
+            if (-not $agentRefSources.ContainsKey($refName)) {
+                $agentRefSources[$refName] = [System.Collections.Generic.List[string]]::new()
+            }
+            if (-not $agentRefSources[$refName].Contains($scanFile.FullName)) {
+                $agentRefSources[$refName].Add($scanFile.FullName)
+            }
+        } else {
+            if (-not $skillRefSources.ContainsKey($refName)) {
+                $skillRefSources[$refName] = [System.Collections.Generic.List[string]]::new()
+            }
+            if (-not $skillRefSources[$refName].Contains($scanFile.FullName)) {
+                $skillRefSources[$refName].Add($scanFile.FullName)
+            }
+        }
     }
 }
 
 $check3Found = $false
-foreach ($skillName in $skillNames) {
+foreach ($skillName in $skillRefSources.Keys) {
     $skillMdPath = Join-Path (Join-Path (Join-Path $pluginRoot 'skills') $skillName) 'SKILL.md'
     if (-not (Test-Path $skillMdPath)) {
         $check3Found = $true
-        Add-Finding -Rule 'CHECK3' -FilePath 'plugin/agents/orchestrator.md' -Line 0 `
-            -Description "Skill referenced but SKILL.md missing: plugin/skills/$skillName/SKILL.md"
+        foreach ($sourceFile in $skillRefSources[$skillName]) {
+            Add-Finding -Rule 'CHECK3' -FilePath $sourceFile -Line 0 `
+                -Description "Skill referenced but SKILL.md missing: plugin/skills/$skillName/SKILL.md"
+        }
     }
 }
 
 if (-not $check3Found) {
-    Write-Host "[PASS] Check 3: All $($skillNames.Count) skill references resolve to SKILL.md files"
+    Write-Host "[PASS] Check 3: All $($skillRefSources.Count) skill references resolve to SKILL.md files"
     $checksPassed++
 } else {
     $checksFailed++
@@ -239,28 +265,20 @@ if (-not $check3Found) {
 Write-Host ''
 Write-Host '=== CHECK 4: Agent names exist ==='
 
-$agentRefNames = @()
-foreach ($matchItem in $skillMatches) {
-    $refName = $matchItem.Groups[1].Value
-    if ($refName -eq '_shared') { continue }
-    if ($refName -eq 'orchestrator') { continue }
-    if ($agentNames -contains $refName -and $agentRefNames -notcontains $refName) {
-        $agentRefNames += $refName
-    }
-}
-
 $check4Found = $false
-foreach ($agentRefName in $agentRefNames) {
+foreach ($agentRefName in $agentRefSources.Keys) {
     $agentMdPath = Join-Path (Join-Path $pluginRoot 'agents') "$agentRefName.md"
     if (-not (Test-Path $agentMdPath)) {
         $check4Found = $true
-        Add-Finding -Rule 'CHECK4' -FilePath 'plugin/agents/orchestrator.md' -Line 0 `
-            -Description "Agent referenced but file missing: plugin/agents/$agentRefName.md"
+        foreach ($sourceFile in $agentRefSources[$agentRefName]) {
+            Add-Finding -Rule 'CHECK4' -FilePath $sourceFile -Line 0 `
+                -Description "Agent referenced but file missing: plugin/agents/$agentRefName.md"
+        }
     }
 }
 
 if (-not $check4Found) {
-    Write-Host "[PASS] Check 4: All $($agentRefNames.Count) agent references resolve to .md files"
+    Write-Host "[PASS] Check 4: All $($agentRefSources.Count) agent references resolve to .md files"
     $checksPassed++
 } else {
     $checksFailed++
