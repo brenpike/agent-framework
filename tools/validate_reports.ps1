@@ -596,6 +596,9 @@ function Test-PlannerReport {
         Test-RequiredSubFields -Lines $Lines -SubFieldMap $plannerFullExtraSubFields -Diagnostics $Diagnostics
     }
 
+    # Check per-step required sub-fields within Steps section
+    Test-PlannerStepSubFields -Lines $Lines -IsFullPlan $isFullPlan -AllLabelPrefixes $allLabelPrefixes -Diagnostics $Diagnostics
+
     # ── Check for standalone prose lines ────────────────────────────────
 
     $fieldActive = $false
@@ -864,6 +867,105 @@ function Test-RequiredSubFields {
         foreach ($sub in $requiredSubs) {
             if (-not $foundSubs.Contains($sub)) {
                 $Diagnostics.Add("Missing required sub-field '$sub' under '$parent'")
+            }
+        }
+    }
+}
+
+# ── Planner Step Sub-field Validation ─────────────────────────────────────
+
+function Test-PlannerStepSubFields {
+    <#
+    .DESCRIPTION
+        Parses each numbered step block within the Steps section and checks
+        for required sub-fields. Compact mode requires Owner, Files, Outcome.
+        Full mode additionally requires Depends on.
+    #>
+    param(
+        [string[]]$Lines,
+        [bool]$IsFullPlan,
+        [System.Collections.Generic.HashSet[string]]$AllLabelPrefixes,
+        [System.Collections.Generic.List[string]]$Diagnostics
+    )
+
+    # Locate Steps: section
+    $stepsIdx = -1
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^Steps:\s*') {
+            $stepsIdx = $i
+            break
+        }
+    }
+    if ($stepsIdx -eq -1) {
+        return
+    }
+
+    # Find the end of the Steps section (next top-level labeled field at column 0)
+    $stepsEndIdx = $Lines.Count
+    for ($j = $stepsIdx + 1; $j -lt $Lines.Count; $j++) {
+        if ($Lines[$j] -match '^[A-Za-z]' -and $Lines[$j] -match '^([^:]+):\s*') {
+            $candidateLabel = $Matches[1].Trim()
+            if ($AllLabelPrefixes.Contains($candidateLabel)) {
+                $stepsEndIdx = $j
+                break
+            }
+        }
+    }
+
+    # Collect step block start indices within the Steps section.
+    # A step starts at a line matching "- S<N>" or "<N>. " (numbered list item).
+    $stepStarts = [System.Collections.Generic.List[int]]::new()
+    $stepLabels = [System.Collections.Generic.List[string]]::new()
+    for ($i = $stepsIdx + 1; $i -lt $stepsEndIdx; $i++) {
+        if ($Lines[$i] -match '^\s*-\s+S(\d+)\b') {
+            $stepStarts.Add($i)
+            $stepLabels.Add("S$($Matches[1])")
+        }
+        elseif ($Lines[$i] -match '^\s*(\d+)\.\s') {
+            $stepStarts.Add($i)
+            $stepLabels.Add("Step $($Matches[1])")
+        }
+    }
+
+    if ($stepStarts.Count -eq 0) {
+        return
+    }
+
+    $requiredSubFields = @('Owner', 'Files', 'Outcome')
+    if ($IsFullPlan) {
+        $requiredSubFields = @('Owner', 'Files', 'Outcome', 'Depends on')
+    }
+
+    for ($s = 0; $s -lt $stepStarts.Count; $s++) {
+        $blockStart = $stepStarts[$s]
+        if ($s -lt $stepStarts.Count - 1) {
+            $blockEnd = $stepStarts[$s + 1]
+        }
+        else {
+            $blockEnd = $stepsEndIdx
+        }
+        $stepLabel = $stepLabels[$s]
+
+        $foundFields = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
+
+        # Check the step header line for inline Owner (e.g., "- S1 Owner: coder")
+        if ($Lines[$blockStart] -match '\bOwner:\s*\S') {
+            [void]$foundFields.Add('Owner')
+        }
+
+        # Scan continuation lines for sub-fields
+        for ($k = $blockStart + 1; $k -lt $blockEnd; $k++) {
+            if ($Lines[$k] -match '^\s+([^:]+):\s*') {
+                $subLabel = $Matches[1].Trim()
+                [void]$foundFields.Add($subLabel)
+            }
+        }
+
+        foreach ($requiredField in $requiredSubFields) {
+            if (-not $foundFields.Contains($requiredField)) {
+                $Diagnostics.Add("$stepLabel missing required field: $requiredField")
             }
         }
     }
