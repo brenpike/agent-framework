@@ -85,7 +85,13 @@ To compute the dominant row: read each commit's full subject and body via `git l
 2. Else if any line of the subject or body matches `^BREAKING CHANGE:` or `^BREAKING-CHANGE:`, map the commit to the MAJOR row regardless of subject type.
 3. Else parse the leading token before `(` or `:` in the subject and map by type: `feat` → MINOR; `fix` and `bugfix` → PATCH; `refactor` → PATCH; `chore`, `docs`, `test`, `ci` → No-bump.
 
-Count commits per row. The dominant row is the row with the highest count. If the working branch has exactly one commit beyond `<base>`, that commit's row is the dominant row. If two or more rows tie for the highest count, the change matches more than one row. If no commit's mapping resolves to a recognized row, the change matches no row.
+Determine the dominant row with this precedence:
+
+1. **MAJOR precedence**: if any commit maps to the MAJOR row, the dominant row is MAJOR. Breaking changes are never overridden by majority count of non-breaking commits.
+2. Otherwise, count commits per remaining row. The dominant row is the row with the highest count.
+3. If the working branch has exactly one commit beyond `<base>`, that commit's row is the dominant row.
+4. If two or more rows (other than MAJOR) tie for the highest count, the change matches more than one row.
+5. If no commit's mapping resolves to a recognized row, the change matches no row.
 
 Note: multiple commit types that map to the same row do not produce a tie. Example: a branch with one `docs:` commit and one `test:` commit has two commits in the No-bump row and is a single-row match (No bump), not a multi-row escalation.
 
