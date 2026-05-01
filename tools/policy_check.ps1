@@ -61,7 +61,8 @@ function Test-Allowlisted {
         $entryPath = $entry.path -replace '/', '\'
         $normalizedPath = $Path -replace '/', '\'
         if ($entryPath -ne $normalizedPath) { continue }
-        if ($null -ne $entry.line -and $entry.line -ne 0 -and $entry.line -ne $Line) { continue }
+        $hasLine = $entry.PSObject.Properties.Name -contains 'line'
+        if ($hasLine -and $entry.line -ne 0 -and $entry.line -ne $Line) { continue }
         return $true
     }
     return $false
@@ -351,7 +352,9 @@ foreach ($mdFile in $mdFiles) {
             $normalizedResolved = [System.IO.Path]::GetFullPath($resolvedPath)
             $normalizedPluginRoot = [System.IO.Path]::GetFullPath($pluginRoot)
 
-            if (-not $normalizedResolved.StartsWith($normalizedPluginRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $pluginRootWithSep = $normalizedPluginRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+            if (-not ($normalizedResolved.StartsWith($pluginRootWithSep, [System.StringComparison]::OrdinalIgnoreCase) -or
+                      $normalizedResolved -eq $normalizedPluginRoot)) {
                 $check6Found = $true
                 Add-Finding -Rule 'CHECK6' -FilePath $mdFile.FullName -Line $lineNum `
                     -Description "Path escapes plugin root: `${CLAUDE_PLUGIN_ROOT}/$refRelPath"
