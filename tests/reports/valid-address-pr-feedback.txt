@@ -1,0 +1,28 @@
+Status: complete
+
+PR:
+- Number: 42
+- Branch: feature/add-validation
+- Target: main
+
+Feedback:
+- Source: inline review comment
+- Author: codex-review[bot]
+- URL: https://github.com/example/repo/pull/42/comments/101
+- Classification: actionable-code-change
+
+Changed:
+- src/routes/register.ts
+
+Validated:
+- npm test: pass
+
+Git:
+- Commit: b2c3d4e
+- Pushed: yes
+
+Reply:
+- Posted: yes
+
+Issues:
+- None

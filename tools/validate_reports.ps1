@@ -1,18 +1,19 @@
 <#
 .SYNOPSIS
-    Validates agent report text against the Shared Worker Report Contract and
-    Blocked Report Contract from agent-system-policy.md.
+    Validates agent report text against the REL-4 report contracts
+    (worker, blocked, planner, PR output, address-pr-feedback,
+    watch-pr-feedback) from agent-system-policy.md and skill SKILL.md files.
 
 .DESCRIPTION
     Parses a report file and checks structural compliance:
-    - Status: line exists with a valid value (complete, partial, blocked)
-    - For complete/partial reports: required sections (Changed, Validated,
-      Need scope change, Issues) and no standalone prose lines
-    - For blocked reports: required fields (Stage, Blocker, Retry status,
-      Fallback used, Impact, Next action)
-    - Optional worker fields (Refs, States handled, Commit, Version,
-      Review item, Git issue, Ready to resolve) are recognized as valid
-      labeled fields
+    - Detects report type via ordered heuristics
+    - For worker (complete/partial): required sections and no standalone prose
+    - For blocked: required fields with value constraints
+    - For planner (compact/full): required fields and list sections
+    - For PR output (open-plan-pr): required fields including PR URL
+    - For address-pr-feedback: required fields with sub-field groups
+    - For watch-pr-feedback: required fields with sub-field groups
+    - Unknown type: diagnostic and fail
 
     Run against a single file or in batch mode against all .txt files in
     tests/reports/.
@@ -21,14 +22,22 @@
     Path to a single report file to validate. When omitted, validates all
     .txt files in tests/reports/ and reports pass/fail per file.
 
+.PARAMETER Batch
+    Path to a directory of .txt fixture files. Overrides the default
+    tests/reports/ directory for batch mode.
+
 .EXAMPLE
     ./tools/validate_reports.ps1 -ReportFile tests/reports/valid-worker-complete.txt
 
 .EXAMPLE
     ./tools/validate_reports.ps1
+
+.EXAMPLE
+    ./tools/validate_reports.ps1 -Batch tests/reports/
 #>
 param(
-    [string]$ReportFile
+    [string]$ReportFile,
+    [string]$Batch
 )
 
 Set-StrictMode -Version Latest
@@ -65,6 +74,51 @@ $optionalWorkerFields = @(
     'Ready to resolve'
 )
 
+# ── Planner Constants ──────────────────────────────────────────────────────
+
+$plannerCompactInlineFields = @('Summary')
+
+$plannerCompactListSections = @('Memory reused', 'Steps', 'Open questions')
+
+$plannerCompactSubFields = @{
+    'Versioning' = @('Impact', 'Artifact(s)')
+}
+
+$plannerFullExtraListSections = @('Edge cases', 'Shared-file risks')
+
+$plannerFullExtraSubFields = @{
+    'Delivery' = @('Shape', 'Branch/PR', 'Worktrees')
+}
+
+# ── PR Output Constants ────────────────────────────────────────────────────
+
+$prOutputInlineFields = @(
+    'Status', 'Base', 'Head', 'Local HEAD', 'Pushed',
+    'Push remote', 'PR head SHA', 'Head verified', 'PR title', 'PR URL'
+)
+
+$prOutputListSections = @('Warnings')
+
+# ── address-pr-feedback Constants ──────────────────────────────────────────
+
+$addressFeedbackSubFields = @{
+    'PR'       = @('Number', 'Branch', 'Target')
+    'Feedback' = @('Source', 'Author', 'URL', 'Classification')
+    'Git'      = @('Commit', 'Pushed')
+    'Reply'    = @('Posted')
+}
+
+$addressFeedbackListSections = @('Changed', 'Validated', 'Issues')
+
+# ── watch-pr-feedback Constants ────────────────────────────────────────────
+
+$watchFeedbackSubFields = @{
+    'PR'    = @('Number', 'State', 'Branch', 'Target')
+    'Watch' = @('Mode', 'Monitoring', 'Parser', 'Cycles', 'Seen comments', 'New actionable comments')
+}
+
+$watchFeedbackListSections = @('Routed', 'Stopped because', 'Next action', 'Issues')
+
 # ── Validation Function ────────────────────────────────────────────────────
 
 function Test-Report {
@@ -97,26 +151,160 @@ function Test-Report {
         }
     }
 
-    if ($null -eq $statusValue) {
-        $diagnostics.Add('Missing required Status: line')
-        return $diagnostics.ToArray()
-    }
+    # ── Detect report type ─────────────────────────────────────────────
 
-    if ($statusValue -cnotin $validStatusValues) {
-        $diagnostics.Add("Invalid Status value '$statusValue' (must be one of: $($validStatusValues -join ', '))")
-        return $diagnostics.ToArray()
-    }
+    $reportType = Get-ReportType -Lines $lines -StatusValue $statusValue
 
-    # ── Route by status type ────────────────────────────────────────────
+    # ── Route by detected type ─────────────────────────────────────────
 
-    if ($statusValue -eq 'blocked') {
-        Test-BlockedReport -Lines $lines -Diagnostics $diagnostics
-    }
-    else {
-        Test-WorkerReport -Lines $lines -Diagnostics $diagnostics
+    switch ($reportType) {
+        'blocked' {
+            if ($null -eq $statusValue) {
+                $diagnostics.Add('Missing required Status: line')
+                return $diagnostics.ToArray()
+            }
+            if ($statusValue -cnotin $validStatusValues) {
+                $diagnostics.Add("Invalid Status value '$statusValue' (must be one of: $($validStatusValues -join ', '))")
+                return $diagnostics.ToArray()
+            }
+            Test-BlockedReport -Lines $lines -Diagnostics $diagnostics
+        }
+        'worker' {
+            if ($null -eq $statusValue) {
+                $diagnostics.Add('Missing required Status: line')
+                return $diagnostics.ToArray()
+            }
+            if ($statusValue -cnotin $validStatusValues) {
+                $diagnostics.Add("Invalid Status value '$statusValue' (must be one of: $($validStatusValues -join ', '))")
+                return $diagnostics.ToArray()
+            }
+            Test-WorkerReport -Lines $lines -Diagnostics $diagnostics
+        }
+        'planner' {
+            Test-PlannerReport -Lines $lines -Diagnostics $diagnostics
+        }
+        'pr-output' {
+            Test-PrOutputReport -Lines $lines -Diagnostics $diagnostics
+        }
+        'address-pr-feedback' {
+            if ($null -eq $statusValue) {
+                $diagnostics.Add('Missing required Status: line')
+                return $diagnostics.ToArray()
+            }
+            if ($statusValue -cnotin $validStatusValues) {
+                $diagnostics.Add("Invalid Status value '$statusValue' (must be one of: $($validStatusValues -join ', '))")
+                return $diagnostics.ToArray()
+            }
+            Test-AddressFeedbackReport -Lines $lines -Diagnostics $diagnostics
+        }
+        'watch-pr-feedback' {
+            if ($null -eq $statusValue) {
+                $diagnostics.Add('Missing required Status: line')
+                return $diagnostics.ToArray()
+            }
+            if ($statusValue -cnotin $validStatusValues) {
+                $diagnostics.Add("Invalid Status value '$statusValue' (must be one of: $($validStatusValues -join ', '))")
+                return $diagnostics.ToArray()
+            }
+            Test-WatchFeedbackReport -Lines $lines -Diagnostics $diagnostics
+        }
+        default {
+            $diagnostics.Add('Unknown report type')
+        }
     }
 
     return $diagnostics.ToArray()
+}
+
+# ── Report Type Detection ──────────────────────────────────────────────────
+
+function Get-ReportType {
+    <#
+    .DESCRIPTION
+        Detects the report type using ordered heuristics. Returns one of:
+        blocked, worker, planner, pr-output, address-pr-feedback,
+        watch-pr-feedback, or unknown.
+    #>
+    param(
+        [string[]]$Lines,
+        [AllowNull()][string]$StatusValue
+    )
+
+    # 1. Blocked: first Status value is "blocked"
+    if ($StatusValue -eq 'blocked') {
+        return 'blocked'
+    }
+
+    # 2. Worker: Status is complete/partial AND no Watch: AND no Feedback: AND
+    #    not a PR output (no PR URL: + PR head SHA: pair)
+    if ($StatusValue -in @('complete', 'partial')) {
+        $hasWatch = $false
+        $hasFeedback = $false
+        $hasPrUrlW = $false
+        $hasPrHeadShaW = $false
+        foreach ($line in $Lines) {
+            if ($line -match '^Watch:\s*') { $hasWatch = $true }
+            if ($line -match '^Feedback:\s*') { $hasFeedback = $true }
+            if ($line -match '^PR URL:\s*') { $hasPrUrlW = $true }
+            if ($line -match '^PR head SHA:\s*') { $hasPrHeadShaW = $true }
+        }
+        if (-not $hasWatch -and -not $hasFeedback -and -not ($hasPrUrlW -and $hasPrHeadShaW)) {
+            return 'worker'
+        }
+    }
+
+    # 3. Planner: first non-blank line is exactly "Plan"
+    foreach ($line in $Lines) {
+        if (-not [string]::IsNullOrWhiteSpace($line)) {
+            if ($line.Trim() -eq 'Plan') {
+                return 'planner'
+            }
+            break
+        }
+    }
+
+    # 4. PR output: contains both "PR URL:" and "PR head SHA:"
+    $hasPrUrl = $false
+    $hasPrHeadSha = $false
+    foreach ($line in $Lines) {
+        if ($line -match '^PR URL:\s*') { $hasPrUrl = $true }
+        if ($line -match '^PR head SHA:\s*') { $hasPrHeadSha = $true }
+    }
+    if ($hasPrUrl -and $hasPrHeadSha) {
+        return 'pr-output'
+    }
+
+    # 5. address-pr-feedback: Feedback: section with Classification: sub-field
+    $inFeedback = $false
+    foreach ($line in $Lines) {
+        if ($line -match '^Feedback:\s*') {
+            $inFeedback = $true
+            continue
+        }
+        if ($inFeedback -and $line -match '^\s*-\s*Classification:\s*') {
+            return 'address-pr-feedback'
+        }
+        if ($inFeedback -and $line -match '^[A-Z][^:]*:\s*' -and $line -notmatch '^\s*-') {
+            $inFeedback = $false
+        }
+    }
+
+    # 6. watch-pr-feedback: Watch: section with Monitoring: sub-field
+    $inWatch = $false
+    foreach ($line in $Lines) {
+        if ($line -match '^Watch:\s*') {
+            $inWatch = $true
+            continue
+        }
+        if ($inWatch -and $line -match '^\s*-\s*Monitoring:\s*') {
+            return 'watch-pr-feedback'
+        }
+        if ($inWatch -and $line -match '^[A-Z][^:]*:\s*' -and $line -notmatch '^\s*-') {
+            $inWatch = $false
+        }
+    }
+
+    return 'unknown'
 }
 
 # ── Worker Report Validation (complete | partial) ──────────────────────────
@@ -313,6 +501,329 @@ function Test-BlockedReport {
     }
 }
 
+# ── Planner Report Validation ──────────────────────────────────────────────
+
+function Test-PlannerReport {
+    param(
+        [string[]]$Lines,
+        [System.Collections.Generic.List[string]]$Diagnostics
+    )
+
+    # INVARIANT: Planner reports start with "Plan" on the first non-blank line (already verified by detection).
+
+    # Determine compact vs full by presence of Delivery: line
+    $isFullPlan = $false
+    foreach ($line in $Lines) {
+        if ($line -match '^Delivery:\s*') {
+            $isFullPlan = $true
+            break
+        }
+    }
+
+    # Build recognized label set
+    $allLabelPrefixes = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($field in $plannerCompactInlineFields) {
+        [void]$allLabelPrefixes.Add($field)
+    }
+    foreach ($section in $plannerCompactListSections) {
+        [void]$allLabelPrefixes.Add($section)
+    }
+    foreach ($parent in $plannerCompactSubFields.Keys) {
+        [void]$allLabelPrefixes.Add($parent)
+    }
+    [void]$allLabelPrefixes.Add('Owner')
+    [void]$allLabelPrefixes.Add('Files')
+    [void]$allLabelPrefixes.Add('Outcome')
+    [void]$allLabelPrefixes.Add('Depends on')
+    if ($isFullPlan) {
+        foreach ($section in $plannerFullExtraListSections) {
+            [void]$allLabelPrefixes.Add($section)
+        }
+        foreach ($parent in $plannerFullExtraSubFields.Keys) {
+            [void]$allLabelPrefixes.Add($parent)
+        }
+        [void]$allLabelPrefixes.Add('Likely bump')
+        [void]$allLabelPrefixes.Add('Release files likely needed')
+        [void]$allLabelPrefixes.Add('Item(s)')
+        [void]$allLabelPrefixes.Add('Classification')
+        [void]$allLabelPrefixes.Add('User decision needed')
+    }
+
+    # Check required inline fields
+    foreach ($field in $plannerCompactInlineFields) {
+        $fieldFound = $false
+        foreach ($line in $Lines) {
+            if ($line -match "^${field}:\s*.+$") {
+                $fieldFound = $true
+                break
+            }
+        }
+        if (-not $fieldFound) {
+            $Diagnostics.Add("Missing required field: $field")
+        }
+    }
+
+    # Check required list sections
+    $requiredListSections = [System.Collections.Generic.List[string]]::new()
+    foreach ($section in $plannerCompactListSections) {
+        $requiredListSections.Add($section)
+    }
+    if ($isFullPlan) {
+        foreach ($section in $plannerFullExtraListSections) {
+            $requiredListSections.Add($section)
+        }
+    }
+    Test-RequiredListSections -Lines $Lines -RequiredSections $requiredListSections.ToArray() -AllLabelPrefixes $allLabelPrefixes -Diagnostics $Diagnostics
+
+    # Check required sub-field groups
+    Test-RequiredSubFields -Lines $Lines -SubFieldMap $plannerCompactSubFields -Diagnostics $Diagnostics
+    if ($isFullPlan) {
+        Test-RequiredSubFields -Lines $Lines -SubFieldMap $plannerFullExtraSubFields -Diagnostics $Diagnostics
+    }
+}
+
+# ── PR Output Report Validation ───────────────────────────────────────────
+
+function Test-PrOutputReport {
+    param(
+        [string[]]$Lines,
+        [System.Collections.Generic.List[string]]$Diagnostics
+    )
+
+    $allLabelPrefixes = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($field in $prOutputInlineFields) {
+        [void]$allLabelPrefixes.Add($field)
+    }
+    foreach ($section in $prOutputListSections) {
+        [void]$allLabelPrefixes.Add($section)
+    }
+
+    # Check required inline fields
+    foreach ($field in $prOutputInlineFields) {
+        $fieldFound = $false
+        foreach ($line in $Lines) {
+            if ($line -match "^$([regex]::Escape($field)):\s*") {
+                $fieldFound = $true
+                break
+            }
+        }
+        if (-not $fieldFound) {
+            $Diagnostics.Add("Missing required field: $field")
+        }
+    }
+
+    # Check required list sections
+    Test-RequiredListSections -Lines $Lines -RequiredSections $prOutputListSections -AllLabelPrefixes $allLabelPrefixes -Diagnostics $Diagnostics
+
+    # Check for standalone prose
+    $fieldActive = $false
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        $lineNum = $i + 1
+        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes -FieldActive ([ref]$fieldActive)) {
+            continue
+        }
+        $Diagnostics.Add("Line $lineNum`: standalone prose: $line")
+    }
+}
+
+# ── address-pr-feedback Report Validation ──────────────────────────────────
+
+function Test-AddressFeedbackReport {
+    param(
+        [string[]]$Lines,
+        [System.Collections.Generic.List[string]]$Diagnostics
+    )
+
+    $allLabelPrefixes = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    [void]$allLabelPrefixes.Add('Status')
+    foreach ($parent in $addressFeedbackSubFields.Keys) {
+        [void]$allLabelPrefixes.Add($parent)
+    }
+    foreach ($section in $addressFeedbackListSections) {
+        [void]$allLabelPrefixes.Add($section)
+    }
+
+    # Check Status present (already validated by caller, but check presence)
+    $hasStatus = $false
+    foreach ($line in $Lines) {
+        if ($line -match '^Status:\s*') {
+            $hasStatus = $true
+            break
+        }
+    }
+    if (-not $hasStatus) {
+        $Diagnostics.Add('Missing required field: Status')
+    }
+
+    # Check required sub-field groups
+    Test-RequiredSubFields -Lines $Lines -SubFieldMap $addressFeedbackSubFields -Diagnostics $Diagnostics
+
+    # Check required list sections
+    Test-RequiredListSections -Lines $Lines -RequiredSections $addressFeedbackListSections -AllLabelPrefixes $allLabelPrefixes -Diagnostics $Diagnostics
+
+    # Check for standalone prose
+    $fieldActive = $false
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        $lineNum = $i + 1
+        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes -FieldActive ([ref]$fieldActive)) {
+            continue
+        }
+        $Diagnostics.Add("Line $lineNum`: standalone prose: $line")
+    }
+}
+
+# ── watch-pr-feedback Report Validation ────────────────────────────────────
+
+function Test-WatchFeedbackReport {
+    param(
+        [string[]]$Lines,
+        [System.Collections.Generic.List[string]]$Diagnostics
+    )
+
+    $allLabelPrefixes = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    [void]$allLabelPrefixes.Add('Status')
+    foreach ($parent in $watchFeedbackSubFields.Keys) {
+        [void]$allLabelPrefixes.Add($parent)
+    }
+    foreach ($section in $watchFeedbackListSections) {
+        [void]$allLabelPrefixes.Add($section)
+    }
+
+    # Check Status present
+    $hasStatus = $false
+    foreach ($line in $Lines) {
+        if ($line -match '^Status:\s*') {
+            $hasStatus = $true
+            break
+        }
+    }
+    if (-not $hasStatus) {
+        $Diagnostics.Add('Missing required field: Status')
+    }
+
+    # Check required sub-field groups
+    Test-RequiredSubFields -Lines $Lines -SubFieldMap $watchFeedbackSubFields -Diagnostics $Diagnostics
+
+    # Check required list sections
+    Test-RequiredListSections -Lines $Lines -RequiredSections $watchFeedbackListSections -AllLabelPrefixes $allLabelPrefixes -Diagnostics $Diagnostics
+
+    # Check for standalone prose
+    $fieldActive = $false
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        $lineNum = $i + 1
+        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes -FieldActive ([ref]$fieldActive)) {
+            continue
+        }
+        $Diagnostics.Add("Line $lineNum`: standalone prose: $line")
+    }
+}
+
+# ── Shared Validation Helpers ──────────────────────────────────────────────
+
+function Test-RequiredListSections {
+    <#
+    .DESCRIPTION
+        Checks that each named section exists and contains at least one list item.
+    #>
+    param(
+        [string[]]$Lines,
+        [string[]]$RequiredSections,
+        [System.Collections.Generic.HashSet[string]]$AllLabelPrefixes,
+        [System.Collections.Generic.List[string]]$Diagnostics
+    )
+
+    foreach ($section in $RequiredSections) {
+        $sectionIdx = -1
+        for ($i = 0; $i -lt $Lines.Count; $i++) {
+            if ($Lines[$i] -match "^$([regex]::Escape($section)):\s*") {
+                $sectionIdx = $i
+                break
+            }
+        }
+        if ($sectionIdx -eq -1) {
+            $Diagnostics.Add("Missing required section: $section")
+            continue
+        }
+
+        $hasListItem = $false
+        for ($j = $sectionIdx + 1; $j -lt $Lines.Count; $j++) {
+            if ($Lines[$j] -match '^([^:]+):\s*') {
+                $nextLabel = $Matches[1].Trim()
+                if ($AllLabelPrefixes.Contains($nextLabel)) {
+                    break
+                }
+            }
+            if ($Lines[$j] -match '^\s*-\s') {
+                $hasListItem = $true
+                break
+            }
+        }
+        if (-not $hasListItem) {
+            $Diagnostics.Add("Required section '$section' must contain at least one list item")
+        }
+    }
+}
+
+function Test-RequiredSubFields {
+    <#
+    .DESCRIPTION
+        Checks that each parent field exists and contains all required
+        sub-fields as indented list items (- SubField: value).
+    #>
+    param(
+        [string[]]$Lines,
+        [hashtable]$SubFieldMap,
+        [System.Collections.Generic.List[string]]$Diagnostics
+    )
+
+    foreach ($parent in $SubFieldMap.Keys) {
+        $parentIdx = -1
+        for ($i = 0; $i -lt $Lines.Count; $i++) {
+            if ($Lines[$i] -match "^$([regex]::Escape($parent)):\s*") {
+                $parentIdx = $i
+                break
+            }
+        }
+        if ($parentIdx -eq -1) {
+            $Diagnostics.Add("Missing required field group: $parent")
+            continue
+        }
+
+        $requiredSubs = $SubFieldMap[$parent]
+        $foundSubs = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
+
+        for ($j = $parentIdx + 1; $j -lt $Lines.Count; $j++) {
+            # Stop at the next top-level field (non-indented label)
+            if ($Lines[$j] -match '^[A-Za-z]' -and $Lines[$j] -match '^([^:]+):\s*') {
+                break
+            }
+            if ($Lines[$j] -match '^\s*-\s*([^:]+):\s*') {
+                $subLabel = $Matches[1].Trim()
+                [void]$foundSubs.Add($subLabel)
+            }
+        }
+
+        foreach ($sub in $requiredSubs) {
+            if (-not $foundSubs.Contains($sub)) {
+                $Diagnostics.Add("Missing required sub-field '$sub' under '$parent'")
+            }
+        }
+    }
+}
+
 # ── Line Classification ────────────────────────────────────────────────────
 
 function Test-ValidLine {
@@ -381,7 +892,17 @@ if ($ReportFile) {
     }
 }
 else {
-    $fixtureDir = Join-Path (Join-Path $repoRoot 'tests') 'reports'
+    if ($Batch) {
+        if ([System.IO.Path]::IsPathRooted($Batch)) {
+            $fixtureDir = $Batch
+        }
+        else {
+            $fixtureDir = Join-Path $repoRoot $Batch
+        }
+    }
+    else {
+        $fixtureDir = Join-Path (Join-Path $repoRoot 'tests') 'reports'
+    }
     if (-not (Test-Path $fixtureDir)) {
         Write-Host "Fixture directory not found: $fixtureDir"
         exit 1

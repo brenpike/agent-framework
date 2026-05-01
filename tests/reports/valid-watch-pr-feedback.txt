@@ -1,0 +1,27 @@
+Status: complete
+
+PR:
+- Number: 42
+- State: OPEN
+- Branch: feature/add-validation
+- Target: main
+
+Watch:
+- Mode: Monitor
+- Monitoring: active
+- Parser: gh --jq
+- Cycles: 2
+- Seen comments: 3
+- New actionable comments: 1
+
+Routed:
+- address-pr-feedback: 1
+
+Stopped because:
+- All actionable comments remediated
+
+Next action:
+- None
+
+Issues:
+- None
