@@ -600,7 +600,7 @@ foreach ($fixtureFile in $compatFixtures) {
                             $fixturePassed = $false
                             Add-Finding -Rule 'COMPAT' -FilePath $fixture.file -Line 0 `
                                 -Description "[$checkDesc] Missing required array: $arrName"
-                        } elseif ($jsonObj.$arrName -isnot [System.Array] -and $jsonObj.$arrName.Count -eq 0) {
+                        } elseif ($jsonObj.$arrName -isnot [System.Array] -or $jsonObj.$arrName.Count -eq 0) {
                             $fixturePassed = $false
                             Add-Finding -Rule 'COMPAT' -FilePath $fixture.file -Line 0 `
                                 -Description "[$checkDesc] Field is not a non-empty array: $arrName"

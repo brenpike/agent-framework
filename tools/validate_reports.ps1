@@ -176,6 +176,20 @@ function Test-BlockedReport {
         [System.Collections.Generic.List[string]]$Diagnostics
     )
 
+    # INVARIANT: Build a set of all recognized labeled-field prefixes for prose detection.
+    $allLabelPrefixes = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($field in $blockedRequiredFields) {
+        [void]$allLabelPrefixes.Add($field)
+    }
+    foreach ($field in $optionalWorkerFields) {
+        [void]$allLabelPrefixes.Add($field)
+    }
+    [void]$allLabelPrefixes.Add('Status')
+
+    # ── Check required fields ───────────────────────────────────────────
+
     $foundFields = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::OrdinalIgnoreCase
     )
@@ -195,6 +209,19 @@ function Test-BlockedReport {
         if (-not $foundFields.Contains($field)) {
             $Diagnostics.Add("Missing required blocked field: $field")
         }
+    }
+
+    # ── Check for standalone prose lines ────────────────────────────────
+
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        $lineNum = $i + 1
+
+        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes) {
+            continue
+        }
+
+        $Diagnostics.Add("Line $lineNum`: standalone prose: $line")
     }
 }
 
