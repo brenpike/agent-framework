@@ -1,0 +1,13 @@
+{
+  "rule": "Review remediation must commit push reply before resolve",
+  "source": {
+    "file": "plugin/governance/pr-review-remediation-loop.md",
+    "pattern": "Resolve review threads only after"
+  },
+  "consumers": [
+    {
+      "file": "plugin/skills/address-pr-feedback/SKILL.md",
+      "pattern": "Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed"
+    }
+  ]
+}

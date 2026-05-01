@@ -1,0 +1,6 @@
+{
+  "check": "Each agent filename (without extension) is mentioned in README.md",
+  "type": "file-names-in-file",
+  "dir": "plugin/agents/",
+  "file": "README.md"
+}

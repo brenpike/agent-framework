@@ -1,0 +1,17 @@
+{
+  "rule": "No trunk commits",
+  "source": {
+    "file": "plugin/governance/branching-pr-workflow.md",
+    "pattern": "Never commit directly to the resolved trunk branch"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "begin implementation before required git preflight is explicit"
+    },
+    {
+      "file": "plugin/skills/checkpoint-commit/SKILL.md",
+      "pattern": "the branch that must not be committed to directly"
+    }
+  ]
+}

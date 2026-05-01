@@ -1,0 +1,6 @@
+{
+  "check": "mcpServers and permissionMode are absent from all agent frontmatter",
+  "type": "frontmatter-field-absent",
+  "dir": "plugin/agents/",
+  "absent": ["mcpServers", "permissionMode"]
+}

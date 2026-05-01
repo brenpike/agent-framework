@@ -1,0 +1,7 @@
+{
+  "check": "No file under plugin/ references docs/planning/ as active governance",
+  "type": "pattern-absent-in-dir",
+  "dir": "plugin/",
+  "pattern": "docs/planning/",
+  "description": "docs/planning/ must not be referenced as active governance from plugin files"
+}

@@ -1,0 +1,7 @@
+{
+  "check": "All agent .md files have required frontmatter: name, description, model, tools",
+  "type": "frontmatter-all-files",
+  "dir": "plugin/agents/",
+  "glob": "*.md",
+  "required": ["name", "description", "model", "tools"]
+}

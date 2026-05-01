@@ -1,0 +1,15 @@
+Status: complete
+
+Changed:
+- src/middleware/auth.ts
+
+This line is standalone prose and should be flagged by the validator.
+
+Validated:
+- npm test: pass
+
+Need scope change:
+- None
+
+Issues:
+- None

@@ -1,0 +1,13 @@
+{
+  "rule": "Monitor truthfulness",
+  "source": {
+    "file": "plugin/governance/agent-system-policy.md",
+    "pattern": "Do not say or imply active monitoring is running unless a real background mechanism started successfully"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "claim monitoring is active unless Monitor (or an equivalent real background trigger) returned a non-error response"
+    }
+  ]
+}

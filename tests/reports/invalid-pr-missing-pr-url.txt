@@ -1,0 +1,11 @@
+Status: complete
+Base: main
+Head: feature/add-validation
+Local HEAD: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+Pushed: yes (git push)
+Push remote: origin
+PR head SHA: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+Head verified: yes
+PR title: Add input validation to registration endpoint
+Warnings:
+- None

@@ -66,9 +66,19 @@ plugin/                     # plugin root — everything Claude Code loads lives
     plugin.json             # plugin manifest
   agents/                   # agent definitions
   skills/                   # skill definitions (incl. _shared/ helpers)
-  governance/               # reference docs loaded via ${CLAUDE_PLUGIN_ROOT}/governance/
+  governance/               # runtime governance docs loaded via ${CLAUDE_PLUGIN_ROOT}/governance/
+docs/
+  planning/                 # advisory planning material and implementation backlog — not active plugin governance
+tools/                      # dev-only validation scripts (policy linter, report validator)
+tests/                      # dev-only test fixtures and checks (policy, reports, plugin compatibility)
 README.md
 ```
+
+`plugin/governance/` is the active runtime governance directory. Agents and skills reference these files via `${CLAUDE_PLUGIN_ROOT}/governance/` paths; they are loaded at runtime and affect agent behavior.
+
+`docs/planning/` contains advisory planning material — state machine drafts, report examples, rule index drafts, glossary stubs, and the improvement backlog. These documents are human and dev-tooling reference only; they are not referenced by agents or skills and are not part of the installed plugin.
+
+`tools/` and `tests/` contain development-time validation scripts and test fixtures. They live outside `plugin/` and are not distributed as plugin runtime data.
 
 `${CLAUDE_PLUGIN_ROOT}` resolves to the `plugin/` directory at runtime, so all internal cross-references (e.g. `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`) resolve correctly without per-consumer configuration.
 

@@ -1,0 +1,9 @@
+Status: blocked
+Stage: implementation
+Blocker: correctness requires editing src/db/adapter.ts which is not in the assigned file scope
+Retry status: not attempted
+Fallback used: none
+Impact: auth middleware cannot call the new session persistence method without a db adapter change
+Next action:
+- Orchestrator must expand scope to include src/db/adapter.ts or re-plan
+- Reassign step 1 with expanded file list
