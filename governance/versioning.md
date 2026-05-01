@@ -76,10 +76,10 @@ Ask the user before delegating version edits when the change matches more than o
 
 A change "matches a row" when both:
 
-- the dominant conventional commit type from staged commits equals the row's commit type, AND
+- the dominant conventional commit type across all commits on the working branch since it diverged from `base` equals the row's commit type, AND
 - the impact column is satisfied per the bullets in Bump Trigger above.
 
-If staged commits use multiple conventional types, the change matches more than one row.
+To compute the dominant commit type: parse the leading token before `(` or `:` in each commit subject of `git log --oneline base..HEAD`. The dominant type is the type with the highest count. If the working branch has exactly one commit, that commit's type is the dominant type. If two or more types tie for the highest count, the change matches more than one row. If no commit subjects parse as a recognized type, the change matches no row.
 
 ## Bump Execution
 

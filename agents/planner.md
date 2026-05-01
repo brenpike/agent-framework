@@ -194,4 +194,7 @@ Open questions:
 - None
 ```
 
-Do not finalize until every step has: one owner; exact file scope; a `Depends on` entry (step numbers or `none`); a `Versioning` block populated with all four fields (`Impact`, `Artifact(s)`, `Likely bump`, `Release files likely needed`); a `Review remediation` block when the task originated from PR feedback (otherwise omit the block); and a `Delivery` block.
+Finalization gate (depends on Output Mode):
+
+- **Compact Output**: do not finalize until every step has one owner; exact file scope (existing files named by full path); and the two `Versioning` fields (`Impact`, `Artifact(s)`) are populated. Compact mode is by definition for cases where dependencies, edge cases, shared-file risks, and delivery shape do not apply (per the Compact Output trigger conditions above).
+- **Full Output**: do not finalize until every step has one owner; exact file scope; a `Depends on` entry (step numbers or `none`); the full 4-field `Versioning` block (`Impact`, `Artifact(s)`, `Likely bump`, `Release files likely needed`); a `Review remediation` block when the task originated from PR feedback (otherwise omit the block); and a `Delivery` block.
