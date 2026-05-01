@@ -482,10 +482,15 @@ function Test-BlockedReport {
 
             if ($label -in $listFields) {
                 $hasListItem = $false
+                $allPlaceholders = $true
                 for ($j = $i + 1; $j -lt $Lines.Count; $j++) {
-                    if ($Lines[$j] -match '^\s*-\s') {
+                    if ($Lines[$j] -match '^\s*-\s(.*)$') {
                         $hasListItem = $true
-                        break
+                        $bulletValue = $Matches[1].Trim()
+                        if ($bulletValue -ne '' -and $bulletValue -inotin @('none', 'n/a', '-')) {
+                            $allPlaceholders = $false
+                        }
+                        continue
                     }
                     if ([string]::IsNullOrWhiteSpace($Lines[$j])) {
                         continue
@@ -494,6 +499,9 @@ function Test-BlockedReport {
                 }
                 if (-not $hasListItem) {
                     $Diagnostics.Add("Required blocked field '$label' has no list items (must have at least one)")
+                }
+                elseif ($allPlaceholders) {
+                    $Diagnostics.Add("Required blocked field '$label' must contain a concrete step (not a placeholder)")
                 }
             }
         }
@@ -858,9 +866,13 @@ function Test-RequiredSubFields {
             if ($Lines[$j] -match '^[A-Za-z]' -and $Lines[$j] -match '^([^:]+):\s*') {
                 break
             }
-            if ($Lines[$j] -match '^\s*-\s*([^:]+):\s*') {
+            if ($Lines[$j] -match '^\s*-\s*([^:]+):\s*(.*)$') {
                 $subLabel = $Matches[1].Trim()
+                $subValue = $Matches[2].Trim()
                 [void]$foundSubs.Add($subLabel)
+                if ([string]::IsNullOrWhiteSpace($subValue)) {
+                    $Diagnostics.Add("Required sub-field '$subLabel' has no value")
+                }
             }
         }
 
