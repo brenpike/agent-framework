@@ -201,13 +201,15 @@ Write-Host '=== CHECK 3: Skill names exist ==='
 $skillPattern = [regex]'agent-framework:([a-zA-Z0-9_-]+)'
 $agentNames = @('orchestrator', 'planner', 'coder', 'designer')
 
-# Collect scan sources: all plugin/agents/*.md and plugin/skills/**/SKILL.md (excluding _shared/).
+# Collect scan sources: all plugin/agents/*.md, plugin/skills/**/SKILL.md (excluding _shared/), and plugin/governance/*.md.
 $scanFiles = @()
 $agentsDir = Join-Path $pluginRoot 'agents'
 $skillsDir = Join-Path $pluginRoot 'skills'
+$governanceDir = Join-Path $pluginRoot 'governance'
 $scanFiles += Get-ChildItem -Path $agentsDir -Filter '*.md' -File
 $scanFiles += Get-ChildItem -Path $skillsDir -Filter 'SKILL.md' -Recurse -File |
     Where-Object { $_.FullName -notmatch '[/\\]_shared[/\\]' }
+$scanFiles += Get-ChildItem -Path $governanceDir -Filter '*.md' -File
 
 # Extract all agent-framework:* references with their source file.
 # Keys: ref name. Values: list of source file paths that contain the reference.
