@@ -31,6 +31,14 @@ The correct improvement strategy is not to remove rules. It is to make rules har
 
 The existing framework should be modified in place rather than replaced. Starting fresh would likely reintroduce the same safety rules over time, with new failure modes and a period of weaker control.
 
+## Planning Constraints
+
+- Phase 1 planning documents are human/dev-tooling reference material only. They live outside the plugin payload under `docs/planning/` and must not be treated as runtime governance.
+- Active runtime governance lives under `plugin/governance/` and must be referenced by agents or skills when it is intended to affect behavior.
+- Development tooling and tests live at the repository root under `tools/` and `tests/`, not under `plugin/`, so they are not distributed as plugin runtime data.
+- Phase 1 must not change agent behavior. It may expose current gaps through advisory checks, fixtures, and documentation.
+- Phase 1 requires no plugin version bump because planned docs, tools, and tests live outside `plugin/`, do not change the plugin runtime payload, and do not affect packaged output or consumer behavior.
+
 ## Improvement Backlog
 
 `Depends on` means "best done after." It is not always a hard blocker.
@@ -41,7 +49,7 @@ The existing framework should be modified in place rather than replaced. Startin
 |---|---|---:|---:|---|
 | TC-1 | Create a short always-loaded core contract; move long workflow detail behind workflow-specific references. | 3 | 5 | CPX-1 |
 | TC-2 | Replace repeated prose with named rule IDs, e.g. `GIT-PREFLIGHT-01`, `VALIDATION-01`. | 3 | 5 | DUR-4 |
-| TC-3 | Generate agent files from canonical governance fragments. | 4 | 4 | TC-2 |
+| TC-3 | Design and, only if still justified, generate static agent files from canonical governance fragments. Claude Code must load generated markdown output, and tooling must prove generated files are in sync. | 5 | 3 | TC-2 |
 | TC-4 | Add compact checklists at the top of each skill. | 2 | 4 | TC-2 |
 | TC-5 | Split `agent-system-policy.md` into modules: scope, git, validation, review, monitor, communication. | 3 | 4 | CPX-1 |
 
@@ -59,7 +67,7 @@ The existing framework should be modified in place rather than replaced. Startin
 
 | ID | Enhancement | Difficulty | Value | Depends on |
 |---|---|---:|---:|---|
-| EFF-1 | Add a safe fast path for trivial single-file changes while preserving branch preflight, scope, validation, and final report. | 3 | 5 | REL-2 |
+| EFF-1 | Validate and harden the existing safe fast path for trivial single-file changes while preserving branch preflight, scope, validation, and final report. | 3 | 5 | REL-2 |
 | EFF-2 | Let planner return `Workflow loadout:` naming only required governance modules. | 3 | 4 | TC-5 |
 | EFF-3 | Add explicit "no PR requested" and "no review requested" workflow branches. | 2 | 4 | CLR-1 |
 | EFF-4 | Batch validation and git checks at phase boundaries instead of repeating nearby checks. | 3 | 3 | REL-3 |
@@ -69,7 +77,7 @@ The existing framework should be modified in place rather than replaced. Startin
 
 | ID | Enhancement | Difficulty | Value | Depends on |
 |---|---|---:|---:|---|
-| CLR-1 | Add a one-page execution state machine: Intake -> Plan -> Preflight -> Branch -> Implement -> Validate -> Commit -> PR -> Review. | 2 | 5 | None |
+| CLR-1 | Add a one-page execution state machine using the target term "trivial fast path": Intake -> Plan -> Preflight -> Branch -> Implement -> Validate -> Commit -> PR -> Review. | 2 | 5 | None |
 | CLR-2 | Add a routing matrix from user intent to skill/agent. | 2 | 5 | CLR-1 |
 | CLR-3 | Rename planner-first exception to "trivial fast path" and make the checklist shorter/testable. | 1 | 3 | EFF-1 |
 | CLR-4 | Add examples of valid blocked reports, worker reports, and remediation reports. | 2 | 4 | None |
@@ -126,45 +134,47 @@ Include items that meet one of these conditions:
 | 5 | REL-1 | Catches contradictions, stale references, unsupported fields, and forbidden language. |
 | 6 | DUR-1 | Locks down core safety invariants before simplification begins. |
 | 7 | DUR-2 | Verifies plugin compatibility so refactors do not silently break Claude plugin behavior. |
+| 8 | CLR-5 | Adds a minimal glossary stub so the state machine does not introduce undefined terminology. |
 
 ### Phase 2: Canonicalize The Policy Surface
 
 | Order | ID | Why Now |
 |---:|---|---|
-| 8 | TC-2 | Rule IDs reduce repeated prose and make rules easier to reference precisely. |
-| 9 | CPX-5 | Policy index maps rule IDs to source and consumers, preventing drift. |
-| 10 | REL-5 | Every safety gate gets one owner, canonical definition, and test fixture. |
-| 11 | CPX-1 | Separates invariants from procedures and agent ownership. |
-| 12 | TC-5 | Splits the large policy file into modules after ownership/source mapping is clear. |
-| 13 | TC-4 | Adds compact skill checklists that reference canonical rules without weakening them. |
+| 9 | TC-2 | Rule IDs reduce repeated prose and make rules easier to reference precisely. |
+| 10 | CPX-5 | Policy index maps rule IDs to source and consumers, preventing drift. |
+| 11 | REL-5 | Every safety gate gets one owner, canonical definition, and test fixture. |
+| 12 | CPX-1 | Separates invariants from procedures and agent ownership. Treat this as multi-PR structural work before moving on. |
+| 13 | TC-5 | Splits the large policy file into modules after ownership/source mapping is clear. |
+| 14 | TC-4 | Adds compact skill checklists that reference canonical rules without weakening them. |
+
+Known risk: Phases 2 and 3 make structural changes before full golden-path workflow tests exist. Mitigation is to keep Phase 2 changes small, land CPX-1 as multi-PR work, and require the Phase 1 safety regression checks to pass before each structural change.
 
 ### Phase 3: Improve Routing And Workflow Shape
 
 | Order | ID | Why Now |
 |---:|---|---|
-| 14 | CLR-2 | A routing matrix makes skill/agent selection clearer and easier to lint. |
-| 15 | CPX-2 | Collapses review remediation routing into one canonical decision table. |
-| 16 | REL-3 | Turns git preflight into command recipes with expected outputs. |
-| 17 | EFF-3 | Makes "no PR requested" and "no review requested" explicit. |
-| 18 | EFF-2 | Lets planner name exact governance modules needed for the task. |
+| 15 | CLR-2 | A routing matrix makes skill/agent selection clearer and easier to lint. |
+| 16 | CPX-2 | Collapses review remediation routing into one canonical decision table. |
+| 17 | REL-3 | Turns git preflight into command recipes with expected outputs. |
+| 18 | EFF-3 | Makes "no PR requested" and "no review requested" explicit. |
+| 19 | EFF-2 | Lets planner name exact governance modules needed for the task. |
 
 ### Phase 4: Add Safe Efficiency Paths
 
 | Order | ID | Why Now |
 |---:|---|---|
-| 19 | REL-2 | Golden-path workflow tests prove main scenarios still work. |
-| 20 | EFF-1 | Adds a safe trivial fast path while preserving branch, scope, validation, and reporting gates. |
-| 21 | PERF-1 | Lower-cost models become safer once fast-path boundaries are tested. |
-| 22 | PERF-2 | Bounded planner discovery improves speed without changing governance. |
-| 23 | PERF-3 | Caches resolved repo facts to reduce repeated checks and rereads. |
+| 20 | REL-2 | Golden-path workflow tests prove main scenarios still work. |
+| 21 | EFF-1 | Validates and hardens the existing safe trivial fast path while preserving branch, scope, validation, and reporting gates. |
+| 22 | PERF-1 | Lower-cost models become safer once fast-path boundaries are tested. |
+| 23 | PERF-2 | Bounded planner discovery improves speed without changing governance. |
+| 24 | PERF-3 | Caches resolved repo facts to reduce repeated checks and rereads. |
 
 ### Phase 5: Reduce Loaded Context And Duplication
 
 | Order | ID | Why Now |
 |---:|---|---|
-| 24 | TC-1 | Creates the always-loaded core contract after canonical modules and tests exist. |
-| 25 | CPX-3 | Removes duplicated unsafe-git/validation wording only after rule IDs and tests protect behavior. |
-| 26 | TC-3 | Generates agent files from canonical fragments after the structure stabilizes. |
+| 25 | TC-1 | Creates the always-loaded core contract after canonical modules and tests exist. |
+| 26 | CPX-3 | Removes duplicated unsafe-git/validation wording only after rule IDs and tests protect behavior. |
 | 27 | CPX-4 | Makes versioning module activation more targeted while preserving versioning stops. |
 
 ### Phase 6: Later Optimizations
@@ -180,8 +190,8 @@ Include items that meet one of these conditions:
 
 | ID | Reason |
 |---|---|
-| CLR-3 | Low difficulty but mostly a rename/reframe. Fold into `EFF-1` later. |
-| CLR-5 | Useful but lower value. Add opportunistically if terminology confusion blocks implementation. |
+| CLR-3 | The target term "trivial fast path" is folded into `CLR-1`; detailed checklist cleanup remains part of `EFF-1`. |
+| TC-3 | High-risk and low value-to-difficulty after review. Reconsider only after static generation design proves Claude Code loads generated output and sync tests are reliable. |
 | EFF-4 | Batching validation/git checks risks weakening enforcement. Revisit after validators and tests exist. |
 | PERF-4 | Incremental GitHub fetching is lower value relative to difficulty. Optimize after remediation flow is stable. |
 
@@ -202,20 +212,26 @@ Included:
 5. `REL-1` policy linter
 6. `DUR-1` safety regression tests
 7. `DUR-2` plugin compatibility tests
+8. `CLR-5` minimal glossary stub for terms used by the state machine
 
-Do not refactor agent behavior in this phase except where needed to add metadata or examples.
+Do not refactor agent behavior in this phase. Phase 1 documents are planning/dev-tooling artifacts outside `plugin/`; they are not active governance and are not referenced from agents.
+
+### Phase 1 Versioning Conclusion
+
+Phase 1 requires no plugin version bump. The planned additions are outside the plugin source directory (`plugin/`) and therefore do not change installed plugin runtime behavior, packaged output, published agent/skill definitions, or consumer-facing governance. If implementation later moves any Phase 1 artifact into `plugin/` or changes agent/skill behavior, reassess versioning before PR opening.
 
 ### Step 1: Add Execution State Machine (`CLR-1`)
 
 Create:
 
-- `governance/execution-state-machine.md`
+- `docs/planning/execution-state-machine.md`
 
 Content:
 
 - Canonical workflow states:
   - Intake
   - Plan
+  - Trivial Fast Path
   - Git Preflight
   - Branch
   - Implement
@@ -235,12 +251,13 @@ Acceptance criteria:
 - Every existing workflow path maps to a state.
 - No state permits implementation before git preflight.
 - Blocked is explicit from any failed gate.
+- The state machine uses the target term `Trivial Fast Path` so a later rename is not required.
 
 ### Step 2: Add Report Examples (`CLR-4`)
 
 Create:
 
-- `governance/report-examples.md`
+- `docs/planning/report-examples.md`
 
 Add examples for:
 
@@ -257,18 +274,21 @@ Acceptance criteria:
 - Examples match current contracts.
 - Examples contain no new rules.
 - Examples are minimal and validator-friendly.
+- Examples are clearly labeled non-normative unless and until promoted into active governance.
 
 ### Step 3: Add Rule Ownership Metadata (`DUR-4`)
 
 Create:
 
-- `governance/rule-index.md`
+- `docs/planning/rule-index-draft.md`
+
+Phase 1 creates the index with descriptive rule names only. Formal rule IDs such as `GIT-PREFLIGHT-01` are assigned later by `TC-2` in Phase 2.
 
 Initial format:
 
 ```markdown
-| Rule ID | Source | Owner | Consumers | Test Coverage | Notes |
-|---|---|---|---|---|---|
+| Descriptive Rule Name | Future Rule ID | Source | Owner | Consumers | Test Coverage | Notes |
+|---|---|---|---|---|---|---|
 ```
 
 Start with core safety rules:
@@ -289,18 +309,43 @@ Acceptance criteria:
 - Every listed rule has one canonical source.
 - Every listed rule has at least one consumer.
 - Test coverage can initially be `planned`.
+- `Future Rule ID` may be `TBD` in Phase 1; Phase 2 owns assigning stable IDs.
+
+### Step 3a: Add Minimal Glossary Stub (`CLR-5`)
+
+Create:
+
+- `docs/planning/glossary-draft.md`
+
+Define only terms used by the Phase 1 state machine and report examples:
+
+- plan
+- phase
+- milestone
+- artifact
+- candidate
+- thread
+- review summary
+- monitor
+- blocked
+
+Acceptance criteria:
+
+- The glossary is explicitly a draft planning aid.
+- No active governance rule depends on it in Phase 1.
+- Definitions point to existing canonical sources where one already exists.
 
 ### Step 4: Add Test And Lint Harness Structure
 
 Create:
 
-- `tools/policy_check.ps1`
-- `tools/validate_reports.ps1`
-- `tests/policy/`
-- `tests/reports/`
-- `tests/plugin/`
+- `tools/policy_check.ps1` at the repository root
+- `tools/validate_reports.ps1` at the repository root
+- `tests/policy/` at the repository root
+- `tests/reports/` at the repository root
+- `tests/plugin/` at the repository root
 
-Keep the harness PowerShell-friendly because the plugin skills declare `shell: powershell`.
+Keep the harness PowerShell-friendly because the primary development environment for this repository is Windows/PowerShell. The plugin skill frontmatter is a separate runtime execution context and is not the reason for the dev-tooling shell choice.
 
 Suggested command:
 
@@ -313,6 +358,7 @@ Acceptance criteria:
 - One command can run all Phase 1 checks.
 - Checks are deterministic and local.
 - No network or GitHub access is required.
+- Tooling is outside `plugin/` and therefore outside the plugin payload.
 
 ### Step 5: Implement Report Validators (`REL-4`)
 
@@ -341,13 +387,26 @@ Acceptance criteria:
 
 Initial linter checks:
 
-- Forbidden contradiction: policy says not to use `ambiguous`, while repo content currently still uses it.
+- Forbidden hedge contradiction: policy says not to use `ambiguous` as a hedge. The linter must not flag every occurrence. It should flag gate-level uncertainty wording such as "unsafe or ambiguous" or "project root is ambiguous"; descriptive classifications such as reviewer/source categories are allowed.
 - Required files exist.
 - Skill names referenced by orchestrator exist.
 - Agent names referenced by orchestrator exist.
 - Unsupported plugin frontmatter fields are absent.
 - Every governance reference path resolves.
 - Every skill has `name`, `description`, `allowed-tools`, and `shell`.
+- `plugin/governance/AGENTS.template.md` exists and is referenced from README as the project-level reviewer template.
+
+Advisory vs strict mode:
+
+- Advisory mode reports findings and exits successfully unless the harness itself fails.
+- Strict mode exits non-zero for findings not listed in the allowlist.
+- Phase 1 runs advisory mode by default.
+
+Allowlist mechanism:
+
+- Create `tests/policy/policy-lint-allowlist.json`.
+- Each allowlist entry contains `rule`, `path`, optional `line`, and `reason`.
+- Allowlist entries must be exact enough that moving the finding or changing the text reopens the finding.
 
 Acceptance criteria:
 
@@ -355,6 +414,7 @@ Acceptance criteria:
 - Linter can run in advisory mode first, then strict mode later.
 - Linter does not require external dependencies.
 - Known current findings can be allowlisted so Phase 1 can land without forcing behavior edits.
+- The `ambiguous` check does not produce known false positives for descriptive, non-hedge usage.
 
 ### Step 7: Add Safety Regression Tests (`DUR-1`)
 
@@ -379,13 +439,15 @@ Acceptance criteria:
 
 Checks:
 
-- `.claude-plugin/plugin.json` has required fields.
+- `plugin/.claude-plugin/plugin.json` has required fields.
 - `.claude-plugin/marketplace.json` references the plugin correctly.
 - Agent frontmatter has valid `name`, `description`, `model`, and `tools`.
 - Skill frontmatter has valid `name`, `description`, `allowed-tools`, and `shell`.
 - README skill names match actual skill directories.
 - README agent names match actual agent files.
 - Unsupported fields listed in README do not appear in agent frontmatter.
+- `plugin/governance/AGENTS.template.md` exists and README points to it.
+- `docs/planning/` files are not referenced as active governance from plugin agents or skills.
 
 Acceptance criteria:
 
@@ -395,18 +457,20 @@ Acceptance criteria:
 
 ### Step 9: Wire Documentation References
 
-Update `README.md` governance table to include:
+Update root-level documentation, if needed, to distinguish runtime plugin governance from planning artifacts:
 
-- `execution-state-machine.md`
-- `report-examples.md`
-- `rule-index.md`
+- `plugin/governance/` remains the active runtime governance directory.
+- `docs/planning/` contains advisory planning material and implementation backlog documents.
+- README references `plugin/governance/AGENTS.template.md` as the project-level Codex reviewer template (required by Steps 6 and 8 validation).
 
 Do not rewrite the main workflow yet.
 
 Acceptance criteria:
 
 - New docs are discoverable.
+- New docs are not listed in the active `plugin/governance/` table unless they are promoted and referenced by agents.
 - README still reflects current install and setup flow.
+- README contains a reference to `plugin/governance/AGENTS.template.md` consistent with what REL-1 (Step 6) and DUR-2 (Step 8) compatibility checks validate.
 
 ### Recommended Phase 1 PR Boundary
 
@@ -415,6 +479,7 @@ One PR should:
 - Add docs, fixtures, and local validation tooling.
 - Avoid changing workflow semantics.
 - Document known existing lint findings as expected failures or advisory warnings.
+- Keep all new planning docs, tooling, and tests outside `plugin/`.
 
 ### Done When
 
@@ -423,3 +488,4 @@ One PR should:
 - Plugin compatibility checks pass.
 - Safety regression checks exist for core invariants.
 - Current framework contradictions are visible as lint findings instead of hidden in prose.
+- The PR states no version bump is required because `plugin/` runtime payload is unchanged.
