@@ -77,7 +77,9 @@ Ask the user before delegating version edits when the change matches more than o
 A change "matches a row" when both:
 
 - the dominant Bump Type Determination row across all commits on the working branch since it diverged from `<base>` equals the row in question, AND
-- the impact column is satisfied per the bullets in Bump Trigger above.
+- the row's impact condition is satisfied:
+  - for the MAJOR, MINOR, and PATCH rows: at least one bullet in Bump Trigger above is satisfied by the change
+  - for the No-bump row: the change matches one or more bullets in the "No bump is required by default" list above and matches no bullet in Bump Trigger
 
 To compute the dominant row: read each commit's full subject and body via `git log --format='%H%n%s%n%b%n--END--' <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight). For each commit:
 

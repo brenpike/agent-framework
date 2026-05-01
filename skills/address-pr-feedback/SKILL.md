@@ -65,12 +65,15 @@ Optional:
 3. Identify the target item. The candidate set is the union of:
    - unresolved inline review-thread comments
    - top-level PR comments (issue comments) not already replied to with a fix-SHA reply
-   - review summaries (reviews with state `CHANGES_REQUESTED` or `COMMENTED` whose body, classified per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification, maps to any `actionable-*` class) not already replied to
+   - review summaries (reviews with state `CHANGES_REQUESTED` or `COMMENTED`) not already replied to with a fix-SHA reply
 
-   Apply the rules:
-   - If exactly one candidate classifies as `actionable-*` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), process it.
-   - If two or more candidates classify as `actionable-*` and the user did not name one (by URL, comment ID, review ID, or quoted text), return Blocked with the candidate list (URL + source kind + first 80 characters of body for each).
-   - If zero candidates classify as `actionable-*`, return `Status: complete` with `Routed: None` and an explicit `No actionable feedback found` line in `Issues:`.
+   Classify every candidate per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification). Apply the rules:
+
+   - If at least one candidate classifies as `question-needs-user-input`, return the Blocked Report Contract with `Stage: review remediation`, `Blocker: question-needs-user-input` and the candidate URL(s) + first 80 characters of body in `Next action:`. Do not commit, push, or reply.
+   - Else if at least one candidate classifies as `architecture-or-contract-concern` or `version-or-release-concern`, route to `agent-framework:planner` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing). Do not delegate to coder/designer until the planner returns a plan.
+   - Else if exactly one candidate classifies as `actionable-*`, process it.
+   - Else if two or more candidates classify as `actionable-*` and the user did not name one (by URL, comment ID, review ID, or quoted text), return Blocked with the candidate list (URL + source kind + first 80 characters of body for each).
+   - Else (every candidate is `non-actionable` or `incorrect-or-rejected`, or the candidate set is empty), return `Status: complete` with `Routed: None` and an explicit `No actionable feedback found` line in `Issues:`.
 4. Classify feedback using `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification).
 5. Route per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing) to `agent-framework:planner`, `agent-framework:coder`, or `agent-framework:designer`.
 6. Delegate the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions).
