@@ -86,15 +86,15 @@ To compute the dominant row: read each commit's full subject and body via `git l
 **Revert pre-pass.** Before mapping rows, drop revert pairs from the set:
 
 - A revert commit is one whose subject matches `^Revert "(.+)"$` (git default) or `^revert(\([^)]*\))?:\s*(.+)$` (Conventional Commits).
-- For each revert commit, capture the quoted/trailing subject as the reverted-original-subject.
-- If any other commit in the same `<base>..HEAD` range has a subject that exactly matches the reverted-original-subject (after trimming surrounding whitespace), drop **both** that original commit and the revert commit from row-mapping.
-- If no match is found, keep the revert commit and map it by step 3 below (most conventional reverts use `revert:` or `chore:` and resolve to PATCH or No-bump).
+- For each revert commit, look in its body for a line matching `^This reverts commit ([0-9a-f]{7,40})\.?$`. The captured SHA is the reverted-original-SHA.
+- If the reverted-original-SHA is present in the same `<base>..HEAD` range (matched by full or abbreviated SHA prefix), drop **both** that original commit and the revert commit from row-mapping.
+- If the revert body has no `This reverts commit <sha>` marker, keep the revert commit and map it by step 3 below (subject-only matching is not used because commit subjects are not unique — repeated dependency-update subjects, automated bumps, etc., can produce false pairs).
 
 Then for each remaining commit:
 
 1. If the subject contains `!` immediately before `:` (e.g., `feat!:`, `refactor!:`), map the commit to the MAJOR row regardless of subject type.
 2. Else if any line of the subject or body matches `^BREAKING CHANGE:` or `^BREAKING-CHANGE:`, map the commit to the MAJOR row regardless of subject type.
-3. Else parse the leading token before `(` or `:` in the subject and map by type: `feat` → MINOR; `fix` and `bugfix` → PATCH; `refactor` → PATCH; `chore`, `docs`, `test`, `ci` → No-bump.
+3. Else parse the leading token before `(` or `:` in the subject and map by type: `feat` → MINOR; `fix`, `bugfix`, and `hotfix` → PATCH; `refactor` → PATCH; `chore`, `docs`, `test`, `ci` → No-bump.
 
 Determine the dominant row with this precedence:
 
