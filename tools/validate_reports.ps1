@@ -47,6 +47,14 @@ $workerRequiredSections = @('Changed', 'Validated', 'Need scope change', 'Issues
 
 $blockedRequiredFields = @('Stage', 'Blocker', 'Retry status', 'Fallback used', 'Impact', 'Next action')
 
+$validStageValues = @(
+    'planning', 'implementation', 'validation', 'git workflow',
+    'versioning', 'review remediation', 'monitoring',
+    'skill selection', 'fetch', 'parse', 'route'
+)
+
+$validRetryStatusValues = @('not attempted', 'retried once', 'exhausted')
+
 $optionalWorkerFields = @(
     'Refs',
     'States handled',
@@ -173,7 +181,7 @@ function Test-WorkerReport {
             continue
         }
         $startIdx = $sectionLineIndices[$section] + 1
-        $hasContent = $false
+        $hasListItem = $false
         for ($j = $startIdx; $j -lt $Lines.Count; $j++) {
             if ($Lines[$j] -match '^([^:]+):\s*') {
                 $nextLabel = $Matches[1].Trim()
@@ -181,13 +189,13 @@ function Test-WorkerReport {
                     break
                 }
             }
-            if (-not [string]::IsNullOrWhiteSpace($Lines[$j])) {
-                $hasContent = $true
+            if ($Lines[$j] -match '^\s*-\s') {
+                $hasListItem = $true
                 break
             }
         }
-        if (-not $hasContent) {
-            $Diagnostics.Add("Required section '$section' is empty (must have at least one entry)")
+        if (-not $hasListItem) {
+            $Diagnostics.Add("Required section '$section' must contain at least one list item (- entry or - None)")
         }
     }
 
@@ -262,6 +270,12 @@ function Test-BlockedReport {
             if ($label -in $inlineFields) {
                 if ([string]::IsNullOrWhiteSpace($value)) {
                     $Diagnostics.Add("Required blocked field '$label' has no value (must not be empty)")
+                }
+                elseif ($label -eq 'Stage' -and $value -cnotin $validStageValues) {
+                    $Diagnostics.Add("Invalid Stage value '$value' (must be one of: $($validStageValues -join ', '))")
+                }
+                elseif ($label -eq 'Retry status' -and $value -cnotin $validRetryStatusValues) {
+                    $Diagnostics.Add("Invalid Retry status value '$value' (must be one of: $($validRetryStatusValues -join ', '))")
                 }
             }
 
