@@ -632,19 +632,19 @@ foreach ($fixtureFile in $compatFixtures) {
                 $fieldFound = $false
 
                 if ($jsonObj.PSObject.Properties.Name -contains 'plugins' -and $jsonObj.plugins.Count -gt 0) {
+                    $fieldFound = $true
                     foreach ($pluginEntry in $jsonObj.plugins) {
-                        if ($pluginEntry.PSObject.Properties.Name -contains $fieldName) {
-                            $fieldFound = $true
-                            if ($pluginEntry.$fieldName -ne $expectedValue) {
-                                $fixturePassed = $false
-                                Add-Finding -Rule 'COMPAT' -FilePath $fixture.file -Line 0 `
-                                    -Description "[$checkDesc] plugins[].$fieldName = '$($pluginEntry.$fieldName)', expected '$expectedValue'"
-                            }
+                        if (-not ($pluginEntry.PSObject.Properties.Name -contains $fieldName)) {
+                            $fixturePassed = $false
+                            Add-Finding -Rule 'COMPAT' -FilePath $fixture.file -Line 0 `
+                                -Description "[$checkDesc] plugins[] entry missing required field '$fieldName'"
+                        } elseif ($pluginEntry.$fieldName -ne $expectedValue) {
+                            $fixturePassed = $false
+                            Add-Finding -Rule 'COMPAT' -FilePath $fixture.file -Line 0 `
+                                -Description "[$checkDesc] plugins[].$fieldName = '$($pluginEntry.$fieldName)', expected '$expectedValue'"
                         }
                     }
-                }
-
-                if (-not $fieldFound -and ($jsonObj.PSObject.Properties.Name -contains $fieldName)) {
+                } elseif ($jsonObj.PSObject.Properties.Name -contains $fieldName) {
                     $fieldFound = $true
                     if ($jsonObj.$fieldName -ne $expectedValue) {
                         $fixturePassed = $false
