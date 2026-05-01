@@ -236,19 +236,17 @@ function Get-ReportType {
     }
 
     # 2. Worker: Status is complete/partial AND no Watch: AND no Feedback: AND
-    #    not a PR output (no PR URL: + PR head SHA: pair)
+    #    not a PR output (none of the PR-output-specific fields present)
     if ($StatusValue -in @('complete', 'partial')) {
         $hasWatch = $false
         $hasFeedback = $false
-        $hasPrUrlW = $false
-        $hasPrHeadShaW = $false
+        $hasPrSignature = $false
         foreach ($line in $Lines) {
             if ($line -match '^Watch:\s*') { $hasWatch = $true }
             if ($line -match '^Feedback:\s*') { $hasFeedback = $true }
-            if ($line -match '^PR URL:\s*') { $hasPrUrlW = $true }
-            if ($line -match '^PR head SHA:\s*') { $hasPrHeadShaW = $true }
+            if ($line -match '^(PR head SHA|PR title|Head verified|Local HEAD|Push remote):\s*') { $hasPrSignature = $true }
         }
-        if (-not $hasWatch -and -not $hasFeedback -and -not ($hasPrUrlW -and $hasPrHeadShaW)) {
+        if (-not $hasWatch -and -not $hasFeedback -and -not $hasPrSignature) {
             return 'worker'
         }
     }
@@ -263,15 +261,11 @@ function Get-ReportType {
         }
     }
 
-    # 4. PR output: contains both "PR URL:" and "PR head SHA:"
-    $hasPrUrl = $false
-    $hasPrHeadSha = $false
+    # 4. PR output: contains any PR-output-specific field
     foreach ($line in $Lines) {
-        if ($line -match '^PR URL:\s*') { $hasPrUrl = $true }
-        if ($line -match '^PR head SHA:\s*') { $hasPrHeadSha = $true }
-    }
-    if ($hasPrUrl -and $hasPrHeadSha) {
-        return 'pr-output'
+        if ($line -match '^(PR head SHA|PR title|Head verified|Local HEAD|Push remote):\s*') {
+            return 'pr-output'
+        }
     }
 
     # 5. address-pr-feedback: Feedback: section with Classification: sub-field
