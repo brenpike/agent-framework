@@ -70,7 +70,7 @@ Optional:
 
 ## Procedure
 
-1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq .number` against the current branch. If no open PR is associated with the current branch, return Blocked with `Blocker: no PR identified`. Then confirm the resolved PR is open via `gh pr view <pr> --json state --jq .state`.
+1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. Confirm the resolved PR's state is `OPEN`. If no PR is associated with the current branch, or the resolved PR's state is not `OPEN` (e.g., `MERGED`, `CLOSED`), return Blocked with `Blocker: no open PR identified` (include the resolved state when available).
 2. Confirm GitHub CLI access works.
 3. Confirm current branch and working tree state.
 4. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, review summaries (reviews with state in `CHANGES_REQUESTED` or `COMMENTED` whose body, when classified per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification, maps to any `actionable-*` class), and the PR's `state` field on every poll so terminal transitions to `MERGED` or `CLOSED` are observable. Fetch and ledger review summary IDs and states alongside thread and comment IDs.

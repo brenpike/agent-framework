@@ -262,8 +262,10 @@ Workers may remediate assigned feedback within explicit file scope. They must no
 
 Use the narrowest matching skill:
 
-- `agent-framework:address-pr-feedback` — one-time generic, human, ambiguous, or non-Codex PR feedback
-- `agent-framework:watch-pr-feedback` — explicit watch, monitor, wait, poll, loop, or continue-handling-new-feedback request
+- `agent-framework:address-pr-feedback` — one-time PR-feedback fix (Codex, human reviewer, or bot comments); user request lacks watch-mode keywords
+- `agent-framework:watch-pr-feedback` — user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`
+
+Full routing rule: see Definitions → One-time vs watch routing.
 
 ## Tool and MCP Policy
 
@@ -303,7 +305,7 @@ If the approved shell/parser strategy fails, retry once only when the failure ma
 
 A remediation skill is not a monitor. A monitor is not a remediator.
 
-Use `agent-framework:watch-pr-feedback` only when the user explicitly asks to watch, monitor, wait for, poll, loop on, or continue handling PR feedback as it appears.
+Use `agent-framework:watch-pr-feedback` only when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. See Definitions → One-time vs watch routing.
 
 Monitoring must be:
 

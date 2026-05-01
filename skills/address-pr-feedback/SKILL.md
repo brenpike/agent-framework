@@ -60,7 +60,7 @@ Optional:
 
 ## Procedure
 
-1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq .number` against the current branch. If no open PR is associated with the current branch, return Blocked with `Blocker: no PR identified`. Then confirm the resolved PR exists, capture target branch and head branch, and confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
+1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. Confirm the resolved PR's state is `OPEN`. If no PR is associated with the current branch, or the resolved PR's state is not `OPEN` (e.g., `MERGED`, `CLOSED`), return the Blocked Report Contract with `Blocker: no open PR identified` (include the resolved state when available). Then capture target branch and head branch, and confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 2. Fetch top-level PR comments, inline review comments, unresolved review threads, and review summaries using `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` where GraphQL review-thread data is required.
 3. Identify the target comment.
    - If exactly one unresolved/actionable candidate exists, process it.
