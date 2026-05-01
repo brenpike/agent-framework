@@ -156,11 +156,12 @@ function Test-WorkerReport {
 
     # ── Check for standalone prose lines ────────────────────────────────
 
+    $fieldActive = $false
     for ($i = 0; $i -lt $Lines.Count; $i++) {
         $line = $Lines[$i]
         $lineNum = $i + 1
 
-        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes) {
+        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes -FieldActive ([ref]$fieldActive)) {
             continue
         }
 
@@ -213,11 +214,12 @@ function Test-BlockedReport {
 
     # ── Check for standalone prose lines ────────────────────────────────
 
+    $fieldActive = $false
     for ($i = 0; $i -lt $Lines.Count; $i++) {
         $line = $Lines[$i]
         $lineNum = $i + 1
 
-        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes) {
+        if (Test-ValidLine -Line $line -AllLabelPrefixes $allLabelPrefixes -FieldActive ([ref]$fieldActive)) {
             continue
         }
 
@@ -232,11 +234,15 @@ function Test-ValidLine {
     .DESCRIPTION
         Returns $true if the line is structurally valid (not standalone prose).
         Valid lines: blank, heading (#), labeled field (Field: value),
-        list item (- ), or continuation of a list/field.
+        or list item (- ) that appears under an active labeled field.
+        FieldActive tracks whether a labeled field has been seen; list items
+        are only valid when a field is active. Blank lines and headings do not
+        reset the active-field context.
     #>
     param(
         [string]$Line,
-        [System.Collections.Generic.HashSet[string]]$AllLabelPrefixes
+        [System.Collections.Generic.HashSet[string]]$AllLabelPrefixes,
+        [ref]$FieldActive
     )
 
     # Blank line
@@ -249,17 +255,18 @@ function Test-ValidLine {
         return $true
     }
 
-    # List item (with optional leading whitespace)
-    if ($Line -match '^\s*-\s') {
-        return $true
-    }
-
     # Labeled field: "SomeLabel: value" where label is a known prefix
     if ($Line -match '^([^:]+):\s*') {
         $label = $Matches[1].Trim()
         if ($AllLabelPrefixes.Contains($label)) {
+            $FieldActive.Value = $true
             return $true
         }
+    }
+
+    # List item (with optional leading whitespace) — only valid under a field
+    if ($Line -match '^\s*-\s') {
+        return $FieldActive.Value
     }
 
     return $false
