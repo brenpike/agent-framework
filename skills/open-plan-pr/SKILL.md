@@ -31,7 +31,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 
 1. Confirm current branch matches `head` and is not `base`.
 2. Confirm no unexpected unstaged changes.
-3. Confirm required validation has passed.
+3. Confirm validation outcome per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) is one of: every declared command passed, OR `Not run (no validation commands defined)`. Stop blocked if the procedure returned the Blocked Report Contract (`Stage: validation`) or any declared command failed.
 4. Confirm required version/release metadata is included or not required.
 5. Capture local HEAD SHA: `git rev-parse HEAD`.
 6. Place the working branch on a remote that `gh pr create` can target:
@@ -53,7 +53,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 ## Do Not
 
 - open PR for a partial plan unless one of: the user explicitly requested a draft PR, OR the planner's `Delivery: Shape` field equals `multi-plan`
-- open PR if validation has not been run per the "Validation procedure" definition
+- open PR if the Validation procedure returned the Blocked Report Contract (`Stage: validation`) or any declared validation command failed. `Validated: Not run (no validation commands defined)` is a valid terminal state per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) and does not block PR opening.
 - open PR if required version/release metadata is missing per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`
 - continue past step 6 with an unverified push state
 - invent missing validation

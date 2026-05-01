@@ -142,9 +142,9 @@ Version bumps are included in the same PR as the triggering change unless the us
 The orchestrator opens PRs using `agent-framework:open-plan-pr` only when:
 
 - the approved plan is complete
-- required validation passed
+- the Validation procedure returned either every declared command passed, OR `Not run (no validation commands defined)`; PR is not opened if the procedure returned Blocked or any command failed
 - outputs are coherent and in scope
-- required version/release metadata is included
+- required version/release metadata is included per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`
 - the working branch has been pushed
 - the branch is ready to merge into the target branch
 
@@ -188,7 +188,7 @@ Changes reach the resolved trunk only through PR.
 Before merge readiness, all of the following must be satisfied per the resolution order:
 
 - required CI passes
-- required validation passes
+- the Validation procedure returned either every declared command passed, OR `Not run (no validation commands defined)`; merge is blocked if the procedure returned Blocked or any command failed
 - required version/release metadata is present
 - the project's review requirement is met (framework default: at least one human review)
 - the project's merge strategy is followed (framework default: squash merge)
