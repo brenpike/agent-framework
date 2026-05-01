@@ -211,6 +211,8 @@ Monitoring must be:
 - bounded by max watch duration and remediation cycles
 - routed through remediation skills instead of editing directly
 
+A monitor targeting a specific resource (PR, issue, branch, workflow run, deployment) must terminate when the watched resource reaches a terminal state (e.g., PR merged or closed, issue closed, run completed, branch deleted, deployment finished). Continued polling against a terminal resource is parser-stable but pointless drift and must be stopped immediately. Detection commands must include the resource's state field so terminal transitions are observable on every poll.
+
 Do not say or imply active monitoring is running unless a real background mechanism started successfully.
 
 If no background mechanism is active, report:

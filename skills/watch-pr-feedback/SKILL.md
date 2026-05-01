@@ -61,6 +61,7 @@ Optional:
 - stop on user/product decision
 - stop on repeated finding
 - stop on unsafe git state
+- stop when PR state becomes `MERGED` or `CLOSED`
 - do not merge PR
 - do not approve PR
 
@@ -69,14 +70,14 @@ Optional:
 1. Confirm PR exists and is open using `gh pr view --json state --jq .state`.
 2. Confirm GitHub CLI access works.
 3. Confirm current branch and working tree state.
-4. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, and review summaries (reviews with `CHANGES_REQUESTED` or `COMMENTED` state whose body contains actionable feedback not captured in inline threads). Fetch and ledger review summary IDs and states alongside thread and comment IDs.
+4. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, and review summaries (reviews with `CHANGES_REQUESTED` or `COMMENTED` state whose body contains actionable feedback not captured in inline threads). Detection must also include the PR's `state` field on every poll so terminal transitions (`MERGED`, `CLOSED`) are observable. Fetch and ledger review summary IDs and states alongside thread and comment IDs.
 5. Track seen comment/thread/review IDs in a session-local ledger.
 6. When new feedback appears, classify source:
    - human reviewer feedback
    - CI/system feedback
    - ambiguous
 7. Route generic/human/ambiguous feedback → `agent-framework:address-pr-feedback`.
-8. Stop on policy stop conditions.
+8. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, stop the Monitor (e.g., via TaskStop) and report the terminal state — do not continue polling a terminal resource.
 
 ## Monitor Rules
 
