@@ -62,9 +62,15 @@ Optional:
 
 1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. Confirm the resolved PR's state is `OPEN`. If no PR is associated with the current branch, or the resolved PR's state is not `OPEN` (e.g., `MERGED`, `CLOSED`), return the Blocked Report Contract with `Blocker: no open PR identified` (include the resolved state when available). Then capture target branch and head branch, and confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 2. Fetch top-level PR comments, inline review comments, unresolved review threads, and review summaries using `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` where GraphQL review-thread data is required.
-3. Identify the target comment.
-   - If exactly one unresolved comment classifies as `actionable-*` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), process it.
-   - If two or more unresolved comments classify as `actionable-*` and the user did not name one (by URL, comment ID, or quoted text), return Blocked with the candidate list (URL + first 80 characters of body for each).
+3. Identify the target item. The candidate set is the union of:
+   - unresolved inline review-thread comments
+   - top-level PR comments (issue comments) not already replied to with a fix-SHA reply
+   - review summaries (reviews with state `CHANGES_REQUESTED` or `COMMENTED` whose body, classified per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification, maps to any `actionable-*` class) not already replied to
+
+   Apply the rules:
+   - If exactly one candidate classifies as `actionable-*` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), process it.
+   - If two or more candidates classify as `actionable-*` and the user did not name one (by URL, comment ID, review ID, or quoted text), return Blocked with the candidate list (URL + source kind + first 80 characters of body for each).
+   - If zero candidates classify as `actionable-*`, return `Status: complete` with `Routed: None` and an explicit `No actionable feedback found` line in `Issues:`.
 4. Classify feedback using `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification).
 5. Route per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing) to `agent-framework:planner`, `agent-framework:coder`, or `agent-framework:designer`.
 6. Delegate the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions).
