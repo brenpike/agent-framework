@@ -125,7 +125,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 3. If planner returns open questions, surface them and stop.
 4. Determine delivery shape and branch classification.
 5. Establish mandatory git preflight.
-6. Create or confirm working branch when implementation is ready.
+6. Create or confirm working branch only after every condition in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Branch Creation) is true.
 7. Convert the plan into phases.
 8. Run independent non-overlapping phases in parallel only when every condition in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees) is true; otherwise run sequentially.
 9. After each phase, verify per Phase Verification below.
@@ -134,7 +134,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 12. Delegate version/release edits to `agent-framework:coder` when required.
 13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
 14. Open PR when the approved plan is complete.
-15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review only when actionable feedback exists on the PR.
+15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review only when at least one unresolved comment classifies as `actionable-*` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification).
 
 ## Delegation Template
 
@@ -238,7 +238,7 @@ Files:
 Done when:
 - Feedback is addressed or reported as invalid/out of scope.
 - Tests/docs/versioning are updated if required.
-- Relevant validation is run or clearly reported as not run.
+- Validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) is run, OR the report includes `Validated: Not run (no validation commands defined)`, OR the worker returned the Blocked Report Contract with `Stage: validation`.
 
 Git:
 - Class: [type]

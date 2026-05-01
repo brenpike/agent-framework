@@ -66,8 +66,8 @@ Do not silently expand scope.
 
 ## Design Rules
 
-- inspect existing project design conventions first by reading repo design tokens, theme files, or design-system folders if present
-- if the repo contains design tokens, theme files, or a folder named `design-system/`, `tokens/`, `theme/`, or `styles/`, match those values; do not introduce alternatives
+- before any change, list directory and file matches for: design tokens (any of `design-system/`, `tokens/`, `theme/`, `styles/`); theme files referenced from `CLAUDE.md`; existing component CSS for the affected component
+- match every value found in the inspection above; do not introduce alternatives. If no design tokens, theme files, or component CSS exist, report `No project design conventions found` in the worker report
 - if `CLAUDE.md` names a design system or component library, follow that and use it instead of inferred conventions whenever the two conflict
 - if neither repo design files nor `CLAUDE.md` names a design system, do not introduce one
 
@@ -94,7 +94,7 @@ If feedback requires runtime behavior, state derivation, data flow, routing, key
 Before completion:
 
 - run `git status --porcelain` and confirm every modified path is in the assigned scope
-- verify each visual state listed in the delegation `States handled:` field renders as specified
+- for each visual state listed in the delegation `States:` (or `Edge cases:`) field, confirm the change renders that state and report it under `States handled:` in the worker report. If a state is listed but cannot be rendered or verified, return Blocked with the specific state name
 - verify each Accessibility Rules item is either satisfied or marked `N/A`
 - verify the change works in every existing theme (or mark `N/A` if the repo has no theme files)
 - run LSP diagnostics on every touched file when LSP is available; report any new diagnostic of severity Error or Warning

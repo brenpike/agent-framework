@@ -63,13 +63,13 @@ Optional:
 1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. Confirm the resolved PR's state is `OPEN`. If no PR is associated with the current branch, or the resolved PR's state is not `OPEN` (e.g., `MERGED`, `CLOSED`), return the Blocked Report Contract with `Blocker: no open PR identified` (include the resolved state when available). Then capture target branch and head branch, and confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 2. Fetch top-level PR comments, inline review comments, unresolved review threads, and review summaries using `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` where GraphQL review-thread data is required.
 3. Identify the target comment.
-   - If exactly one unresolved/actionable candidate exists, process it.
-   - If multiple unrelated candidates exist and the user did not identify one, return blocked with candidates.
+   - If exactly one unresolved comment classifies as `actionable-*` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), process it.
+   - If two or more unresolved comments classify as `actionable-*` and the user did not name one (by URL, comment ID, or quoted text), return Blocked with the candidate list (URL + first 80 characters of body for each).
 4. Classify feedback using `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification).
 5. Route per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing) to `agent-framework:planner`, `agent-framework:coder`, or `agent-framework:designer`.
 6. Delegate the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions).
 7. Run validation per the "Validation procedure" definition. If `CLAUDE.md` lists no validation commands, report `Validated: Not run (no validation commands defined)`.
-8. Commit and push when all of: a change was made; the head branch is not the resolved trunk; there are no unresolved validation failures.
+8. Commit and push when all of: a change was made; the head branch is not the resolved trunk; the Validation procedure (per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` Definitions) returned every declared command passed OR `Not run (no validation commands defined)`. Do not commit if validation returned Blocked or any declared command failed.
 9. Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed. Reply mechanism depends on feedback source:
    - inline review comment or review thread → `addPullRequestReviewThreadReply` GraphQL mutation on the originating thread
    - top-level PR comment (issue comment) → `gh pr comment <pr> --body "..."` referencing the original comment URL

@@ -26,7 +26,7 @@ Format: `MAJOR.MINOR.PATCH`
 | MINOR | Backward-compatible public API, capability, option, behavior, or artifact surface |
 | PATCH | Bug fix, internal refactor, or implementation change with no public compatibility impact |
 
-For `0.x.y` artifacts, SemVer permits minor increments for breaking changes. Breaking changes must still be documented clearly.
+For `0.x.y` artifacts, SemVer permits minor increments for breaking changes. Breaking changes must still include a changelog entry under `Changed` or `Removed` that names the breaking surface (function, type, flag, file, endpoint) and the migration path.
 
 Pre-release labels such as `1.2.0-beta.1` require orchestrator coordination and project release-workflow support.
 
@@ -53,7 +53,7 @@ No bump is required by default for:
 - changelog-only maintenance
 - markdown-only changes
 
-Project documentation may define additional required or excluded paths.
+Project documentation may define additional required or excluded paths. When `CLAUDE.md` does not define bump-trigger paths, this section's lists are exhaustive: any change matching the bullets above triggers a bump; any change matching the "No bump is required by default" list does not.
 
 ## Bump Type Determination
 
@@ -74,6 +74,13 @@ The orchestrator determines bump type from:
 
 Ask the user before delegating version edits when the change matches more than one row of the table above, OR matches no row.
 
+A change "matches a row" when both:
+
+- the dominant conventional commit type from staged commits equals the row's commit type, AND
+- the impact column is satisfied per the bullets in Bump Trigger above.
+
+If staged commits use multiple conventional types, the change matches more than one row.
+
 ## Bump Execution
 
 The orchestrator delegates version/release file edits to coder.
@@ -90,7 +97,7 @@ Project-specific documentation must define the exact files to update atomically,
 
 Every artifact must have one canonical version source. Mirrors are informational and must be kept in sync.
 
-If the canonical source is undefined, inspect the repo and ask for user confirmation before editing version metadata.
+If `CLAUDE.md` does not list the artifact files for a triggered bump, the orchestrator stops and asks the user before delegating any version edit. The coder must not infer artifact files.
 
 ## CHANGELOG / Release Notes
 

@@ -50,7 +50,7 @@ Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PL
 
 Stop and report blocked when any of the following is true:
 
-- any item from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight) is undefined, inconsistent, or unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- any item from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight) is undefined, OR any preflight item's value contradicts another (e.g., `Base = main` and `PR = develop`), OR git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
 - another file must be edited to make the assigned change compile, build, pass type checks, satisfy referenced tests, or satisfy referenced contracts (interfaces, schemas, generated stubs)
 - the requested work crosses an ownership boundary in the Authority Matrix
 - the change would alter public API, compatibility surface, package/release behavior, versioning, or a documented contract, but no such change is explicitly assigned
@@ -65,7 +65,7 @@ Do not silently expand scope.
 - do not introduce a new abstraction (interface, base class, generic, callback parameter, helper function, hook, etc.) unless one of: (a) two or more existing call sites would use it, OR (b) the planner or user explicitly named it
 - do not nest callbacks beyond 2 levels; do not place early returns inside `try`/`finally`; extract any inline closure that would exceed 5 lines into a named helper function
 - function and variable names must include a verb (functions) or noun (data); single-letter names allowed only for loop counters
-- add comments only for: documented function/method docstrings; non-obvious invariants prefixed with `INVARIANT:`; citations of external specs, RFCs, or issues. Do not add explanatory comments for self-evident code.
+- add comments only for: documented function/method docstrings; non-obvious invariants prefixed with `INVARIANT:`; citations of external specs, RFCs, or issues. Do not add explanatory comments other than these three categories.
 - propagate failures explicitly (raise, return, log-and-fail). Do not catch-and-discard. Do not return sentinel values that erase failure context.
 - do not invent visual design
 

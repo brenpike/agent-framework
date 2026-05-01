@@ -42,7 +42,7 @@ Git state is unsafe if any of the following is true at the moment of the check:
 
 A change is trivial if and only if all of the following are true:
 
-- diff is ≤ 20 added or removed lines (excluding generated files, lockfiles, and pure whitespace)
+- the sum of added plus removed lines in the diff is ≤ 20 (excluding generated files, lockfiles, and pure whitespace)
 - diff touches exactly one file
 - the file is not in any of: public API surface (exported declarations, package entry points), configuration schema files, database schema files, dependency manifests (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, etc.), build scripts, CI files, or canonical version files identified by `CLAUDE.md`
 - the change does not add a new exported symbol, remove an exported symbol, or rename an exported symbol
@@ -271,7 +271,7 @@ Full routing rule: see Definitions → One-time vs watch routing.
 
 | Tool / MCP | orchestrator | planner | coder | designer | Notes |
 |---|---|---|---|---|---|
-| WebFetch/WebSearch | only when delegation requires external doc lookup | use when the task references a specific external library, framework, or API by name AND the answer is not in the repo | same condition as planner | same condition as planner | current framework/library/platform docs |
+| WebFetch/WebSearch | only when delegation requires external doc lookup | use when the task references a specific external library, framework, or API by name AND the answer is not in the repo | same condition as planner | same condition as planner | permitted only against libraries, frameworks, or APIs named by exact identifier in the task input or in the repo's dependency manifests |
 | claude-mem | optional | invoke `claude-mem:mem-search` before planning whenever the plugin is installed (skip only if the repo has no commits or the user opts out) | use when prior decisions about the same files exist in memory | same condition as coder | continuity and token efficiency |
 | local repo tools | only those listed in this agent's tools frontmatter | only the read-only set listed in `${CLAUDE_PLUGIN_ROOT}/agents/planner.md` tools frontmatter | only those listed in `${CLAUDE_PLUGIN_ROOT}/agents/coder.md` tools frontmatter | only those listed in `${CLAUDE_PLUGIN_ROOT}/agents/designer.md` tools frontmatter | each agent's frontmatter is the binding allowlist |
 | GitHub CLI/API | orchestration and review-thread management | `gh pr view`, `gh pr list`, `gh pr diff`, `gh issue view`, `gh issue list`, `gh repo view` only | only when explicitly delegated for a remediation step | not allowed | respect PR/review ownership |
@@ -357,7 +357,7 @@ Stop and report instead of guessing when any of the following is true:
 - git state matches the "Unsafe git state" definition
 - any item from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight) is undefined
 - the change matches more than one row of `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` Bump Type Determination, or matches none, or `CLAUDE.md` does not name a canonical version file
-- feedback requires a decision about: product, public API surface, architecture, security, compatibility, release, or versioning
+- feedback's classification per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` is one of `question-needs-user-input`, `architecture-or-contract-concern`, or `version-or-release-concern`; OR the comment body is tagged `P0`; OR the comment body names any of `CVE`, `CWE`, `auth`, `secret`, `credential`, `SSRF`, `RCE`, `injection`, `XSS`
 - validation cannot be run AND the change touches any of: public API, runtime behavior, build/package output, version/release files, or files explicitly listed in `CLAUDE.md` as requiring validation
 
 ## Communication Standard
@@ -366,7 +366,7 @@ Agent-to-agent communication must be field-based.
 
 Rules:
 
-- use only labeled fields; do not write prose paragraphs in routine reports
+- every line of the report must be either a heading, a labeled field of the form `Field: value`, a list item under such a field, or blank — no standalone sentences outside a field
 - include every required section in the contract being used (Shared Worker Report Contract or Blocked Report Contract)
 - include an optional section only when at least one item exists for it; otherwise omit the section heading entirely
 - report facts, blockers, scope needs, validation, versioning, review state, and git state directly
