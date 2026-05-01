@@ -116,9 +116,6 @@ foreach ($mdFile in $mdFiles) {
     foreach ($textLine in $lines) {
         $lineNum++
 
-        # INVARIANT: "unambiguous" is not a violation.
-        if ($textLine -match '\bunambiguous\b') { continue }
-
         # INVARIANT: The rule definition itself in agent-system-policy.md is not a violation.
         if ($textLine -match 'Do not use the word.*ambiguous.*as a hedge') { continue }
 
@@ -351,12 +348,20 @@ foreach ($mdFile in $mdFiles) {
             # Strip trailing punctuation that is not part of file paths.
             $refRelPath = $refRelPath.TrimEnd('.', ',', ';', ':', ')')
             $resolvedPath = Join-Path $pluginRoot ($refRelPath -replace '/', '\')
+            $normalizedResolved = [System.IO.Path]::GetFullPath($resolvedPath)
+            $normalizedPluginRoot = [System.IO.Path]::GetFullPath($pluginRoot)
 
-            $pathExists = (Test-Path $resolvedPath -PathType Leaf) -or (Test-Path $resolvedPath -PathType Container)
-            if (-not $pathExists) {
+            if (-not $normalizedResolved.StartsWith($normalizedPluginRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
                 $check6Found = $true
                 Add-Finding -Rule 'CHECK6' -FilePath $mdFile.FullName -Line $lineNum `
-                    -Description "Path does not resolve: `${CLAUDE_PLUGIN_ROOT}/$refRelPath"
+                    -Description "Path escapes plugin root: `${CLAUDE_PLUGIN_ROOT}/$refRelPath"
+            } else {
+                $pathExists = (Test-Path $resolvedPath -PathType Leaf) -or (Test-Path $resolvedPath -PathType Container)
+                if (-not $pathExists) {
+                    $check6Found = $true
+                    Add-Finding -Rule 'CHECK6' -FilePath $mdFile.FullName -Line $lineNum `
+                        -Description "Path does not resolve: `${CLAUDE_PLUGIN_ROOT}/$refRelPath"
+                }
             }
         }
     }
