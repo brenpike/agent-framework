@@ -1,0 +1,6 @@
+{
+  "agent": "agent-framework:orchestrator",
+  "enabledPlugins": {
+    "agent-framework@brenpike": true
+  }
+}
