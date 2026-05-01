@@ -79,7 +79,13 @@ A change "matches a row" when both:
 - the dominant Bump Type Determination row across all commits on the working branch since it diverged from `<base>` equals the row in question, AND
 - the impact column is satisfied per the bullets in Bump Trigger above.
 
-To compute the dominant row: parse the leading token before `(` or `:` in each commit subject of `git log --oneline <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight). Map each parsed type to its Bump Type Determination row (so `feat` maps to the MINOR row; `feat!` or `BREAKING CHANGE:` maps to the MAJOR row; `fix` and `bugfix` map to the same PATCH row; `refactor` maps to the PATCH row; `chore`, `docs`, `test`, and `ci` map to the No-bump row; `refactor!` maps to the MAJOR row). Count commits per row. The dominant row is the row with the highest count. If the working branch has exactly one commit beyond `<base>`, that commit's row is the dominant row. If two or more rows tie for the highest count, the change matches more than one row. If no commit subject parses to a recognized row, the change matches no row.
+To compute the dominant row: read each commit's full subject and body via `git log --format='%H%n%s%n%b%n--END--' <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight). For each commit:
+
+1. If the subject contains `!` immediately before `:` (e.g., `feat!:`, `refactor!:`), map the commit to the MAJOR row regardless of subject type.
+2. Else if any line of the subject or body matches `^BREAKING CHANGE:` or `^BREAKING-CHANGE:`, map the commit to the MAJOR row regardless of subject type.
+3. Else parse the leading token before `(` or `:` in the subject and map by type: `feat` → MINOR; `fix` and `bugfix` → PATCH; `refactor` → PATCH; `chore`, `docs`, `test`, `ci` → No-bump.
+
+Count commits per row. The dominant row is the row with the highest count. If the working branch has exactly one commit beyond `<base>`, that commit's row is the dominant row. If two or more rows tie for the highest count, the change matches more than one row. If no commit's mapping resolves to a recognized row, the change matches no row.
 
 Note: multiple commit types that map to the same row do not produce a tie. Example: a branch with one `docs:` commit and one `test:` commit has two commits in the No-bump row and is a single-row match (No bump), not a multi-row escalation.
 
