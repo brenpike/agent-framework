@@ -35,12 +35,12 @@ Follow:
 
 ## Invocation Boundary
 
-Use for:
+Use when both are true:
 
-- `fix PR comment on PR #N`
-- `address reviewer feedback`
-- `fix the unresolved comment`
-- ambiguous PR feedback requests
+- the comment author is not literally `codex` (case-insensitive)
+- the user request does not contain any of: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`
+
+Typical user phrasings that match: `fix PR comment on PR #N`, `address reviewer feedback`, `fix the unresolved comment`.
 
 ## Required Inputs
 
@@ -58,17 +58,17 @@ Optional:
 
 ## Procedure
 
-1. Confirm PR exists, target branch, head branch, current branch, and safe working tree.
+1. Confirm PR exists, target branch, head branch, current branch, and that git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 2. Fetch top-level PR comments, inline review comments, unresolved review threads, and review summaries using `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` where GraphQL review-thread data is required.
 3. Identify the target comment.
    - If exactly one unresolved/actionable candidate exists, process it.
    - If multiple unrelated candidates exist and the user did not identify one, return blocked with candidates.
-4. Classify feedback using `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
-5. Route to `agent-framework:planner` / `agent-framework:coder` / `agent-framework:designer` according to policy.
-6. Apply the smallest correct fix.
-7. Run relevant validation when feasible.
-8. Commit and push when a change was made and policy allows.
-9. Reply with concise fix summary, validation, and commit SHA when appropriate.
+4. Classify feedback using `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification).
+5. Route per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing) to `agent-framework:planner`, `agent-framework:coder`, or `agent-framework:designer`.
+6. Delegate the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions).
+7. Run validation per the "Validation procedure" definition. If `CLAUDE.md` lists no validation commands, report `Validated: Not run (no validation commands defined)`.
+8. Commit and push when all of: a change was made; the head branch is not the resolved trunk; there are no unresolved validation failures.
+9. Reply with fix summary, validation result, and commit SHA when both: a change was made and pushed; AND the originating feedback was an inline review comment or review thread.
 
 Do not request Codex re-review from this skill unless the user explicitly asks.
 

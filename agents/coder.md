@@ -48,26 +48,25 @@ Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PL
 
 ## Hard Stop Rules
 
-Stop and report blocked when:
+Stop and report blocked when any of the following is true:
 
-- required git context is missing or inconsistent
-- another file is needed for correctness
-- requested work crosses ownership boundaries
-- public API, compatibility, package/release, versioning, or contract changes are needed but not explicitly assigned
-- assigned version bump conflicts with observed compatibility impact
-- repo/worktree/git state is unsafe
+- any item from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight) is undefined, inconsistent, or unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- another file must be edited to make the assigned change compile, build, pass type checks, satisfy referenced tests, or satisfy referenced contracts (interfaces, schemas, generated stubs)
+- the requested work crosses an ownership boundary in the Authority Matrix
+- the change would alter public API, compatibility surface, package/release behavior, versioning, or a documented contract, but no such change is explicitly assigned
+- an assigned version bump conflicts with the actual compatibility impact of the implementation
+- git state matches the "Unsafe git state" definition
 
 Do not silently expand scope.
 
 ## Coding Principles
 
-- follow existing project patterns and structure
-- prefer explicit, low-coupling changes over clever abstractions
-- keep control flow simple and traceable
-- use clear names
-- comment only for invariants, assumptions, or external requirements
-- make failures explicit; do not silently swallow them
-- use platform/framework conventions directly
+- when a pattern, idiom, or convention is already used elsewhere in the repo for the same task, use it; do not introduce an alternative
+- do not introduce a new abstraction (interface, base class, generic, callback parameter, helper function, hook, etc.) unless one of: (a) two or more existing call sites would use it, OR (b) the planner or user explicitly named it
+- do not nest callbacks beyond 2 levels; do not place early returns inside `try`/`finally`; extract any inline closure that would exceed 5 lines into a named helper function
+- function and variable names must include a verb (functions) or noun (data); single-letter names allowed only for loop counters
+- add comments only for: documented function/method docstrings; non-obvious invariants prefixed with `INVARIANT:`; citations of external specs, RFCs, or issues. Do not add explanatory comments for self-evident code.
+- propagate failures explicitly (raise, return, log-and-fail). Do not catch-and-discard. Do not return sentinel values that erase failure context.
 - do not invent visual design
 
 ## Git Rules
@@ -82,11 +81,11 @@ When assigned review feedback:
 
 1. read the specific thread/comment and affected code
 2. determine whether the comment is valid within assigned scope
-3. make the smallest correct change
+3. make the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions)
 4. add/update tests when behavior changes
-5. report version/release impact when relevant
-6. run relevant validation when feasible
-7. report whether the item is ready for orchestrator reply/resolution
+5. include `Version: required|none|unknown` in the report whenever the changed files match the project's bump-trigger paths (or, when undefined, do not match the "No bump is required by default" list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`)
+6. run validation per the "Validation procedure" definition
+7. include `Ready to resolve: yes|no` in the report
 
 Do not reply to threads, resolve threads, request re-review, or expand scope silently.
 
@@ -94,10 +93,10 @@ Do not reply to threads, resolve threads, request re-review, or expand scope sil
 
 Before completion:
 
-- confirm only assigned files changed
-- check LSP for touched files when available
-- run relevant parse/build/lint/test checks when feasible
-- confirm task-relevant edge cases were addressed
-- confirm version/release consistency when assigned
+- run `git status --porcelain` and confirm every modified path is in the assigned scope
+- run LSP diagnostics on every touched file when LSP is available; report any new diagnostic of severity Error or Warning
+- run validation per the "Validation procedure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- confirm every edge case named in the delegation `Edge cases:` list is addressed in the diff
+- when assigned a version bump, confirm every required artifact's version matches per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution)
 
 Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.

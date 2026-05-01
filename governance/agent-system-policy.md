@@ -8,6 +8,89 @@ This file defines shared constraints once. Agent files define role-specific delt
 
 Do not copy this policy into agents or skills. Reference it, and duplicate only short safety-critical stop rules where isolation requires it.
 
+## Definitions
+
+Canonical definitions referenced by every other section and by agent/skill files. When any rule uses a term defined here, the definition below is binding.
+
+### Transient failure
+
+A failure is transient if and only if its root cause matches one of:
+
+- HTTP 5xx response
+- HTTP 429 response
+- TCP connection reset, refused, or aborted
+- DNS resolution failure
+- TLS handshake failure
+- command exit code 124 (timeout) or 137 (SIGKILL)
+- network unreachable / no route to host
+- Git transient failure: `Connection timed out`, `RPC failed`, `early EOF`, `index-pack failed`
+
+Every other failure is non-transient and must not be retried. This includes: HTTP 4xx (except 429), JSON/parser errors, missing-tool errors, permission denials, file-not-found, command exit codes 1–123 (other than the listed timeouts), and any failure whose stderr matches the auth/protected-branch patterns enumerated in `${CLAUDE_PLUGIN_ROOT}/skills/open-plan-pr/SKILL.md`.
+
+### Unsafe git state
+
+Git state is unsafe if any of the following is true at the moment of the check:
+
+- current branch is the resolved trunk branch
+- HEAD is detached
+- index contains conflict markers (any line beginning `<<<<<<<`, `=======`, `>>>>>>>` in a tracked file's working-tree content)
+- a rebase, merge, cherry-pick, or bisect is in progress (`.git/MERGE_HEAD`, `.git/REBASE_HEAD`, `.git/CHERRY_PICK_HEAD`, `.git/BISECT_LOG` exists)
+- the working tree contains uncommitted changes to files outside the agent's currently assigned file scope
+- the resolved trunk branch cannot be identified
+
+### Trivial change
+
+A change is trivial if and only if all of the following are true:
+
+- diff is ≤ 20 added or removed lines (excluding generated files, lockfiles, and pure whitespace)
+- diff touches exactly one file
+- the file is not in any of: public API surface (exported declarations, package entry points), configuration schema files, database schema files, dependency manifests (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, etc.), build scripts, CI files, or canonical version files identified by `CLAUDE.md`
+- the change does not add a new exported symbol, remove an exported symbol, or rename an exported symbol
+
+The terms "low-risk change", "small change", "non-architectural change", and "minor change" appearing elsewhere in this framework are aliases for "trivial change" as defined here.
+
+### Same finding (repeat detection)
+
+A review finding repeats when any of the following matches a finding seen in a prior remediation cycle on the same PR:
+
+- same review-thread ID, OR
+- same comment ID, OR
+- the tuple (file path, line number, classification per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification list), OR
+- comment body text after lower-casing, removing surrounding whitespace, and collapsing internal whitespace runs to a single space
+
+A finding "repeats after attempted remediation" when one of the above matches and at least one full remediation cycle (delegate → commit → push) has run on that finding since it first appeared.
+
+### Smallest correct fix
+
+The smallest correct fix is the change with the fewest changed files that addresses the targeted feedback or task without modifying any file outside the assigned scope, unless cross-file change is required to make the project build, typecheck, or pass referenced tests. Among fixes with equal file count, choose the one with the fewest changed lines.
+
+The terms "smallest safe remediation path" and "smallest correct change" are aliases for this definition.
+
+### Validation procedure
+
+To "run validation" means: execute every command listed under the project's `CLAUDE.md` validation section (typical names: `validation`, `validate`, `test command`, `lint command`, `typecheck command`) that completes within 5 minutes wall-clock time. If `CLAUDE.md` does not list any validation commands, validation is "Not run" and the report must say so explicitly. Do not invent validation commands.
+
+### Material visual decision
+
+A visual decision is material when it requires one of:
+
+- a color value not derivable from existing design tokens or theme files in the repo
+- a spacing/sizing value not derivable from the existing scale
+- a typography choice (family, size, weight, line-height) not present in existing component CSS/tokens
+- a new component variant, state, or composition pattern not documented in the repo's design-system files referenced by `CLAUDE.md`
+- any change requiring a new design token
+
+Visual changes that reuse existing tokens, scales, and documented patterns are not material.
+
+### Ambiguous (PR feedback routing)
+
+Feedback is "ambiguous" — and therefore routes to `agent-framework:address-pr-feedback` — when both of the following are true:
+
+- the comment author is not literally `codex` (case-insensitive), AND
+- the user request does not contain any of the keywords: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`
+
+The term has no other meaning in this framework. Do not use "ambiguous" as a hedge in any rule; replace each occurrence with the concrete fallback test it is gating.
+
 ## Mandatory Governance Files
 
 Agents must follow these files whether or not the user restates them:
@@ -95,7 +178,7 @@ If another file is required:
 
 No agent may silently expand scope.
 
-For mixed presentation-and-behavior files, default owner is `coder` unless the assignment is purely presentational and explicitly prohibits behavior changes.
+For mixed presentation-and-behavior files, default owner is `coder`. Designer is the owner only when (a) the assignment names files matching `*.css`, `*.scss`, `*.less`, `*.module.css`, `*.style.*`, or files in directories named `styles/`, `tokens/`, or `theme/`; AND (b) the orchestrator's delegation explicitly states "Do not modify behavior, state, handlers, imports, or non-style logic."
 
 ## Accessibility Ownership Split
 
@@ -167,11 +250,11 @@ Use the narrowest matching skill:
 
 | Tool / MCP | orchestrator | planner | coder | designer | Notes |
 |---|---|---|---|---|---|
-| WebFetch/WebSearch | optional | use when relevant | use when relevant | use when relevant | current framework/library/platform docs |
-| claude-mem | optional | first step when context matters | use when relevant | use when relevant | continuity and token efficiency |
-| local repo tools | minimal/orchestration | read-only | role-appropriate | role-appropriate | respect ownership |
-| GitHub CLI/API | orchestration/review | read-only only | delegated only | no | respect PR/review ownership |
-| Monitor | explicit watch only | no | no | no | read-only, bounded, deterministic |
+| WebFetch/WebSearch | only when delegation requires external doc lookup | use when the task references a specific external library, framework, or API by name AND the answer is not in the repo | same condition as planner | same condition as planner | current framework/library/platform docs |
+| claude-mem | optional | invoke `claude-mem:mem-search` before planning whenever the plugin is installed (skip only if the repo has no commits or the user opts out) | use when prior decisions about the same files exist in memory | same condition as coder | continuity and token efficiency |
+| local repo tools | only those listed in this agent's tools frontmatter | only the read-only set listed in `${CLAUDE_PLUGIN_ROOT}/agents/planner.md` tools frontmatter | only those listed in `${CLAUDE_PLUGIN_ROOT}/agents/coder.md` tools frontmatter | only those listed in `${CLAUDE_PLUGIN_ROOT}/agents/designer.md` tools frontmatter | each agent's frontmatter is the binding allowlist |
+| GitHub CLI/API | orchestration and review-thread management | `gh pr view`, `gh pr list`, `gh pr diff`, `gh issue view`, `gh issue list`, `gh repo view` only | only when explicitly delegated for a remediation step | not allowed | respect PR/review ownership |
+| Monitor | only after the user request contains `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue` | not allowed | not allowed | not allowed | read-only, bounded, deterministic, parser-stable |
 
 Do not use broad tools to bypass role boundaries.
 
@@ -195,7 +278,7 @@ Prefer:
 3. `gh api graphql --jq ...`
 4. deterministic commands with bounded retries
 
-If the approved shell/parser strategy fails, retry once only when transient, then return `blocked` rather than improvising parser fallback chains.
+If the approved shell/parser strategy fails, retry once only when the failure matches the "Transient failure" definition, then return `blocked` rather than improvising parser fallback chains.
 
 ## Monitoring Policy
 
@@ -231,41 +314,40 @@ Failures are execution states, not waiting states.
 
 After any tool error, timeout, failed delegation, unusable output, missing permission, parser failure, or internal runtime failure, the observing agent must immediately do one of:
 
-1. retry once if the failure appears transient
-2. continue with a safe fallback
-3. return `blocked`
+1. retry exactly once if the failure matches the "Transient failure" definition
+2. continue with a documented safe fallback (a fallback is "documented" when it appears in the agent's own file or in a referenced skill/governance file)
+3. return `blocked` per the Blocked Report Contract
 
 Rules:
 
-- Do not retry indefinitely.
-- Do not repeat the same failing action more than once without changed strategy or new information.
+- Do not repeat the same command (after argument normalization) more than once unless one of: at least one argument value changes, the working directory changes, or a prerequisite command in between has succeeded where it previously failed.
 - Do not wait for the user to ask what happened.
 - Do not abandon a failed skill, monitor, or delegation without a blocked report.
-- Do not invoke a broader/riskier skill unless the user's request matches that skill boundary.
+- Do not invoke a broader skill (one whose Invocation Boundary admits more cases) unless the user's request matches that broader skill's Invocation Boundary literally.
 
 ## Escalation Rules
 
-Stop and report instead of guessing when:
+Stop and report instead of guessing when any of the following is true:
 
-- assigned scope is insufficient
-- ownership boundary would be crossed
-- design guidance is missing for material visual work
-- runtime behavior is required in a designer task
-- repo/worktree/git state is unsafe
-- required git context is missing
-- versioning/release scope is ambiguous
-- feedback requires product, public API, architecture, security, compatibility, release, or versioning decision
-- validation cannot be run but is required for confidence
+- correctness requires editing a file not listed in the assignment
+- the requested change crosses an ownership boundary in the Authority Matrix
+- a designer task requires a "Material visual decision" (see Definitions) without project-level design guidance present
+- a designer task requires runtime behavior, state derivation, data flow, routing, runtime keyboard handling, or live-region behavior
+- git state matches the "Unsafe git state" definition
+- any item from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight) is undefined
+- the change matches more than one row of `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` Bump Type Determination, or matches none, or `CLAUDE.md` does not name a canonical version file
+- feedback requires a decision about: product, public API surface, architecture, security, compatibility, release, or versioning
+- validation cannot be run AND the change touches any of: public API, runtime behavior, build/package output, version/release files, or files explicitly listed in `CLAUDE.md` as requiring validation
 
 ## Communication Standard
 
-Agent-to-agent communication must be concise and field-based.
+Agent-to-agent communication must be field-based.
 
 Rules:
 
-- prefer short labeled fields over prose
-- include only required sections
-- omit optional sections unless relevant
+- use only labeled fields; do not write prose paragraphs in routine reports
+- include every required section in the contract being used (Shared Worker Report Contract or Blocked Report Contract)
+- include an optional section only when at least one item exists for it; otherwise omit the section heading entirely
 - report facts, blockers, scope needs, validation, versioning, review state, and git state directly
 - do not restate policy or workflow rules inside routine reports
 
@@ -293,15 +375,15 @@ Issues:
 - None
 ```
 
-Optional lines only when relevant:
+Optional lines. Include each line below only when its trigger fires; otherwise omit the line entirely.
 
-- `Refs: ...`
-- `States handled: ...`
-- `Commit: ...`
-- `Version: ...`
-- `Review item: ...`
-- `Git issue: ...`
-- `Ready to resolve: yes|no`
+- `Refs: ...` — when the worker consulted external docs, prior commits, or memory; list them
+- `States handled: ...` — when the assignment had a `States:` or `Edge cases:` field; list each state addressed
+- `Commit: ...` — when the worker is delegated to commit (per Authority Matrix); include the SHA
+- `Version: required|none|unknown` — when the changed files match the project's bump-trigger paths or, when undefined, do not match the "No bump is required by default" list
+- `Review item: ...` — when the work was review-remediation; include the comment ID or thread ID
+- `Git issue: ...` — when git state matches the "Unsafe git state" definition or any preflight item is undefined
+- `Ready to resolve: yes|no` — when the work was review-remediation
 
 ## Blocked Report Contract
 

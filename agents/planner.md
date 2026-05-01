@@ -65,13 +65,16 @@ Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PL
 - create branches or worktrees
 - commit, push, open PRs, request external review, reply to review threads, or resolve review threads
 - assign work to any agent except `coder` or `designer`
-- use vague file scopes such as "relevant files"
-- rely on memory instead of current repo inspection when correctness requires inspection
+- use vague file scopes; every step's `Files:` list must contain absolute or repo-relative paths to files that already exist or that the step explicitly creates
+- rely on memory for any of the following — these must be inspected at runtime: file paths, function signatures, import statements, configuration values, dependency versions, branch state
 - invoke any skill other than `claude-mem:mem-search` — the `Skill` tool is granted solely so Memory-First Planning can run when `claude-mem` is installed. Workflow skills (`agent-framework:create-working-branch`, `agent-framework:checkpoint-commit`, `agent-framework:open-plan-pr`, `agent-framework:request-codex-review`, `agent-framework:address-pr-feedback`, `agent-framework:watch-pr-feedback`) belong to the orchestrator. The setup skill (`agent-framework:setup-project`) is user-invoked only. If you need any of their effects, surface the need in the plan.
 
 ## Memory-First Planning
 
-If the `claude-mem` plugin (https://github.com/thedotmack/claude-mem) is installed, invoke its `claude-mem:mem-search` skill before planning when prior context may reduce rediscovery, improve continuity, or lower token usage.
+If the `claude-mem` plugin (https://github.com/thedotmack/claude-mem) is installed, invoke its `claude-mem:mem-search` skill before planning. Skip only when one of the following is true:
+
+- the repo has zero commits (brand-new repo)
+- the user explicitly says to skip memory or to ignore prior context
 
 Look for:
 
@@ -80,15 +83,15 @@ Look for:
 - known risks, hotspots, blockers
 - prior failed approaches
 
-If `claude-mem` is unavailable or memory is irrelevant, continue normally without it. Memory is an accelerator, not a substitute for inspection.
+If `claude-mem` is not installed or returns no relevant results, continue without it. Memory is an accelerator, not a substitute for inspection.
 
 ## Research Rules
 
 - Use local repo inspection first for codebase understanding.
 - Use Bash only for read-only inspection.
-- Use external doc lookup tools (WebFetch/WebSearch) when framework/library/API docs materially improve accuracy.
-- Use Web tools only when external non-doc research is actually needed.
-- Retry transient tool failures once, then use safe fallback or return blocked.
+- Use WebFetch/WebSearch when the task references a specific external library, framework, or API by name AND the answer is not present in the repo's existing imports/dependencies, OR the user has asked about a specific version's behavior.
+- Use Web tools for non-doc research only when (a) the user explicitly references a URL or external service AND (b) repo inspection cannot answer the question.
+- Retry tool failures once if the failure matches the "Transient failure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`. Otherwise return blocked.
 
 ## Review Remediation Planning
 
@@ -103,26 +106,26 @@ Use planner for feedback involving:
 - test strategy
 - sequencing or risk analysis
 
-Identify the smallest safe remediation path and whether user approval is required.
+Identify the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). User approval is required when the remediation requires a public API change, a version bump, or files outside the approved plan's scope.
 
 ## Versioning Planning
 
 When changes may affect versioned artifacts:
 
-- identify affected artifacts when project docs define them
-- identify likely bump requirement
-- recommend likely bump type only when determinable
-- identify version/release files likely needed
-- surface uncertainty instead of guessing
+- identify affected artifacts named in `CLAUDE.md`; if `CLAUDE.md` is silent, output `Artifact(s): unknown`
+- identify whether a bump is required by applying the Bump Trigger list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` against the changed files
+- recommend a bump type only when the change matches exactly one row of `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Type Determination); otherwise output `Likely bump: unknown`
+- identify version/release files named in `CLAUDE.md`; if undefined, output `Release files likely needed: unknown`
+- output `unknown` for any field whose determination requires inference not directly supported by file content, user input, or governance rules
 
 ## Output Mode
 
 Use compact output only when all are true:
 
-- one specialist owner
-- one or two known files
-- local low-risk change
-- no architecture, versioning, review, delivery-shape, or git ambiguity
+- one specialist owner (`coder` or `designer`)
+- one or two existing files named by full path
+- the change meets every condition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Trivial change)
+- the change does not require any decision in: architecture, versioning, review remediation, delivery shape, git workflow classification
 
 Otherwise use full output.
 

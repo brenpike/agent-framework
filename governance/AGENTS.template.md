@@ -4,7 +4,9 @@
 
 Repository-level guidance for external AI reviewers such as Codex.
 
-Codex is an external pull request reviewer, not an internal Claude Code subagent. It must not push commits, change branches, or resolve review threads. It should leave review comments only.
+External reviewers consult `AGENTS.md` at the repository root.
+
+Codex is an external pull request reviewer, not an internal Claude Code subagent. It must not push commits, change branches, or resolve review threads. It must leave review comments only.
 
 Project-specific build, test, architecture, package, and domain rules live in `CLAUDE.md` and the repository documentation it references.
 
@@ -24,19 +26,19 @@ Review PRs for:
 
 ## Severity
 
-- P0: security issue, data loss, broken build, severe regression, or release blocker
-- P1: likely bug, risky missing test, public API break, package/release regression, or incorrect behavior
-- P2: maintainability, naming, style, documentation, or minor test coverage issue
+- P0: any of (1) introduces a security vulnerability, (2) introduces a data-loss path, (3) breaks main-branch CI, (4) breaks a previously-working public API, (5) makes the next release unshippable per project release criteria
+- P1: likely bug, missing test for a code path changed in this PR, public API break, package/release regression, or incorrect behavior
+- P2: maintainability, naming, style, documentation, or coverage gap that does not affect a code path changed in this PR
 
 ## Review Behavior
 
-Prefer actionable, specific comments. Include:
+Each comment must include all of:
 
-- affected file or behavior
-- why it matters
-- recommended fix direction
-- severity when appropriate
+- file path and line range
+- observed problem
+- proposed fix or fix direction
+- severity from the table above
 
-Do not request changes for subjective style preferences unless they conflict with documented project conventions.
+Do not comment on naming, formatting, or stylistic choices unless `CLAUDE.md` or a documented style guide referenced from `CLAUDE.md` defines a different rule.
 
 Do not push commits directly.

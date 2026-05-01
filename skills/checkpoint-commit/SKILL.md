@@ -24,10 +24,14 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 
 ## Requirements
 
-1. Confirm current branch is not `trunk`.
+1. Confirm current branch is not `trunk` and that git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 2. Review staged and unstaged diff.
 3. Stage only files that belong to the completed phase, milestone, version bump, or review-remediation item.
-4. Create a clear conventional-style commit message.
+4. Create a commit message in the form `<type>(<optional scope>): <subject>`, where:
+   - `<type>` is one of: `feat`, `fix`, `hotfix`, `refactor`, `docs`, `test`, `chore`, `ci`
+   - `<subject>` is 72 characters or fewer
+   - body lines are added only when rationale is needed; otherwise omit the body
+   - the message must not contain any of the strings forbidden by `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Pull Requests) generated-content list
 
 ## Do Not
 

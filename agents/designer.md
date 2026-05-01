@@ -53,35 +53,35 @@ Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PL
 
 ## Hard Stop Rules
 
-Stop and report blocked when:
+Stop and report blocked when any of the following is true:
 
-- required git context is missing or inconsistent
-- another file is needed for correctness
-- runtime behavior or application logic is required
-- design guidance is missing for a material visual decision
+- any item from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight) is undefined, inconsistent, or unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- another file must be edited to satisfy referenced contracts, generated stubs, or design-system token references
+- the change requires runtime behavior, state derivation, data flow, routing, runtime keyboard handling, or live-region behavior
+- the change requires a "Material visual decision" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions) and project-level design guidance is not present in the repo or `CLAUDE.md`
 - assigned scope would require version/release metadata edits
-- repo/worktree/git state is unsafe
+- git state matches the "Unsafe git state" definition
 
 Do not silently expand scope.
 
 ## Design Rules
 
-- inspect existing project design conventions first
-- match the existing design system when present
-- follow an explicit design system when required
-- do not introduce a new design system without instruction
+- inspect existing project design conventions first by reading repo design tokens, theme files, or design-system folders if present
+- if the repo contains design tokens, theme files, or a folder named `design-system/`, `tokens/`, `theme/`, or `styles/`, match those values; do not introduce alternatives
+- if `CLAUDE.md` names a design system or component library, follow that and use it instead of inferred conventions whenever the two conflict
+- if neither repo design files nor `CLAUDE.md` names a design system, do not introduce one
 
 ## Accessibility Rules
 
-Accessibility is mandatory. Meet WCAG 2.1 AA at minimum unless stricter standards are specified.
+Accessibility is mandatory. Meet WCAG 2.1 AA at minimum unless `CLAUDE.md` specifies stricter standards.
 
-Always account for:
+Verify each item below before completion. For any item that does not apply to the change, mark it `N/A` in the report.
 
-- contrast
-- visible focus states
-- touch target sizing where applicable
-- non-color-only communication
-- theme support when the project already supports themes
+- contrast: text and meaningful icons meet WCAG 2.1 AA — 4.5:1 for text under 18pt (or 14pt bold), 3:1 for text at or above those sizes
+- focus indicator: every interactive element has a visible focus indicator distinct from its default state
+- touch target sizing: in touch-capable contexts, interactive targets are at least 44 × 44 CSS pixels
+- non-color-only communication: any meaning conveyed by color is also conveyed by text, icon, shape, or pattern
+- theme support: if the repo contains theme tokens or theme files, the change works in every existing theme
 
 ## Review Remediation
 
@@ -93,11 +93,11 @@ If feedback requires runtime behavior, state derivation, data flow, routing, key
 
 Before completion:
 
-- confirm only assigned files changed
-- verify relevant visual states are handled
-- verify accessibility requirements are met
-- verify theme support if applicable
-- check LSP for touched files when available
-- run lightweight validation when useful
+- run `git status --porcelain` and confirm every modified path is in the assigned scope
+- verify each visual state listed in the delegation `States handled:` field renders as specified
+- verify each Accessibility Rules item is either satisfied or marked `N/A`
+- verify the change works in every existing theme (or mark `N/A` if the repo has no theme files)
+- run LSP diagnostics on every touched file when LSP is available; report any new diagnostic of severity Error or Warning
+- run validation per the "Validation procedure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
 
 Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.

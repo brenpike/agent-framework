@@ -72,7 +72,7 @@ The orchestrator determines bump type from:
 | `refactor!` | MAJOR |
 | `chore` / `docs` / `test` / `ci` without artifact impact | No bump |
 
-When uncertain, ask the user before delegating version edits.
+Ask the user before delegating version edits when the change matches more than one row of the table above, OR matches no row.
 
 ## Bump Execution
 
@@ -94,7 +94,7 @@ If the canonical source is undefined, inspect the repo and ask for user confirma
 
 ## CHANGELOG / Release Notes
 
-Each versioned artifact should maintain release notes or a changelog unless the project defines another release documentation mechanism.
+Each versioned artifact must maintain release notes or a changelog unless `CLAUDE.md` defines a different release documentation mechanism.
 
 Recommended sections follow Keep a Changelog:
 
@@ -105,7 +105,17 @@ Recommended sections follow Keep a Changelog:
 - Fixed
 - Security
 
-When bumping, convert pending unreleased entries into a dated release section and reset the unreleased section according to project convention.
+When bumping, convert pending unreleased entries into a dated release section. If `CLAUDE.md` does not specify how to reset the unreleased section, reset it to:
+
+```markdown
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+```
 
 ## Tags
 
