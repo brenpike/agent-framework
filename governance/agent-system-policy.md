@@ -68,7 +68,14 @@ The terms "smallest safe remediation path" and "smallest correct change" are ali
 
 ### Validation procedure
 
-To "run validation" means: execute every command listed under the project's `CLAUDE.md` validation section (typical names: `validation`, `validate`, `test command`, `lint command`, `typecheck command`) that completes within 5 minutes wall-clock time. If `CLAUDE.md` does not list any validation commands, validation is "Not run" and the report must say so explicitly. Do not invent validation commands.
+To "run validation" means: execute every command listed under the project's `CLAUDE.md` validation section (typical names: `validation`, `validate`, `test command`, `lint command`, `typecheck command`).
+
+Rules:
+
+- Run every declared command. There is no duration cap; long-running commands are not skipped. The Validation procedure does not silently exclude slow checks.
+- If a declared command cannot be run (missing dependency, sandbox restriction, environment misconfiguration, etc.), do not skip it silently. Return the Blocked Report Contract with `Stage: validation`, naming the specific command and the concrete reason it cannot run. Workflow gates that require validation must not pass on a Blocked validation result.
+- If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so explicitly. Do not invent validation commands.
+- A skill or agent may set its own time budget (for example to bound a single Monitor poll), but that budget belongs to the skill/agent, not to this Definition. The skill must not advertise validation as run when it skipped a declared command on a time budget; instead it must return Blocked with the budget as the reason.
 
 ### Material visual decision
 
@@ -84,10 +91,12 @@ Visual changes that reuse existing tokens, scales, and documented patterns are n
 
 ### One-time vs watch routing (PR feedback)
 
-Two skills handle PR feedback. Choose by user-request keywords only — the comment author never decides which skill is used:
+Two skills handle PR feedback. Choose by user-request keywords only — the comment author never decides which skill is used, and missing PR identifiers do not exclude the skill at routing time.
 
 - `agent-framework:watch-pr-feedback` — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`
 - `agent-framework:address-pr-feedback` — every other PR-feedback request, including one-time fixes for Codex, human, or bot comments
+
+PR identification is the skill's responsibility, not the router's. If the user request matches `watch-pr-feedback` but does not name a PR, the orchestrator still routes to `watch-pr-feedback` and passes the available context (current branch, current repo). The skill resolves the PR via `gh pr view --json number,state` against the current branch. If no open PR is associated with the current branch, the skill returns the Blocked Report Contract with `Stage: skill selection` or `Stage: fetch` and `Blocker: no PR identified`. The same applies to `address-pr-feedback`.
 
 The author of the comment (Codex, human reviewer, bot, automated reviewer) affects classification per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), not skill selection.
 

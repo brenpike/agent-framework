@@ -43,9 +43,12 @@ Typical user phrasings that match: `fix PR comment on PR #N`, `address reviewer 
 
 ## Required Inputs
 
-At minimum:
+At minimum one of:
 
-- PR number or PR URL
+- PR number or PR URL, OR
+- a current git branch with exactly one open PR on the configured remote (the skill resolves the PR via `gh pr view --json number,state` against the current branch)
+
+If neither is available, return the Blocked Report Contract with `Stage: fetch` and `Blocker: no PR identified`.
 
 Optional:
 
@@ -57,7 +60,7 @@ Optional:
 
 ## Procedure
 
-1. Confirm PR exists, target branch, head branch, current branch, and that git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
+1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq .number` against the current branch. If no open PR is associated with the current branch, return Blocked with `Blocker: no PR identified`. Then confirm the resolved PR exists, capture target branch and head branch, and confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 2. Fetch top-level PR comments, inline review comments, unresolved review threads, and review summaries using `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` where GraphQL review-thread data is required.
 3. Identify the target comment.
    - If exactly one unresolved/actionable candidate exists, process it.

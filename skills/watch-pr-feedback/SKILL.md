@@ -39,9 +39,12 @@ Do not use for one-time requests like `fix PR comment on PR #N`; use `agent-fram
 
 ## Required Inputs
 
-At minimum:
+At minimum one of:
 
-- PR number or PR URL
+- PR number or PR URL, OR
+- a current git branch with exactly one open PR on the configured remote (the skill resolves the PR via `gh pr view --json number,state` against the current branch)
+
+If neither is available, return the Blocked Report Contract with `Stage: skill selection` (when called for input resolution) or `Stage: fetch` (when called mid-procedure) and `Blocker: no PR identified`.
 
 Optional:
 
@@ -67,7 +70,7 @@ Optional:
 
 ## Procedure
 
-1. Confirm PR exists and is open using `gh pr view --json state --jq .state`.
+1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq .number` against the current branch. If no open PR is associated with the current branch, return Blocked with `Blocker: no PR identified`. Then confirm the resolved PR is open via `gh pr view <pr> --json state --jq .state`.
 2. Confirm GitHub CLI access works.
 3. Confirm current branch and working tree state.
 4. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, review summaries (reviews with state in `CHANGES_REQUESTED` or `COMMENTED` whose body, when classified per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification, maps to any `actionable-*` class), and the PR's `state` field on every poll so terminal transitions to `MERGED` or `CLOSED` are observable. Fetch and ledger review summary IDs and states alongside thread and comment IDs.
