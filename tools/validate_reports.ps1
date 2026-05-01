@@ -948,6 +948,18 @@ function Test-PlannerStepSubFields {
         $requiredSubFields = @('Owner', 'Files', 'Outcome', 'Depends on')
     }
 
+    $inlineSubFields = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    [void]$inlineSubFields.Add('Owner')
+    [void]$inlineSubFields.Add('Depends on')
+
+    $listSubFields = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    [void]$listSubFields.Add('Files')
+    [void]$listSubFields.Add('Outcome')
+
     for ($s = 0; $s -lt $stepStarts.Count; $s++) {
         $blockStart = $stepStarts[$s]
         if ($s -lt $stepStarts.Count - 1) {
@@ -966,12 +978,38 @@ function Test-PlannerStepSubFields {
         if ($Lines[$blockStart] -match '\bOwner:\s*\S') {
             [void]$foundFields.Add('Owner')
         }
+        elseif ($Lines[$blockStart] -match '\bOwner:\s*$') {
+            [void]$foundFields.Add('Owner')
+            $stepNum = $stepLabels[$s] -replace '^(S|Step\s*)', ''
+            $Diagnostics.Add("Step ${stepNum}: required field 'Owner' has no value")
+        }
 
-        # Scan continuation lines for sub-fields
+        # Scan continuation lines for sub-fields and validate values
         for ($k = $blockStart + 1; $k -lt $blockEnd; $k++) {
-            if ($Lines[$k] -match '^\s+([^:]+):\s*') {
+            if ($Lines[$k] -match '^\s+([^:]+):\s*(.*)$') {
                 $subLabel = $Matches[1].Trim()
+                $subValue = $Matches[2].Trim()
                 [void]$foundFields.Add($subLabel)
+
+                if ($inlineSubFields.Contains($subLabel) -and $subValue -eq '') {
+                    $Diagnostics.Add("Step $($stepLabels[$s] -replace '^(S|Step\s*)', ''): required field '$subLabel' has no value")
+                }
+                elseif ($listSubFields.Contains($subLabel) -and $subValue -eq '') {
+                    # List field with no inline value — check for list items before next label or end of block
+                    $hasListItem = $false
+                    for ($m = $k + 1; $m -lt $blockEnd; $m++) {
+                        if ($Lines[$m] -match '^\s+([^:]+):\s*') {
+                            break
+                        }
+                        if ($Lines[$m] -match '^\s+[-]\s+\S' -or $Lines[$m] -match '^\s+\d+\.\s+\S') {
+                            $hasListItem = $true
+                            break
+                        }
+                    }
+                    if (-not $hasListItem) {
+                        $Diagnostics.Add("Step $($stepLabels[$s] -replace '^(S|Step\s*)', ''): required field '$subLabel' has no list items")
+                    }
+                }
             }
         }
 
