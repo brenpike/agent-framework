@@ -13,14 +13,23 @@ Inside Claude Code, add the marketplace then install the plugin:
 
 ## Per-project setup
 
-1. Enable the plugin in `.claude/settings.json`:
+1. Enable the plugin and set the orchestrator as the session default agent in `.claude/settings.json`:
 
 ```json
 {
   "enabledPlugins": {
     "agent-framework@brenpike": true
-  }
+  },
+  "agent": "agent-framework:orchestrator"
 }
+```
+
+The `agent` key sets the default agent for the project session. Without it, Claude Code starts with the default agent and the orchestrator is only reachable on-demand via the Agent tool — bypassing the workflow guarantees.
+
+Or run the setup skill once to apply the required keys automatically:
+
+```text
+/agent-framework:setup-project
 ```
 
 2. Create `CLAUDE.md` with project-specific details:
@@ -34,7 +43,7 @@ Inside Claude Code, add the marketplace then install the plugin:
    - Severity definitions
    - Project-specific conventions for reviewers
 
-That is all. The orchestrator is automatically the default agent. All skills are available namespaced as `agent-framework:<skill-name>`.
+Once configured, the orchestrator is the session default agent. All skills are available namespaced as `agent-framework:<skill-name>`.
 
 ## Recommended companion plugins
 
@@ -62,6 +71,7 @@ All skills are invoked using the namespaced form:
 
 | Skill | Purpose |
 |---|---|
+| `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) |
 | `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `agent-framework:checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `agent-framework:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
