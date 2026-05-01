@@ -288,7 +288,26 @@ function Get-ReportType {
         }
     }
 
-    # 6. Planner: first non-blank line is exactly "Plan"
+    # 6. Worker (statusless fallback): worker-exclusive section headers present
+    #    but no Status: line — route to worker so Test-WorkerReport emits the
+    #    precise "Missing required Status: line" diagnostic.
+    if ($null -eq $StatusValue) {
+        $hasNeedScope = $false
+        $hasChanged = $false
+        $hasValidated = $false
+        $hasIssues = $false
+        foreach ($line in $Lines) {
+            if ($line -match '^Need scope change:\s*') { $hasNeedScope = $true }
+            if ($line -match '^Changed:\s*') { $hasChanged = $true }
+            if ($line -match '^Validated:\s*') { $hasValidated = $true }
+            if ($line -match '^Issues:\s*') { $hasIssues = $true }
+        }
+        if ($hasNeedScope -or ($hasChanged -and $hasValidated -and $hasIssues)) {
+            return 'worker'
+        }
+    }
+
+    # 7. Planner: first non-blank line is exactly "Plan"
     foreach ($line in $Lines) {
         if (-not [string]::IsNullOrWhiteSpace($line)) {
             if ($line.Trim() -eq 'Plan') {
@@ -889,7 +908,7 @@ function Test-ValidLine {
     }
 
     # List item (with optional leading whitespace) — only valid under a field
-    if ($Line -match '^\s*-\s') {
+    if ($Line -match '^\s*(-|\d+\.)\s') {
         return $FieldActive.Value
     }
 
