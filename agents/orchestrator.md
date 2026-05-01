@@ -55,8 +55,8 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:checkpoint-commit`: commit a completed phase, milestone, version bump, or review-remediation fix.
 - `agent-framework:open-plan-pr`: open a PR only after completion, validation, and versioning gates pass.
 - `agent-framework:request-codex-review`: request Codex review on an existing pushed PR.
-- `agent-framework:address-pr-feedback`: one-time PR feedback fix where the user request does not contain `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue`. Used for one-time Codex, human, and bot comment fixes alike. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
-- `agent-framework:watch-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue`. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
+- `agent-framework:address-pr-feedback`: one-time PR feedback fix where the user request does not contain `watch`, `monitor`, `wait`, `poll`, or `loop`. Used for one-time Codex, human, and bot comment fixes alike. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
+- `agent-framework:watch-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
 
 Selection order (most specific first — choose the first whose Invocation Boundary matches):
 
@@ -112,7 +112,7 @@ If any are undefined, do not begin implementation. Full detail: `${CLAUDE_PLUGIN
 
 ## Monitor Use
 
-Use Monitor only when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`.
+Use Monitor only when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`.
 
 Monitor commands must be read-only, deterministic, bounded, and parser-stable per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy).
 

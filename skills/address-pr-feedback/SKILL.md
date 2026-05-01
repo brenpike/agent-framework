@@ -35,7 +35,7 @@ Follow:
 
 ## Invocation Boundary
 
-Use when the user request does not contain any of: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`.
+Use when the user request does not contain any of: `watch`, `monitor`, `wait`, `poll`, `loop`.
 
 The comment author does not affect skill selection — this skill handles one-time fixes for Codex, human reviewer, and bot comments alike. Author affects classification, not routing.
 
@@ -70,7 +70,11 @@ Optional:
 6. Delegate the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions).
 7. Run validation per the "Validation procedure" definition. If `CLAUDE.md` lists no validation commands, report `Validated: Not run (no validation commands defined)`.
 8. Commit and push when all of: a change was made; the head branch is not the resolved trunk; there are no unresolved validation failures.
-9. Reply with fix summary, validation result, and commit SHA when both: a change was made and pushed; AND the originating feedback was an inline review comment or review thread.
+9. Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed. Reply mechanism depends on feedback source:
+   - inline review comment or review thread → `addPullRequestReviewThreadReply` GraphQL mutation on the originating thread
+   - top-level PR comment (issue comment) → `gh pr comment <pr> --body "..."` referencing the original comment URL
+   - review summary (review with no inline thread) → `gh pr comment` referencing the review URL
+   Every actionable fix gets a reply with the commit SHA so the re-review gate in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Re-review preconditions) is satisfied.
 
 Do not request Codex re-review from this skill unless the user explicitly asks.
 

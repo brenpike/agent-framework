@@ -1,6 +1,6 @@
 ---
 name: watch-pr-feedback
-description: Watch a specific GitHub pull request for new unresolved review comments or review threads using Monitor when available, then route to the appropriate remediation skill. Use only when the user explicitly asks to watch, monitor, wait, poll, loop, or continue handling new PR feedback as it appears.
+description: Watch a specific GitHub pull request for new unresolved review comments or review threads using Monitor when available, then route to the appropriate remediation skill. Use only when the user explicitly asks to watch, monitor, wait, poll, or loop on new PR feedback.
 disable-model-invocation: false
 allowed-tools:
   - Bash(gh pr view *)

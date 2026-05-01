@@ -93,7 +93,7 @@ Visual changes that reuse existing tokens, scales, and documented patterns are n
 
 Two skills handle PR feedback. Choose by user-request keywords only — the comment author never decides which skill is used, and missing PR identifiers do not exclude the skill at routing time.
 
-- `agent-framework:watch-pr-feedback` — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`, `continue`
+- `agent-framework:watch-pr-feedback` — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`
 - `agent-framework:address-pr-feedback` — every other PR-feedback request, including one-time fixes for Codex, human, or bot comments
 
 PR identification is the skill's responsibility, not the router's. If the user request matches `watch-pr-feedback` but does not name a PR, the orchestrator still routes to `watch-pr-feedback` and passes the available context (current branch, current repo). The skill resolves the PR via `gh pr view --json number,state` against the current branch. If no open PR is associated with the current branch, the skill returns the Blocked Report Contract with `Stage: skill selection` or `Stage: fetch` and `Blocker: no PR identified`. The same applies to `address-pr-feedback`.
@@ -273,7 +273,7 @@ Use the narrowest matching skill:
 | claude-mem | optional | invoke `claude-mem:mem-search` before planning whenever the plugin is installed (skip only if the repo has no commits or the user opts out) | use when prior decisions about the same files exist in memory | same condition as coder | continuity and token efficiency |
 | local repo tools | only those listed in this agent's tools frontmatter | only the read-only set listed in `${CLAUDE_PLUGIN_ROOT}/agents/planner.md` tools frontmatter | only those listed in `${CLAUDE_PLUGIN_ROOT}/agents/coder.md` tools frontmatter | only those listed in `${CLAUDE_PLUGIN_ROOT}/agents/designer.md` tools frontmatter | each agent's frontmatter is the binding allowlist |
 | GitHub CLI/API | orchestration and review-thread management | `gh pr view`, `gh pr list`, `gh pr diff`, `gh issue view`, `gh issue list`, `gh repo view` only | only when explicitly delegated for a remediation step | not allowed | respect PR/review ownership |
-| Monitor | only after the user request contains `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue` | not allowed | not allowed | not allowed | read-only, bounded, deterministic, parser-stable |
+| Monitor | only after the user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` | not allowed | not allowed | not allowed | read-only, bounded, deterministic, parser-stable |
 
 Do not use broad tools to bypass role boundaries.
 

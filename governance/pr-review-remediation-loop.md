@@ -154,7 +154,7 @@ Do not commit the ledger unless the user or project policy explicitly requests i
 
 Skill selection depends only on user-request keywords; the comment author (Codex, human reviewer, bot) does not affect which skill is used. PR identification is the skill's responsibility, not the router's — see `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → One-time vs watch routing).
 
-- `agent-framework:watch-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, `loop`, or `continue`. The skill resolves the target PR (named in the request, current branch's open PR, or returns Blocked).
+- `agent-framework:watch-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. The skill resolves the target PR (named in the request, current branch's open PR, or returns Blocked).
 - `agent-framework:address-pr-feedback`: every other PR-feedback request — one-time fixes for Codex, human reviewer, or bot comments. Use this for `fix Codex comment on PR #N`, `address reviewer feedback`, `fix the unresolved comment`, etc.
 
 ## Monitoring
