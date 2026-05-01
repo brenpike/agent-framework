@@ -134,7 +134,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 12. Delegate version/release edits to `agent-framework:coder` when required.
 13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
 14. Open PR when the approved plan is complete.
-15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following classifies as `actionable-*` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification): an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied.
+15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, or `question-needs-user-input` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification). The remediation skill itself decides per-class whether to delegate, escalate to the user, or block (see `${CLAUDE_PLUGIN_ROOT}/skills/address-pr-feedback/SKILL.md` Procedure step 3).
 
 ## Delegation Template
 

@@ -104,9 +104,10 @@ Determine the dominant row with this precedence (apply in order; the first match
 
 1. **No mapped commits**: if no commit (after the revert pre-pass) maps to a recognized row, the change matches no row.
 2. **MAJOR precedence**: if any mapped commit maps to the MAJOR row, the dominant row is MAJOR. Breaking changes are never overridden by majority count of non-breaking commits.
-3. **Single mapped commit**: if exactly one commit maps to a row, that row is the dominant row.
-4. **Tie detection**: count commits per row across all mapped commits. If two or more non-MAJOR rows tie for the highest count, the change matches more than one row.
-5. **Single-row winner**: otherwise the row with the strictly highest count is the dominant row.
+3. **Bump Trigger precedence**: if the change satisfies any bullet in Bump Trigger AND at least one mapped commit maps to MINOR or PATCH, the dominant row is the most significant of those bump-impacting rows: MINOR if any mapped commit is MINOR, otherwise PATCH. No-bump-mapped commits are excluded from this selection so docs/test/ci noise alongside one `feat` or `fix` commit no longer outvotes the bump.
+4. **Single mapped commit**: if exactly one commit maps to a row (after the revert pre-pass), that row is the dominant row.
+5. **Tie detection**: count commits per row across all mapped commits. If two or more non-MAJOR rows tie for the highest count, the change matches more than one row.
+6. **Single-row winner**: otherwise the row with the strictly highest count is the dominant row.
 
 Note: multiple commit types that map to the same row do not produce a tie. Example: a branch with one `docs:` commit and one `test:` commit has two commits in the No-bump row and is a single-row match (No bump), not a multi-row escalation.
 
