@@ -76,10 +76,12 @@ Ask the user before delegating version edits when the change matches more than o
 
 A change "matches a row" when both:
 
-- the dominant conventional commit type across all commits on the working branch since it diverged from `base` equals the row's commit type, AND
+- the dominant Bump Type Determination row across all commits on the working branch since it diverged from `<base>` equals the row in question, AND
 - the impact column is satisfied per the bullets in Bump Trigger above.
 
-To compute the dominant commit type: parse the leading token before `(` or `:` in each commit subject of `git log --oneline <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight). The dominant type is the type with the highest count. If the working branch has exactly one commit beyond `<base>`, that commit's type is the dominant type. If two or more types tie for the highest count, the change matches more than one row. If no commit subjects parse as a recognized type, the change matches no row.
+To compute the dominant row: parse the leading token before `(` or `:` in each commit subject of `git log --oneline <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight). Map each parsed type to its Bump Type Determination row (so `feat` maps to the MINOR row; `feat!` or `BREAKING CHANGE:` maps to the MAJOR row; `fix` and `bugfix` map to the same PATCH row; `refactor` maps to the PATCH row; `chore`, `docs`, `test`, and `ci` map to the No-bump row; `refactor!` maps to the MAJOR row). Count commits per row. The dominant row is the row with the highest count. If the working branch has exactly one commit beyond `<base>`, that commit's row is the dominant row. If two or more rows tie for the highest count, the change matches more than one row. If no commit subject parses to a recognized row, the change matches no row.
+
+Note: multiple commit types that map to the same row do not produce a tie. Example: a branch with one `docs:` commit and one `test:` commit has two commits in the No-bump row and is a single-row match (No bump), not a multi-row escalation.
 
 ## Bump Execution
 
