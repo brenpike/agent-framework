@@ -26,7 +26,7 @@ Format: `MAJOR.MINOR.PATCH`
 | MINOR | Backward-compatible public API, capability, option, behavior, or artifact surface |
 | PATCH | Bug fix, internal refactor, or implementation change with no public compatibility impact |
 
-For `0.x.y` artifacts, SemVer permits minor increments for breaking changes. Breaking changes must still be documented clearly.
+For `0.x.y` artifacts, SemVer permits minor increments for breaking changes. Breaking changes must still include a changelog entry under `Changed` or `Removed` that names the breaking surface (function, type, flag, file, endpoint) and the migration path.
 
 Pre-release labels such as `1.2.0-beta.1` require orchestrator coordination and project release-workflow support.
 
@@ -53,7 +53,11 @@ No bump is required by default for:
 - changelog-only maintenance
 - markdown-only changes
 
-Project documentation may define additional required or excluded paths.
+Project documentation may define additional required or excluded paths. When `CLAUDE.md` does not define bump-trigger paths, this section's lists are exhaustive with the following precedence:
+
+- **Bump Trigger wins on overlap**: if a change matches any bullet in Bump Trigger AND any bullet in "No bump is required by default", a bump is required. The No-bump list applies only when the change matches one or more No-bump bullets AND matches no Bump Trigger bullet.
+
+Examples of overlap that go to bump-required: a markdown-only change that alters a documented consumer expectation (matches `markdown-only changes` AND `documented consumer expectation`); a CI workflow change that alters packaging (`CI-only changes` AND `packaged output`).
 
 ## Bump Type Determination
 
@@ -74,6 +78,39 @@ The orchestrator determines bump type from:
 
 Ask the user before delegating version edits when the change matches more than one row of the table above, OR matches no row.
 
+A change "matches a row" when both:
+
+- the dominant Bump Type Determination row across all commits on the working branch since it diverged from `<base>` equals the row in question, AND
+- the row's impact condition is satisfied:
+  - for the MAJOR, MINOR, and PATCH rows: at least one bullet in Bump Trigger above is satisfied by the change
+  - for the No-bump row: the change matches one or more bullets in the "No bump is required by default" list above and matches no bullet in Bump Trigger
+
+To compute the dominant row: read each commit's full subject and body via `git log --format='%H%n%s%n%b%n--END--' <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
+
+**Revert pre-pass.** Before mapping rows, drop revert pairs from the set:
+
+- A revert commit is one whose subject matches `^Revert "(.+)"$` (git default) or `^revert(\([^)]*\))?:\s*(.+)$` (Conventional Commits).
+- For each revert commit, look in its body for a line matching `^This reverts commit ([0-9a-f]{7,40})\.?$`. The captured SHA is the reverted-original-SHA.
+- If the reverted-original-SHA is present in the same `<base>..HEAD` range (matched by full or abbreviated SHA prefix), drop **both** that original commit and the revert commit from row-mapping.
+- If the revert body has no `This reverts commit <sha>` marker, keep the revert commit and map it by step 3 below (subject-only matching is not used because commit subjects are not unique — repeated dependency-update subjects, automated bumps, etc., can produce false pairs).
+
+Then for each remaining commit:
+
+1. If the subject contains `!` immediately before `:` (e.g., `feat!:`, `refactor!:`), map the commit to the MAJOR row regardless of subject type.
+2. Else if any line of the subject or body matches `^BREAKING CHANGE:` or `^BREAKING-CHANGE:`, map the commit to the MAJOR row regardless of subject type.
+3. Else parse the leading token before `(` or `:` in the subject and map by type: `feat` → MINOR; `fix`, `bugfix`, and `hotfix` → PATCH; `refactor` → PATCH; `chore`, `docs`, `test`, `ci` → No-bump.
+
+Determine the dominant row with this precedence (apply in order; the first matching rule wins):
+
+1. **No mapped commits**: if no commit (after the revert pre-pass) maps to a recognized row, the change matches no row.
+2. **MAJOR precedence**: if any mapped commit maps to the MAJOR row, the dominant row is MAJOR. Breaking changes are never overridden by majority count of non-breaking commits.
+3. **Bump Trigger precedence**: if the change satisfies any bullet in Bump Trigger AND at least one mapped commit maps to MINOR or PATCH, the dominant row is the most significant of those bump-impacting rows: MINOR if any mapped commit is MINOR, otherwise PATCH. No-bump-mapped commits are excluded from this selection so docs/test/ci noise alongside one `feat` or `fix` commit no longer outvotes the bump.
+4. **Single mapped commit**: if exactly one commit maps to a row (after the revert pre-pass), that row is the dominant row.
+5. **Tie detection**: count commits per row across all mapped commits. If two or more non-MAJOR rows tie for the highest count, the change matches more than one row.
+6. **Single-row winner**: otherwise the row with the strictly highest count is the dominant row.
+
+Note: multiple commit types that map to the same row do not produce a tie. Example: a branch with one `docs:` commit and one `test:` commit has two commits in the No-bump row and is a single-row match (No bump), not a multi-row escalation.
+
 ## Bump Execution
 
 The orchestrator delegates version/release file edits to coder.
@@ -90,7 +127,7 @@ Project-specific documentation must define the exact files to update atomically,
 
 Every artifact must have one canonical version source. Mirrors are informational and must be kept in sync.
 
-If the canonical source is undefined, inspect the repo and ask for user confirmation before editing version metadata.
+If `CLAUDE.md` does not list the artifact files for a triggered bump, the orchestrator stops and asks the user before delegating any version edit. The coder must not infer artifact files.
 
 ## CHANGELOG / Release Notes
 

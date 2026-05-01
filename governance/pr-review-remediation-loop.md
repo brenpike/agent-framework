@@ -61,7 +61,7 @@ Do not silently ignore review feedback.
 
 - `coder`: source, tests, docs, build, packaging, release metadata, serialization, generation, runtime behavior, validation fixes
 - `designer`: presentational UI/UX or static accessibility fixes
-- `planner`: multi-step, risky, public API, architecture, compatibility, package/release, versioning, generated-output, cross-cutting, or test-strategy feedback
+- `planner`: feedback whose Classification is one of `architecture-or-contract-concern`, `version-or-release-concern`, OR whose Smallest correct fix would touch more than one file in different planner steps
 - user: product, public API, architecture, security, compatibility, release, or versioning decisions that cannot be safely inferred
 
 ## Fix Rules
@@ -90,7 +90,7 @@ If feedback is incorrect or intentionally not applied:
 
 Request another external review only when every one of the following is true:
 
-- every classification = `actionable-*` item from this loop has had its fix pushed
+- every item classified `actionable-*` in the current Remediation Ledger has `Status: pushed` (commit SHA recorded)
 - every fix has a corresponding reply on the originating thread that includes the commit SHA
 - the user has not asked to skip re-review for this PR
 - there is at least one new commit on the PR branch since the last review request (compared by HEAD SHA)
@@ -113,7 +113,7 @@ Stop when any of the following is true:
 - a finding "repeats after attempted remediation" per the "Same finding" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
 - any new feedback item is classified `question-needs-user-input`
 - feedback requires a decision in any of: architecture, public API surface, compatibility, release behavior, versioning
-- a CI check unrelated to the changed files in this PR is failing
+- a CI check is failing whose configured paths or triggers (per the workflow file) do not match any path in the PR diff
 - remediation would require violating any rule in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`, `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`, or this file
 - git state matches the "Unsafe git state" definition
 - a GitHub API or parser failure occurred and the failure does not match the "Transient failure" definition (or it does but the single retry already failed)

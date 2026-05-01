@@ -90,21 +90,16 @@ If `claude-mem` is not installed or returns no relevant results, continue withou
 - Use local repo inspection first for codebase understanding.
 - Use Bash only for read-only inspection.
 - Use WebFetch/WebSearch when the task references a specific external library, framework, or API by name AND the answer is not present in the repo's existing imports/dependencies, OR the user has asked about a specific version's behavior.
-- Use Web tools for non-doc research only when (a) the user explicitly references a URL or external service AND (b) repo inspection cannot answer the question.
+- Do not use Web tools for purposes other than the prior bullet. If repo inspection returns no result for a question that does not match the prior bullet's conditions, output the question under `Open questions` instead of fetching.
 - Retry tool failures once if the failure matches the "Transient failure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`. Otherwise return blocked.
 
 ## Review Remediation Planning
 
-Use planner for feedback involving:
+Planner is required when the orchestrator's delegation routes feedback to planner per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing). That routing fires for:
 
-- multiple dependent changes
-- public API or compatibility analysis
-- architecture/contract analysis
-- generated output stability
-- package/release behavior
-- versioning impact
-- test strategy
-- sequencing or risk analysis
+- feedback whose Classification is `architecture-or-contract-concern`
+- feedback whose Classification is `version-or-release-concern`
+- any actionable-* feedback whose Smallest correct fix would touch files in two or more planner steps (regardless of subclass — `actionable-code-change`, `actionable-test-change`, or `actionable-doc-change`)
 
 Identify the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). User approval is required when the remediation requires a public API change, a version bump, or files outside the approved plan's scope.
 
@@ -198,4 +193,7 @@ Open questions:
 - None
 ```
 
-Do not finalize until every step has one owner, exact file scope, dependencies where needed, and relevant versioning/review/delivery guidance.
+Finalization gate (depends on Output Mode):
+
+- **Compact Output**: do not finalize until every step has one owner; exact file scope (existing files named by full path); and the two `Versioning` fields (`Impact`, `Artifact(s)`) are populated. Compact mode is by definition for cases where dependencies, edge cases, shared-file risks, and delivery shape do not apply (per the Compact Output trigger conditions above).
+- **Full Output**: do not finalize until every step has one owner; exact file scope; a `Depends on` entry (step numbers or `none`); the full 4-field `Versioning` block (`Impact`, `Artifact(s)`, `Likely bump`, `Release files likely needed`); a `Review remediation` block when the task originated from PR feedback (otherwise omit the block); and a `Delivery` block.

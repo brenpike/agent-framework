@@ -125,16 +125,16 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 3. If planner returns open questions, surface them and stop.
 4. Determine delivery shape and branch classification.
 5. Establish mandatory git preflight.
-6. Create or confirm working branch when implementation is ready.
+6. Create or confirm working branch only after every condition in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Branch Creation) is true.
 7. Convert the plan into phases.
 8. Run independent non-overlapping phases in parallel only when every condition in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees) is true; otherwise run sequentially.
 9. After each phase, verify per Phase Verification below.
 10. Create checkpoint commits per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Commit Policy).
-11. Before PR readiness, apply `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Trigger) against changed files. If `CLAUDE.md` does not define project-specific bump-trigger paths and the change matches the "No bump is required by default" list, no bump is required. Otherwise stop and ask the user.
+11. Before PR readiness, apply `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Trigger) against changed files. When `CLAUDE.md` does not define project-specific bump-trigger paths, the Bump Trigger and "No bump is required by default" lists are exhaustive (per versioning.md): a change matching the "No bump" list requires no bump; a change matching the Bump Trigger list requires a bump (use Bump Type Determination to choose the type). Stop and ask the user only when (a) the change matches more than one row of Bump Type Determination, or (b) it matches no row, or (c) for an artifact that requires a bump, `CLAUDE.md` does not list the full set of artifact files per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — canonical version file, required mirrors, changelog/release notes, package/artifact metadata, documentation mirrors, and release validation files when applicable.
 12. Delegate version/release edits to `agent-framework:coder` when required.
 13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
 14. Open PR when the approved plan is complete.
-15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review only when actionable feedback exists on the PR.
+15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, or `question-needs-user-input` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification). The remediation skill itself decides per-class whether to delegate, escalate to the user, or block (see `${CLAUDE_PLUGIN_ROOT}/skills/address-pr-feedback/SKILL.md` Procedure step 3).
 
 ## Delegation Template
 
@@ -238,7 +238,7 @@ Files:
 Done when:
 - Feedback is addressed or reported as invalid/out of scope.
 - Tests/docs/versioning are updated if required.
-- Relevant validation is run or clearly reported as not run.
+- Validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) is run, OR the report includes `Validated: Not run (no validation commands defined)`, OR the worker returned the Blocked Report Contract with `Stage: validation`.
 
 Git:
 - Class: [type]

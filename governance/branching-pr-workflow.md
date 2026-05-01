@@ -107,7 +107,7 @@ Workers do not commit automatically.
 Checkpoint commits are allowed only when one of the following is true:
 
 - a phase from the orchestrator's plan has been verified per the Phase Verification list in `${CLAUDE_PLUGIN_ROOT}/agents/orchestrator.md`
-- a milestone explicitly named in the orchestrator's plan or delegation has been verified
+- a milestone has been verified — a milestone is any plan item whose `Outcome:` is reachable only after two or more phases AND the orchestrator's plan explicitly labels the item `Milestone: <name>`
 - the next planned phase touches more than 5 files OR requires a database/schema migration OR is flagged `risk=high` in the plan, and a recovery point is needed before that phase begins
 - a review-remediation fix is complete, validated per the Validation procedure definition, and ready to push
 - a version bump is complete, version files are consistent across required artifacts per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`, and changelog/release notes are updated when required
@@ -155,7 +155,7 @@ Use draft PRs only when explicitly requested or when the planner split staged re
 PR content must include:
 
 - summary of 5 sentences or fewer
-- key files/areas changed
+- every file path modified in the PR diff, grouped under the planner's `Files:` list per step (one bullet per step naming each file)
 - validation performed (matching the Validation procedure definition output)
 - version/release notes when the change matches the Bump Trigger in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`
 - every item from the planner's `Constraints` output and every item from the planner's `Open questions` output
@@ -204,7 +204,7 @@ When a branch falls behind the resolved trunk, use rebase. Use merge only when o
 Stop and reassess if conflict resolution requires any of:
 
 - editing a file not in the approved plan's file scope
-- editing a public API signature, exported type, or contract
+- editing a public API signature, exported function/method signature, exported type, schema declaration, or generated-stub source listed in `CLAUDE.md`
 - more than 10 lines of conflict-resolution code in any single hunk
 
 ## Hotfix Standard
@@ -212,7 +212,7 @@ Stop and reassess if conflict resolution requires any of:
 For urgent production fixes:
 
 1. create `hotfix/<topic>` from the resolved trunk
-2. implement minimal safe change
+2. implement the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions)
 3. validate
 4. open PR to the resolved trunk
 5. merge per the project's merge strategy after required approval, unless the user explicitly directs a different emergency process
