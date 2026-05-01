@@ -154,6 +154,43 @@ function Test-WorkerReport {
         }
     }
 
+    # ── Check required sections are non-empty ──────────────────────────
+
+    $sectionLineIndices = @{}
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^([^:]+):\s*') {
+            $label = $Matches[1].Trim()
+            foreach ($section in $workerRequiredSections) {
+                if ($label -eq $section) {
+                    $sectionLineIndices[$section] = $i
+                }
+            }
+        }
+    }
+
+    foreach ($section in $workerRequiredSections) {
+        if (-not $sectionLineIndices.ContainsKey($section)) {
+            continue
+        }
+        $startIdx = $sectionLineIndices[$section] + 1
+        $hasContent = $false
+        for ($j = $startIdx; $j -lt $Lines.Count; $j++) {
+            if ($Lines[$j] -match '^([^:]+):\s*') {
+                $nextLabel = $Matches[1].Trim()
+                if ($allLabelPrefixes.Contains($nextLabel)) {
+                    break
+                }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($Lines[$j])) {
+                $hasContent = $true
+                break
+            }
+        }
+        if (-not $hasContent) {
+            $Diagnostics.Add("Required section '$section' is empty (must have at least one entry)")
+        }
+    }
+
     # ── Check for standalone prose lines ────────────────────────────────
 
     $fieldActive = $false
@@ -209,6 +246,41 @@ function Test-BlockedReport {
     foreach ($field in $blockedRequiredFields) {
         if (-not $foundFields.Contains($field)) {
             $Diagnostics.Add("Missing required blocked field: $field")
+        }
+    }
+
+    # ── Check blocked required fields have non-empty values ────────────
+
+    $inlineFields = @('Stage', 'Blocker', 'Retry status', 'Fallback used', 'Impact')
+    $listFields = @('Next action')
+
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^([^:]+):\s*(.*)$') {
+            $label = $Matches[1].Trim()
+            $value = $Matches[2].Trim()
+
+            if ($label -in $inlineFields) {
+                if ([string]::IsNullOrWhiteSpace($value)) {
+                    $Diagnostics.Add("Required blocked field '$label' has no value (must not be empty)")
+                }
+            }
+
+            if ($label -in $listFields) {
+                $hasListItem = $false
+                for ($j = $i + 1; $j -lt $Lines.Count; $j++) {
+                    if ($Lines[$j] -match '^\s*-\s') {
+                        $hasListItem = $true
+                        break
+                    }
+                    if ([string]::IsNullOrWhiteSpace($Lines[$j])) {
+                        continue
+                    }
+                    break
+                }
+                if (-not $hasListItem) {
+                    $Diagnostics.Add("Required blocked field '$label' has no list items (must have at least one)")
+                }
+            }
         }
     }
 
