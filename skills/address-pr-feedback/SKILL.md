@@ -1,6 +1,6 @@
 ---
 name: address-pr-feedback
-description: Fix a specific generic GitHub PR comment or reviewer comment on an existing pull request. Use for non-Codex or ambiguous PR feedback requests.
+description: Fix a specific generic GitHub PR comment or reviewer comment on an existing pull request. Use for one-time fixes of Codex, human reviewer, or bot comments — anything that is not a watch/monitor/poll/wait/loop/continue request.
 disable-model-invocation: false
 allowed-tools:
   - Read
@@ -23,7 +23,7 @@ shell: powershell
 
 # Address PR Feedback
 
-Fix one-time generic, human, non-Codex, or ambiguous PR feedback.
+Fix one-time PR feedback (Codex, human reviewer, or bot comments alike).
 
 Follow:
 
@@ -35,18 +35,20 @@ Follow:
 
 ## Invocation Boundary
 
-Use for:
+Use when the user request does not contain any of: `watch`, `monitor`, `wait`, `poll`, `loop`.
 
-- `fix PR comment on PR #N`
-- `address reviewer feedback`
-- `fix the unresolved comment`
-- ambiguous PR feedback requests
+The comment author does not affect skill selection — this skill handles one-time fixes for Codex, human reviewer, and bot comments alike. Author affects classification, not routing.
+
+Typical user phrasings that match: `fix PR comment on PR #N`, `address reviewer feedback`, `fix the unresolved comment`, `fix Codex comment on PR #N`, `address Codex feedback on this PR`.
 
 ## Required Inputs
 
-At minimum:
+At minimum one of:
 
-- PR number or PR URL
+- PR number or PR URL, OR
+- a current git branch with exactly one open PR on the configured remote (the skill resolves the PR via `gh pr view --json number,state` against the current branch)
+
+If neither is available, return the Blocked Report Contract with `Stage: fetch` and `Blocker: no PR identified`.
 
 Optional:
 
@@ -58,17 +60,21 @@ Optional:
 
 ## Procedure
 
-1. Confirm PR exists, target branch, head branch, current branch, and safe working tree.
+1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. Confirm the resolved PR's state is `OPEN`. If no PR is associated with the current branch, or the resolved PR's state is not `OPEN` (e.g., `MERGED`, `CLOSED`), return the Blocked Report Contract with `Blocker: no open PR identified` (include the resolved state when available). Then capture target branch and head branch, and confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 2. Fetch top-level PR comments, inline review comments, unresolved review threads, and review summaries using `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` where GraphQL review-thread data is required.
 3. Identify the target comment.
    - If exactly one unresolved/actionable candidate exists, process it.
    - If multiple unrelated candidates exist and the user did not identify one, return blocked with candidates.
-4. Classify feedback using `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
-5. Route to `agent-framework:planner` / `agent-framework:coder` / `agent-framework:designer` according to policy.
-6. Apply the smallest correct fix.
-7. Run relevant validation when feasible.
-8. Commit and push when a change was made and policy allows.
-9. Reply with concise fix summary, validation, and commit SHA when appropriate.
+4. Classify feedback using `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification).
+5. Route per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing) to `agent-framework:planner`, `agent-framework:coder`, or `agent-framework:designer`.
+6. Delegate the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions).
+7. Run validation per the "Validation procedure" definition. If `CLAUDE.md` lists no validation commands, report `Validated: Not run (no validation commands defined)`.
+8. Commit and push when all of: a change was made; the head branch is not the resolved trunk; there are no unresolved validation failures.
+9. Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed. Reply mechanism depends on feedback source:
+   - inline review comment or review thread → `addPullRequestReviewThreadReply` GraphQL mutation on the originating thread
+   - top-level PR comment (issue comment) → `gh pr comment <pr> --body "..."` referencing the original comment URL
+   - review summary (review with no inline thread) → `gh pr comment` referencing the review URL
+   Every actionable fix gets a reply with the commit SHA so the re-review gate in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Re-review preconditions) is satisfied.
 
 Do not request Codex re-review from this skill unless the user explicitly asks.
 

@@ -1,6 +1,6 @@
 ---
 name: watch-pr-feedback
-description: Watch a specific GitHub pull request for new unresolved review comments or review threads using Monitor when available, then route to the appropriate remediation skill. Use only when the user explicitly asks to watch, monitor, wait, poll, loop, or continue handling new PR feedback as it appears.
+description: Watch a specific GitHub pull request for new unresolved review comments or review threads using Monitor when available, then route to the appropriate remediation skill. Use only when the user explicitly asks to watch, monitor, wait, poll, or loop on new PR feedback.
 disable-model-invocation: false
 allowed-tools:
   - Bash(gh pr view *)
@@ -39,9 +39,12 @@ Do not use for one-time requests like `fix PR comment on PR #N`; use `agent-fram
 
 ## Required Inputs
 
-At minimum:
+At minimum one of:
 
-- PR number or PR URL
+- PR number or PR URL, OR
+- a current git branch with exactly one open PR on the configured remote (the skill resolves the PR via `gh pr view --json number,state` against the current branch)
+
+If neither is available, return the Blocked Report Contract with `Stage: skill selection` (when called for input resolution) or `Stage: fetch` (when called mid-procedure) and `Blocker: no PR identified`.
 
 Optional:
 
@@ -58,19 +61,19 @@ Optional:
 - max remediation cycles: 3
 - max speculative fix attempts per thread: 1
 - max watch duration: 4 hours
-- stop on user/product decision
-- stop on repeated finding
-- stop on unsafe git state
+- stop when any new feedback item is classified `question-needs-user-input` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
+- stop when a finding meets the "Same finding" / "repeats after attempted remediation" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions)
+- stop when git state matches the "Unsafe git state" definition
 - stop when PR state becomes `MERGED` or `CLOSED`
 - do not merge PR
 - do not approve PR
 
 ## Procedure
 
-1. Confirm PR exists and is open using `gh pr view --json state --jq .state`.
+1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. Confirm the resolved PR's state is `OPEN`. If no PR is associated with the current branch, or the resolved PR's state is not `OPEN` (e.g., `MERGED`, `CLOSED`), return Blocked with `Blocker: no open PR identified` (include the resolved state when available).
 2. Confirm GitHub CLI access works.
 3. Confirm current branch and working tree state.
-4. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, and review summaries (reviews with `CHANGES_REQUESTED` or `COMMENTED` state whose body contains actionable feedback not captured in inline threads). Detection must also include the PR's `state` field on every poll so terminal transitions (`MERGED`, `CLOSED`) are observable. Fetch and ledger review summary IDs and states alongside thread and comment IDs.
+4. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, review summaries (reviews with state in `CHANGES_REQUESTED` or `COMMENTED` whose body, when classified per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification, maps to any `actionable-*` class), and the PR's `state` field on every poll so terminal transitions to `MERGED` or `CLOSED` are observable. Fetch and ledger review summary IDs and states alongside thread and comment IDs.
 5. Track seen comment/thread/review IDs in a session-local ledger.
 6. When new feedback appears, classify source:
    - human reviewer feedback
@@ -95,8 +98,8 @@ Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitorin
 
 If Monitor startup or parser strategy fails:
 
-1. retry once only if transient
-2. perform one manual feedback check when safe
+1. retry exactly once if the failure matches the "Transient failure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+2. run exactly one manual check using the same read-only command if git state is not unsafe per the "Unsafe git state" definition
 3. report `Monitoring: not active`
 
 Do not start a second Monitor with a different parser strategy unless the user explicitly approves.

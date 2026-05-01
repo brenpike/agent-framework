@@ -31,7 +31,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 
 1. Confirm current branch matches `head` and is not `base`.
 2. Confirm no unexpected unstaged changes.
-3. Confirm required validation has passed.
+3. Confirm validation outcome per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) is one of: every declared command passed, OR `Not run (no validation commands defined)`. Stop blocked if the procedure returned the Blocked Report Contract (`Stage: validation`) or any declared command failed.
 4. Confirm required version/release metadata is included or not required.
 5. Capture local HEAD SHA: `git rev-parse HEAD`.
 6. Place the working branch on a remote that `gh pr create` can target:
@@ -45,19 +45,19 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
        Run `git push --force-with-lease <remote> HEAD:<upstream_branch>`. The explicit `HEAD:<upstream_branch>` refspec targets the actual tracked branch — not the same-named branch on the remote, which may differ when the local branch tracks a renamed upstream (`push.default=upstream` or explicit branch mapping). Force-with-lease without a value uses the remote-tracking ref as expected, so it succeeds only when the remote tip matches what the local clone last fetched, which covers intentional history rewrites (rebase, amend) without overwriting concurrent pushes.
        - on FWL success: continue.
        - on FWL failure: stop blocked. Remote has commits the local clone has not seen.
-     - on **auth / read-only / protected branch** failure: record warning and continue. `gh pr create` may route to a fork or alternate remote.
+     - on **auth / read-only / protected branch / hook-policy** failure: record warning and continue. `gh pr create` may route to a fork or alternate remote. Treat as auth/read-only/protected/hook-policy when stderr contains any of: `Permission denied`, `remote: Permission`, `protected branch`, `403`, `401`, `[remote rejected]`, `remote rejected`, `pre-receive hook`, `update hook`, `push declined`. Treat as non-fast-forward only when stderr contains `non-fast-forward` OR `(fetch first)`. Bare `rejected` is not a non-fast-forward marker on its own (`[remote rejected]` is server-side and is not resolved by force-with-lease).
    - else (no upstream, no `push_remote`): defer to `gh pr create` in step 7. It prompts for push target and can fork the base repo.
 7. Run `gh pr create --base <base> ...` with title, summary, validation notes, version/release notes, and unresolved issues. Do not pass `--head` — `--head` makes `gh` skip its push/fork fallback, which defeats step 6's fork-based and unpushed-branch handling. `gh pr create` uses the current branch as head by default; confirm step 1 already verified current branch matches the intended `head`.
 8. Verify the PR head SHA matches local HEAD captured in step 5: `gh pr view <pr> --json headRefOid --jq .headRefOid`. If mismatch, stop blocked — the PR points at a stale or wrong commit.
 
 ## Do Not
 
-- open PR for partial plan unless workflow explicitly allows it
-- open PR if validation is incomplete
-- open PR if required version/release metadata is missing
+- open PR for a partial plan unless one of: the user explicitly requested a draft PR, OR the planner's `Delivery: Shape` field equals `multi-plan`
+- open PR if the Validation procedure returned the Blocked Report Contract (`Stage: validation`) or any declared validation command failed. `Validated: Not run (no validation commands defined)` is a valid terminal state per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) and does not block PR opening.
+- open PR if required version/release metadata is missing per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`
 - continue past step 6 with an unverified push state
 - invent missing validation
-- include generated-content signatures
+- include any of the strings forbidden by `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Pull Requests) generated-content list
 
 ## Output
 

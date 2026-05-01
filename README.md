@@ -47,7 +47,7 @@ Once configured, the orchestrator is the session default agent. All skills are a
 
 ## Recommended companion plugins
 
-- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `claude-mem:mem-search` skill referenced by the planner for cross-session memory and continuity. Install separately as a Claude Code plugin. The agent framework works without it; if installed, planning will use prior context where relevant.
+- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `claude-mem:mem-search` skill referenced by the planner for cross-session memory and continuity. Install separately as a Claude Code plugin. The agent framework works without it; if installed, planning invokes `claude-mem:mem-search` before every plan unless the repo has zero commits or the user explicitly opts out.
 
 ## After cloning a project that uses this plugin
 
@@ -98,7 +98,7 @@ Governance rules are embedded in agent definitions. These files are reference ma
 The following agent frontmatter fields are not supported by the Claude Code plugin system and are omitted from plugin agent definitions:
 
 - `mcpServers` — configure MCP servers at the project or global level instead
-- `permissionMode` — the planner enforces read-only behavior via its instructions
+- `permissionMode` — read-only enforcement is achieved by limiting the planner's `tools` frontmatter to read-only commands; see the planner's `tools` list in `agents/planner.md`
 
 ## License
 
