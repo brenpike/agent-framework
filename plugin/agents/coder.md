@@ -99,4 +99,4 @@ Before completion:
 - confirm every edge case named in the delegation `Edge cases:` list is addressed in the diff
 - when assigned a version bump, confirm every required artifact's version matches per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution)
 
-Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
+Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.

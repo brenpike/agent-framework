@@ -90,4 +90,4 @@ Issues:
 - None
 ```
 
-Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states.
+Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` for blocked states.

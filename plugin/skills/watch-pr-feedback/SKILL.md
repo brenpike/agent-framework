@@ -21,6 +21,8 @@ This skill detects and routes. It must not directly edit files, commit, push, re
 Follow:
 
 - `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`
 - `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
 - Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` for the complete GraphQL operations reference.
 
@@ -94,7 +96,7 @@ Monitor commands must be:
 
 Do not probe or fallback through Python, Node, standalone `jq`, PowerShell, or shell translations.
 
-Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy and Shell and Parser Policy).
+Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md` (Monitoring Policy and Shell and Parser Policy).
 
 If Monitor startup or parser strategy fails:
 
@@ -153,4 +155,4 @@ Issues:
 - None
 ```
 
-Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states.
+Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` for blocked states.
