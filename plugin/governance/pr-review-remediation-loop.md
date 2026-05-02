@@ -73,6 +73,8 @@ The `Skill` column value depends on user-request keywords: if the request contai
 | `non-actionable` | — | — | — (reply only) |
 | `incorrect-or-rejected` | — | — | — (reply with rationale per Rejected Feedback) |
 
+**Cross-step override:** Any `actionable-*` item whose Smallest correct fix would touch files in more than one planner step escalates to `agent-framework:planner` first (then `agent-framework:coder`), regardless of the Worker/Skill shown in the table above.
+
 ## Fix Rules
 
 For each actionable item:
