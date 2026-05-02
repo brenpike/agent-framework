@@ -276,7 +276,7 @@
         "pattern": "Do not silently expand scope"
       }
     ],
-    "testFixture": "tests/policy/safety-orchestrator-no-implement.json"
+    "testFixture": "tests/policy/safety-no-silent-scope-expansion.json"
   },
   {
     "ruleId": "VAL-01",
@@ -324,7 +324,7 @@
         "pattern": "Monitoring must be read-only, deterministic, bounded, parser-stable, and truthfully reported"
       }
     ],
-    "testFixture": "tests/policy/safety-blocked-blocks-pr.json"
+    "testFixture": "tests/policy/safety-validation-gate.json"
   },
   {
     "ruleId": "VAL-02",
