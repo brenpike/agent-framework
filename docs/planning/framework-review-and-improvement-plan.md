@@ -1166,9 +1166,9 @@ This document is a planning/design spec — not active governance.
 Acceptance criteria:
 
 - Classifies every `plugin/governance/*.md` file (excluding `AGENTS.template.md`).
-- Mandatory set matches the Mandatory Governance Files list in `plugin/governance/agent-system-policy.md`.
+- Mandatory and conditional sets are internally consistent; modules proposed for reclassification from mandatory to conditional are explicitly listed for update in `plugin/governance/agent-system-policy.md` as part of Step 22b.
 - Fallback rule is fail-open (include when uncertain).
-- No `plugin/` files modified.
+- No `plugin/` files modified. (Reclassification changes to `agent-system-policy.md` are deferred to Step 22b, which already touches `plugin/`.)
 - `tools/policy_check.ps1` passes.
 
 ### Step 22b: Implement Workflow Loadout in Planner (EFF-2 part b)
@@ -1180,6 +1180,7 @@ Modify:
 - `plugin/agents/planner.md` — add a new `## Workflow Loadout` section (after `## Research Rules`, before `## Output Mode`) explaining how to produce the field. Add `Workflow loadout:` field to both Compact Output and Full Output templates (after the `Versioning:` block). Add `Workflow loadout:` to the finalization gate requirements for both output modes.
 - `tests/reports/valid-planner-compact.txt` — add `Workflow loadout:` field example.
 - `tests/reports/valid-planner-full.txt` — add `Workflow loadout:` field example.
+- `plugin/governance/agent-system-policy.md` — update the Mandatory Governance Files section to remove any modules reclassified as conditional by the Step 22a spec.
 
 **`## Workflow Loadout` section content summary:** Classify each governance module using `docs/planning/governance-module-classification.md`. Mandatory modules always included. Conditional modules included when their condition is true. When uncertain, include (fail-open). Output lists active conditional modules only, or `all mandatory only` when none are needed.
 
@@ -1195,6 +1196,7 @@ Acceptance criteria:
 - `plugin/agents/planner.md` contains `## Workflow Loadout` section.
 - Both Compact and Full output templates include `Workflow loadout:` field.
 - Report validator fixtures updated to include the field.
+- `plugin/governance/agent-system-policy.md` Mandatory Governance Files section updated to remove modules reclassified as conditional by the Step 22a spec.
 - All `tests/policy/safety-*.json` patterns still match.
 - `tools/policy_check.ps1` passes.
 
