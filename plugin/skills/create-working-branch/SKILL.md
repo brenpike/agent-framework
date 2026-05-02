@@ -12,6 +12,21 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `GIT-01` (no trunk commits), `GIT-02` (required git preflight), `REPORT-01` (blocked report contract)
+
+Before:
+- [ ] Orchestrator provided `base`, `working_branch`, and `classification`
+- [ ] `base` branch exists locally or can be fetched
+- [ ] No uncommitted changes that make switching unsafe
+- [ ] `working_branch` name follows branch taxonomy
+
+After:
+- [ ] Current branch is `working_branch`
+- [ ] Branch created from or confirmed on `base`
+- [ ] Output uses skill output contract
+
 Create or confirm the working branch for the current approved plan.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.

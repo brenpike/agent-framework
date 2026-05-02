@@ -114,7 +114,7 @@ If any are undefined, do not begin implementation. Full detail: `${CLAUDE_PLUGIN
 
 Use Monitor only when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`.
 
-Monitor commands must be read-only, deterministic, bounded, and parser-stable per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy).
+Monitor commands must be read-only, deterministic, bounded, and parser-stable per `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md` (Monitoring Policy).
 
 If Monitor returns a non-zero exit, errors during startup, or returns a parser failure on its first poll: run exactly one manual check using the same read-only command, then report `Monitoring: not active`. Do not start a second Monitor with a different parser strategy unless the user explicitly approves.
 
@@ -306,4 +306,4 @@ Issues:
 - None
 ```
 
-If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
+If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.

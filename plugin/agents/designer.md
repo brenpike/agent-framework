@@ -100,4 +100,4 @@ Before completion:
 - run LSP diagnostics on every touched file when LSP is available; report any new diagnostic of severity Error or Warning
 - run validation per the "Validation procedure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
 
-Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
+Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.

@@ -12,6 +12,20 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `GIT-01` (no trunk commits), `VAL-01` (validation gate), `REPORT-01` (blocked report contract)
+
+Before:
+- [ ] Current branch is not trunk
+- [ ] Git state is not unsafe per Definitions
+- [ ] Staged files belong to the completed phase only
+
+After:
+- [ ] Commit message uses `<type>(<scope>): <subject>` format
+- [ ] No unrelated files included
+- [ ] Output uses skill output contract
+
 Create a checkpoint commit for the current approved plan.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.

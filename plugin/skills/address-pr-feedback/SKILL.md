@@ -21,6 +21,21 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `VAL-01` (validation gate), `REPORT-01` (blocked report contract), `REVIEW-01` (review remediation ownership)
+
+Before:
+- [ ] PR resolved and state is OPEN
+- [ ] Git state is not unsafe per Definitions
+- [ ] Target feedback item identified and classified
+
+After:
+- [ ] Smallest correct fix applied within scope
+- [ ] Validation run or "Not run" reported
+- [ ] Fix-SHA reply posted on the feedback thread
+- [ ] Output uses skill output contract
+
 # Address PR Feedback
 
 Fix one-time PR feedback (Codex, human reviewer, or bot comments alike).
@@ -28,6 +43,7 @@ Fix one-time PR feedback (Codex, human reviewer, or bot comments alike).
 Follow:
 
 - `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`
 - `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`
 - `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`
 - `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
@@ -129,4 +145,4 @@ Issues:
 - None
 ```
 
-Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states.
+Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` for blocked states.

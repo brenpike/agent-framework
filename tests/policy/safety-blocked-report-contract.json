@@ -1,7 +1,7 @@
 {
   "rule": "Blocked report contract",
   "source": {
-    "file": "plugin/governance/agent-system-policy.md",
+    "file": "plugin/governance/communication-policy.md",
     "pattern": "Use this for blocked planning, execution, validation, git, versioning, review, monitoring, or skill states"
   },
   "consumers": [

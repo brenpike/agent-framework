@@ -11,6 +11,20 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `REPORT-01` (blocked report contract)
+
+Before:
+- [ ] Project root resolved via `git rev-parse --show-toplevel`
+- [ ] `.claude/settings.json` read or default `{}` established
+- [ ] No conflicting `agent` value exists (or user approved override)
+
+After:
+- [ ] Required keys applied to `.claude/settings.json`
+- [ ] Existing keys preserved
+- [ ] Output uses skill output contract
+
 # Setup Project
 
 Apply the agent-framework plugin's required project settings to `.claude/settings.json` so the orchestrator becomes the session default agent.
@@ -90,4 +104,4 @@ Issues:
 - None
 ```
 
-Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states.
+Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` for blocked states.

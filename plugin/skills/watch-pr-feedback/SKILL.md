@@ -12,6 +12,21 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `VAL-01` (validation gate), `REPORT-01` (blocked report contract), `MON-01` (monitor truthfulness), `REVIEW-01` (review remediation ownership)
+
+Before:
+- [ ] PR resolved and state is OPEN
+- [ ] Monitor command is read-only, deterministic, bounded, parser-stable
+- [ ] Stop conditions configured
+
+After:
+- [ ] New feedback classified and routed to address-pr-feedback
+- [ ] Monitoring reported truthfully (active or not active)
+- [ ] Stopped on policy stop condition
+- [ ] Output uses skill output contract
+
 # Watch PR Feedback
 
 Watch a specific PR for new unresolved review feedback and route to remediation skills.
@@ -21,6 +36,8 @@ This skill detects and routes. It must not directly edit files, commit, push, re
 Follow:
 
 - `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`
 - `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
 - Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` for the complete GraphQL operations reference.
 
@@ -94,7 +111,7 @@ Monitor commands must be:
 
 Do not probe or fallback through Python, Node, standalone `jq`, PowerShell, or shell translations.
 
-Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Monitoring Policy and Shell and Parser Policy).
+Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md` (Monitoring Policy and Shell and Parser Policy).
 
 If Monitor startup or parser strategy fails:
 
@@ -153,4 +170,4 @@ Issues:
 - None
 ```
 
-Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states.
+Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` for blocked states.
