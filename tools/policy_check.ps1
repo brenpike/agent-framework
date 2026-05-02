@@ -861,6 +861,86 @@ if ($compatFixtures.Count -eq 0) {
     $checksFailed += $compatFailed
 }
 
+# ── WORKFLOW FIXTURE TESTS ──────────────────────────────────────────────────
+
+Write-Host ''
+Write-Host '=== WORKFLOW-FIXTURES: Golden-path workflow tests ==='
+
+function Test-WorkflowFixtures {
+    $fixturesDir = Join-Path (Join-Path $repoRoot 'tests') 'workflows'
+    $fixtures = @()
+    if (Test-Path $fixturesDir) {
+        $fixtures = Get-ChildItem -Path $fixturesDir -Filter 'golden-*.json' -File
+    }
+    if ($fixtures.Count -eq 0) {
+        Write-Host "FAIL [WORKFLOW-FIXTURES] No golden-*.json fixtures found in tests/workflows/"
+        Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $fixturesDir -Line 0 `
+            -Description 'No golden-*.json fixtures found in tests/workflows/'
+        return @{ Passed = 0; Failed = 1 }
+    }
+    $wfPassed = 0
+    $wfFailed = 0
+    $expectedFixtures = @(
+        'golden-feature.json',
+        'golden-monitor-request.json',
+        'golden-pr-open.json',
+        'golden-review-remediation.json',
+        'golden-trivial-edit.json'
+    )
+    foreach ($expected in $expectedFixtures) {
+        $expectedPath = Join-Path $fixturesDir $expected
+        if (-not (Test-Path $expectedPath)) {
+            Write-Host "FAIL [WORKFLOW-FIXTURES] Missing required fixture: $expected"
+            Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath (Join-Path $fixturesDir $expected) -Line 0 `
+                -Description "Missing required fixture: $expected"
+            $wfFailed++
+        }
+    }
+    foreach ($f in $fixtures) {
+        try { $data = Get-Content $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json }
+        catch {
+            Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name): JSON parse error"
+            Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $f.FullName -Line 0 `
+                -Description "Fixture JSON parse error: $($f.Name)"
+            $wfFailed++
+            continue
+        }
+        $filePassed = $true
+        if (-not $data.steps -or @($data.steps).Count -eq 0) {
+            Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name): fixture has no steps"
+            Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $f.FullName -Line 0 `
+                -Description "Fixture has no steps: $($f.Name)"
+            $wfFailed++
+            continue
+        }
+        foreach ($step in $data.steps) {
+            $srcPath = Resolve-RepoPath $step.source.file
+            if (-not (Test-Path $srcPath)) {
+                Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state): source file not found: $($step.source.file)"
+                Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $step.source.file -Line 0 `
+                    -Description "Workflow fixture source file not found: $($step.source.file)"
+                $filePassed = $false
+                continue
+            }
+            $content = Get-Content $srcPath -Raw -Encoding UTF8
+            if ($content -like "*$($step.source.pattern)*") {
+                Write-Host "PASS [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state)"
+            } else {
+                Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state): pattern not found: $($step.source.pattern)"
+                Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $step.source.file -Line 0 `
+                    -Description "Workflow fixture pattern not found in $($step.source.file): $($step.source.pattern)"
+                $filePassed = $false
+            }
+        }
+        if ($filePassed) { $wfPassed++ } else { $wfFailed++ }
+    }
+    return @{ Passed = $wfPassed; Failed = $wfFailed }
+}
+
+$wfResult = Test-WorkflowFixtures
+$checksPassed += $wfResult.Passed
+$checksFailed += $wfResult.Failed
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 Write-Host ''
