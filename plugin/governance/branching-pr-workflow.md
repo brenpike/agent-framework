@@ -112,10 +112,10 @@ Run before any git write operation. Each check maps to a condition from the Unsa
 | Not on trunk | `git branch --show-current` | Output is not the resolved trunk branch |
 | No detached HEAD | `git symbolic-ref HEAD` | Exits 0 (attached to a branch) |
 | No unmerged paths | `git ls-files -u` | Empty output |
-| No in-progress operation | `test ! -f .git/MERGE_HEAD && test ! -f .git/REBASE_HEAD && test ! -f .git/CHERRY_PICK_HEAD && test ! -f .git/BISECT_LOG` | Exits 0 (no sentinel files exist) |
+| No in-progress operation | For each sentinel in `MERGE_HEAD REBASE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG`: resolve via `git rev-parse --git-path <sentinel>`, then `test ! -f <resolved path>` | All resolved sentinel paths are absent (do not hardcode `.git/`; the git dir may be a pointer file in linked worktrees) |
 | No out-of-scope changes | `git status --porcelain` | Empty output, or every listed path is within the agent's assigned file scope |
 | Trunk branch identifiable | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` | Returns a non-empty branch name string |
-| Remote reachable | `git ls-remote --exit-code origin HEAD` | Exits 0 |
+| Remote reachable | `git ls-remote --exit-code origin HEAD` | Exits 0. Required only when the workflow will push or open a PR; skip when using a no-PR opt-out or when no remote is configured |
 
 ## Branch Creation
 
