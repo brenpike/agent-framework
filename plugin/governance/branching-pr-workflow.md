@@ -98,7 +98,7 @@ Each item below includes the resolution command and expected output shape. Run t
 | Work classification | (determined from plan or user input) | One of: `feature\|bugfix\|hotfix\|refactor\|chore\|docs\|test\|ci` |
 | Base branch | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` | Branch name string (e.g. `main`) — unless overridden by user or `CLAUDE.md` |
 | Working branch name | (constructed from classification + topic per Branch Taxonomy) | `<prefix>/<topic>` matching naming constraints |
-| Branch exists vs create | `git branch --list <name>` and `git ls-remote --heads origin <name>` | Empty = create; non-empty = exists |
+| Branch exists vs create | `git branch --list <name>` (local); `git ls-remote --heads origin <name>` (remote — required only when the workflow will push or open a PR; skip when using a no-PR opt-out or when no remote is configured) | Empty = create; non-empty = exists. Local check alone is sufficient for no-PR/offline scenarios |
 | Worktree decision | (determined from plan parallelism requirements per Worktrees section) | `yes` or `no` |
 | Checkpoint commit policy | (derived from plan phase count and risk flags per Commit Policy section) | One of: `none\|checkpoint allowed\|checkpoint expected` |
 | PR target | Same resolution as base branch | Branch name string |
