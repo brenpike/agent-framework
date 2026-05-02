@@ -15,7 +15,7 @@ See `routing-matrix.md` for the full user-intent-to-skill/agent routing matrix r
 - **Entry gate:** none (initial state)
 - **Transitions:**
   - &rarr; **Plan** (default; Execution Algorithm step 1)
-  - &rarr; **Trivial Fast Path** (only when every condition of the planner-skip exception is answered "yes" from the task input as written)
+  - &rarr; **Trivial Fast Path** (only when every condition of the trivial fast path is answered "yes" from the task input as written)
   - &rarr; **Blocked** (task is unintelligible or violates a hard prohibition)
 
 ---
@@ -35,12 +35,12 @@ The orchestrator delegates to `agent-framework:planner`. The planner reads, rese
 
 ### 3. Trivial Fast Path
 
-The orchestrator determines that every planner-skip condition is satisfied and skips the planner. The skip decision must be stated explicitly in the orchestrator's report with each condition listed and resolved.
+The orchestrator determines that every trivial fast path condition is satisfied and skips the planner. The skip decision must be stated explicitly in the orchestrator's report with each condition listed and resolved.
 
 This is not a shortcut past Git Preflight. Implementation cannot begin until Git Preflight completes.
 
 - **Owner:** orchestrator
-- **Entry gate:** all six planner-skip conditions answered "yes" from the task input as written (one owner, one known file, trivial change, branch classification stated or unambiguous, version impact = none, no review remediation)
+- **Entry gate:** all six trivial fast path conditions (TFP-1 through TFP-6) answered "yes" from the task input as written (one owner, one known file, trivial change, branch classification stated or unambiguous, version impact = none, no review remediation)
 - **Transitions:**
   - &rarr; **Git Preflight** (always; the fast path still requires full preflight before implementation)
   - &rarr; **Blocked** (git state is unsafe, or preflight values cannot be resolved)
@@ -234,7 +234,7 @@ Intake -> Trivial Fast Path -> Git Preflight -> Branch -> Implement
   -> Validate -> Checkpoint Commit -> PR -> Final Report
 ```
 
-Execution Algorithm mapping: Intake &rarr; Trivial Fast Path (planner-skip exception applied at step 1) &rarr; Git Preflight (steps 4-5; not skipped) &rarr; Branch (step 6) &rarr; Implement/Validate/Checkpoint Commit (steps 7-10) &rarr; PR (step 14) &rarr; Final Report.
+Execution Algorithm mapping: Intake &rarr; Trivial Fast Path (trivial fast path applied at step 1) &rarr; Git Preflight (steps 4-5; not skipped) &rarr; Branch (step 6) &rarr; Implement/Validate/Checkpoint Commit (steps 7-10) &rarr; PR (step 14) &rarr; Final Report.
 
 ### Blocked at any gate
 

@@ -121,7 +121,7 @@ Run before any git write operation. Each check maps to a condition from the Unsa
 
 The orchestrator creates or confirms the working branch only after:
 
-- the planner returns a complete plan or the planner-skip exception applies
+- the planner returns a complete plan or the trivial fast path applies
 - open questions are resolved
 - implementation is ready to begin
 - repo state is safe

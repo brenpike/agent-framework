@@ -83,14 +83,14 @@ If you cannot resolve a required value, do not invoke the skill. Stop and report
 
 Call `agent-framework:planner` before any delegation, branch creation, or implementation work.
 
-Skip planner only when every one of the following is answered "yes" using only the task input as written, with no inference:
+Skip planner only when the trivial fast path applies — every one of the following is answered "yes" using only the task input as written, with no inference:
 
-1. **One owner**: the task names exactly one of `coder` or `designer` as the owner, OR the change can be performed only by that one specialist (no cross-role work).
-2. **One known file**: the task names exactly one file by full path, AND that file already exists.
-3. **Trivial change**: the change meets every condition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Trivial change).
-4. **Branch classification stated or unambiguous**: the user named one of `feature|bugfix|hotfix|refactor|chore|docs|test|ci`, OR the current working branch already uses one of those prefixes and the change fits that prefix.
-5. **Version impact = none**: the change matches the "No bump is required by default" list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.
-6. **No review remediation involved**: the task is not addressing PR feedback.
+1. **TFP-1: One owner**: the task names exactly one of `coder` or `designer` as the owner, OR the change can be performed only by that one specialist (no cross-role work).
+2. **TFP-2: One known file**: the task names exactly one file by full path, AND that file already exists.
+3. **TFP-3: Trivial change**: the change meets every condition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Trivial change).
+4. **TFP-4: Branch classification stated or unambiguous**: the user named one of `feature|bugfix|hotfix|refactor|chore|docs|test|ci`, OR the current working branch already uses one of those prefixes and the change fits that prefix.
+5. **TFP-5: Version impact = none**: the change matches the "No bump is required by default" list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.
+6. **TFP-6: No review remediation involved**: the task is not addressing PR feedback.
 
 If any condition cannot be answered "yes" from the task input as written, call planner.
 
@@ -120,7 +120,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 ## Execution Algorithm
 
-1. Call `agent-framework:planner` unless the planner-skip exception applies.
+1. Call `agent-framework:planner` unless the trivial fast path applies.
 2. If planner fails, follow policy retry/fallback/blocked handling immediately.
 3. If planner returns open questions, surface them and stop.
 4. Determine delivery shape and branch classification.

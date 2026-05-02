@@ -192,7 +192,7 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 
 | ID | Reason |
 |---|---|
-| CLR-3 | The target term "trivial fast path" is folded into `CLR-1`; detailed checklist cleanup remains part of `EFF-1`. |
+| CLR-3 | Completed in Phase 4 Step 21. Renamed "planner-skip exception" to "trivial fast path" throughout; assigned stable condition IDs TFP-1 through TFP-6. |
 | TC-3 | High-risk and low value-to-difficulty after review. Reconsider only after static generation design proves Claude Code loads generated output and sync tests are reliable. |
 | EFF-4 | Batching validation/git checks risks weakening enforcement. Revisit after validators and tests exist. |
 | PERF-4 | Incremental GitHub fetching is lower value relative to difficulty. Optimize after remediation flow is stable. |
@@ -1090,7 +1090,7 @@ Modify:
 
 **Scenarios:**
 
-1. **trivial-edit**: Intake → Trivial Fast Path → Git Preflight → Branch → Implement → Validate → Checkpoint Commit → PR → Final Report. Source patterns: six planner-skip conditions in `plugin/agents/orchestrator.md`; Trivial Fast Path in `docs/planning/execution-state-machine.md`; trivial change definition in `plugin/governance/agent-system-policy.md`.
+1. **trivial-edit**: Intake → Trivial Fast Path → Git Preflight → Branch → Implement → Validate → Checkpoint Commit → PR → Final Report. Source patterns: six trivial fast path conditions (TFP-1 through TFP-6) in `plugin/agents/orchestrator.md`; Trivial Fast Path in `docs/planning/execution-state-machine.md`; trivial change definition in `plugin/governance/agent-system-policy.md`.
 2. **feature**: Intake → Plan → Git Preflight → Branch → Implement → Validate → Checkpoint Commit → PR → Final Report. Source patterns: planner-first rule in `plugin/agents/orchestrator.md`; delegation template; plan state in execution state machine.
 3. **pr-open**: Validate → Version Bump → PR. Source patterns: six PR-open gate conditions in `plugin/agents/orchestrator.md`; bump trigger in `plugin/governance/versioning.md`; PR state in execution state machine.
 4. **review-remediation**: PR → External Review → Remediation → Checkpoint Commit → PR. Source patterns: Remediation Decision Table in `plugin/governance/pr-review-remediation-loop.md`; review remediation delegation template in `plugin/agents/orchestrator.md`; review state in execution state machine.

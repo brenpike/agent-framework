@@ -7,8 +7,8 @@
 
 | # | User Intent Pattern | Target | Selection Rule | Source |
 |---|---|---|---|---|
-| 1 | Any task not meeting all six planner-skip conditions | `agent-framework:planner` | Planner-First Rule | `plugin/agents/orchestrator.md` (Planner-First Rule) |
-| 2 | Task meets all six planner-skip conditions (one owner, one known file, trivial change, branch classification stated or unambiguous, version impact = none, no review remediation) | Orchestrator handles directly (Trivial Fast Path) | All six conditions answered "yes" from task input as written, with no inference | `plugin/agents/orchestrator.md` (Planner-First Rule) |
+| 1 | Any task not meeting all six trivial fast path conditions (TFP-1 through TFP-6) | `agent-framework:planner` | Planner-First Rule | `plugin/agents/orchestrator.md` (Planner-First Rule) |
+| 2 | Task meets all six trivial fast path conditions (TFP-1: one owner, TFP-2: one known file, TFP-3: trivial change, TFP-4: branch classification stated or unambiguous, TFP-5: version impact = none, TFP-6: no review remediation) | Orchestrator handles directly (Trivial Fast Path) | All six conditions answered "yes" from task input as written, with no inference | `plugin/agents/orchestrator.md` (Planner-First Rule) |
 | 3 | Implementation work: source, tests, docs, build, packaging, release metadata, serialization, generation, runtime behavior | `agent-framework:coder` | File type and role boundary | `plugin/governance/agent-system-policy.md` (Authority Matrix) |
 | 4 | Implementation work: presentational UI/UX, design tokens, layout, semantic markup, static ARIA, visual states, responsive presentation, presentation accessibility | `agent-framework:designer` | File type and role boundary | `plugin/governance/agent-system-policy.md` (Authority Matrix) |
 | 5 | Branch creation or confirmation needed before implementation | `agent-framework:create-working-branch` | First matching skill (most specific first) | `plugin/agents/orchestrator.md` (Skill Routing) |
@@ -37,7 +37,7 @@ The orchestrator chooses the first skill whose invocation boundary matches the c
 
 Within remediation routing (rows 11 through 14), classification is checked first. If multiple classifications apply to a single review item, the orchestrator escalates to the most conservative target: user > planner > designer > coder.
 
-The Planner-First Rule (row 1) applies before any skill selection. The orchestrator calls `agent-framework:planner` before delegation, branch creation, or implementation work unless every planner-skip condition is satisfied.
+The Planner-First Rule (row 1) applies before any skill selection. The orchestrator calls `agent-framework:planner` before delegation, branch creation, or implementation work unless every trivial fast path condition (TFP-1 through TFP-6) is satisfied.
 
 ## Conflict Resolution
 
