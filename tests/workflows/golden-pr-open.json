@@ -4,7 +4,7 @@
   "steps": [
     { "state": "Validate", "source": { "file": "plugin/governance/agent-system-policy.md", "pattern": "Validation procedure" } },
     { "state": "Version Bump", "source": { "file": "plugin/governance/versioning.md", "pattern": "## Bump Trigger" } },
-    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "skip PR opening and proceed to the Final Report" } },
+    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "open PR when the approved plan is complete" } },
     { "state": "Final Report", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Result: complete | partial | blocked" } }
   ]
 }
