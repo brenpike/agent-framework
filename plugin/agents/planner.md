@@ -107,7 +107,7 @@ Budget: read at most 3N files during discovery for a task touching N files (mini
 
 ## Workflow Loadout
 
-Classify each governance module under `${CLAUDE_PLUGIN_ROOT}/governance/` as mandatory or conditional per the classification in `docs/planning/governance-module-classification.md`.
+Classify each governance module under `${CLAUDE_PLUGIN_ROOT}/governance/` as mandatory or conditional using the rules below.
 
 6 mandatory modules are always loaded and never listed in output:
 
