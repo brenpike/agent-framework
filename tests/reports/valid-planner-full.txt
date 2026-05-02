@@ -26,6 +26,9 @@ Versioning:
 - Likely bump: minor
 - Release files likely needed: package.json
 
+Workflow loadout:
+- versioning.md
+
 Delivery:
 - Shape: single-plan
 - Branch/PR: feature/redis-session from main

@@ -13,5 +13,8 @@ Versioning:
 - Impact: none
 - Artifact(s): none
 
+Workflow loadout:
+- all mandatory only
+
 Open questions:
 - None

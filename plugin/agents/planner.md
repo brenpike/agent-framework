@@ -93,6 +93,30 @@ If `claude-mem` is not installed or returns no relevant results, continue withou
 - Do not use Web tools for purposes other than the prior bullet. If repo inspection returns no result for a question that does not match the prior bullet's conditions, output the question under `Open questions` instead of fetching.
 - Retry tool failures once if the failure matches the "Transient failure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`. Otherwise return blocked.
 
+## Workflow Loadout
+
+Classify each governance module under `${CLAUDE_PLUGIN_ROOT}/governance/` as mandatory or conditional per the classification in `docs/planning/governance-module-classification.md`.
+
+6 mandatory modules are always loaded and never listed in output:
+
+- `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/git-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/scope-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/escalation-policy.md`
+
+4 conditional modules are included only when their activation condition is met:
+
+- `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` — workflow touches bump-trigger paths, OR `CLAUDE.md` defines versioned artifacts
+- `${CLAUDE_PLUGIN_ROOT}/governance/validation-policy.md` — workflow includes a validation phase
+- `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` — workflow includes PR feedback or review remediation
+- `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md` — user request contains `watch`, `monitor`, `wait`, `poll`, or `loop`
+
+Fail-open: when uncertain whether a condition is met, include the module.
+
+The `Workflow loadout:` output field lists active conditional modules only. When no conditional modules are active, use `- all mandatory only`.
+
 ## Review Remediation Planning
 
 Planner is required when the orchestrator's delegation routes feedback to planner per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). That routing fires for:
@@ -143,6 +167,9 @@ Versioning:
 - Impact: [none|possible|required|unknown]
 - Artifact(s): [name|none|unknown]
 
+Workflow loadout:
+- [conditional-module|all mandatory only]
+
 Open questions:
 - [question]
 - None
@@ -178,6 +205,9 @@ Versioning:
 - Likely bump: [major|minor|patch|none|unknown]
 - Release files likely needed: [files|none|unknown]
 
+Workflow loadout:
+- [conditional-module|all mandatory only]
+
 Review remediation:
 - Item(s): [ids|none]
 - Classification: [classification|none]
@@ -195,5 +225,5 @@ Open questions:
 
 Finalization gate (depends on Output Mode):
 
-- **Compact Output**: do not finalize until every step has one owner; exact file scope (existing files named by full path); and the two `Versioning` fields (`Impact`, `Artifact(s)`) are populated. Compact mode is by definition for cases where dependencies, edge cases, shared-file risks, and delivery shape do not apply (per the Compact Output trigger conditions above).
-- **Full Output**: do not finalize until every step has one owner; exact file scope; a `Depends on` entry (step numbers or `none`); the full 4-field `Versioning` block (`Impact`, `Artifact(s)`, `Likely bump`, `Release files likely needed`); a `Review remediation` block when the task originated from PR feedback (otherwise omit the block); and a `Delivery` block.
+- **Compact Output**: do not finalize until every step has one owner; exact file scope (existing files named by full path); the two `Versioning` fields (`Impact`, `Artifact(s)`) are populated; and a `Workflow loadout` field is present. Compact mode is by definition for cases where dependencies, edge cases, shared-file risks, and delivery shape do not apply (per the Compact Output trigger conditions above).
+- **Full Output**: do not finalize until every step has one owner; exact file scope; a `Depends on` entry (step numbers or `none`); the full 4-field `Versioning` block (`Impact`, `Artifact(s)`, `Likely bump`, `Release files likely needed`); a `Workflow loadout` field; a `Review remediation` block when the task originated from PR feedback (otherwise omit the block); and a `Delivery` block.
