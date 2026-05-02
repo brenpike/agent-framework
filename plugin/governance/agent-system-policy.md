@@ -134,7 +134,7 @@ External reviewers, CI, GitHub, Codex, and other services are not Claude Code su
 | Planning | coordinates | owns | no | no |
 | Implementation | no | no | owns | presentational only |
 | Visual design | coordinates | plan only | no new design without guidance | owns |
-| Static accessibility | coordinates | plan only | partial | owns |
+| Static accessibility | coordinates | plan only | no | owns |
 | Runtime accessibility | coordinates | plan only | owns | no |
 | Branch/worktree decision | owns | recommend only | no | no |
 | Branch creation | owns via skill | no | no | no |
