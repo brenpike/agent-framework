@@ -104,18 +104,23 @@ Do not use the word "ambiguous" as a hedge anywhere in this framework. Where a r
 
 ## Mandatory Governance Files
 
-Agents must follow these files whether or not the user restates them:
+Agents must follow these files whether or not the user restates them. Mandatory modules are always loaded for every workflow; no activation condition, user override, or workflow classification can suppress them.
 
 - `branching-pr-workflow.md` — branching, commits, PRs, merge path, validation, trunk-based delivery
-- `versioning.md` — SemVer, release metadata, changelog, tags
-- `pr-review-remediation-loop.md` — external PR review feedback handling
 - `scope-policy.md` — explicit file-scope enforcement and accessibility ownership boundaries
 - `git-policy.md` — git workflow enforcement rules
-- `validation-policy.md` — versioning enforcement and external review policy
-- `monitoring-policy.md` — shell/parser constraints, monitoring rules, retry/failure handling
 - `escalation-policy.md` — conditions requiring agent escalation instead of guessing
 - `communication-policy.md` — agent-to-agent communication standards and report contracts
 - `CLAUDE.md` — project-specific adapter: paths, commands, packages, artifact rules
+
+## Conditional Governance Files
+
+These modules are loaded only when their activation condition is met. When it is uncertain whether a condition is met, include the module (fail-open).
+
+- `versioning.md` — SemVer, release metadata, changelog, tags. **Condition:** workflow touches bump-trigger paths, OR `CLAUDE.md` defines versioned artifacts.
+- `validation-policy.md` — versioning enforcement and external review policy. **Condition:** workflow includes a validation phase.
+- `pr-review-remediation-loop.md` — external PR review feedback handling. **Condition:** workflow includes PR feedback or review remediation.
+- `monitoring-policy.md` — shell/parser constraints, monitoring rules, retry/failure handling. **Condition:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop`.
 
 Silence about git workflow, versioning, validation, or review remediation is not permission to ignore the governance files.
 
