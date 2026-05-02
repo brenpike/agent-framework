@@ -1,5 +1,7 @@
 # Rule Ownership Index -- DRAFT
 
+Machine-readable index: `docs/planning/policy-index.json`
+
 Status: Phase 1 draft -- establishes structure only. Phase 2 assigns rule IDs.
 
 Tracking: DUR-4

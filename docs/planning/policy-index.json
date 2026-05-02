@@ -1,0 +1,352 @@
+[
+  {
+    "ruleId": "GIT-01",
+    "name": "No trunk commits",
+    "source": {
+      "file": "plugin/governance/branching-pr-workflow.md",
+      "section": "Hard Rules",
+      "pattern": "Never commit directly to the resolved trunk branch"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "begin implementation before required git preflight is explicit"
+      },
+      {
+        "file": "plugin/agents/coder.md",
+        "referenceType": "enforces",
+        "pattern": "git state matches the \"Unsafe git state\" definition"
+      },
+      {
+        "file": "plugin/agents/designer.md",
+        "referenceType": "enforces",
+        "pattern": "git state matches the \"Unsafe git state\" definition"
+      },
+      {
+        "file": "plugin/skills/create-working-branch/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "continue when branch state is unsafe or ambiguous"
+      },
+      {
+        "file": "plugin/skills/checkpoint-commit/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "Confirm current branch is not `trunk`"
+      },
+      {
+        "file": "plugin/skills/open-plan-pr/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "Confirm current branch matches `head` and is not `base`"
+      }
+    ],
+    "testFixture": "tests/policy/safety-no-trunk-commit.json"
+  },
+  {
+    "ruleId": "GIT-02",
+    "name": "Required git preflight",
+    "source": {
+      "file": "plugin/governance/branching-pr-workflow.md",
+      "section": "Required Git Preflight",
+      "pattern": "If any item is undefined, implementation must not begin"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "If any are undefined, do not begin implementation"
+      },
+      {
+        "file": "plugin/agents/coder.md",
+        "referenceType": "depends-on",
+        "pattern": "any item from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight) is undefined"
+      },
+      {
+        "file": "plugin/agents/designer.md",
+        "referenceType": "depends-on",
+        "pattern": "any item from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight) is undefined"
+      },
+      {
+        "file": "plugin/skills/create-working-branch/SKILL.md",
+        "referenceType": "depends-on",
+        "pattern": "invent values for `base`, `working_branch`, or `classification` -- return blocked if any are missing"
+      }
+    ],
+    "testFixture": null
+  },
+  {
+    "ruleId": "MON-01",
+    "name": "Monitor truthfulness",
+    "source": {
+      "file": "plugin/governance/agent-system-policy.md",
+      "section": "Monitoring Policy",
+      "pattern": "Do not say or imply active monitoring is running unless a real background mechanism started successfully"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "claim monitoring is active unless Monitor (or an equivalent real background trigger) returned a non-error response"
+      },
+      {
+        "file": "plugin/skills/watch-pr-feedback/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "report `Monitoring: not active`"
+      }
+    ],
+    "testFixture": "tests/policy/safety-monitor-truthfulness.json"
+  },
+  {
+    "ruleId": "PLAN-01",
+    "name": "Planner-first / default planning",
+    "source": {
+      "file": "plugin/agents/orchestrator.md",
+      "section": "Planner-First Rule",
+      "pattern": "Call `agent-framework:planner` before any delegation, branch creation, or implementation work"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "Skip planner only when every one of the following is answered \"yes\""
+      },
+      {
+        "file": "plugin/agents/planner.md",
+        "referenceType": "depends-on",
+        "pattern": "You create plans only. You do not write or edit code"
+      }
+    ],
+    "testFixture": "tests/policy/safety-planner-no-write.json"
+  },
+  {
+    "ruleId": "REPORT-01",
+    "name": "Blocked report contract",
+    "source": {
+      "file": "plugin/governance/agent-system-policy.md",
+      "section": "Blocked Report Contract",
+      "pattern": "Use this for blocked planning, execution, validation, git, versioning, review, monitoring, or skill states"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`"
+      },
+      {
+        "file": "plugin/agents/planner.md",
+        "referenceType": "depends-on",
+        "pattern": "return blocked"
+      },
+      {
+        "file": "plugin/agents/coder.md",
+        "referenceType": "depends-on",
+        "pattern": "Stop and report blocked when any of the following is true"
+      },
+      {
+        "file": "plugin/agents/designer.md",
+        "referenceType": "depends-on",
+        "pattern": "Stop and report blocked when any of the following is true"
+      },
+      {
+        "file": "plugin/skills/open-plan-pr/SKILL.md",
+        "referenceType": "depends-on",
+        "pattern": "Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states"
+      },
+      {
+        "file": "plugin/skills/address-pr-feedback/SKILL.md",
+        "referenceType": "depends-on",
+        "pattern": "Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states"
+      },
+      {
+        "file": "plugin/skills/watch-pr-feedback/SKILL.md",
+        "referenceType": "depends-on",
+        "pattern": "Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states"
+      },
+      {
+        "file": "plugin/skills/checkpoint-commit/SKILL.md",
+        "referenceType": "depends-on",
+        "pattern": "Status: complete | blocked"
+      },
+      {
+        "file": "plugin/skills/create-working-branch/SKILL.md",
+        "referenceType": "depends-on",
+        "pattern": "Status: complete | blocked"
+      }
+    ],
+    "testFixture": null
+  },
+  {
+    "ruleId": "REVIEW-01",
+    "name": "Review remediation ownership",
+    "source": {
+      "file": "plugin/governance/pr-review-remediation-loop.md",
+      "section": "Ownership",
+      "pattern": "The orchestrator owns the loop"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "external review request/remediation routing"
+      },
+      {
+        "file": "plugin/agents/coder.md",
+        "referenceType": "depends-on",
+        "pattern": "Do not reply to threads, resolve threads, request re-review, or expand scope silently"
+      },
+      {
+        "file": "plugin/agents/designer.md",
+        "referenceType": "depends-on",
+        "pattern": "If feedback requires runtime behavior, state derivation, data flow, routing, keyboard behavior, or live-region behavior, stop"
+      },
+      {
+        "file": "plugin/agents/planner.md",
+        "referenceType": "depends-on",
+        "pattern": "review-remediation planning when delegated"
+      },
+      {
+        "file": "plugin/skills/address-pr-feedback/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed"
+      },
+      {
+        "file": "plugin/skills/watch-pr-feedback/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "This skill detects and routes. It must not directly edit files, commit, push, reply, resolve threads"
+      }
+    ],
+    "testFixture": "tests/policy/safety-remediation-commit-push-reply.json"
+  },
+  {
+    "ruleId": "SCOPE-01",
+    "name": "Explicit file scope",
+    "source": {
+      "file": "plugin/governance/agent-system-policy.md",
+      "section": "Explicit Scope Rule",
+      "pattern": "Any modifying agent must work only in explicitly assigned files"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "exact file-scoped delegation"
+      },
+      {
+        "file": "plugin/agents/planner.md",
+        "referenceType": "depends-on",
+        "pattern": "every step's `Files:` list must contain absolute or repo-relative paths"
+      },
+      {
+        "file": "plugin/agents/coder.md",
+        "referenceType": "enforces",
+        "pattern": "You implement only within explicitly assigned file scope"
+      },
+      {
+        "file": "plugin/agents/designer.md",
+        "referenceType": "enforces",
+        "pattern": "You handle presentational work only within explicitly assigned file scope"
+      }
+    ],
+    "testFixture": "tests/policy/safety-explicit-file-scope.json"
+  },
+  {
+    "ruleId": "SCOPE-02",
+    "name": "No silent scope expansion",
+    "source": {
+      "file": "plugin/governance/agent-system-policy.md",
+      "section": "Explicit Scope Rule",
+      "pattern": "No agent may silently expand scope"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/coder.md",
+        "referenceType": "enforces",
+        "pattern": "Do not silently expand scope"
+      },
+      {
+        "file": "plugin/agents/designer.md",
+        "referenceType": "enforces",
+        "pattern": "Do not silently expand scope"
+      }
+    ],
+    "testFixture": "tests/policy/safety-orchestrator-no-implement.json"
+  },
+  {
+    "ruleId": "VAL-01",
+    "name": "Validation gate",
+    "source": {
+      "file": "plugin/governance/agent-system-policy.md",
+      "section": "Definitions",
+      "pattern": "Run every declared command. There is no duration cap"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions)"
+      },
+      {
+        "file": "plugin/agents/coder.md",
+        "referenceType": "depends-on",
+        "pattern": "run validation per the \"Validation procedure\" definition"
+      },
+      {
+        "file": "plugin/agents/designer.md",
+        "referenceType": "depends-on",
+        "pattern": "run validation per the \"Validation procedure\" definition"
+      },
+      {
+        "file": "plugin/skills/open-plan-pr/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "Stop blocked if the procedure returned the Blocked Report Contract"
+      },
+      {
+        "file": "plugin/skills/checkpoint-commit/SKILL.md",
+        "referenceType": "depends-on",
+        "pattern": "Stage only files that belong to the completed phase, milestone, version bump, or review-remediation item"
+      },
+      {
+        "file": "plugin/skills/address-pr-feedback/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "Run validation per the \"Validation procedure\" definition"
+      },
+      {
+        "file": "plugin/skills/watch-pr-feedback/SKILL.md",
+        "referenceType": "depends-on",
+        "pattern": "Monitoring must be read-only, deterministic, bounded, parser-stable, and truthfully reported"
+      }
+    ],
+    "testFixture": "tests/policy/safety-blocked-blocks-pr.json"
+  },
+  {
+    "ruleId": "VAL-02",
+    "name": "PR only after validation",
+    "source": {
+      "file": "plugin/governance/branching-pr-workflow.md",
+      "section": "Pull Requests",
+      "pattern": "the Validation procedure returned either every declared command passed"
+    },
+    "owner": "orchestrator",
+    "consumers": [
+      {
+        "file": "plugin/agents/orchestrator.md",
+        "referenceType": "enforces",
+        "pattern": "open a PR only after completion, validation, and versioning gates pass"
+      },
+      {
+        "file": "plugin/skills/open-plan-pr/SKILL.md",
+        "referenceType": "enforces",
+        "pattern": "open PR if the Validation procedure returned the Blocked Report Contract"
+      }
+    ],
+    "testFixture": "tests/policy/safety-pr-requires-validation.json"
+  }
+]
