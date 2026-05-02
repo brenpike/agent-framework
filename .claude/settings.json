@@ -3,5 +3,14 @@
     "agent-framework@brenpike": true,
     "claude-mem@thedotmack": true
   },
-  "agent": "agent-framework:orchestrator"
+  "agent": "agent-framework:orchestrator",
+  "permissions": {
+    "allow": [
+      "Bash(git -C * status *)",
+      "Bash(git -C * branch *)",
+      "Bash(git -C * log *)",
+      "Bash(git -C * diff *)",
+      "Bash(git -C * show *)"
+    ]
+  }
 }
