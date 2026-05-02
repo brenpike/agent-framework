@@ -270,8 +270,19 @@ function Get-ReportType {
         }
     }
 
-    # 4. Blocked: first Status value is "blocked"
+    # 4. Blocked vs blocked-worker: Status is "blocked" but worker body
+    #    sections override → route to worker so Test-WorkerReport validates.
     if ($StatusValue -eq 'blocked') {
+        $hasWorkerSection = $false
+        foreach ($line in $Lines) {
+            if ($line -match '^(Changed|Validated|Need scope change|Issues):\s*') {
+                $hasWorkerSection = $true
+                break
+            }
+        }
+        if ($hasWorkerSection) {
+            return 'worker'
+        }
         return 'blocked'
     }
 

@@ -1,0 +1,15 @@
+Status: blocked
+
+Changed:
+- src/middleware/auth.ts
+
+Validated:
+- npm test: pass
+
+Need scope change:
+- src/db/adapter.ts: auth middleware requires updated persistence method
+
+Issues:
+- None
+
+Git issue: correctness requires editing src/db/adapter.ts which is not in the assigned file scope
