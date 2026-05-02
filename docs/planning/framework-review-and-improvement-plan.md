@@ -97,12 +97,12 @@ The existing framework should be modified in place rather than replaced. Startin
 
 | ID | Enhancement | Difficulty | Value | Depends on |
 |---|---|---:|---:|---|
-| PERF-1 | Assign haiku to specialist agents (planner, coder) for routine/low-risk invocations; keep sonnet on orchestrator and high-risk paths (architecture, versioning, review remediation, multi-file). Do not attempt per-path model routing within a single agent. | 2 | 4 | EFF-1 |
+| PERF-1 | Use lower-cost models for low-risk/routine tasks; keep stronger models for architecture, versioning, review remediation, and multi-file work. Implementation approach determined by PERF-6 investigation results. | 2 | 4 | PERF-6 |
 | PERF-2 | Add bounded discovery commands for planner: file map first, targeted reads second. | 2 | 4 | CLR-1 |
 | PERF-3 | Cache resolved repo facts in session reports: trunk, validation commands, artifact paths, review policy. | 3 | 4 | REL-3 |
 | PERF-4 | Make GitHub review fetching incremental using seen IDs in the session ledger. | 4 | 3 | CPX-2 |
 | PERF-5 | Add validation tiers in `CLAUDE.md`: required quick checks before commit, full checks before PR/merge. | 4 | 4 | REL-5 |
-| PERF-6 | Investigate whether Claude Code supports per-invocation model overrides to enable true per-path model routing within orchestrator. | 3 | 3 | PERF-1 |
+| PERF-6 | Investigate whether Claude Code supports per-invocation model overrides to enable true per-task model routing. | 3 | 3 | None |
 
 ### Durability
 
@@ -166,7 +166,7 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 | 20 | REL-2 | Golden-path workflow tests prove main scenarios still work. |
 | 21 | EFF-1 | Validates and hardens the existing safe trivial fast path while preserving branch, scope, validation, and reporting gates. |
 | 22 | EFF-2 | TC-5 complete (Phase 2). Part (a): design mandatory/conditional governance module classification spec. Part (b): implement `Workflow loadout:` in planner.md after spec approval. |
-| 23 | PERF-1 | Option B: assign haiku to specialist agents for routine invocations; keep sonnet on orchestrator and high-risk paths. Safe once fast-path boundaries are tested. |
+| 23 | PERF-6 | Investigate whether Claude Code supports per-invocation model overrides. Must complete before PERF-1 implementation. Low-risk investigation with no behavioral change. |
 | 24 | PERF-2 | Bounded planner discovery improves speed without changing governance. |
 | 25 | PERF-3 | Caches resolved repo facts to reduce repeated checks and rereads. |
 
@@ -177,16 +177,16 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 | 26 | TC-1 | Creates the always-loaded core contract after canonical modules and tests exist. |
 | 27 | CPX-3 | Removes duplicated unsafe-git/validation wording only after rule IDs and tests protect behavior. |
 | 28 | CPX-4 | Makes versioning module activation more targeted while preserving versioning stops. |
+| 29 | PERF-1 | Implement intelligent per-task model routing based on PERF-6 investigation results from Phase 4. |
 
 ### Phase 6: Later Optimizations
 
 | Order | ID | Why Now |
 |---:|---|---|
-| 29 | EFF-5 | Remediation batching is valuable but risky; wait until routing is canonical and tested. |
-| 30 | PERF-5 | Validation tiers can help but need careful semantics to avoid weakening validation. |
-| 31 | DUR-5 | Migration notes become important once rule renames or module splits happen. |
-| 32 | DUR-3 | Policy changelog is useful but not foundational. Add it alongside the first behavioral refactor. |
-| 33 | PERF-6 | Investigate per-invocation model overrides in Claude Code once PERF-1 Option B is delivered. |
+| 30 | EFF-5 | Remediation batching is valuable but risky; wait until routing is canonical and tested. |
+| 31 | PERF-5 | Validation tiers can help but need careful semantics to avoid weakening validation. |
+| 32 | DUR-5 | Migration notes become important once rule renames or module splits happen. |
+| 33 | DUR-3 | Policy changelog is useful but not foundational. Add it alongside the first behavioral refactor. |
 
 ### Deferred Items
 
