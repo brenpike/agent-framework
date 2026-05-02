@@ -1,0 +1,25 @@
+{
+  "rule": "Blocked report contract",
+  "source": {
+    "file": "plugin/governance/agent-system-policy.md",
+    "pattern": "Use this for blocked planning, execution, validation, git, versioning, review, monitoring, or skill states"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "use the blocked report contract from"
+    },
+    {
+      "file": "plugin/agents/planner.md",
+      "pattern": "Otherwise return blocked"
+    },
+    {
+      "file": "plugin/agents/coder.md",
+      "pattern": "Stop and report blocked when any of the following is true"
+    },
+    {
+      "file": "plugin/agents/designer.md",
+      "pattern": "Stop and report blocked when any of the following is true"
+    }
+  ]
+}

@@ -489,3 +489,283 @@ One PR should:
 - Safety regression checks exist for core invariants.
 - Current framework contradictions are visible as lint findings instead of hidden in prose.
 - The PR states no version bump is required because `plugin/` runtime payload is unchanged.
+
+---
+
+## Phase 2 Implementation Plan
+
+### Phase 2 Goal
+
+Phase 2 assigns stable rule IDs to every safety rule inventoried in Phase 1, builds a machine-readable policy index mapping each rule ID to its canonical source and consumers, ensures every safety gate has exactly one owner and one test fixture, then performs the structural separation of policy from procedure — splitting `agent-system-policy.md` into focused modules and adding compact checklists to skills. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.ps1`) must pass before and after every structural change.
+
+### Phase 2 Scope
+
+1. **TC-2 (Step 9)**: Assign stable rule IDs to the rules in `docs/planning/rule-index-draft.md`. IDs appear in the planning index and skill checklists only; governance prose embedding deferred to Phase 5 (CPX-3).
+2. **CPX-5 (Step 10)**: Create `docs/planning/policy-index.json` mapping every rule ID to canonical source, owner, consumers, and test fixture.
+3. **REL-5 (Step 11)**: Fill coverage gaps in `tests/policy/` so every rule ID has one fixture.
+4. **CPX-1 Step 12a**: Classify every governance section as Policy, Procedure, Ownership, or Definition. Create `docs/planning/policy-procedure-ownership-map.md`. No `plugin/` changes.
+5. **CPX-1 Steps 12b–12c**: Extract procedure duplication (conservative) and verify agent ownership boundaries. Touches `plugin/`.
+6. **TC-5 (Step 13)**: Split `plugin/governance/agent-system-policy.md` into `<domain>-policy.md` modules. Definitions section stays in core file to preserve all existing `(Definitions → ...)` cross-references.
+7. **TC-4 (Step 14)**: Add compact `## Quick Reference` checklists to all 7 skill files. Lands in same PR as Step 13.
+
+### Phase 2 Versioning
+
+Steps 9–11 and 12a touch only `docs/planning/` and `tests/policy/`. No version bump required.
+
+Steps 12b–12c, 13, and 14 modify files inside `plugin/`. Internal restructuring with updated cross-references constitutes documented consumer expectations within the plugin. Bump type: **PATCH**. Each plugin-touching PR gets its own increment.
+
+Canonical version file: `plugin/.claude-plugin/plugin.json`.
+
+### Phase 2 PR Boundary
+
+| PR | Steps | Touches `plugin/` | Version bump |
+|---|---|---|---|
+| PR A | 9, 10, 11, 12a | No | None |
+| PR B | 12b, 12c | Yes | `0.2.1 → 0.2.2` |
+| PR C | 13, 14 | Yes | `0.2.2 → 0.2.3` |
+
+Phase 1 safety checks must pass before each PR is opened.
+
+### Step 9: Assign Rule IDs (TC-2)
+
+Modify:
+
+- `docs/planning/rule-index-draft.md` — replace `TBD` values in `Future Rule ID` column; add ID scheme section.
+
+**ID scheme:** `<DOMAIN>-<NN>` — uppercase domain token plus zero-padded two-digit number. Domain identifies the governing concern, not the source file, so IDs remain stable across file moves.
+
+**First-draft rule ID list:**
+
+| Descriptive Rule Name | Rule ID |
+|---|---|
+| No trunk commits | `GIT-01` |
+| Required git preflight | `GIT-02` |
+| Explicit file scope | `SCOPE-01` |
+| No silent scope expansion | `SCOPE-02` |
+| Planner-first / default planning | `PLAN-01` |
+| Validation gate | `VAL-01` |
+| PR only after validation | `VAL-02` |
+| Blocked report contract | `REPORT-01` |
+| Monitor truthfulness | `MON-01` |
+| Review remediation ownership | `REVIEW-01` |
+
+Acceptance criteria:
+
+- Every row has a stable rule ID with no `TBD` entries.
+- IDs follow `<DOMAIN>-<NN>` format consistently.
+- No two rules share an ID.
+- ID scheme section is added to the rule index.
+- `tools/policy_check.ps1` passes.
+
+### Step 10: Policy Index (CPX-5)
+
+Create:
+
+- `docs/planning/policy-index.json`
+
+Modify:
+
+- `docs/planning/rule-index-draft.md` — add cross-reference to `policy-index.json`.
+
+**Schema per entry:**
+
+```json
+{
+  "ruleId": "GIT-01",
+  "name": "No trunk commits",
+  "source": {
+    "file": "plugin/governance/branching-pr-workflow.md",
+    "section": "Hard Rules",
+    "pattern": "Never commit directly to trunk"
+  },
+  "owner": "orchestrator",
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "referenceType": "enforces",
+      "pattern": "no trunk commits"
+    }
+  ],
+  "testFixture": "tests/policy/safety-no-trunk-commit.json"
+}
+```
+
+`referenceType` values: `enforces`, `depends-on`, `duplicates`. `testFixture` is `null` where Step 11 must add coverage.
+
+Acceptance criteria:
+
+- `policy-index.json` parses as valid JSON.
+- Every rule ID from Step 9 appears exactly once.
+- Every consumer file exists under `plugin/`.
+- Every non-null `testFixture` names an existing file under `tests/policy/`.
+- Index is consistent with existing safety fixtures.
+- `tools/policy_check.ps1` passes.
+
+### Step 11: Safety Gate Ownership (REL-5)
+
+Audit all 8 existing `tests/policy/safety-*.json` fixtures and map each to a rule ID.
+
+Create new fixtures for gaps identified in `policy-index.json` (where `testFixture` is `null`). Known gaps to investigate:
+
+- `GIT-02` (required git preflight) — no current fixture.
+- `SCOPE-02` (no silent scope expansion) — may need a distinct fixture from `SCOPE-01`.
+- `PLAN-01` (planner-first routing rule) — existing `safety-planner-no-write.json` tests tool restrictions, not the routing rule itself.
+- `REPORT-01` (blocked report contract) — verify current coverage.
+
+Modify:
+
+- `docs/planning/policy-index.json` — fill in `testFixture` fields after fixtures are created.
+
+Acceptance criteria:
+
+- Every rule ID in `policy-index.json` has a non-null `testFixture`.
+- Every fixture exists and parses as valid JSON.
+- Every fixture's `source.pattern` matches text in its source file.
+- Every consumer `pattern` matches or is confirmed absent via `"absent": true`.
+- `tools/policy_check.ps1` passes.
+
+### Step 12a: Classify Governance Sections (CPX-1, part 1)
+
+Create:
+
+- `docs/planning/policy-procedure-ownership-map.md`
+
+Classify every top-level section of every governance file as:
+
+- **Policy** — invariant/constraint (must always be true)
+- **Procedure** — how to do something (step-by-step, command sequences)
+- **Ownership** — who owns what (authority, delegation)
+- **Definition** — shared vocabulary
+- **Mixed** — multiple concerns; note the sub-tags
+
+Source files to classify:
+
+- `plugin/governance/agent-system-policy.md`
+- `plugin/governance/branching-pr-workflow.md`
+- `plugin/governance/pr-review-remediation-loop.md`
+- `plugin/governance/versioning.md`
+
+Acceptance criteria:
+
+- Every section of every governance file appears in the map.
+- Each section has exactly one classification or `Mixed` with sub-tags.
+- Map identifies sections confirmed to be duplicated in a skill file.
+- No `plugin/` files modified.
+
+### Step 12b: Extract Procedure Duplication (CPX-1, part 2)
+
+Modify conservatively — only sections confirmed duplicated in a skill file per the Step 12a map:
+
+- `plugin/governance/agent-system-policy.md`
+- `plugin/governance/branching-pr-workflow.md` (if applicable)
+- `plugin/governance/pr-review-remediation-loop.md` (if applicable)
+
+The following section headers are referenced by name from multiple consumers. Update all cross-references atomically in the same commit as any section move:
+
+- `(Definitions → Validation procedure)` — referenced from 6 files
+- `(Shared Worker Report Contract)` and `(Blocked Report Contract)` — referenced from 8 files
+- `(Explicit Scope Rule)` — referenced from agents and skills
+
+Acceptance criteria:
+
+- No governance file contains step-by-step procedures already present in a skill file.
+- All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- All safety fixture patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Step 12c: Verify Agent Ownership Boundaries (CPX-1, part 3)
+
+Verify each agent's `Own` section and prohibitions are consistent with the Authority Matrix in `agent-system-policy.md`. No new ownership rules invented. Modify only if gaps or contradictions are found:
+
+- `plugin/agents/orchestrator.md`
+- `plugin/agents/planner.md`
+- `plugin/agents/coder.md`
+- `plugin/agents/designer.md`
+
+Acceptance criteria:
+
+- Every cell in the Authority Matrix maps to an explicit statement in the corresponding agent file.
+- No agent file claims ownership contradicting the Authority Matrix.
+- `tools/policy_check.ps1` passes.
+
+### Step 13: Split agent-system-policy.md (TC-5)
+
+Reduce:
+
+- `plugin/governance/agent-system-policy.md` — keep only Definitions, topology, authority, and role boundaries.
+
+Create:
+
+| New file | Content moved into it |
+|---|---|
+| `plugin/governance/scope-policy.md` | Explicit Scope Rule, Accessibility Ownership Split |
+| `plugin/governance/git-policy.md` | Git Workflow Enforcement |
+| `plugin/governance/validation-policy.md` | Versioning/review enforcement sections |
+| `plugin/governance/monitoring-policy.md` | Monitoring Policy, Shell and Parser Policy, Retry and Failure Policy |
+| `plugin/governance/escalation-policy.md` | Escalation Rules |
+| `plugin/governance/communication-policy.md` | Communication Standard, Shared Worker Report Contract, Blocked Report Contract |
+
+Definitions stay in `agent-system-policy.md`. All `(Definitions → ...)` cross-references remain valid and need no changes.
+
+Update cross-references in agent and skill files for moved sections. Example: `agent-system-policy.md (Monitoring Policy)` becomes `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md`.
+
+Acceptance criteria:
+
+- `agent-system-policy.md` contains only core definitions, topology, authority, and role boundaries.
+- Each new module file has a `## Purpose` section.
+- Every cross-reference in every agent and skill file resolves to the correct module.
+- All references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- All `tests/policy/safety-*.json` patterns still match (update `source.file` fields in fixtures if needed).
+- `tools/policy_check.ps1` passes.
+- No content is lost — every section present before the split appears in the result.
+
+### Step 14: Compact Skill Checklists (TC-4)
+
+Add a `## Quick Reference` section immediately after the YAML frontmatter closing `---` and before the existing skill body in all 7 skill files:
+
+- `plugin/skills/checkpoint-commit/SKILL.md`
+- `plugin/skills/create-working-branch/SKILL.md`
+- `plugin/skills/open-plan-pr/SKILL.md`
+- `plugin/skills/request-codex-review/SKILL.md`
+- `plugin/skills/address-pr-feedback/SKILL.md`
+- `plugin/skills/watch-pr-feedback/SKILL.md`
+- `plugin/skills/setup-project/SKILL.md`
+
+**Format example (checkpoint-commit):**
+
+```markdown
+## Quick Reference
+
+Rules: `GIT-01` (no trunk commits), `GIT-02` (git preflight), `VAL-01` (validation gate)
+
+Before:
+- [ ] Current branch is not trunk
+- [ ] Git state is not unsafe
+- [ ] Files belong to completed phase or milestone
+
+After:
+- [ ] Commit message follows `<type>(<scope>): <subject>` format
+- [ ] No unrelated files included
+- [ ] No push, no PR, no branch creation
+```
+
+Acceptance criteria:
+
+- Every skill has a `## Quick Reference` section immediately after frontmatter.
+- Every rule ID referenced exists in `docs/planning/rule-index-draft.md`.
+- Checklists introduce no new rules and do not modify existing rule semantics.
+- No checklist exceeds 10 items.
+- `tools/policy_check.ps1` passes.
+
+### Phase 2 Done When
+
+- Every safety rule has a stable rule ID in `docs/planning/rule-index-draft.md`.
+- `docs/planning/policy-index.json` exists, parses as valid JSON, and maps every rule ID to source, owner, consumers, and test fixture.
+- Every rule ID has a corresponding `tests/policy/safety-*.json` fixture with passing assertions.
+- `docs/planning/policy-procedure-ownership-map.md` classifies every governance section.
+- `plugin/governance/agent-system-policy.md` is split into focused `<domain>-policy.md` modules with no content loss.
+- Every cross-reference in `plugin/` uses `${CLAUDE_PLUGIN_ROOT}/...` paths and resolves to an existing file and section.
+- Every skill has a compact `## Quick Reference` checklist referencing canonical rule IDs.
+- `tools/policy_check.ps1` passes after every PR lands.
+- All `tests/policy/safety-*.json` patterns match their source files.
+- Plugin version reflects structural changes: `0.2.2` after PR B, `0.2.3` after PR C.
