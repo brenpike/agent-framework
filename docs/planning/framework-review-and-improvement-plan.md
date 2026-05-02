@@ -1014,3 +1014,262 @@ Acceptance criteria:
 - `tools/policy_check.ps1` passes after every PR lands.
 - All `tests/policy/safety-*.json` patterns match their source files.
 - Plugin version reflects changes: `0.2.4` after PR A, `0.2.5` after PR B.
+
+---
+
+## Phase 4 Implementation Plan
+
+### Phase 4 Goal
+
+Phase 4 adds safe efficiency paths to the framework. It proves the main workflow scenarios with golden-path tests, hardens the trivial fast path with stable condition IDs, classifies governance modules as mandatory or conditional to enable selective loading, investigates per-invocation model override support, adds bounded discovery to the planner to reduce token waste, and caches resolved repo facts in session reports. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.ps1`) must pass before and after every structural change.
+
+### Phase 4 Scope
+
+Included:
+
+1. **REL-2 (Step 20)**: Golden-path workflow tests for trivial edit, feature, PR open, review remediation, and monitor request.
+2. **EFF-1 + CLR-3 (Step 21)**: Harden the trivial fast path; rename "planner-skip exception" to "trivial fast path" throughout; assign stable condition IDs TFP-1 through TFP-6.
+3. **EFF-2 (Step 22)**: Two-part delivery: (a) mandatory/conditional governance module classification spec in `docs/planning/`; (b) implement `Workflow loadout:` in `plugin/agents/planner.md`.
+4. **PERF-6 (Step 23)**: Investigation of per-invocation model override support. Produces a findings document in `docs/planning/`. No `plugin/` changes.
+5. **PERF-2 (Step 24)**: Add bounded discovery commands to planner: file map first, targeted reads second.
+6. **PERF-3 (Step 25)**: Cache resolved repo facts in session reports.
+
+Excluded: PERF-1 (intelligent per-task model routing) is deferred to Phase 5, depending on PERF-6 investigation results from Step 23.
+
+### Phase 4 Versioning
+
+| PR | Steps | Touches `plugin/` | Starting version | Ending version |
+|---|---|---|---|---|
+| PR A | 20, 21 | Yes (Step 21) | `0.2.5` | `0.2.6` |
+| PR B | 22a | No | `0.2.6` | `0.2.6` |
+| PR C | 22b, 23, 24 | Yes (Steps 22b, 24) | `0.2.6` | `0.2.7` |
+| PR D | 25 | Yes | `0.2.7` | `0.2.8` |
+
+Canonical version file: `plugin/.claude-plugin/plugin.json`.
+
+### Phase 4 PR Boundary
+
+| PR | Steps | Rationale |
+|---|---|---|
+| PR A | 20, 21 | REL-2 tests must exist before EFF-1 hardening is verified. Step 21 carries the PATCH bump. |
+| PR B | 22a | Spec-only doc. Merge = design gate before Step 22b begins. |
+| PR C | 22b, 23, 24 | Steps 22b and 24 both modify `plugin/agents/planner.md`; bundled to avoid shared-file conflicts. Step 23 (investigation doc) is free. |
+| PR D | 25 | Independent — different files from PR C. |
+
+Phase 1 safety checks must pass before each PR is opened.
+
+### Step 20: Golden-Path Workflow Tests (REL-2)
+
+Create:
+
+- `tests/workflows/golden-trivial-edit.json`
+- `tests/workflows/golden-feature.json`
+- `tests/workflows/golden-pr-open.json`
+- `tests/workflows/golden-review-remediation.json`
+- `tests/workflows/golden-monitor-request.json`
+
+Modify:
+
+- `tools/policy_check.ps1` — add a CHECK block that validates workflow test fixtures: parse JSON, verify each step's `source.pattern` exists in the named `source.file`.
+
+**Fixture format:**
+
+```json
+{
+  "workflow": "<scenario-name>",
+  "description": "<description>",
+  "steps": [
+    {
+      "state": "<state-name>",
+      "source": { "file": "<plugin-file-path>", "pattern": "<regex-or-literal>" },
+      "transition": "<next-state>"
+    }
+  ]
+}
+```
+
+**Scenarios:**
+
+1. **trivial-edit**: Intake → Trivial Fast Path → Git Preflight → Branch → Implement → Validate → Checkpoint Commit → PR → Final Report. Source patterns: six planner-skip conditions in `plugin/agents/orchestrator.md`; Trivial Fast Path in `docs/planning/execution-state-machine.md`; trivial change definition in `plugin/governance/agent-system-policy.md`.
+2. **feature**: Intake → Plan → Git Preflight → Branch → Implement → Validate → Checkpoint Commit → PR → Final Report. Source patterns: planner-first rule in `plugin/agents/orchestrator.md`; delegation template; plan state in execution state machine.
+3. **pr-open**: Validate → Version Bump → PR. Source patterns: six PR-open gate conditions in `plugin/agents/orchestrator.md`; bump trigger in `plugin/governance/versioning.md`; PR state in execution state machine.
+4. **review-remediation**: PR → External Review → Remediation → Checkpoint Commit → PR. Source patterns: Remediation Decision Table in `plugin/governance/pr-review-remediation-loop.md`; review remediation delegation template in `plugin/agents/orchestrator.md`; review state in execution state machine.
+5. **monitor-request**: Monitor keyword → `watch-pr-feedback` skill. Source patterns: monitor keyword list in `plugin/agents/orchestrator.md`; monitoring policy reference in `plugin/governance/monitoring-policy.md`.
+
+Acceptance criteria:
+
+- Five fixture files exist in `tests/workflows/` and parse as valid JSON.
+- Every fixture's source patterns match their target plugin files.
+- `tools/policy_check.ps1` workflow CHECK block passes.
+- No `plugin/` files modified.
+
+### Step 21: Harden Trivial Fast Path and Rename (EFF-1 + CLR-3)
+
+Modify:
+
+- `plugin/agents/orchestrator.md` — Execution Algorithm step 1: rename "planner-skip exception" to "trivial fast path". Planner-First Rule section: assign stable IDs TFP-1 through TFP-6 to each of the six skip conditions (condition text unchanged).
+- `plugin/governance/branching-pr-workflow.md` — Branch Creation section: rename "planner-skip exception" to "trivial fast path".
+- `docs/planning/execution-state-machine.md` — all occurrences of "planner-skip exception" / "planner-skip condition": rename to "trivial fast path". Add TFP condition IDs to the Trivial Fast Path state entry gate.
+- `docs/planning/routing-matrix.md` — all occurrences of "planner-skip conditions": rename to "trivial fast path conditions (TFP-1 through TFP-6)".
+- `docs/planning/framework-review-and-improvement-plan.md` — update CLR-3 Deferred Items entry to note completion in Phase 4 Step 21.
+- `tests/workflows/golden-trivial-edit.json` — update source patterns to use "trivial fast path".
+- `plugin/.claude-plugin/plugin.json` — bump `0.2.5` → `0.2.6`.
+
+**TFP condition ID assignments:**
+
+| ID | Condition |
+|---|---|
+| TFP-1 | One owner |
+| TFP-2 | One known file |
+| TFP-3 | Trivial change |
+| TFP-4 | Branch classification stated or unambiguous |
+| TFP-5 | Version impact = none |
+| TFP-6 | No review remediation |
+
+Condition text is unchanged — IDs are additive prefixes only.
+
+Acceptance criteria:
+
+- Zero occurrences of "planner-skip exception" remain in the repository.
+- Each condition in orchestrator.md Planner-First Rule has a TFP-1 through TFP-6 prefix.
+- Trivial Fast Path execution state machine entry gate references TFP-1 through TFP-6.
+- All `tests/policy/safety-*.json` patterns still match.
+- All `tests/workflows/golden-*.json` patterns still match.
+- `plugin/.claude-plugin/plugin.json` version is `0.2.6`.
+- `tools/policy_check.ps1` passes.
+
+### Step 22a: Governance Module Classification Spec (EFF-2 part a)
+
+Create:
+
+- `docs/planning/governance-module-classification.md`
+
+**Classification table:**
+
+| Module | Classification | Condition for loading |
+|---|---|---|
+| `agent-system-policy.md` | Mandatory | Always |
+| `branching-pr-workflow.md` | Mandatory | Always |
+| `git-policy.md` | Mandatory | Always |
+| `scope-policy.md` | Mandatory | Always |
+| `communication-policy.md` | Mandatory | Always |
+| `escalation-policy.md` | Mandatory | Always |
+| `versioning.md` | Conditional | Workflow touches bump-trigger paths, OR `CLAUDE.md` defines versioned artifacts |
+| `validation-policy.md` | Conditional | Workflow includes a validation phase |
+| `pr-review-remediation-loop.md` | Conditional | Workflow includes PR feedback or review remediation |
+| `monitoring-policy.md` | Conditional | User request contains `watch`, `monitor`, `wait`, `poll`, or `loop` |
+
+Additional required sections: mandatory module invariant; conditional module activation rules; fallback rule (fail-open: when uncertain, include the module); CLAUDE.md override mechanism; `Workflow loadout:` output field format definition.
+
+This document is a planning/design spec — not active governance.
+
+Acceptance criteria:
+
+- Classifies every `plugin/governance/*.md` file (excluding `AGENTS.template.md`).
+- Mandatory set matches the Mandatory Governance Files list in `plugin/governance/agent-system-policy.md`.
+- Fallback rule is fail-open (include when uncertain).
+- No `plugin/` files modified.
+- `tools/policy_check.ps1` passes.
+
+### Step 22b: Implement Workflow Loadout in Planner (EFF-2 part b)
+
+Depends on: Step 22a spec merged.
+
+Modify:
+
+- `plugin/agents/planner.md` — add a new `## Workflow Loadout` section (after `## Research Rules`, before `## Output Mode`) explaining how to produce the field. Add `Workflow loadout:` field to both Compact Output and Full Output templates (after the `Versioning:` block). Add `Workflow loadout:` to the finalization gate requirements for both output modes.
+- `tests/reports/valid-planner-compact.txt` — add `Workflow loadout:` field example.
+- `tests/reports/valid-planner-full.txt` — add `Workflow loadout:` field example.
+
+**`## Workflow Loadout` section content summary:** Classify each governance module using `docs/planning/governance-module-classification.md`. Mandatory modules always included. Conditional modules included when their condition is true. When uncertain, include (fail-open). Output lists active conditional modules only, or `all mandatory only` when none are needed.
+
+**Output field format:**
+```
+Workflow loadout:
+- <conditional-module-name>
+- all mandatory only
+```
+
+Acceptance criteria:
+
+- `plugin/agents/planner.md` contains `## Workflow Loadout` section.
+- Both Compact and Full output templates include `Workflow loadout:` field.
+- Report validator fixtures updated to include the field.
+- All `tests/policy/safety-*.json` patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Step 23: Per-Invocation Model Override Investigation (PERF-6)
+
+Create:
+
+- `docs/planning/perf-6-investigation.md`
+
+**Investigation scope (three questions):**
+
+(a) Does Claude Code plugin system support per-invocation model overrides via any mechanism (frontmatter parameter, `Agent()` tool argument, environment variable, API option)?
+
+Research: inspect current agent frontmatter model fields; search Claude Code plugin documentation for per-invocation model selection support; check whether `Agent()` tool call accepts a `model` parameter; check whether skills inherit model context.
+
+(b) If yes — what is the exact mechanism and how would PERF-1 use it for per-task routing?
+
+(c) If no — what alternative approaches are viable: (1) separate lightweight agent variants (`coder-lite.md`, `designer-lite.md`); (2) orchestrator-level `Model tier:` advisory field (informational only); (3) accept fixed frontmatter models and focus PERF-1 on other cost-reduction strategies?
+
+**Required document sections:** Status, Question (a) with evidence, Question (b) or N/A, Question (c) or N/A, Recommendation for PERF-1, Sources.
+
+No `plugin/` files modified. Investigation is performed by the coder agent via WebSearch/WebFetch of Claude Code plugin documentation.
+
+Acceptance criteria:
+
+- `docs/planning/perf-6-investigation.md` answers all three questions with cited evidence.
+- A PERF-1 recommendation is stated.
+- No `plugin/` files modified.
+- `tools/policy_check.ps1` passes.
+
+### Step 24: Bounded Discovery Commands for Planner (PERF-2)
+
+Modify:
+
+- `plugin/agents/planner.md` — add a `## Bounded Discovery` section after `## Research Rules` (before `## Review Remediation Planning` or equivalent next section). Content: four-rule protocol (file map first, targeted reads second, Grep before Read, stop when sufficient) plus discovery budget formula (read at most 3N files during discovery for a task touching N files, minimum 3; state unknowns in Open questions if budget exceeded).
+
+Acceptance criteria:
+
+- `plugin/agents/planner.md` contains `## Bounded Discovery` with four rules and budget formula.
+- Positioned after `## Research Rules`.
+- Existing Research Rules content unchanged.
+- All `tests/policy/safety-*.json` patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Step 25: Session Fact Cache in Reports (PERF-3)
+
+Modify:
+
+- `plugin/governance/communication-policy.md` — add `## Session Fact Cache` section after the Blocked Report Contract section. Define six cacheable facts (trunk, validation commands, artifact paths, review policy, version file, bump-trigger-paths defined/undefined), cache rules, and staleness conditions (rebase, base branch advance, CLAUDE.md modification). Cache is advisory: fresh checks override cached values.
+- `plugin/agents/orchestrator.md` — add optional `Session facts:` block to Delegation Template (after `Constraints:`). Add optional `Session facts:` block to Final Report template. Add note in Mandatory Git Preflight to cache trunk and validation after resolution.
+- `tests/reports/valid-worker-complete.txt` — add example `Session facts:` block (optional field example).
+- `plugin/.claude-plugin/plugin.json` — bump `0.2.7` → `0.2.8`.
+
+Acceptance criteria:
+
+- `communication-policy.md` contains `## Session Fact Cache` with six cacheable facts, rules, and staleness conditions.
+- Orchestrator Delegation Template and Final Report include optional `Session facts:` blocks.
+- Cache is documented as advisory.
+- Report validator fixture updated.
+- `plugin/.claude-plugin/plugin.json` version is `0.2.8`.
+- All `tests/policy/safety-*.json` patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Phase 4 Done When
+
+- `tests/workflows/` contains five golden-path workflow test fixtures, all passing the policy check.
+- Zero occurrences of "planner-skip exception" remain anywhere in the repository.
+- Each trivial fast path condition has a stable ID (TFP-1 through TFP-6) in `plugin/agents/orchestrator.md`.
+- `docs/planning/governance-module-classification.md` classifies every `plugin/governance/*.md` module.
+- `plugin/agents/planner.md` includes `## Workflow Loadout` section and `Workflow loadout:` field in both output templates.
+- `docs/planning/perf-6-investigation.md` answers all three investigation questions and states a PERF-1 recommendation.
+- `plugin/agents/planner.md` includes `## Bounded Discovery` section with four-rule protocol and budget.
+- `plugin/governance/communication-policy.md` includes `## Session Fact Cache` section.
+- `plugin/agents/orchestrator.md` Delegation Template and Final Report include optional `Session facts:` blocks.
+- All cross-references in `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- `tools/policy_check.ps1` passes after every PR lands.
+- All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match.
+- Plugin versions: `0.2.6` after PR A, `0.2.7` after PR C, `0.2.8` after PR D. PR B has no bump.
