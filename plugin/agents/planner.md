@@ -93,6 +93,18 @@ If `claude-mem` is not installed or returns no relevant results, continue withou
 - Do not use Web tools for purposes other than the prior bullet. If repo inspection returns no result for a question that does not match the prior bullet's conditions, output the question under `Open questions` instead of fetching.
 - Retry tool failures once if the failure matches the "Transient failure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`. Otherwise return blocked.
 
+## Bounded Discovery
+
+Use bounded discovery to minimize unnecessary file reads during planning.
+
+Rules:
+1. **File map first** — use Glob or ls to understand repository structure before reading individual files.
+2. **Targeted reads second** — read only files directly relevant to the planned task scope.
+3. **Grep before Read** — search for symbols, patterns, or section headers before reading full files.
+4. **Stop when sufficient** — stop discovery once you have enough information to produce a complete plan. Do not read exhaustively.
+
+Budget: read at most 3N files during discovery for a task touching N files (minimum 3). If the budget is exceeded before planning is complete, state the remaining unknowns in the `Open questions:` field rather than continuing to read.
+
 ## Workflow Loadout
 
 Classify each governance module under `${CLAUDE_PLUGIN_ROOT}/governance/` as mandatory or conditional per the classification in `docs/planning/governance-module-classification.md`.
