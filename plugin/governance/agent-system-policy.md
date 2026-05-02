@@ -109,6 +109,12 @@ Agents must follow these files whether or not the user restates them:
 - `branching-pr-workflow.md` — branching, commits, PRs, merge path, validation, trunk-based delivery
 - `versioning.md` — SemVer, release metadata, changelog, tags
 - `pr-review-remediation-loop.md` — external PR review feedback handling
+- `scope-policy.md` — explicit file-scope enforcement and accessibility ownership boundaries
+- `git-policy.md` — git workflow enforcement rules
+- `validation-policy.md` — versioning enforcement and external review policy
+- `monitoring-policy.md` — shell/parser constraints, monitoring rules, retry/failure handling
+- `escalation-policy.md` — conditions requiring agent escalation instead of guessing
+- `communication-policy.md` — agent-to-agent communication standards and report contracts
 - `CLAUDE.md` — project-specific adapter: paths, commands, packages, artifact rules
 
 Silence about git workflow, versioning, validation, or review remediation is not permission to ignore the governance files.
