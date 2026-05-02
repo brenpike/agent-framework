@@ -73,7 +73,7 @@
         "pattern": "invent values for `base`, `working_branch`, or `classification` -- return blocked if any are missing"
       }
     ],
-    "testFixture": null
+    "testFixture": "tests/policy/safety-required-git-preflight.json"
   },
   {
     "ruleId": "MON-01",
@@ -177,7 +177,7 @@
         "pattern": "Status: complete | blocked"
       }
     ],
-    "testFixture": null
+    "testFixture": "tests/policy/safety-blocked-report-contract.json"
   },
   {
     "ruleId": "REVIEW-01",

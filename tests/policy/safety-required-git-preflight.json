@@ -1,0 +1,25 @@
+{
+  "rule": "Required git preflight",
+  "source": {
+    "file": "plugin/governance/branching-pr-workflow.md",
+    "pattern": "If any item is undefined, implementation must not begin"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "If any are undefined, do not begin implementation"
+    },
+    {
+      "file": "plugin/agents/coder.md",
+      "pattern": "(Required Git Preflight) is undefined"
+    },
+    {
+      "file": "plugin/agents/designer.md",
+      "pattern": "(Required Git Preflight) is undefined"
+    },
+    {
+      "file": "plugin/skills/create-working-branch/SKILL.md",
+      "pattern": "return blocked if any are missing"
+    }
+  ]
+}
