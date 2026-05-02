@@ -1130,7 +1130,7 @@ Condition text is unchanged — IDs are additive prefixes only.
 
 Acceptance criteria:
 
-- Zero occurrences of "planner-skip exception" remain in the repository.
+- Zero occurrences of "planner-skip exception" remain in `plugin/` files and `docs/planning/` advisory documents. (Descriptive uses within the Phase 4 Implementation Plan section of this file are excluded — they document the rename task itself, not operational guidance.)
 - Each condition in orchestrator.md Planner-First Rule has a TFP-1 through TFP-6 prefix.
 - Trivial Fast Path execution state machine entry gate references TFP-1 through TFP-6.
 - All `tests/policy/safety-*.json` patterns still match.
@@ -1263,7 +1263,7 @@ Acceptance criteria:
 ### Phase 4 Done When
 
 - `tests/workflows/` contains five golden-path workflow test fixtures, all passing the policy check.
-- Zero occurrences of "planner-skip exception" remain anywhere in the repository.
+- Zero occurrences of "planner-skip exception" remain in `plugin/` files and `docs/planning/` advisory documents. (Descriptive uses within the Phase 4 Implementation Plan section of this file are excluded.)
 - Each trivial fast path condition has a stable ID (TFP-1 through TFP-6) in `plugin/agents/orchestrator.md`.
 - `docs/planning/governance-module-classification.md` classifies every `plugin/governance/*.md` module.
 - `plugin/agents/planner.md` includes `## Workflow Loadout` section and `Workflow loadout:` field in both output templates.
