@@ -874,6 +874,8 @@ function Test-WorkflowFixtures {
     }
     if ($fixtures.Count -eq 0) {
         Write-Host "FAIL [WORKFLOW-FIXTURES] No golden-*.json fixtures found in tests/workflows/"
+        Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $fixturesDir -Line 0 `
+            -Description 'No golden-*.json fixtures found in tests/workflows/'
         return @{ Passed = 0; Failed = 1 }
     }
     $wfPassed = 0
@@ -882,14 +884,25 @@ function Test-WorkflowFixtures {
         try { $data = Get-Content $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json }
         catch {
             Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name): JSON parse error"
+            Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $f.FullName -Line 0 `
+                -Description "Fixture JSON parse error: $($f.Name)"
             $wfFailed++
             continue
         }
         $filePassed = $true
+        if (-not $data.steps -or @($data.steps).Count -eq 0) {
+            Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name): fixture has no steps"
+            Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $f.FullName -Line 0 `
+                -Description "Fixture has no steps: $($f.Name)"
+            $wfFailed++
+            continue
+        }
         foreach ($step in $data.steps) {
             $srcPath = Resolve-RepoPath $step.source.file
             if (-not (Test-Path $srcPath)) {
                 Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state): source file not found: $($step.source.file)"
+                Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $step.source.file -Line 0 `
+                    -Description "Workflow fixture source file not found: $($step.source.file)"
                 $filePassed = $false
                 continue
             }
@@ -898,6 +911,8 @@ function Test-WorkflowFixtures {
                 Write-Host "PASS [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state)"
             } else {
                 Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state): pattern not found: $($step.source.pattern)"
+                Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath $step.source.file -Line 0 `
+                    -Description "Workflow fixture pattern not found in $($step.source.file): $($step.source.pattern)"
                 $filePassed = $false
             }
         }
