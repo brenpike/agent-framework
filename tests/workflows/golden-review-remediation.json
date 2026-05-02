@@ -2,10 +2,10 @@
   "workflow": "review-remediation",
   "description": "External PR review feedback classification and remediation routing",
   "steps": [
-    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Request external review only when" }, "transition": "External Review" },
-    { "state": "External Review", "source": { "file": "plugin/governance/pr-review-remediation-loop.md", "pattern": "## Remediation Decision Table" }, "transition": "Remediation" },
-    { "state": "Remediation", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "## Review Remediation Delegation Template" }, "transition": "Checkpoint Commit" },
-    { "state": "Checkpoint Commit", "source": { "file": "plugin/governance/branching-pr-workflow.md", "pattern": "## Commit Policy" }, "transition": "Final Report" },
-    { "state": "Final Report", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Result: complete | partial | blocked" }, "transition": null }
+    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Request external review only when" } },
+    { "state": "External Review", "source": { "file": "plugin/governance/pr-review-remediation-loop.md", "pattern": "## Remediation Decision Table" } },
+    { "state": "Remediation", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "## Review Remediation Delegation Template" } },
+    { "state": "Checkpoint Commit", "source": { "file": "plugin/governance/branching-pr-workflow.md", "pattern": "## Commit Policy" } },
+    { "state": "Final Report", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Result: complete | partial | blocked" } }
   ]
 }
