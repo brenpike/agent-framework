@@ -133,8 +133,8 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 11. Before PR readiness, apply `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Trigger) against changed files. When `CLAUDE.md` does not define project-specific bump-trigger paths, the Bump Trigger and "No bump is required by default" lists are exhaustive (per versioning.md): a change matching the "No bump" list requires no bump; a change matching the Bump Trigger list requires a bump (use Bump Type Determination to choose the type). Stop and ask the user only when (a) the change matches more than one row of Bump Type Determination, or (b) it matches no row, or (c) for an artifact that requires a bump, `CLAUDE.md` does not list the full set of artifact files per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — canonical version file, required mirrors, changelog/release notes, package/artifact metadata, documentation mirrors, and release validation files when applicable.
 12. Delegate version/release edits to `agent-framework:coder` when required.
 13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
-14. Open PR when the approved plan is complete.
-15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, or `question-needs-user-input` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). The remediation skill itself decides per-class whether to delegate, escalate to the user, or block (see `${CLAUDE_PLUGIN_ROOT}/skills/address-pr-feedback/SKILL.md` Procedure step 3).
+14. If the user explicitly requested no PR (task input contains "no PR", "skip PR", "don't open PR", or equivalent opt-out), skip PR opening and proceed to the Final Report with `PR: not opened (user opted out)`. All other gates still apply — validation, scope verification, and version bump must complete before the Final Report. Otherwise, open PR when the approved plan is complete.
+15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, or `question-needs-user-input` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). The remediation skill itself decides per-class whether to delegate, escalate to the user, or block (see `${CLAUDE_PLUGIN_ROOT}/skills/address-pr-feedback/SKILL.md` Procedure step 3). If neither (a) nor (b) is true, skip external review and proceed to the Final Report with `Review: Requested: no`. External review is opt-in; this is the default path.
 
 ## Delegation Template
 
@@ -290,7 +290,7 @@ Git:
 - Work: [branch]
 - Worktrees: [yes|no]
 - Checkpoints: [none|summary]
-- PR: [not opened|opened to target]
+- PR: [not opened (user opted out)|not opened|opened to target]
 
 Versioning:
 - Required: [yes|no]
