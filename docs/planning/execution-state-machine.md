@@ -9,6 +9,8 @@
 
 The orchestrator receives a task from the user.
 
+See `routing-matrix.md` for the full user-intent-to-skill/agent routing matrix referenced from this state.
+
 - **Owner:** orchestrator
 - **Entry gate:** none (initial state)
 - **Transitions:**
