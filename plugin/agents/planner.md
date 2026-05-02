@@ -95,7 +95,7 @@ If `claude-mem` is not installed or returns no relevant results, continue withou
 
 ## Review Remediation Planning
 
-Planner is required when the orchestrator's delegation routes feedback to planner per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Routing). That routing fires for:
+Planner is required when the orchestrator's delegation routes feedback to planner per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). That routing fires for:
 
 - feedback whose Classification is `architecture-or-contract-concern`
 - feedback whose Classification is `version-or-release-concern`

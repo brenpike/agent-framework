@@ -15,12 +15,12 @@
 | 6 | Phase, milestone, version bump, or review-remediation fix complete | `agent-framework:checkpoint-commit` | Second in selection order | `plugin/agents/orchestrator.md` (Skill Routing) |
 | 7 | Plan complete, validation passed, versioning done | `agent-framework:open-plan-pr` | Third in selection order | `plugin/agents/orchestrator.md` (Skill Routing) |
 | 8 | User request contains `review`, `codex`, or `audit`; OR `CLAUDE.md` sets review-on-PR = true | `agent-framework:request-codex-review` | Fourth in selection order | `plugin/agents/orchestrator.md` (Skill Routing, Execution Algorithm step 15) |
-| 9 | PR feedback + user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` | `agent-framework:watch-pr-feedback` | Fifth in selection order; keyword-driven | `plugin/agents/orchestrator.md` (Skill Routing), `plugin/governance/pr-review-remediation-loop.md` (Skill Selection) |
-| 10 | PR feedback + no watch keywords | `agent-framework:address-pr-feedback` | Sixth in selection order (most permissive) | `plugin/agents/orchestrator.md` (Skill Routing), `plugin/governance/pr-review-remediation-loop.md` (Skill Selection) |
-| 11 | Remediation: `actionable-code-change`, `actionable-test-change`, `actionable-doc-change` | `agent-framework:coder` (via `address-pr-feedback` or `watch-pr-feedback`) | Classification match | `plugin/governance/pr-review-remediation-loop.md` (Routing) |
-| 12 | Remediation: `design-or-UX-concern` | `agent-framework:designer` (via `address-pr-feedback` or `watch-pr-feedback`) | Classification match | `plugin/governance/pr-review-remediation-loop.md` (Routing) |
-| 13 | Remediation: `architecture-or-contract-concern`, `version-or-release-concern`, or actionable fix touching files across multiple planner steps | `agent-framework:planner` | Classification match or cross-step scope | `plugin/governance/pr-review-remediation-loop.md` (Routing) |
-| 14 | Remediation: product, public API, architecture, security, compatibility, release, or versioning decision that cannot be safely inferred | User | Cannot be safely inferred | `plugin/governance/pr-review-remediation-loop.md` (Routing) |
+| 9 | PR feedback + user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` | `agent-framework:watch-pr-feedback` | Fifth in selection order; keyword-driven | `plugin/agents/orchestrator.md` (Skill Routing), `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 10 | PR feedback + no watch keywords | `agent-framework:address-pr-feedback` | Sixth in selection order (most permissive) | `plugin/agents/orchestrator.md` (Skill Routing), `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 11 | Remediation: `actionable-code-change`, `actionable-test-change`, `actionable-doc-change` | `agent-framework:coder` (via `address-pr-feedback` or `watch-pr-feedback`) | Classification match | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 12 | Remediation: `design-or-UX-concern` | `agent-framework:designer` (via `address-pr-feedback` or `watch-pr-feedback`) | Classification match | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 13 | Remediation: `architecture-or-contract-concern`, `version-or-release-concern`, or actionable fix touching files across multiple planner steps | `agent-framework:planner` | Classification match or cross-step scope | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 14 | Remediation: product, public API, architecture, security, compatibility, release, or versioning decision that cannot be safely inferred | User | Cannot be safely inferred | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
 
 ## Selection Priority
 
@@ -47,4 +47,4 @@ The Planner-First Rule (row 1) applies before any skill selection. The orchestra
 
 ## Related Documents
 
-- [Execution State Machine](docs/planning/execution-state-machine.md)
+- [Execution State Machine](execution-state-machine.md)
