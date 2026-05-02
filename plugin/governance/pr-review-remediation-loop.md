@@ -57,12 +57,21 @@ Classify every review item as one of:
 
 Do not silently ignore review feedback.
 
-## Routing
+## Remediation Decision Table
 
-- `coder`: source, tests, docs, build, packaging, release metadata, serialization, generation, runtime behavior, validation fixes
-- `designer`: presentational UI/UX or static accessibility fixes
-- `planner`: feedback whose Classification is one of `architecture-or-contract-concern`, `version-or-release-concern`, OR whose Smallest correct fix would touch more than one file in different planner steps
-- user: product, public API, architecture, security, compatibility, release, or versioning decisions that cannot be safely inferred
+The `Skill` column value depends on user-request keywords: if the request contains `watch`, `monitor`, `wait`, `poll`, or `loop`, use `agent-framework:watch-pr-feedback`; otherwise use `agent-framework:address-pr-feedback`.
+
+| Classification | Worker | Skill | Escalate to |
+|---|---|---|---|
+| `actionable-code-change` | `agent-framework:coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `actionable-test-change` | `agent-framework:coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `actionable-doc-change` | `agent-framework:coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `architecture-or-contract-concern` | — | — | `agent-framework:planner` (then `agent-framework:coder`) |
+| `design-or-UX-concern` | `agent-framework:designer` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `version-or-release-concern` | — | — | `agent-framework:planner` (then `agent-framework:coder`) |
+| `question-needs-user-input` | — | — | user |
+| `non-actionable` | — | — | — (reply only) |
+| `incorrect-or-rejected` | — | — | — (reply with rationale per Rejected Feedback) |
 
 ## Fix Rules
 
@@ -149,13 +158,6 @@ Maintain a short session-local ledger during each loop:
 - remaining items
 
 Do not commit the ledger unless the user or project policy explicitly requests it.
-
-## Skill Selection
-
-Skill selection depends only on user-request keywords; the comment author (Codex, human reviewer, bot) does not affect which skill is used. PR identification is the skill's responsibility, not the router's — see `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → One-time vs watch routing).
-
-- `agent-framework:watch-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. The skill resolves the target PR (named in the request, current branch's open PR, or returns Blocked).
-- `agent-framework:address-pr-feedback`: every other PR-feedback request — one-time fixes for Codex, human reviewer, or bot comments. Use this for `fix Codex comment on PR #N`, `address reviewer feedback`, `fix the unresolved comment`, etc.
 
 ## Monitoring
 
