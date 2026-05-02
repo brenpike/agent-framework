@@ -126,6 +126,7 @@ The orchestrator opens a pull request via `agent-framework:open-plan-pr`. PRs ar
 - **Owner:** orchestrator (via `agent-framework:open-plan-pr` skill)
 - **Entry gate:** approved plan complete; validation passed (all declared commands passed, or "Not run" when no commands defined); version/release metadata included when required; working branch pushed
 - **Transitions:**
+  - &rarr; **Final Report** (user explicitly opted out of PR; all gates completed)
   - &rarr; **External Review** (user request contains `review`, `codex`, or `audit`; OR project `CLAUDE.md` sets review-on-PR = true)
   - &rarr; **Final Report** (no external review requested or required)
   - &rarr; **Blocked** (PR creation fails with non-transient error)
