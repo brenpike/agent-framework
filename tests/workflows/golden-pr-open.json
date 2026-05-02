@@ -1,0 +1,10 @@
+{
+  "workflow": "pr-open",
+  "description": "PR opening gate conditions and version bump check",
+  "steps": [
+    { "state": "Validate", "source": { "file": "plugin/governance/agent-system-policy.md", "pattern": "Validation procedure" }, "transition": "Version Bump" },
+    { "state": "Version Bump", "source": { "file": "plugin/governance/versioning.md", "pattern": "## Bump Trigger" }, "transition": "PR" },
+    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "skip PR opening and proceed to the Final Report" }, "transition": "Final Report" },
+    { "state": "Final Report", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Result: complete | partial | blocked" }, "transition": null }
+  ]
+}

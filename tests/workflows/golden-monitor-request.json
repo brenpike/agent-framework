@@ -1,0 +1,8 @@
+{
+  "workflow": "monitor-request",
+  "description": "User request with watch/monitor keywords routes to watch-pr-feedback skill",
+  "steps": [
+    { "state": "Intake", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "`watch`, `monitor`, `wait`, `poll`, `loop`" }, "transition": "Monitor Watch" },
+    { "state": "Monitor Watch", "source": { "file": "plugin/governance/monitoring-policy.md", "pattern": "Monitoring must be:" }, "transition": null }
+  ]
+}

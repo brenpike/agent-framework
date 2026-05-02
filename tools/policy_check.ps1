@@ -861,6 +861,55 @@ if ($compatFixtures.Count -eq 0) {
     $checksFailed += $compatFailed
 }
 
+# ── WORKFLOW FIXTURE TESTS ──────────────────────────────────────────────────
+
+Write-Host ''
+Write-Host '=== WORKFLOW-FIXTURES: Golden-path workflow tests ==='
+
+function Test-WorkflowFixtures {
+    $fixturesDir = Join-Path (Join-Path $repoRoot 'tests') 'workflows'
+    $fixtures = @()
+    if (Test-Path $fixturesDir) {
+        $fixtures = Get-ChildItem -Path $fixturesDir -Filter 'golden-*.json' -File
+    }
+    if ($fixtures.Count -eq 0) {
+        Write-Host "FAIL [WORKFLOW-FIXTURES] No golden-*.json fixtures found in tests/workflows/"
+        return @{ Passed = 0; Failed = 1 }
+    }
+    $wfPassed = 0
+    $wfFailed = 0
+    foreach ($f in $fixtures) {
+        try { $data = Get-Content $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json }
+        catch {
+            Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name): JSON parse error"
+            $wfFailed++
+            continue
+        }
+        $filePassed = $true
+        foreach ($step in $data.steps) {
+            $srcPath = Resolve-RepoPath $step.source.file
+            if (-not (Test-Path $srcPath)) {
+                Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state): source file not found: $($step.source.file)"
+                $filePassed = $false
+                continue
+            }
+            $content = Get-Content $srcPath -Raw -Encoding UTF8
+            if ($content -like "*$($step.source.pattern)*") {
+                Write-Host "PASS [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state)"
+            } else {
+                Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state): pattern not found: $($step.source.pattern)"
+                $filePassed = $false
+            }
+        }
+        if ($filePassed) { $wfPassed++ } else { $wfFailed++ }
+    }
+    return @{ Passed = $wfPassed; Failed = $wfFailed }
+}
+
+$wfResult = Test-WorkflowFixtures
+$checksPassed += $wfResult.Passed
+$checksFailed += $wfResult.Failed
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 Write-Host ''
