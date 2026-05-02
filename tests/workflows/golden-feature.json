@@ -9,7 +9,7 @@
     { "state": "Implement", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "## Delegation Template" } },
     { "state": "Validate", "source": { "file": "plugin/governance/agent-system-policy.md", "pattern": "Validation procedure" } },
     { "state": "Checkpoint Commit", "source": { "file": "plugin/governance/branching-pr-workflow.md", "pattern": "## Commit Policy" } },
-    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "## Final Report" } },
+    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "open PR when the approved plan is complete" } },
     { "state": "Final Report", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Result: complete | partial | blocked" } }
   ]
 }

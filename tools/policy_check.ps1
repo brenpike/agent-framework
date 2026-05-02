@@ -880,6 +880,22 @@ function Test-WorkflowFixtures {
     }
     $wfPassed = 0
     $wfFailed = 0
+    $expectedFixtures = @(
+        'golden-feature.json',
+        'golden-monitor-request.json',
+        'golden-pr-open.json',
+        'golden-review-remediation.json',
+        'golden-trivial-edit.json'
+    )
+    foreach ($expected in $expectedFixtures) {
+        $expectedPath = Join-Path $fixturesDir $expected
+        if (-not (Test-Path $expectedPath)) {
+            Write-Host "FAIL [WORKFLOW-FIXTURES] Missing required fixture: $expected"
+            Add-Finding -Rule 'WORKFLOW-FIXTURES' -FilePath (Join-Path $fixturesDir $expected) -Line 0 `
+                -Description "Missing required fixture: $expected"
+            $wfFailed++
+        }
+    }
     foreach ($f in $fixtures) {
         try { $data = Get-Content $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json }
         catch {
