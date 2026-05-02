@@ -89,6 +89,34 @@ Before implementation begins, the orchestrator must define:
 
 If any item is undefined, implementation must not begin.
 
+### Preflight Command Recipes
+
+Each item below includes the resolution command and expected output shape. Run these (or equivalent) to establish preflight values before implementation begins. If any command fails or returns an unexpected shape, the item is undefined and implementation must not begin.
+
+| Preflight Item | Command | Expected Output |
+|---|---|---|
+| Work classification | (determined from plan or user input) | One of: `feature\|bugfix\|hotfix\|refactor\|chore\|docs\|test\|ci` |
+| Base branch | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` | Branch name string (e.g. `main`) — unless overridden by user or `CLAUDE.md` |
+| Working branch name | (constructed from classification + topic per Branch Taxonomy) | `<prefix>/<topic>` matching naming constraints |
+| Branch exists vs create | `git branch --list <name>` and `git ls-remote --heads origin <name>` | Empty = create; non-empty = exists |
+| Worktree decision | (determined from plan parallelism requirements per Worktrees section) | `yes` or `no` |
+| Checkpoint commit policy | (derived from plan phase count and risk flags per Commit Policy section) | One of: `none\|checkpoint allowed\|checkpoint expected` |
+| PR target | Same resolution as base branch | Branch name string |
+
+### Safe Git State Check
+
+Run before any git write operation. Each check maps to a condition from the Unsafe git state definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). Do not begin implementation if any check fails.
+
+| Check | Command | Pass Condition |
+|---|---|---|
+| Not on trunk | `git branch --show-current` | Output is not the resolved trunk branch |
+| No detached HEAD | `git symbolic-ref HEAD` | Exits 0 (attached to a branch) |
+| No unmerged paths | `git ls-files -u` | Empty output |
+| No in-progress operation | `test ! -f .git/MERGE_HEAD && test ! -f .git/REBASE_HEAD && test ! -f .git/CHERRY_PICK_HEAD && test ! -f .git/BISECT_LOG` | Exits 0 (no sentinel files exist) |
+| No out-of-scope changes | `git status --porcelain` | Empty output, or every listed path is within the agent's assigned file scope |
+| Trunk branch identifiable | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` | Returns a non-empty branch name string |
+| Remote reachable | `git ls-remote --exit-code origin HEAD` | Exits 0 |
+
 ## Branch Creation
 
 The orchestrator creates or confirms the working branch only after:

@@ -53,6 +53,8 @@ The orchestrator explicitly establishes all required git context: work classific
 
 If any item is undefined, implementation must not begin.
 
+Command recipes and safe git state checks: `plugin/governance/branching-pr-workflow.md` (Preflight Command Recipes).
+
 - **Owner:** orchestrator
 - **Entry gate:** complete plan returned from Plan, OR Trivial Fast Path conditions satisfied
 - **Transitions:**
