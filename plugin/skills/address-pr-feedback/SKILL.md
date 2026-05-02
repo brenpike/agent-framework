@@ -21,6 +21,21 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `VAL-01` (validation gate), `REPORT-01` (blocked report contract), `REVIEW-01` (review remediation ownership)
+
+Before:
+- [ ] PR resolved and state is OPEN
+- [ ] Git state is not unsafe per Definitions
+- [ ] Target feedback item identified and classified
+
+After:
+- [ ] Smallest correct fix applied within scope
+- [ ] Validation run or "Not run" reported
+- [ ] Fix-SHA reply posted on the feedback thread
+- [ ] Output uses skill output contract
+
 # Address PR Feedback
 
 Fix one-time PR feedback (Codex, human reviewer, or bot comments alike).

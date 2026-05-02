@@ -2,13 +2,13 @@
   {
     "rule": "CHECK1",
     "path": "plugin/skills/create-working-branch/SKILL.md",
-    "line": 41,
+    "line": 56,
     "reason": "Gate-level hedge: 'unsafe or ambiguous' uses ambiguous as uncertainty gate. Tracked for remediation."
   },
   {
     "rule": "CHECK1",
     "path": "plugin/skills/setup-project/SKILL.md",
-    "line": 64,
+    "line": 78,
     "reason": "Gate-level hedge: 'proceed if the project root is ambiguous' uses ambiguous as stop-gate condition. Tracked for remediation."
   }
 ]

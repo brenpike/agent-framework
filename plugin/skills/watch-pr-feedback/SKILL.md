@@ -12,6 +12,21 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `VAL-01` (validation gate), `REPORT-01` (blocked report contract), `MON-01` (monitor truthfulness), `REVIEW-01` (review remediation ownership)
+
+Before:
+- [ ] PR resolved and state is OPEN
+- [ ] Monitor command is read-only, deterministic, bounded, parser-stable
+- [ ] Stop conditions configured
+
+After:
+- [ ] New feedback classified and routed to address-pr-feedback
+- [ ] Monitoring reported truthfully (active or not active)
+- [ ] Stopped on policy stop condition
+- [ ] Output uses skill output contract
+
 # Watch PR Feedback
 
 Watch a specific PR for new unresolved review feedback and route to remediation skills.

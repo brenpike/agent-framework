@@ -8,6 +8,19 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `REPORT-01` (blocked report contract)
+
+Before:
+- [ ] PR exists and is open
+- [ ] Current branch is the PR head branch
+- [ ] PR branch has been pushed
+
+After:
+- [ ] Review request comment posted on PR
+- [ ] Output uses skill output contract
+
 Request Codex review on the current pull request.
 
 Codex is an external reviewer, not a Claude Code subagent.

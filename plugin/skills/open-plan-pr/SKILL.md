@@ -15,6 +15,21 @@ allowed-tools:
 shell: powershell
 ---
 
+## Quick Reference
+
+Rules: `GIT-01` (no trunk commits), `VAL-01` (validation gate), `VAL-02` (PR only after validation), `REPORT-01` (blocked report contract)
+
+Before:
+- [ ] Current branch matches `head` and is not `base`
+- [ ] Validation passed or "Not run (no validation commands defined)"
+- [ ] Required version/release metadata included or not required
+- [ ] No unexpected unstaged changes
+
+After:
+- [ ] PR head SHA matches local HEAD
+- [ ] PR created with `--base` targeting resolved trunk
+- [ ] Output uses skill output contract
+
 Open a pull request for the completed approved plan.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` and `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.

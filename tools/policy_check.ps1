@@ -867,7 +867,7 @@ Write-Host ''
 Write-Host '=== Summary ==='
 
 $totalFindings = $script:findings.Count
-$allowlistedCount = ($script:findings | Where-Object { $_.Allowlisted }).Count
+$allowlistedCount = @($script:findings | Where-Object { $_.Allowlisted }).Count
 $nonAllowlistedCount = $totalFindings - $allowlistedCount
 
 Write-Host "Checks passed: $checksPassed / $($checksPassed + $checksFailed)"
