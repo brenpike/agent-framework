@@ -68,7 +68,7 @@ The existing framework should be modified in place rather than replaced. Startin
 | ID | Enhancement | Difficulty | Value | Depends on |
 |---|---|---:|---:|---|
 | EFF-1 | Validate and harden the existing safe fast path for trivial single-file changes while preserving branch preflight, scope, validation, and final report. | 3 | 5 | REL-2 |
-| EFF-2 | Let planner return `Workflow loadout:` naming only required governance modules. | 3 | 4 | TC-5 |
+| EFF-2 | Let planner return `Workflow loadout:` naming only required governance modules. Two-part delivery: (a) design mandatory/conditional module classification spec as a docs/planning artifact, (b) implement in planner.md once spec is approved. | 3 | 4 | TC-5 |
 | EFF-3 | Add explicit "no PR requested" and "no review requested" workflow branches. | 2 | 4 | CLR-1 |
 | EFF-4 | Batch validation and git checks at phase boundaries instead of repeating nearby checks. | 3 | 3 | REL-3 |
 | EFF-5 | Define remediation batching rules for same owner, same files, same validation path. | 4 | 4 | CPX-2 |
@@ -97,11 +97,12 @@ The existing framework should be modified in place rather than replaced. Startin
 
 | ID | Enhancement | Difficulty | Value | Depends on |
 |---|---|---:|---:|---|
-| PERF-1 | Use lower-cost models only for low-risk paths; keep strongest models for architecture, versioning, review remediation, multi-file work. | 2 | 4 | EFF-1 |
+| PERF-1 | Assign haiku to specialist agents (planner, coder) for routine/low-risk invocations; keep sonnet on orchestrator and high-risk paths (architecture, versioning, review remediation, multi-file). Do not attempt per-path model routing within a single agent. | 2 | 4 | EFF-1 |
 | PERF-2 | Add bounded discovery commands for planner: file map first, targeted reads second. | 2 | 4 | CLR-1 |
 | PERF-3 | Cache resolved repo facts in session reports: trunk, validation commands, artifact paths, review policy. | 3 | 4 | REL-3 |
 | PERF-4 | Make GitHub review fetching incremental using seen IDs in the session ledger. | 4 | 3 | CPX-2 |
 | PERF-5 | Add validation tiers in `CLAUDE.md`: required quick checks before commit, full checks before PR/merge. | 4 | 4 | REL-5 |
+| PERF-6 | Investigate whether Claude Code supports per-invocation model overrides to enable true per-path model routing within orchestrator. | 3 | 3 | PERF-1 |
 
 ### Durability
 
@@ -164,26 +165,28 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 |---:|---|---|
 | 20 | REL-2 | Golden-path workflow tests prove main scenarios still work. |
 | 21 | EFF-1 | Validates and hardens the existing safe trivial fast path while preserving branch, scope, validation, and reporting gates. |
-| 22 | PERF-1 | Lower-cost models become safer once fast-path boundaries are tested. |
-| 23 | PERF-2 | Bounded planner discovery improves speed without changing governance. |
-| 24 | PERF-3 | Caches resolved repo facts to reduce repeated checks and rereads. |
+| 22 | EFF-2 | TC-5 complete (Phase 2). Part (a): design mandatory/conditional governance module classification spec. Part (b): implement `Workflow loadout:` in planner.md after spec approval. |
+| 23 | PERF-1 | Option B: assign haiku to specialist agents for routine invocations; keep sonnet on orchestrator and high-risk paths. Safe once fast-path boundaries are tested. |
+| 24 | PERF-2 | Bounded planner discovery improves speed without changing governance. |
+| 25 | PERF-3 | Caches resolved repo facts to reduce repeated checks and rereads. |
 
 ### Phase 5: Reduce Loaded Context And Duplication
 
 | Order | ID | Why Now |
 |---:|---|---|
-| 25 | TC-1 | Creates the always-loaded core contract after canonical modules and tests exist. |
-| 26 | CPX-3 | Removes duplicated unsafe-git/validation wording only after rule IDs and tests protect behavior. |
-| 27 | CPX-4 | Makes versioning module activation more targeted while preserving versioning stops. |
+| 26 | TC-1 | Creates the always-loaded core contract after canonical modules and tests exist. |
+| 27 | CPX-3 | Removes duplicated unsafe-git/validation wording only after rule IDs and tests protect behavior. |
+| 28 | CPX-4 | Makes versioning module activation more targeted while preserving versioning stops. |
 
 ### Phase 6: Later Optimizations
 
 | Order | ID | Why Now |
 |---:|---|---|
-| 28 | EFF-5 | Remediation batching is valuable but risky; wait until routing is canonical and tested. |
-| 29 | PERF-5 | Validation tiers can help but need careful semantics to avoid weakening validation. |
-| 30 | DUR-5 | Migration notes become important once rule renames or module splits happen. |
-| 31 | DUR-3 | Policy changelog is useful but not foundational. Add it alongside the first behavioral refactor. |
+| 29 | EFF-5 | Remediation batching is valuable but risky; wait until routing is canonical and tested. |
+| 30 | PERF-5 | Validation tiers can help but need careful semantics to avoid weakening validation. |
+| 31 | DUR-5 | Migration notes become important once rule renames or module splits happen. |
+| 32 | DUR-3 | Policy changelog is useful but not foundational. Add it alongside the first behavioral refactor. |
+| 33 | PERF-6 | Investigate per-invocation model overrides in Claude Code once PERF-1 Option B is delivered. |
 
 ### Deferred Items
 
@@ -193,7 +196,7 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 | TC-3 | High-risk and low value-to-difficulty after review. Reconsider only after static generation design proves Claude Code loads generated output and sync tests are reliable. |
 | EFF-4 | Batching validation/git checks risks weakening enforcement. Revisit after validators and tests exist. |
 | PERF-4 | Incremental GitHub fetching is lower value relative to difficulty. Optimize after remediation flow is stable. |
-| EFF-2 | Requires mandatory/conditional governance module split spec not yet designed; deferred to Phase 4 alongside other efficiency improvements (EFF-1, PERF-1, PERF-2). |
+| EFF-2 | Moved to Phase 4. TC-5 dependency resolved (Phase 2 complete). Two-part delivery: mandatory/conditional module spec design, then implementation in planner.md. |
 
 ## Phase 1 Implementation Plan
 
