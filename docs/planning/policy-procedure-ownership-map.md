@@ -108,12 +108,15 @@ Planning artifact. Not active governance. Updated as part of Phase 2 (CPX-1 Step
 
 Sections confirmed to have equivalent content in a skill file:
 
-| Governance section | Governance file | Duplicate in skill |
-|---|---|---|
-| Skill Selection (keyword routing) | pr-review-remediation-loop.md | watch-pr-feedback/SKILL.md (Invocation Boundary) and address-pr-feedback/SKILL.md (Invocation Boundary) restate the same watch-vs-address keyword split |
-| Classification | pr-review-remediation-loop.md | address-pr-feedback/SKILL.md (step 3/4) re-applies the same nine-label classification inline |
-| Routing | pr-review-remediation-loop.md | address-pr-feedback/SKILL.md (step 5) re-applies the same agent routing rules |
-| Monitoring Policy (shell/parser constraints) | agent-system-policy.md | watch-pr-feedback/SKILL.md (Monitor Rules) restates deterministic/bounded/parser-stable constraints and Shell and Parser Policy |
-| Stop Conditions (repeat detection, unsafe git) | pr-review-remediation-loop.md | watch-pr-feedback/SKILL.md (Defaults) restates same-finding, unsafe-git, and question-needs-user-input stop conditions |
-| Commit Policy (forbidden strings) | branching-pr-workflow.md | checkpoint-commit/SKILL.md (step 4) references the same forbidden-string list |
-| Rejected Feedback | pr-review-remediation-loop.md | address-pr-feedback/SKILL.md (step 3, incorrect-or-rejected rule) restates the rationale-reply and high-severity stop procedure |
+| Governance section | Governance file | Duplicate in skill | Finding |
+|---|---|---|---|
+| Skill Selection (keyword routing) | pr-review-remediation-loop.md | watch-pr-feedback/SKILL.md (Invocation Boundary) and address-pr-feedback/SKILL.md (Invocation Boundary) restate the same watch-vs-address keyword split | Cross-ref already exists; Mixed content — no extraction |
+| Classification | pr-review-remediation-loop.md | address-pr-feedback/SKILL.md (step 3/4) re-applies the same nine-label classification inline | Skill cross-references governance — not a true duplicate |
+| Routing | pr-review-remediation-loop.md | address-pr-feedback/SKILL.md (step 5) re-applies the same agent routing rules | Skill cross-references governance — not a true duplicate |
+| Monitoring Policy (shell/parser constraints) | agent-system-policy.md | watch-pr-feedback/SKILL.md (Monitor Rules) restates deterministic/bounded/parser-stable constraints and Shell and Parser Policy | Short summary + cross-ref; endorsed isolation pattern |
+| Stop Conditions (repeat detection, unsafe git) | pr-review-remediation-loop.md | watch-pr-feedback/SKILL.md (Defaults) restates same-finding, unsafe-git, and question-needs-user-input stop conditions | Skill uses defined terms via cross-ref — not a true duplicate |
+| Commit Policy (forbidden strings) | branching-pr-workflow.md | checkpoint-commit/SKILL.md (step 4) references the same forbidden-string list | Skill cross-references governance — not a true duplicate |
+| Rejected Feedback | pr-review-remediation-loop.md | address-pr-feedback/SKILL.md (step 3, incorrect-or-rejected rule) restates the rationale-reply and high-severity stop procedure | Skill cross-references + adds skill-specific escalation logic |
+
+**Conclusion (Step 12b):** No pure-procedure duplicates without cross-references found.
+Conservative threshold not met for any entry. Zero plugin/ extractions required.
