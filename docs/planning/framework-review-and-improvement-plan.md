@@ -157,7 +157,6 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 | 16 | CPX-2 | Collapses review remediation routing into one canonical decision table. |
 | 17 | REL-3 | Turns git preflight into command recipes with expected outputs. |
 | 18 | EFF-3 | Makes "no PR requested" and "no review requested" explicit. |
-| 19 | EFF-2 | Lets planner name exact governance modules needed for the task. |
 
 ### Phase 4: Add Safe Efficiency Paths
 
@@ -194,6 +193,7 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 | TC-3 | High-risk and low value-to-difficulty after review. Reconsider only after static generation design proves Claude Code loads generated output and sync tests are reliable. |
 | EFF-4 | Batching validation/git checks risks weakening enforcement. Revisit after validators and tests exist. |
 | PERF-4 | Incremental GitHub fetching is lower value relative to difficulty. Optimize after remediation flow is stable. |
+| EFF-2 | Requires mandatory/conditional governance module split spec not yet designed; deferred to Phase 4 alongside other efficiency improvements (EFF-1, PERF-1, PERF-2). |
 
 ## Phase 1 Implementation Plan
 
@@ -769,3 +769,245 @@ Acceptance criteria:
 - `tools/policy_check.ps1` passes after every PR lands.
 - All `tests/policy/safety-*.json` patterns match their source files.
 - Plugin version reflects structural changes: `0.2.2` after PR B, `0.2.3` after PR C.
+
+---
+
+## Phase 3 Implementation Plan
+
+### Phase 3 Goal
+
+Phase 3 improves routing clarity and workflow shape. It creates a routing matrix mapping user intent to skill/agent selection, collapses scattered review remediation routing into one canonical decision table, converts git preflight checks into explicit command recipes with expected outputs, and adds explicit "no PR requested" and "no review requested" workflow branches. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.ps1`) must pass before and after every structural change.
+
+### Phase 3 Scope
+
+1. **CLR-2 (Step 15)**: Routing matrix from user intent to skill/agent.
+2. **CPX-2 (Step 16)**: Collapse review remediation routing into one canonical decision table.
+3. **REL-3 (Step 17)**: Git preflight as command recipes with expected outputs.
+4. **EFF-3 (Step 18)**: Explicit "no PR requested" and "no review requested" workflow branches.
+
+Excluded: EFF-2 (Step 19) is deferred to Phase 4. See Deferred Items table.
+
+### Phase 3 Versioning
+
+Steps 15–16 (PR A): Step 15 creates a planning doc in `docs/planning/`, no bump on its own. Step 16 modifies `plugin/governance/pr-review-remediation-loop.md` and updates cross-references in `plugin/agents/orchestrator.md`. This is the first Phase 3 PR touching `plugin/` and carries the version catch-up bump: `0.2.1 → 0.2.4`. The catch-up accounts for two Phase 2 plugin/ PRs that landed without bumping (PR B at `0.2.2` and PR C at `0.2.3` were planned but the version file was not updated) plus one Phase 3 PATCH increment.
+
+Steps 17–18 (PR B): Both steps modify files inside `plugin/`. Bump type: PATCH. Version: `0.2.4 → 0.2.5`.
+
+Canonical version file: `plugin/.claude-plugin/plugin.json`.
+
+### Phase 3 PR Boundary
+
+| PR | Steps | Touches `plugin/` | Version bump |
+|---|---|---|---|
+| PR A | 15, 16 | Yes (Step 16) | `0.2.1 → 0.2.4` (catch-up) |
+| PR B | 17, 18 | Yes | `0.2.4 → 0.2.5` |
+
+Phase 1 safety checks must pass before each PR is opened.
+
+### Step 15: Routing Matrix (CLR-2)
+
+Create:
+
+- `docs/planning/routing-matrix.md`
+
+Modify:
+
+- `docs/planning/execution-state-machine.md` — add cross-reference to routing matrix in the Intake state section.
+
+**Content of routing matrix:**
+
+The matrix maps user intent patterns to the correct skill or agent. It consolidates routing logic currently distributed across:
+
+- `plugin/agents/orchestrator.md` Skill Routing section
+- `plugin/agents/orchestrator.md` Execution Algorithm steps 14–15
+- `plugin/governance/pr-review-remediation-loop.md` Routing section
+- `plugin/governance/pr-review-remediation-loop.md` Skill Selection section
+
+**Matrix structure:**
+
+```markdown
+| User Intent Pattern | Target | Selection Rule | Source |
+|---|---|---|---|
+| [intent description or keyword pattern] | [skill or agent name] | [condition that selects this target] | [canonical source file and section] |
+```
+
+**Rows to include (derive from current sources):**
+
+1. Task requires planning → `agent-framework:planner` (Planner-First Rule)
+2. Task meets all six planner-skip conditions → orchestrator handles directly (Trivial Fast Path)
+3. Implementation work → `agent-framework:coder` or `agent-framework:designer` (delegation by file type/role)
+4. Branch creation needed → `agent-framework:create-working-branch` (Skill Routing item 1)
+5. Phase/milestone/version complete → `agent-framework:checkpoint-commit` (Skill Routing item 2)
+6. Plan complete, validation passed → `agent-framework:open-plan-pr` (Skill Routing item 3)
+7. User says `review`/`codex`/`audit` or project requires review → `agent-framework:request-codex-review` (Skill Routing item 4)
+8. User says `watch`/`monitor`/`wait`/`poll`/`loop` for PR feedback → `agent-framework:watch-pr-feedback` (Skill Selection)
+9. PR feedback fix (no watch keywords) → `agent-framework:address-pr-feedback` (Skill Selection)
+10. Remediation routing: `actionable-code-change`/`actionable-test-change`/`actionable-doc-change` → `coder` (Routing)
+11. Remediation routing: `design-or-UX-concern` → `designer` (Routing)
+12. Remediation routing: `architecture-or-contract-concern`/`version-or-release-concern`/cross-step fix → `planner` (Routing)
+13. Remediation routing: product/API/security/compatibility/release decision → user (Routing)
+
+**Additional sections:**
+
+- Selection priority order (matching the orchestrator's "most specific first" list)
+- Conflict resolution: when multiple rows match, which wins
+- Cross-reference to `docs/planning/execution-state-machine.md` states
+
+Acceptance criteria:
+
+- Every skill in the orchestrator's Skill Routing section has at least one row in the matrix.
+- Every agent delegation path has at least one row.
+- Every remediation routing target in `pr-review-remediation-loop.md` (Routing) has a row.
+- The matrix is consistent with the execution state machine transitions.
+- No new routing rules are introduced; the matrix documents existing behavior.
+- The document is marked as planning/advisory material (not active governance).
+- `tools/policy_check.ps1` passes.
+
+### Step 16: Canonical Remediation Decision Table (CPX-2)
+
+Modify:
+
+- `plugin/governance/pr-review-remediation-loop.md` — replace the separate Classification, Routing, and Skill Selection sections with a single unified Remediation Decision Table.
+- `plugin/agents/orchestrator.md` — simplify Execution Algorithm step 15 cross-reference to reference `(Remediation Decision Table)` instead of `(Classification)`.
+- `plugin/.claude-plugin/plugin.json` — bump version from `0.2.1` to `0.2.4`.
+
+**Decision table structure:**
+
+Replace the current three separate sections (Classification list, Routing list, Skill Selection) with one table under a new `## Remediation Decision Table` section:
+
+| Classification | Worker | Skill | Escalate to |
+|---|---|---|---|
+| `actionable-code-change` | `coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `actionable-test-change` | `coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `actionable-doc-change` | `coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `architecture-or-contract-concern` | — | — | `planner` (then `coder`) |
+| `design-or-UX-concern` | `designer` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `version-or-release-concern` | — | — | `planner` (then `coder`) |
+| `question-needs-user-input` | — | — | user |
+| `non-actionable` | — | — | — (reply only) |
+| `incorrect-or-rejected` | — | — | — (reply with rationale) |
+
+The `Skill` column value depends on user-request keywords (`watch`/`monitor`/`wait`/`poll`/`loop` selects `watch-pr-feedback`; otherwise `address-pr-feedback`). This keyword rule is stated once in the table footnote, not repeated.
+
+**What moves and what stays:**
+
+- Classification values list: stays as a standalone enumeration above the table (the table references these values).
+- Routing section: content absorbed into the Worker and Escalate columns of the decision table. Section removed.
+- Skill Selection section: content absorbed into the Skill column and keyword footnote. Section removed.
+- Fix Rules, Rejected Feedback, Re-review, Stop Conditions, Thread Resolution Rule, Remediation Ledger: unchanged.
+
+Acceptance criteria:
+
+- Unified decision table contains every classification value from the current Classification list.
+- Every routing target from the current Routing section appears in Worker or Escalate column.
+- Every skill selection rule from the current Skill Selection section appears in Skill column or footnote.
+- No classification value, routing target, or skill selection rule is lost.
+- Routing section and Skill Selection section are removed (content in the table).
+- Orchestrator Execution Algorithm step 15 references `(Remediation Decision Table)`.
+- All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- All `tests/policy/safety-*.json` patterns still match.
+- `docs/planning/policy-index.json` entry for `REVIEW-01` is updated if its `source.section` changed.
+- `plugin/.claude-plugin/plugin.json` version is `0.2.4`.
+- `tools/policy_check.ps1` passes.
+
+### Step 17: Git Preflight Command Recipes (REL-3)
+
+Modify:
+
+- `plugin/governance/branching-pr-workflow.md` — expand the Required Git Preflight section with concrete command recipes and expected outputs for each of the seven preflight items, plus a safe git state check subsection.
+- `docs/planning/execution-state-machine.md` — add cross-reference from the Git Preflight state to the new command recipes subsection.
+
+**Command recipes structure (additive subsection after the existing seven-item list):**
+
+```markdown
+### Preflight Command Recipes
+
+Each preflight item below includes the resolution command and the expected output shape. The orchestrator runs these commands (or equivalent) to establish preflight values. If any command fails or returns an unexpected shape, the item is undefined and implementation must not begin.
+```
+
+| Preflight Item | Command | Expected Output |
+|---|---|---|
+| Work classification | (determined from plan or user input) | One of: `feature\|bugfix\|hotfix\|refactor\|chore\|docs\|test\|ci` |
+| Base branch | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` | Branch name string (e.g., `main`) — unless overridden by user or `CLAUDE.md` |
+| Working branch name | (constructed from classification + topic per Branch Taxonomy) | `<prefix>/<topic>` matching naming constraints |
+| Branch exists vs create | `git branch --list <working-branch-name>` and `git ls-remote --heads origin <working-branch-name>` | Empty = create; non-empty = exists |
+| Worktree decision | (determined from plan parallelism requirements) | `yes` or `no` |
+| Checkpoint commit policy | (derived from plan phase count and risk flags) | One of: `none\|checkpoint allowed\|checkpoint expected` |
+| PR target | Same as base branch resolution | Branch name string |
+
+Safe git state check subsection:
+
+| Check | Command | Pass condition |
+|---|---|---|
+| Not on trunk | `git branch --show-current` | Output is not the resolved trunk branch |
+| Clean working tree | `git status --porcelain` | Empty output or only expected changes |
+| No detached HEAD | `git symbolic-ref HEAD` | Exits 0 |
+| Remote reachable | `git ls-remote --exit-code origin HEAD` | Exits 0 |
+
+Acceptance criteria:
+
+- Every one of the seven Required Git Preflight items has a command recipe with expected output.
+- Safe git state check covers conditions in the "Unsafe git state" definition.
+- Command recipes use only read-only git/gh commands.
+- The existing seven-item list is unchanged; recipes are an additive subsection.
+- The execution state machine Git Preflight state cross-references the recipes.
+- All existing cross-references to `(Required Git Preflight)` continue to resolve (header not renamed).
+- All `tests/policy/safety-*.json` patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Step 18: Explicit No-PR and No-Review Workflow Branches (EFF-3)
+
+Modify:
+
+- `plugin/agents/orchestrator.md` — update Execution Algorithm steps 14–15 and Final Report to handle explicit "no PR requested" and "no review requested" branches.
+- `docs/planning/execution-state-machine.md` — add transitions for no-PR and no-review paths in the PR and External Review states.
+- `plugin/.claude-plugin/plugin.json` — bump version from `0.2.4` to `0.2.5`.
+
+**Changes to Execution Algorithm step 14:**
+
+Current text: "Open PR when the approved plan is complete."
+
+New text:
+
+```text
+14. If the user explicitly requested no PR (task input contains "no PR", "skip PR", "don't open PR", or equivalent), skip PR opening. Proceed to final report with `PR: not opened (user opted out)`. All other gates (validation, version bump, scope check) still apply.
+    Otherwise, open PR when the approved plan is complete.
+```
+
+**Changes to Execution Algorithm step 15:**
+
+After the existing condition text, add:
+
+```text
+    If neither (a) nor (b) is true, skip external review. Proceed to final report with `Review: not requested`. This is the default — external review is opt-in.
+```
+
+**Changes to Final Report template:** Document new opt-out field values:
+- `PR: not opened (user opted out)`
+- `Review: not requested`
+
+**Changes to execution-state-machine.md:** Add no-PR transition to PR state and note no-review as explicit default in External Review state.
+
+Acceptance criteria:
+
+- Execution Algorithm step 14 explicitly handles "no PR requested" opt-out.
+- Execution Algorithm step 15 explicitly handles "no review requested" as the default path.
+- No safety gate is bypassed by opt-out — validation, scope, version bump still run.
+- Final Report template supports new field values.
+- Execution state machine PR state includes no-PR transition to Final Report.
+- All `tests/policy/safety-*.json` patterns still match.
+- `plugin/.claude-plugin/plugin.json` version is `0.2.5`.
+- `tools/policy_check.ps1` passes.
+
+### Phase 3 Done When
+
+- `docs/planning/routing-matrix.md` exists and maps every skill and agent delegation path to user intent patterns.
+- `plugin/governance/pr-review-remediation-loop.md` contains a single Remediation Decision Table covering all classification, routing, and skill selection logic.
+- The separate Routing and Skill Selection sections in `pr-review-remediation-loop.md` are removed (content consolidated into the table).
+- `plugin/governance/branching-pr-workflow.md` Required Git Preflight section includes command recipes with expected outputs for all seven preflight items plus a safe git state check.
+- `plugin/agents/orchestrator.md` Execution Algorithm explicitly handles "no PR requested" and "no review requested" workflow branches.
+- `docs/planning/execution-state-machine.md` transitions updated for no-PR and no-review paths and cross-reference the preflight recipes.
+- All cross-references in `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths and resolve to existing files and sections.
+- `tools/policy_check.ps1` passes after every PR lands.
+- All `tests/policy/safety-*.json` patterns match their source files.
+- Plugin version reflects changes: `0.2.4` after PR A, `0.2.5` after PR B.
