@@ -91,13 +91,14 @@ Optional:
 2. Confirm GitHub CLI access works.
 3. Confirm current branch and working tree state.
 4. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, review summaries (reviews with state in `CHANGES_REQUESTED` or `COMMENTED` whose body, when classified per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification, maps to any `actionable-*` class), and the PR's `state` field on every poll so terminal transitions to `MERGED` or `CLOSED` are observable. Fetch and ledger review summary IDs and states alongside thread and comment IDs.
-5. Track seen comment/thread/review IDs in a session-local ledger.
-6. When new feedback appears, classify source:
+5. Resolve the bot identity once at startup: run `gh api user --jq .login` and store the result as `BOT_LOGIN`. Apply Comment Filtering (see below) to every detected item before adding it to the ledger. Items excluded by Comment Filtering are never added to the ledger and never classified.
+6. Track seen comment/thread/review IDs in a session-local ledger.
+7. When new feedback appears, classify source:
    - human reviewer feedback
    - CI/system feedback
    - ambiguous
-7. Route generic/human/ambiguous feedback → `agent-framework:address-pr-feedback`.
-8. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, stop the Monitor (e.g., via TaskStop) and report the terminal state — do not continue polling a terminal resource.
+8. Route generic/human/ambiguous feedback → `agent-framework:address-pr-feedback`.
+9. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, stop the Monitor (e.g., via TaskStop) and report the terminal state — do not continue polling a terminal resource.
 
 ## Monitor Rules
 
@@ -121,6 +122,24 @@ If Monitor startup or parser strategy fails:
 
 Do not start a second Monitor with a different parser strategy unless the user explicitly approves.
 
+## Comment Filtering
+
+Apply both exclusion rules at the detection layer, before any item is added to the State Ledger or classified. An item excluded here is counted in the ledger's `filtered (excluded)` total and otherwise ignored for the remainder of the session.
+
+### Rule 1 — Empty body
+
+Exclude any comment, review thread comment, or review summary whose `body` field is an empty string, `null`, or contains only whitespace characters after trimming.
+
+This rule applies to review summaries regardless of the review's `state` field. A review with `state: CHANGES_REQUESTED` and an empty `body` is excluded by this rule; any inline threads attached to that review are evaluated independently and are not excluded by this rule.
+
+### Rule 2 — Self-author
+
+Exclude any comment or review whose `author.login` value (string, case-sensitive literal comparison) equals the `BOT_LOGIN` resolved via `gh api user --jq .login` at startup (Procedure step 5).
+
+- Identity is resolved once at startup and reused for the entire session without re-querying.
+- Comparison is an exact string match. Do not use pattern matching, prefix matching, or case-folding.
+- Purpose: prevents the bot's own replies from being picked up on the next poll (race condition at detection layer).
+
 ## State Ledger
 
 Track session-local:
@@ -130,6 +149,7 @@ Track session-local:
 - comments already remediated
 - comments skipped as non-actionable
 - comments requiring user input
+- filtered (excluded) count
 - remediation cycle count
 - monitor startup status
 
