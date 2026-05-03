@@ -41,6 +41,8 @@ Check:
 - requested-changes or commented review summaries
 - CI failures on files changed in this PR or referenced by review feedback
 
+Before classification, apply the Detection Filtering rules defined in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` (Detection Filtering). Items excluded by filtering are not classified and do not enter the Remediation Ledger.
+
 ## Classification
 
 Classify every review item as one of:
