@@ -173,6 +173,8 @@ query($threadId: ID!, $after: String) {
 }'
 ```
 
+Apply Detection Filtering rules (see [Detection Filtering](#detection-filtering)) to all results from this query before ledger entry or classification.
+
 Pass `-F after="CURSOR"` using `endCursor` from `pageInfo` on all continuation fetches. Omit `-F after` only for the initial fetch (first page of the thread's comments).
 
 ## Fetch Top-Level PR Comments

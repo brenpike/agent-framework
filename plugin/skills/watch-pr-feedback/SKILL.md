@@ -5,7 +5,7 @@ disable-model-invocation: false
 allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh api *)
-  - Bash($env:SELF_LOGIN = *)
+  - Bash($env:SELF_LOGIN = (gh api user --jq .login))
   - Bash(git status *)
   - Bash(git branch *)
   - Monitor
