@@ -59,7 +59,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
 }'
 ```
 
-Filter results to reviews where `state` is `CHANGES_REQUESTED` or `COMMENTED` and `body` is non-empty. Pass `-F after="CURSOR"` using `endCursor` from `pageInfo` on subsequent fetches.
+Filter results to reviews where `state` is `CHANGES_REQUESTED` or `COMMENTED`. Apply the Detection Filtering rules (see [Detection Filtering](#detection-filtering)) before yielding results as new feedback. Pass `-F after="CURSOR"` using `endCursor` from `pageInfo` on subsequent fetches.
 
 ## Fetch Review Threads
 
@@ -141,7 +141,10 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
         | select(.isResolved == false)
         | . as $thread
         | $thread.comments.nodes[]
+        | select(.body != null and (.body | gsub("\\s+"; "") != ""))
+        | select(.author.login != $ENV.SELF_LOGIN)
         | "THREAD=\($thread.id) COMMENT=\(.id) AUTHOR=\(.author.login) PATH=\($thread.path) LINE=\($thread.line // "") URL=\(.url)"'
+# SELF_LOGIN is resolved at runtime via: gh api user --jq .login
 ```
 
 ## Fetch Thread Comments (Paginated)
@@ -169,6 +172,8 @@ query($threadId: ID!, $after: String) {
   }
 }'
 ```
+
+Apply Detection Filtering rules (see [Detection Filtering](#detection-filtering)) to all results from this query before ledger entry or classification.
 
 Pass `-F after="CURSOR"` using `endCursor` from `pageInfo` on all continuation fetches. Omit `-F after` only for the initial fetch (first page of the thread's comments).
 
@@ -199,8 +204,46 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
   }
 }' \
   --jq '.data.repository.pullRequest.comments.nodes[]
+        | select(.body != null and (.body | gsub("\\s+"; "") != ""))
+        | select(.author.login != $ENV.SELF_LOGIN)
         | "COMMENT=\(.id) AUTHOR=\(.author.login) URL=\(.url)"'
+# SELF_LOGIN is resolved at runtime via: gh api user --jq .login
 ```
+
+## Detection Filtering
+
+All detection and poll queries must apply both filters before yielding results as new feedback. A result that fails either filter must be silently skipped — do not surface it as actionable feedback, count it toward the actionable total, or route it for remediation. A filtered result may be incremented in a separate observability counter (e.g., a `filtered (excluded)` ledger entry) solely for diagnostic purposes.
+
+### Filter 1 — Exclude empty body
+
+Exclude any comment or review where `body` is `null`, the empty string `""`, or contains only whitespace characters.
+
+In `--jq` expressions use:
+
+```
+select(.body != null and (.body | gsub("\\s+"; "") != ""))
+```
+
+### Filter 2 — Exclude self/bot identity
+
+Exclude any comment or review where `author.login` matches the authenticated identity of the agent running the query. This prevents the agent from treating its own previously posted replies as new incoming feedback.
+
+Resolve and export the identity once per poll cycle before issuing queries. The syntax is shell-specific; both variants achieve the same result:
+
+```bash
+# Bash
+export SELF_LOGIN=$(gh api user --jq .login)
+# PowerShell
+$env:SELF_LOGIN = (gh api user --jq .login)
+```
+
+`SELF_LOGIN` is a runtime-resolved variable. It is **not** a literal string placeholder — it must be assigned to the process environment before the `--jq` expression runs. In `--jq` expressions, pass it through the environment:
+
+```
+select(.author.login != $ENV.SELF_LOGIN)
+```
+
+Both filters apply to every detection query: review threads, thread comments, top-level PR comments, and review summaries.
 
 ## Reply to Review Thread
 
