@@ -112,7 +112,7 @@ Before delegating to a subagent, determine the model tier using the table below.
 
 **Routing rules:**
 
-1. TFP path (all 6 TFP conditions met) → delegate coder with `model: sonnet`.
+1. TFP path (all 6 TFP conditions met) AND owner is `coder` → delegate coder with `model: sonnet`. TFP tasks owned by `designer` route to designer with no model override (designer's frontmatter default is already `sonnet`).
 2. Version Bump Delegation Template → delegate coder with `model: sonnet`.
 3. Review Remediation Delegation Template where classification is NOT `architecture-or-contract-concern` AND NOT `version-or-release-concern` → delegate coder with `model: sonnet`.
 4. All other coder delegations → omit `model` (opus default applies).
