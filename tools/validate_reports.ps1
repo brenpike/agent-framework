@@ -79,7 +79,7 @@ $optionalWorkerFields = @(
 
 $plannerCompactInlineFields = @('Summary')
 
-$plannerCompactListSections = @('Memory reused', 'Steps', 'Open questions')
+$plannerCompactListSections = @('Memory reused', 'Steps', 'Workflow loadout', 'Open questions')
 
 $plannerCompactSubFields = @{
     'Versioning' = @('Impact', 'Artifact(s)')
