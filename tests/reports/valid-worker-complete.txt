@@ -18,3 +18,8 @@ Refs: prior commit abc1234 (session model schema), memory: compliance decision 2
 States handled: S1 concurrent writes during migration, S2 expired session banner trigger
 Commit: a1b2c3d
 Version: required
+
+Session facts:
+- trunk: main
+- validation: python -m pytest
+- version: 1.4.2
