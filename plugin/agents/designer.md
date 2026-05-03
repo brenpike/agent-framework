@@ -20,7 +20,7 @@ You handle presentational work only within explicitly assigned file scope.
 
 Mandatory governance:
 
-Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
+Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
 
 ## Own
 
@@ -60,7 +60,7 @@ Stop and report blocked when any of the following is true:
 - the change requires runtime behavior, state derivation, data flow, routing, runtime keyboard handling, or live-region behavior
 - the change requires a "Material visual decision" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions) and project-level design guidance is not present in the repo or `CLAUDE.md`
 - assigned scope would require version/release metadata edits
-- git state matches the "Unsafe git state" definition
+- git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
 
 Do not silently expand scope.
 

@@ -1275,3 +1275,113 @@ Acceptance criteria:
 - `tools/policy_check.ps1` passes after every PR lands.
 - All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match.
 - Plugin versions: `0.2.6` after PR A, `0.2.7` after PR C, `0.2.8` after PR D. PR B has no bump.
+
+## Phase 6 Implementation Plan
+
+### Phase 6 Goal
+
+Phase 6 reduces token load and duplication across the plugin without weakening safety. It creates a short always-loaded core contract that consolidates mandatory/conditional module classification and core definition cross-references, adds conservative cross-reference notes where unsafe-git/validation wording is duplicated without explicit source pointers, and tightens the versioning module activation condition to fire only when the planner's file scope actually intersects bump-trigger paths. No safety rule may be weakened.
+
+### Phase 6 Scope
+
+Steps 26-28 (TC-1, CPX-3, CPX-4) as defined in the Phase 5 section above.
+
+Included:
+
+1. **TC-1 (Step 26)**: Create `plugin/governance/core-contract.md` with mandatory modules list, conditional modules table, and Core Definitions summary table. Update all four agent preambles and planner Workflow Loadout section to reference core-contract.md.
+2. **CPX-3 (Step 27)**: Add conservative "see canonical source" cross-reference notes to six locations where unsafe-git/validation wording is duplicated without explicit source pointers.
+3. **CPX-4 (Step 28)**: Tighten versioning module activation condition from "workflow touches bump-trigger paths" to "planner's file scope includes files matching the Bump Trigger list (and not exclusively matching the No bump list)." Fail-open rule preserved.
+
+Excluded: PERF-1 (intelligent per-task model routing) remains in Phase 5 scope but is not part of this implementation plan.
+
+### Phase 6 Versioning
+
+Single PATCH bump: `0.3.0` → `0.3.1`. One PR covers all three items.
+
+Canonical version file: `plugin/.claude-plugin/plugin.json`.
+
+### Phase 6 PR Boundary
+
+Single PR. All three steps are tightly coupled — core-contract.md must exist before CPX-3 can add cross-references to it and before CPX-4 can reference it for activation conditions.
+
+### Step 26: Core Contract (TC-1)
+
+Create:
+
+- `plugin/governance/core-contract.md` — short always-loaded contract containing:
+  - **Mandatory modules list**: the six mandatory governance modules (agent-system-policy.md, branching-pr-workflow.md, git-policy.md, scope-policy.md, communication-policy.md, escalation-policy.md) with one-line purpose summaries.
+  - **Conditional modules table**: the four conditional governance modules (versioning.md, validation-policy.md, pr-review-remediation-loop.md, monitoring-policy.md) with activation conditions matching the classification from `docs/planning/governance-module-classification.md`.
+  - **Core Definitions summary table**: cross-references to canonical definitions in `agent-system-policy.md` (Definitions section) — Transient failure, Unsafe git state, Trivial change, Same finding, Smallest correct fix, Validation procedure, Material visual decision, One-time vs watch routing.
+
+Modify:
+
+- `plugin/agents/orchestrator.md` — add reference to `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` in preamble.
+- `plugin/agents/planner.md` — add reference to `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` in preamble. Update Workflow Loadout section to reference core-contract.md instead of listing modules inline.
+- `plugin/agents/coder.md` — add reference to `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` in preamble.
+- `plugin/agents/designer.md` — add reference to `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` in preamble.
+- `plugin/governance/agent-system-policy.md` — add cross-reference notes in the Mandatory Governance Files and Definitions sections pointing to core-contract.md as the summary index.
+
+Acceptance criteria:
+
+- `plugin/governance/core-contract.md` exists with mandatory modules list, conditional modules table, and Core Definitions summary table.
+- All four agent preambles reference `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`.
+- Planner Workflow Loadout section references core-contract.md.
+- `agent-system-policy.md` module and definitions sections include cross-reference notes to core-contract.md.
+- All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- All `tests/policy/safety-*.json` patterns still match.
+- All `tests/workflows/golden-*.json` patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Step 27: Conservative Cross-Reference Additions (CPX-3)
+
+Modify:
+
+- `plugin/agents/coder.md` — add "see canonical source" cross-reference note where Unsafe git state is referenced without an explicit pointer to the definition in `agent-system-policy.md`.
+- `plugin/agents/designer.md` — add "see canonical source" cross-reference note where Unsafe git state is referenced without an explicit pointer to the definition in `agent-system-policy.md`.
+- `plugin/governance/git-policy.md` — add "see canonical source" cross-reference note where the preflight list is referenced without an explicit pointer to `branching-pr-workflow.md`.
+- `plugin/governance/validation-policy.md` — add "see canonical source" cross-reference notes in the versioning and review sections where wording is duplicated without explicit pointers to `versioning.md` and `pr-review-remediation-loop.md`.
+- `plugin/governance/escalation-policy.md` — add "see canonical source" cross-reference note where duplicated wording lacks an explicit source pointer.
+- `plugin/governance/communication-policy.md` — add "see canonical source" cross-reference note where duplicated wording lacks an explicit source pointer.
+
+No wording removed — conservative additions only. Each cross-reference note is a short inline pointer (e.g. "See `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions > Unsafe git state) for canonical definition.").
+
+Acceptance criteria:
+
+- Six files contain new cross-reference notes at the identified locations.
+- No existing wording removed or weakened.
+- All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- All `tests/policy/safety-*.json` patterns still match.
+- All `tests/workflows/golden-*.json` patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Step 28: Targeted Versioning Activation (CPX-4)
+
+Modify:
+
+- `plugin/governance/agent-system-policy.md` — update the conditional activation condition for `versioning.md` from "workflow touches bump-trigger paths" to "planner's file scope includes files matching the Bump Trigger list in `versioning.md` (and not exclusively matching the No bump list)." Add explicit fail-open note: when uncertain whether file scope intersects bump-trigger paths, include versioning.md.
+- `plugin/agents/planner.md` — update the Workflow Loadout section's versioning.md activation condition to match the tightened condition: "planner's file scope includes files matching the Bump Trigger list (and not exclusively matching the No bump list)." Preserve the fail-open rule.
+- `plugin/.claude-plugin/plugin.json` — bump `0.3.0` → `0.3.1`.
+
+Acceptance criteria:
+
+- `agent-system-policy.md` versioning.md activation condition references planner's file scope and bump-trigger paths, not just "workflow touches bump-trigger paths."
+- `planner.md` Workflow Loadout versioning.md activation condition matches.
+- Fail-open rule is explicitly preserved in both locations.
+- `plugin/.claude-plugin/plugin.json` version is `0.3.1`.
+- All `tests/policy/safety-*.json` patterns still match.
+- All `tests/workflows/golden-*.json` patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Phase 6 Done When
+
+- `plugin/governance/core-contract.md` exists with mandatory modules list, conditional modules table, and Core Definitions summary table.
+- All four agent preambles (`orchestrator.md`, `planner.md`, `coder.md`, `designer.md`) reference `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`.
+- Planner Workflow Loadout references core-contract.md instead of listing modules inline.
+- Six files contain conservative "see canonical source" cross-reference notes at identified duplication locations.
+- No existing safety wording removed or weakened.
+- Versioning module activation condition tightened in both `agent-system-policy.md` and `planner.md` to reference planner's file scope intersecting bump-trigger paths.
+- Fail-open rule preserved for versioning activation.
+- All cross-references in `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- `plugin/.claude-plugin/plugin.json` version is `0.3.1`.
+- All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match.
+- `tools/policy_check.ps1` passes after PR lands.

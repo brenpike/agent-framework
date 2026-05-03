@@ -14,6 +14,8 @@ A PR that requires a version bump is not ready until required version/release me
 
 If project-specific version paths or canonical version sources are unclear, stop and ask the user.
 
+See `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` for canonical versioning rules.
+
 ## External Review Policy
 
 `pr-review-remediation-loop.md` is mandatory for external PR feedback. See `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
@@ -30,3 +32,5 @@ Use the narrowest matching skill:
 - `agent-framework:watch-pr-feedback` — user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`
 
 Full routing rule: see Definitions → One-time vs watch routing.
+
+See `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` for canonical review remediation rules.

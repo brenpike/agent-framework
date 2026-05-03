@@ -47,7 +47,7 @@ Optional lines. Include each line below only when its trigger fires; otherwise o
 - `Commit: ...` — when the worker is delegated to commit (per Authority Matrix); include the SHA
 - `Version: required|none|unknown` — when the changed files match the project's bump-trigger paths or, when undefined, do not match the "No bump is required by default" list
 - `Review item: ...` — when the work was review-remediation; include the comment ID or thread ID
-- `Git issue: ...` — when git state matches the "Unsafe git state" definition or any preflight item is undefined
+- `Git issue: ...` — when git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` or any preflight item is undefined
 - `Ready to resolve: yes|no` — when the work was review-remediation
 
 ## Blocked Report Contract

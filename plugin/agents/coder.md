@@ -20,7 +20,7 @@ You implement only within explicitly assigned file scope.
 
 Mandatory governance:
 
-Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
+Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
 
 ## Own
 
@@ -55,7 +55,7 @@ Stop and report blocked when any of the following is true:
 - the requested work crosses an ownership boundary in the Authority Matrix
 - the change would alter public API, compatibility surface, package/release behavior, versioning, or a documented contract, but no such change is explicitly assigned
 - an assigned version bump conflicts with the actual compatibility impact of the implementation
-- git state matches the "Unsafe git state" definition
+- git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
 
 Do not silently expand scope.
 
