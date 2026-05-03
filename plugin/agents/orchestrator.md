@@ -96,6 +96,31 @@ If any condition cannot be answered "yes" from the task input as written, call p
 
 The skip decision must be stated explicitly in the orchestrator's report, with each condition listed and resolved. Silent skips are a workflow violation.
 
+## Model Routing
+
+Before delegating to a subagent, determine the model tier using the table below. Pass the override as the `model` parameter on the Agent() call only when the Override column specifies one. Omit `model` when the override is "none" (the agent's frontmatter default applies).
+
+| Task type | Agent | Default | Override | Rationale |
+|---|---|---|---|---|
+| Planning (any complexity) | planner | opus | none | Planning benefits from strongest reasoning |
+| Multi-file / architecture / contract | coder | opus | none | Complex cross-file work benefits from opus |
+| Single-file trivial (all 6 TFP conditions met) | coder | opus | `sonnet` | Trivial single-file edits do not need opus |
+| Review remediation — simple fix (`actionable-*`, not architecture/contract) | coder | opus | `sonnet` | Targeted fixes with clear instructions |
+| Review remediation — architecture or contract concern | coder | opus | none | Architecture changes need stronger reasoning |
+| Version bump (mechanical) | coder | opus | `sonnet` | Mechanical file edits with clear instructions |
+| Presentational UI/UX | designer | sonnet | none | Designer tasks already run on sonnet |
+
+**Routing rules:**
+
+1. TFP path (all 6 TFP conditions met) AND owner is `coder` → delegate coder with `model: sonnet`. TFP tasks owned by `designer` route to designer with no model override (designer's frontmatter default is already `sonnet`).
+2. Version Bump Delegation Template → delegate coder with `model: sonnet`.
+3. Review Remediation Delegation Template where classification is NOT `architecture-or-contract-concern` AND NOT `version-or-release-concern` → delegate coder with `model: sonnet`.
+4. All other coder delegations → omit `model` (opus default applies).
+5. Planner and designer → never override.
+6. `haiku` is not used in this phase.
+
+Include the chosen tier as `Model:` in every delegation. See delegation templates below.
+
 ## Mandatory Git Preflight
 
 Before implementation delegation, explicitly establish:
@@ -122,7 +147,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 ## Execution Algorithm
 
-1. Call `agent-framework:planner` unless the trivial fast path applies.
+1. Call `agent-framework:planner` unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
 2. If planner fails, follow policy retry/fallback/blocked handling immediately.
 3. If planner returns open questions, surface them and stop.
 4. Determine delivery shape and branch classification.
@@ -166,6 +191,7 @@ Git:
 - Worktree: [yes|no]
 - Commit: [none|checkpoint allowed|checkpoint expected]
 - PR: [target branch]
+- Model: [default|sonnet] — [routing reason]
 
 Constraints:
 - [role boundary]
@@ -192,6 +218,7 @@ Git:
 - Worktree: [yes|no]
 - Commit: [policy]
 - PR: [target]
+- Model: [default|sonnet]
 
 Constraints:
 - Do not modify other files.
@@ -220,6 +247,7 @@ Git:
 - Worktree: [yes|no]
 - Commit: orchestrator checkpoints after verification
 - PR: [target]
+- Model: sonnet — mechanical version bump
 
 Constraints:
 - Follow `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` and project-specific paths from `CLAUDE.md`.
@@ -254,6 +282,7 @@ Git:
 - Worktree: [yes|no]
 - Commit: [policy]
 - PR: [target]
+- Model: [default|sonnet] — [routing reason]
 
 Constraints:
 - Do not resolve review threads.
