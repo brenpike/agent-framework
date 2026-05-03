@@ -46,3 +46,5 @@ Canonical definitions live in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-pol
 | Smallest correct fix | The minimum change that addresses the root cause without expanding scope | `agent-system-policy.md` (Definitions → Smallest correct fix) |
 | Transient failure | Failures that may succeed on retry (network, rate-limit, timeout) | `agent-system-policy.md` (Definitions → Transient failure) |
 | Same finding | A review finding that repeats after attempted remediation | `agent-system-policy.md` (Definitions → Same finding) |
+| Material visual decision | A visual change requiring a new color, spacing, typography, or component variant not derivable from existing tokens or documented patterns | `agent-system-policy.md` (Definitions → Material visual decision) |
+| One-time vs watch routing | Route PR feedback to `address-pr-feedback` by default; use `watch-pr-feedback` only when user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` | `agent-system-policy.md` (Definitions → One-time vs watch routing) |
