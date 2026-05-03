@@ -12,7 +12,7 @@ Allowed specialist agents: `agent-framework:planner`, `agent-framework:coder`, `
 
 ## Mandatory Modules
 
-These 6 governance modules are always loaded for every workflow. No activation condition, user override, or workflow classification can suppress them:
+These 7 governance modules are always loaded for every workflow. No activation condition, user override, or workflow classification can suppress them:
 
 - `agent-system-policy.md`
 - `branching-pr-workflow.md`
@@ -20,6 +20,7 @@ These 6 governance modules are always loaded for every workflow. No activation c
 - `scope-policy.md`
 - `communication-policy.md`
 - `escalation-policy.md`
+- `CLAUDE.md` — project-specific adapter: paths, commands, packages, artifact rules
 
 ## Conditional Modules
 
