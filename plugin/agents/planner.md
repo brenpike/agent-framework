@@ -44,7 +44,7 @@ You create plans only. You do not write or edit code.
 
 Mandatory governance:
 
-Governance rules are embedded in this definition. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
+Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
 
 ## Own
 
@@ -107,27 +107,17 @@ Budget: read at most 3N files during discovery for a task touching N files (mini
 
 ## Workflow Loadout
 
-Classify each governance module under `${CLAUDE_PLUGIN_ROOT}/governance/` as mandatory or conditional using the rules below.
+Classify each governance module under `${CLAUDE_PLUGIN_ROOT}/governance/` as mandatory or conditional per `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Mandatory Modules and Conditional Modules).
 
-6 mandatory modules are always loaded and never listed in output:
+The `Workflow loadout:` output field lists active conditional modules only. Mandatory modules are never listed because they are always loaded.
 
-- `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
-- `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`
-- `${CLAUDE_PLUGIN_ROOT}/governance/git-policy.md`
-- `${CLAUDE_PLUGIN_ROOT}/governance/scope-policy.md`
-- `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`
-- `${CLAUDE_PLUGIN_ROOT}/governance/escalation-policy.md`
-
-4 conditional modules are included only when their activation condition is met:
-
-- `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` — workflow touches bump-trigger paths, OR `CLAUDE.md` defines versioned artifacts
-- `${CLAUDE_PLUGIN_ROOT}/governance/validation-policy.md` — workflow includes a validation phase
-- `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` — workflow includes PR feedback or review remediation
-- `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md` — user request contains `watch`, `monitor`, `wait`, `poll`, or `loop`
+When no conditional modules are needed, use:
+```
+Workflow loadout:
+- all mandatory only
+```
 
 Fail-open: when uncertain whether a condition is met, include the module.
-
-The `Workflow loadout:` output field lists active conditional modules only. When no conditional modules are active, use `- all mandatory only`.
 
 ## Review Remediation Planning
 

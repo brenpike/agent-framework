@@ -113,14 +113,18 @@ Agents must follow these files whether or not the user restates them. Mandatory 
 - `communication-policy.md` — agent-to-agent communication standards and report contracts
 - `CLAUDE.md` — project-specific adapter: paths, commands, packages, artifact rules
 
+See `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Mandatory Modules) for the canonical list.
+
 ## Conditional Governance Files
 
 These modules are loaded only when their activation condition is met. When it is uncertain whether a condition is met, include the module (fail-open).
 
-- `versioning.md` — SemVer, release metadata, changelog, tags. **Condition:** workflow touches bump-trigger paths, OR `CLAUDE.md` defines versioned artifacts.
+- `versioning.md` — SemVer, release metadata, changelog, tags. **Condition:** Planner's file scope includes files matching the Bump Trigger list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (and not exclusively matching the "No bump is required by default" list), OR `CLAUDE.md` defines versioned artifacts.
 - `validation-policy.md` — versioning enforcement and external review policy. **Condition:** workflow includes a validation phase.
 - `pr-review-remediation-loop.md` — external PR review feedback handling. **Condition:** workflow includes PR feedback or review remediation.
 - `monitoring-policy.md` — shell/parser constraints, monitoring rules, retry/failure handling. **Condition:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop`.
+
+See `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Conditional Modules) for canonical activation conditions.
 
 Silence about git workflow, versioning, validation, or review remediation is not permission to ignore the governance files.
 
