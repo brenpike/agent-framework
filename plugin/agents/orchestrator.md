@@ -108,6 +108,8 @@ Before implementation delegation, explicitly establish:
 - checkpoint commit policy
 - PR target
 
+After resolving trunk and validation commands, the orchestrator MAY cache them in a `Session facts:` block for use in subsequent delegations.
+
 If any are undefined, do not begin implementation. Full detail: `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
 
 ## Monitor Use
@@ -169,6 +171,11 @@ Constraints:
 - [role boundary]
 - [technical/design constraint]
 - Do not modify other files.
+
+Session facts: (optional)
+- trunk: [branch]
+- validation: [command]
+- version: [x.y.z]
 ```
 
 Compact form for trivial single-file tasks:
@@ -304,6 +311,11 @@ Review:
 Issues:
 - [issue]
 - None
+
+Session facts: (optional)
+- trunk: [branch]
+- validation: [command]
+- version: [x.y.z]
 ```
 
 If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.

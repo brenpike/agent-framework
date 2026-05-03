@@ -64,3 +64,33 @@ Impact: [what cannot proceed]
 Next action:
 - [specific next step]
 ```
+
+## Session Fact Cache
+
+Certain facts are resolved repeatedly during a task. Agents may cache them to avoid redundant lookups.
+
+### Cacheable Facts
+
+| Fact | Description |
+|------|-------------|
+| trunk | Resolved trunk branch name (e.g., `main`) |
+| validation commands | The declared validation command(s) from CLAUDE.md |
+| artifact paths | Canonical version file and required mirrors from CLAUDE.md |
+| review policy | Whether review-on-PR is true in CLAUDE.md |
+| version file | Current version string at task start |
+| bump-trigger-paths | Whether CLAUDE.md defines project-specific bump-trigger paths (`defined` \| `undefined`) |
+
+### Cache Rules
+
+- Agents MAY cache these facts after resolving them during a task
+- Cached values MAY be passed in a `Session facts:` block in delegation templates or final reports
+- Fresh checks always override cached values — cache is advisory only
+- Agents must not treat cached values as authoritative when the underlying file or state may have changed
+
+### Staleness Conditions
+
+Cache must be discarded when any of the following occurs:
+
+- Rebase or history rewrite on the working branch
+- Base branch advances (new commits on trunk since cache was set)
+- CLAUDE.md is modified during the task

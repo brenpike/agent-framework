@@ -71,7 +71,8 @@ $optionalWorkerFields = @(
     'Version',
     'Review item',
     'Git issue',
-    'Ready to resolve'
+    'Ready to resolve',
+    'Session facts'
 )
 
 # ── Planner Constants ──────────────────────────────────────────────────────
