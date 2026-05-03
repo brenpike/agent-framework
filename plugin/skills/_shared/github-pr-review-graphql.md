@@ -210,7 +210,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
 
 ## Detection Filtering
 
-All detection and poll queries must apply both filters before yielding results as new feedback. A result that fails either filter must be silently skipped — do not surface it, count it, or route it for remediation.
+All detection and poll queries must apply both filters before yielding results as new feedback. A result that fails either filter must be silently skipped — do not surface it as actionable feedback, count it toward the actionable total, or route it for remediation. A filtered result may be incremented in a separate observability counter (e.g., a `filtered (excluded)` ledger entry) solely for diagnostic purposes.
 
 ### Filter 1 — Exclude empty body
 
