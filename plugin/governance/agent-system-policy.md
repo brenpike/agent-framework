@@ -112,6 +112,7 @@ Agents must follow these files whether or not the user restates them. Mandatory 
 - `escalation-policy.md` — conditions requiring agent escalation instead of guessing
 - `communication-policy.md` — agent-to-agent communication standards and report contracts
 - `CLAUDE.md` — project-specific adapter: paths, commands, packages, artifact rules
+- `core-contract.md` — always-loaded module classification, mandatory/conditional lists, and core definition cross-references
 
 See `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Mandatory Modules) for the canonical list.
 
