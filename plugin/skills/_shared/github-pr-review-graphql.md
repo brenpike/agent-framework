@@ -226,13 +226,13 @@ select(.body != null and (.body | gsub("\\s+"; "") != ""))
 
 Exclude any comment or review where `author.login` matches the authenticated identity of the agent running the query. This prevents the agent from treating its own previously posted replies as new incoming feedback.
 
-Resolve the identity once per poll cycle before issuing queries:
+Resolve and export the identity once per poll cycle before issuing queries:
 
 ```bash
-SELF_LOGIN=$(gh api user --jq .login)
+export SELF_LOGIN=$(gh api user --jq .login)
 ```
 
-`SELF_LOGIN` is a runtime-resolved variable. It is **not** a literal string placeholder — it must be evaluated before the `--jq` expression runs. In `--jq` expressions, pass it through the environment:
+`SELF_LOGIN` is a runtime-resolved variable. It is **not** a literal string placeholder — it must be exported to the process environment before the `--jq` expression runs. In `--jq` expressions, pass it through the environment:
 
 ```
 select(.author.login != $ENV.SELF_LOGIN)
