@@ -1406,15 +1406,17 @@ Phase 7 adds three targeted refinements that improve efficiency and reduce token
 
 ### Phase 7 Scope
 
-1. **EFF-6 (Step 29)**: Add a change-class validation matrix to `CLAUDE.md` with scoped command sets for docs-only vs. plugin-runtime changes.
-2. **PERF-7 (Step 30)**: Amend `plugin/agents/orchestrator.md` delegation template to make `Session facts:` mandatory (not optional) once trunk and validation are resolved.
-3. **TC-6 (Step 31)**: Extract Version Bump and Review Remediation delegation template bodies in `plugin/agents/orchestrator.md` to appendix locations; keep only invocation criteria inline.
+1. **EFF-6 (Step 34)**: Add a change-class validation matrix to `CLAUDE.md` with scoped command sets for docs-only vs. plugin-runtime changes.
+2. **PERF-7 (Step 35)**: Amend `plugin/agents/orchestrator.md` delegation template to make `Session facts:` mandatory (not optional) once trunk and validation are resolved.
+3. **TC-6 (Step 36)**: Extract Version Bump and Review Remediation delegation template bodies in `plugin/agents/orchestrator.md` to appendix locations; keep only invocation criteria inline.
 
 ### Phase 7 Versioning
 
-Step 29 (EFF-6): `CLAUDE.md` is repo-specific tooling outside `plugin/`. No version bump required.
+> **Note:** Phase 6 implementation completed at version `0.3.1`. An interim chore bump (PR #30) advanced the version `0.3.1` → `0.3.2` after Phase 6 landed. Phase 7 therefore starts from `0.3.2`.
 
-Steps 30–31 (PERF-7 + TC-6): Both modify files inside `plugin/`. Single PATCH bump: `0.3.2` → `0.3.3` applied in Step 31 (the last plugin-touching step).
+Step 34 (EFF-6): `CLAUDE.md` is repo-specific tooling outside `plugin/`. No version bump required.
+
+Steps 35–36 (PERF-7 + TC-6): Both modify files inside `plugin/`. Single PATCH bump: `0.3.2` → `0.3.3` applied in Step 36 (the last plugin-touching step).
 
 Canonical version file: `plugin/.claude-plugin/plugin.json`.
 
@@ -1422,14 +1424,14 @@ Canonical version file: `plugin/.claude-plugin/plugin.json`.
 
 | PR | Steps | Touches `plugin/` | Version bump |
 |---|---|---|---|
-| PR A | 29 | No | None |
-| PR B | 30, 31 | Yes | `0.3.2 → 0.3.3` |
+| PR A | 34 | No | None |
+| PR B | 35, 36 | Yes | `0.3.2 → 0.3.3` |
 
-Steps 30 and 31 are bundled because both modify `plugin/agents/orchestrator.md`; separate PRs would create shared-file conflicts.
+Steps 35 and 36 are bundled because both modify `plugin/agents/orchestrator.md`; separate PRs would create shared-file conflicts.
 
 Phase 1 safety checks must pass before each PR is opened.
 
-### Step 29: CLAUDE.md Validation Profiles (EFF-6)
+### Step 34: CLAUDE.md Validation Profiles (EFF-6)
 
 Modify:
 
@@ -1458,7 +1460,7 @@ Acceptance criteria:
 - No other `CLAUDE.md` content modified.
 - `tools/policy_check.ps1` passes (if applicable to CLAUDE.md changes).
 
-### Step 30: Mandatory Session Facts (PERF-7)
+### Step 35: Mandatory Session Facts (PERF-7)
 
 Modify:
 
@@ -1473,7 +1475,7 @@ Acceptance criteria:
 - All `tests/policy/safety-*.json` patterns still match.
 - `tools/policy_check.ps1` passes.
 
-### Step 31: Delegation Template Appendices (TC-6)
+### Step 36: Delegation Template Appendices (TC-6)
 
 Modify:
 
