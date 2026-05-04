@@ -52,6 +52,7 @@ The existing framework should be modified in place rather than replaced. Startin
 | TC-3 | Design and, only if still justified, generate static agent files from canonical governance fragments. Claude Code must load generated markdown output, and tooling must prove generated files are in sync. | 5 | 3 | TC-2 |
 | TC-4 | Add compact checklists at the top of each skill. | 2 | 4 | TC-2 |
 | TC-5 | Split `agent-system-policy.md` into modules: scope, git, validation, review, monitor, communication. | 3 | 4 | CPX-1 |
+| TC-6 | Move the long always-visible Version Bump and Review Remediation delegation templates in `orchestrator.md` to referenced appendix files or clearly delimited appendix sections. Keep only invocation criteria inline. | 3 | 3 | TC-1 |
 
 ### Reliability
 
@@ -72,6 +73,7 @@ The existing framework should be modified in place rather than replaced. Startin
 | EFF-3 | Add explicit "no PR requested" and "no review requested" workflow branches. | 2 | 4 | CLR-1 |
 | EFF-4 | Batch validation and git checks at phase boundaries instead of repeating nearby checks. | 3 | 3 | REL-3 |
 | EFF-5 | Define remediation batching rules for same owner, same files, same validation path. | 4 | 4 | CPX-2 |
+| EFF-6 | Add a change-class matrix to `CLAUDE.md` distinguishing docs-only vs. plugin-runtime changes, each with a scoped validation command set. | 1 | 3 | None |
 
 ### Clarity
 
@@ -103,6 +105,7 @@ The existing framework should be modified in place rather than replaced. Startin
 | PERF-4 | Make GitHub review fetching incremental using seen IDs in the session ledger. | 4 | 3 | CPX-2 |
 | PERF-5 | Add validation tiers in `CLAUDE.md`: required quick checks before commit, full checks before PR/merge. | 4 | 4 | REL-5 |
 | PERF-6 | Investigate whether Claude Code supports per-invocation model overrides to enable true per-task model routing. | 3 | 3 | None |
+| PERF-7 | Amend PERF-3 implementation (Phase 4 Step 25): make `Session facts:` block mandatory in every delegation once trunk and validation are resolved, rather than optional/advisory. | 1 | 4 | PERF-3 |
 
 ### Durability
 
@@ -187,6 +190,14 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 | 31 | PERF-5 | Validation tiers can help but need careful semantics to avoid weakening validation. |
 | 32 | DUR-5 | Migration notes become important once rule renames or module splits happen. |
 | 33 | DUR-3 | Policy changelog is useful but not foundational. Add it alongside the first behavioral refactor. |
+
+### Phase 7: Targeted Refinements
+
+| Order | ID | Why Now |
+|---:|---|---|
+| 34 | EFF-6 | No dependencies. Lowest effort. CLAUDE.md-only change that makes validation class-aware for docs-only changes without touching plugin/. |
+| 35 | PERF-7 | Low effort, low risk, high value. Amends existing PERF-3 infrastructure to make session facts mandatory. Requires plugin version bump. |
+| 36 | TC-6 | Medium effort, medium risk. Restructures orchestrator delegation templates into appendices. Depends on TC-1 (Phase 6 complete). |
 
 ### Deferred Items
 
@@ -1384,4 +1395,120 @@ Acceptance criteria:
 - All cross-references in `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths.
 - `plugin/.claude-plugin/plugin.json` version is `0.3.1`.
 - All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match.
-- `tools/policy_check.ps1` passes after PR lands.
+
+---
+
+## Phase 7 Implementation Plan
+
+### Phase 7 Goal
+
+Phase 7 adds three targeted refinements that improve efficiency and reduce token load without weakening safety. It makes CLAUDE.md validation class-aware so docs-only changes skip unnecessary plugin checks, promotes session facts from advisory to mandatory in delegations to eliminate repeated re-resolution across phases, and extracts the long always-visible delegation template bodies in the orchestrator into appendices so only invocation criteria appear inline. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.ps1`) must pass before and after every structural change.
+
+### Phase 7 Scope
+
+1. **EFF-6 (Step 34)**: Add a change-class validation matrix to `CLAUDE.md` with scoped command sets for docs-only vs. plugin-runtime changes.
+2. **PERF-7 (Step 35)**: Amend `plugin/agents/orchestrator.md` delegation template to make `Session facts:` mandatory (not optional) once trunk and validation are resolved.
+3. **TC-6 (Step 36)**: Extract Version Bump and Review Remediation delegation template bodies in `plugin/agents/orchestrator.md` to appendix locations; keep only invocation criteria inline.
+
+### Phase 7 Versioning
+
+> **Note:** Phase 6 implementation completed at version `0.3.1`. An interim chore bump (PR #30) advanced the version `0.3.1` → `0.3.2` after Phase 6 landed. Phase 7 therefore starts from `0.3.2`.
+
+Step 34 (EFF-6): `CLAUDE.md` is repo-specific tooling outside `plugin/`. No version bump required.
+
+Steps 35–36 (PERF-7 + TC-6): Both modify files inside `plugin/`. Single PATCH bump: `0.3.2` → `0.3.3` applied in Step 36 (the last plugin-touching step).
+
+Canonical version file: `plugin/.claude-plugin/plugin.json`.
+
+### Phase 7 PR Boundary
+
+| PR | Steps | Touches `plugin/` | Version bump |
+|---|---|---|---|
+| PR A | 34 | No | None |
+| PR B | 35, 36 | Yes | `0.3.2 → 0.3.3` |
+
+Steps 35 and 36 are bundled because both modify `plugin/agents/orchestrator.md`; separate PRs would create shared-file conflicts.
+
+Phase 1 safety checks must pass before each PR is opened.
+
+### Step 34: CLAUDE.md Validation Profiles (EFF-6)
+
+Modify:
+
+- `CLAUDE.md` — add a "Change-Class Validation" subsection within the existing `## Validation` section.
+
+**Content of new subsection:**
+
+```markdown
+### Change-Class Validation
+
+Apply the command set for the change class that matches the files modified.
+
+| Change class | Condition | Required checks |
+|---|---|---|
+| docs-only | All modified files are outside `plugin/` | None — skip JSON manifest and bare-path checks |
+| plugin-runtime | Any modified file is inside `plugin/` | Full: JSON manifest parse + bare-path grep (as defined above) |
+
+When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runtime command set.
+```
+
+Acceptance criteria:
+
+- `CLAUDE.md` Validation section contains the new `### Change-Class Validation` subsection.
+- Matrix covers both classes with unambiguous file-path condition.
+- Mixed-PR rule is stated.
+- No other `CLAUDE.md` content modified.
+- `tools/policy_check.ps1` passes (if applicable to CLAUDE.md changes).
+
+### Step 35: Mandatory Session Facts (PERF-7)
+
+Modify:
+
+- `plugin/agents/orchestrator.md` — amend the Delegation Template section to mark `Session facts:` as mandatory (not optional) once trunk and validation are resolved. Update the compact template form to include `Session facts:` as a required field after the first delegation. Add a note: "Session facts block is optional in the first delegation (facts not yet resolved) and mandatory in all subsequent delegations within the same session."
+
+Acceptance criteria:
+
+- Orchestrator Delegation Template marks `Session facts:` as mandatory after first resolution.
+- Note clarifies first-delegation exception.
+- Compact delegation template form also updated.
+- All `tests/workflows/golden-*.json` patterns still match.
+- All `tests/policy/safety-*.json` patterns still match.
+- `tools/policy_check.ps1` passes.
+
+### Step 36: Delegation Template Appendices (TC-6)
+
+Modify:
+
+- `plugin/agents/orchestrator.md` — replace the inline Version Bump Delegation Template body and Review Remediation Delegation Template body with short invocation criteria blocks and references to appendix sections. Move the full template content to clearly delimited appendix sections at the bottom of the same file (preferred) or to new files `plugin/governance/orchestrator-appendix-version-bump.md` and `plugin/governance/orchestrator-appendix-review-remediation.md` if the coder determines separate files better preserve cross-reference stability. The coder must choose the approach that carries lower cross-reference breakage risk.
+- `plugin/.claude-plugin/plugin.json` — bump version `0.3.2` → `0.3.3`.
+
+**Invocation criteria format (inline replacement for each template):**
+
+```markdown
+### Version Bump Delegation Template
+
+Invoke when: a changed file matches the Bump Trigger list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` and a version bump is required.
+
+See: [Version Bump Delegation Template — full template](#appendix-version-bump-delegation-template) (or `${CLAUDE_PLUGIN_ROOT}/governance/orchestrator-appendix-version-bump.md`).
+```
+
+Acceptance criteria:
+
+- Inline delegation template bodies replaced with short invocation criteria and appendix references.
+- Full template content preserved in appendix location (bottom of file or separate governance file).
+- All existing consumers of the template text can still reach the full content.
+- All `tests/policy/safety-*.json` patterns still match.
+- All `tests/workflows/golden-*.json` patterns still match.
+- `plugin/.claude-plugin/plugin.json` version is `0.3.3`.
+- All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- `tools/policy_check.ps1` passes.
+
+### Phase 7 Done When
+
+- `CLAUDE.md` Validation section contains a `### Change-Class Validation` subsection with a two-class matrix and mixed-PR rule.
+- `plugin/agents/orchestrator.md` delegation template marks `Session facts:` as mandatory after first resolution, with a first-delegation exception note.
+- Version Bump and Review Remediation delegation template bodies are moved to appendix locations; only invocation criteria appear inline in `plugin/agents/orchestrator.md`.
+- All cross-references in `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths and resolve to existing files and sections.
+- `plugin/.claude-plugin/plugin.json` version is `0.3.3`.
+- `tools/policy_check.ps1` passes after every PR lands.
+- All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match their source files.
