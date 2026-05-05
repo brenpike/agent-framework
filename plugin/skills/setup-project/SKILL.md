@@ -1,6 +1,6 @@
 ---
 name: setup-project
-description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the orchestrator becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup.
+description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the orchestrator becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.agent-framework/` is excluded from git via `.gitignore`.
 disable-model-invocation: false
 allowed-tools:
   - Read
@@ -19,11 +19,13 @@ Before:
 - [ ] Project root resolved via `git rev-parse --show-toplevel`
 - [ ] `.claude/settings.json` read or default `{}` established
 - [ ] No conflicting `agent` value exists (or user approved override)
+- [ ] `.gitignore` read or default absence noted
 
 After:
 - [ ] Required keys applied to `.claude/settings.json`
 - [ ] Existing keys preserved
 - [ ] Output uses skill output contract
+- [ ] `.agent-framework/` entry ensured in `.gitignore`
 
 # Setup Project
 
@@ -60,7 +62,12 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
 6. If `dry_run` = `yes`, print the merged JSON and stop without writing.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
-8. Report which keys were added vs already present.
+8. Ensure `.agent-framework/` is listed in the project's `.gitignore`:
+   a. If `<project root>/.gitignore` does not exist, create it with a single line `.agent-framework/`.
+   b. If `.gitignore` exists, read it. If it already contains `.agent-framework/` as a standalone line (trimmed), report `already present` and skip.
+   c. Otherwise append `.agent-framework/` to the end of the file (prepend a blank line if the file does not end with a newline).
+   d. If `dry_run` = `yes`, report what would be done but do not write.
+9. Report which keys were added vs already present.
 
 ## Merge Rules
 
@@ -72,7 +79,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5
-- modify project files outside `.claude/settings.json`
+- modify project files outside `.claude/settings.json` and `.gitignore`
 - commit, push, or otherwise touch git state
 - invoke other skills
 - proceed if the project root is ambiguous
@@ -87,6 +94,9 @@ Project root:
 
 Target file:
 - .claude/settings.json: created | updated | unchanged
+
+Gitignore:
+- .gitignore: created | updated | already present | skipped (dry_run)
 
 Keys applied:
 - enabledPlugins["agent-framework@brenpike"]: added | already present

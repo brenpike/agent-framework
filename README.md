@@ -32,6 +32,8 @@ Or run the setup skill once to apply the required keys automatically:
 /agent-framework:setup-project
 ```
 
+The setup skill also adds `.agent-framework/` to your project's `.gitignore`. This directory is created at runtime by the orchestrator for ephemeral plans, handoffs, and checkpoints — it should not be committed. If you prefer manual setup, add `.agent-framework/` to your project's `.gitignore` directly.
+
 2. Create `CLAUDE.md` with project-specific details:
    - Build/test commands
    - Package names and version file paths
@@ -97,7 +99,7 @@ All skills are invoked using the namespaced form:
 
 | Skill | Purpose |
 |---|---|
-| `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) |
+| `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.agent-framework/` to `.gitignore` |
 | `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `agent-framework:checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `agent-framework:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
