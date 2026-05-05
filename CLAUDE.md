@@ -56,6 +56,17 @@ No build or test suite. "Validation" for changes here is:
    /plugin install agent-framework@brenpike
    ```
 
+### Change-Class Validation
+
+Apply the command set for the change class that matches the files modified.
+
+| Change class | Condition | Required checks |
+|---|---|---|
+| docs-only | All modified files are outside `plugin/` and outside `.claude-plugin/` | None — skip JSON manifest and bare-path checks |
+| plugin-runtime | Any modified file is inside `plugin/` or inside `.claude-plugin/` | Full: JSON manifest parse + bare-path grep (as defined above) |
+
+When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runtime command set.
+
 ## Common pitfalls
 
 - Adding a new governance doc but forgetting to reference it from an agent → dead file.
