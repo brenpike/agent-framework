@@ -358,6 +358,11 @@ Git:
 Constraints:
 - Follow `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` and project-specific paths from `CLAUDE.md`.
 - Do not modify other files.
+
+Session facts:
+- trunk: [branch]
+- validation: [command]
+- version: [x.y.z]
 ```
 
 ---
@@ -396,4 +401,8 @@ Constraints:
 - Do not resolve review threads.
 - Do not request re-review.
 - Do not modify other files.
+
+Session facts:
+- trunk: [branch]
+- validation: [command]
 ```
