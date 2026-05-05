@@ -168,7 +168,7 @@ Standardize execution lifecycle so work is consistently decomposed and tracked.
 
 ### Dependencies
 - Requires handoff schema from #1.
-- Enables #10 automation with lower risk.
+- Enables #8 automation with lower risk.
 
 ---
 
@@ -189,7 +189,7 @@ Replace verbose history replay with precise references.
 
 ### Dependencies
 - Amplifies #1 and #2.
-- Supports #8 progressive loading.
+- Supports #9 progressive loading.
 
 ---
 
@@ -231,7 +231,7 @@ Prevent quality loss while clearing context more aggressively.
 - Block finalization on unresolved contradiction.
 
 ### Dependencies
-- Strongly recommended before aggressive auto-clear in #10.
+- Strongly recommended before aggressive auto-clear in #8.
 
 ---
 
@@ -251,7 +251,7 @@ Separate long-lived high-signal memory from transient exploration noise.
 
 ### Dependencies
 - Improved by #3 anchors.
-- Supports #5 budgeting and #8 loading.
+- Supports #7 budgeting and #9 loading.
 
 ---
 
@@ -295,7 +295,7 @@ Automate context reset at safe, predictable boundaries.
 - Rehydration logging requirement.
 
 ### Dependencies
-- Requires #1/#2/#5 guardrails and budget policy for safe operation.
+- Requires #1/#2/#5 guardrails and #7 budget policy for safe operation.
 
 ---
 
@@ -334,7 +334,7 @@ Support controlled multi-path exploration for complex tasks.
 - Require merge rationale linked to chosen decision ID.
 
 ### Dependencies
-- Needs #1/#3/#5 to prevent uncontrolled token growth.
+- Needs #1/#3/#7 to prevent uncontrolled token growth.
 
 ---
 
@@ -345,7 +345,7 @@ Support controlled multi-path exploration for complex tasks.
 - #1/#2 → #5
 - #3 → #6 → #7
 - #3/#6 → #9
-- #1/#3/#5 → #10
+- #1/#3/#7 → #10
 
 ---
 
