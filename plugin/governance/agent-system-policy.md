@@ -124,6 +124,7 @@ These modules are loaded only when their activation condition is met. When it is
 - `validation-policy.md` — versioning enforcement and external review policy. **Condition:** workflow includes a validation phase.
 - `pr-review-remediation-loop.md` — external PR review feedback handling. **Condition:** workflow includes PR feedback or review remediation.
 - `monitoring-policy.md` — shell/parser constraints, monitoring rules, retry/failure handling. **Condition:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop`.
+- `context-management-policy.md` — execution lifecycle, memory tiering, quality guardrails, budget policy. **Condition:** workflow includes more than one execution phase, OR the plan contains `STEP-NNN` identifiers.
 
 See `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Conditional Modules) for canonical activation conditions.
 
