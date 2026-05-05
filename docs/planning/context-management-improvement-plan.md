@@ -385,14 +385,14 @@ Automate context reset at safe, predictable boundaries.
 
 ### Agent Integration
 - Trigger candidates:
-  - phase completion
-  - N tool calls
-  - scope pivot
-  - explicit user reset request
+  - phase completion *(Slice 1)*
+  - N tool calls *(Slice 2)*
+  - scope pivot *(Slice 2)*
+  - explicit user reset request *(Slice 2)*
 - On trigger: emit checkpoint, clear ephemeral context, continue from compact state.
 
 ### Policy Embedding
-- Central threshold definitions using observable proxies (phase completion, N tool calls, scope pivot, user reset).
+- Central threshold definitions using observable proxies (phase completion in Slice 1; N tool calls, scope pivot, user reset in Slice 2).
 - Cooldown rules to prevent thrashing.
 - Rehydration logging requirement.
 
