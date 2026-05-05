@@ -171,7 +171,7 @@ Use by default:
 
 ```text
 Task: [required outcome]
-Step: STEP-NNN
+Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
 
 Files:
 - [exact file]
@@ -239,7 +239,7 @@ Compact form for trivial single-file tasks:
 
 ```text
 Task: [required outcome]
-Step: STEP-NNN
+Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
 File: [exact file]
 Done when: [completion condition]
 
