@@ -159,6 +159,10 @@ Implementation note:
 - `make-plan` and `do` are **conceptual framework primitives** in this plan, not hard bindings to optional `claude-mem` skills.
 - When `claude-mem` is installed and approved, its capabilities may implement or accelerate these primitives.
 - When `claude-mem` is absent, agents follow the same lifecycle with native report/state artifacts.
+- Native fallback artifact shape (claude-mem absent):
+  - Plan: a numbered step list in the orchestrator's delegation preamble or a fenced block in a committed `docs/` file, each step with a unique `STEP-NNN` ID, owner, and completion criteria.
+  - Step delta: a `Step delta:` section appended to the Shared Worker Report Contract at each `do(step)` completion, containing step ID, outcome, evidence refs, and unresolved assumptions.
+  - Phase closure: orchestrator compacts all step deltas from the phase into a single handoff artifact before the next delegation — prior phase reports are not re-injected.
 
 ### Agent Integration
 - Task-capable agents must create/consume an active plan ID.
@@ -179,6 +183,13 @@ Implementation note:
 ### Dependencies
 - Requires handoff schema from #1.
 - Enables #8 automation with lower risk.
+
+### Token Efficiency Impact
+- Highest single-item token ROI in this plan.
+- Current framework carries full plan + all prior phase delegation context in orchestrator throughout the workflow. By phase 4 of a 6-phase plan, orchestrator context includes: plan, phases 1–3 full delegations + reports, validation outputs, git state. This is the primary context bloat driver.
+- Step-delta artifacts with phase-closure compaction eliminate this: prior phases drop out of active context after closure; only the compact handoff artifact carries forward.
+- Estimated impact: 40–60% reduction in orchestrator context for workflows with 5+ phases.
+- Recommendation: accept the framework change. The orchestrator and planner already decompose work into phases/steps — adding STEP-NNN IDs and mandatory step-delta reports to the Shared Worker Report Contract is incremental, not a rewrite.
 
 ---
 
@@ -201,6 +212,9 @@ Replace verbose history replay with precise references.
   - optional persistence: `claude-mem` observations (when installed)
   - cross-session retrieval is only guaranteed when a persistent memory substrate is available
 
+### Phase 0 Simplification
+In Phase 0 (in-session only), DEC-*, RISK-*, ASM-*, EVD-* IDs are embedded directly in handoff artifacts — the handoff IS the store. No separate retrieval infrastructure is needed. "Retrieve by ID" becomes non-trivial only for cross-phase or cross-session use cases, which require claude-mem or an equivalent persistent substrate. Avoid over-engineering Phase 0 anchor storage: ID discipline (naming and referencing decisions consistently) is the Phase 0 value, not retrieval infrastructure.
+
 ### Dependencies
 - Amplifies #1 and #2.
 - Supports #9 progressive loading.
@@ -218,8 +232,8 @@ Verify that artifact-only context is sufficient after reset.
 - If not, request targeted rehydration by ID.
 
 ### Policy Embedding
-- Phase 0/Stage A: define test schema, pass/fail criteria, and telemetry only (warn mode).
-- Phase 1/Stage B onward: enable blocking gate if reconstruction fails below threshold.
+- Phase 0/Stage A: define test schema and telemetry only (warn mode). Pass/fail is binary: can the agent continue correctly from handoff + anchors alone? Yes = pass, No = fail. No percentage threshold in Phase 0.
+- Phase 1/Stage B onward: enable blocking gate on binary fail. Percentage-based thresholds may be introduced after Phase 0 telemetry establishes a calibration baseline.
 - Record failure reason/missing fields for telemetry in all phases.
 
 ### Dependencies
@@ -263,6 +277,7 @@ Separate long-lived high-signal memory from transient exploration noise.
   - durable = handoff/report artifacts + `Session facts:` cache extensions
   - ephemeral = current-phase scratch sections and transient tool output not promoted into artifacts
   - purge = clear ephemeral sections at phase boundary; retain durable artifacts
+- Important: "purge ephemeral memory" in Claude Code means a full context clear followed by selective rehydration of durable artifacts only — it is not selective removal within a running session. Ephemeral purge is therefore tightly coupled to the #8 auto-clear trigger. #6 defines *what* to keep; #8 is *how* the purge executes. These two items work together, not independently.
 
 ### Policy Embedding
 - Promotion rules from ephemeral → durable (must include evidence/decision link).
@@ -292,6 +307,10 @@ Apply right-sized context limits based on work class.
 ### Policy Embedding
 - Governance table mapping task type → budget profile.
 - Budget breach triggers forced checkpoint/compression using observable proxies (artifact count, replay depth, tool-call count), not token introspection.
+- Most actionable Phase 1 proxies (implement first):
+  - "max tool calls before mandatory checkpoint" — fully observable; agents track call count natively.
+  - "max replay depth (number of prior artifacts auto-included per delegation)" — directly governs how many prior phase reports are injected; most direct lever on orchestrator context size.
+  - Artifact count and summary size limits are secondary; defer until primary proxies are calibrated.
 
 ### Dependencies
 - Works best after #6 memory tiering.
@@ -329,7 +348,8 @@ Keep large artifacts out of active context unless needed.
 ### Agent Integration
 - Default: include synopsis + anchor only.
 - Lazy-load full evidence only for verification/disambiguation.
-- Unload evidence after step completion.
+- Do not pre-load evidence that is not yet needed — this is the primary mechanism.
+- Note: selective mid-session unloading is not supported in Claude Code (context is append-only within a session). "Unloading" only occurs via full context clear + selective durable-artifact rehydration — this is the #8 auto-clear mechanism. Progressive evidence loading and #8 are complementary: #9 prevents loading unnecessary evidence; #8 clears it when a reset boundary is hit.
 
 ### Policy Embedding
 - Inline evidence size caps.
@@ -383,6 +403,8 @@ Exit criteria:
 - Plan/step lifecycle consistently used for applicable tasks.
 - Reconstruction pass rate acceptable.
 
+Note: specific numeric thresholds (e.g., completion rate ≥ X%, reconstruction pass rate ≥ Y%) are defined during pilot calibration at Stage A entry using the baseline cohort, not pre-specified here.
+
 ## Stage B (Safety Hardening)
 
 Implement #5, #6, #7 with mixed warn/block gates.
@@ -392,6 +414,8 @@ Exit criteria:
 - Durable/ephemeral separation adopted by agents.
 - Budget breaches handled predictably.
 
+Note: specific numeric thresholds for false-positive rate and budget-breach frequency are calibrated from Stage A data before Stage B gates are enforced.
+
 ## Stage C (Automation)
 
 Implement #8 and #9; evaluate #10 only for proven need.
@@ -400,6 +424,8 @@ Exit criteria:
 - Auto-clear reduces context footprint without increased quality regressions.
 - Evidence loading decreases large-context incidence.
 - Advanced branching only used on tasks above complexity threshold.
+
+Note: specific numeric thresholds for context footprint reduction and quality regression rate are calibrated from Stage B data before Stage C gates are enforced.
 
 ---
 
