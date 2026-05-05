@@ -106,7 +106,7 @@ The existing framework should be modified in place rather than replaced. Startin
 | PERF-5 | Add validation tiers in `CLAUDE.md`: required quick checks before commit, full checks before PR/merge. | 4 | 4 | REL-5 |
 | PERF-6 | Investigate whether Claude Code supports per-invocation model overrides to enable true per-task model routing. | 3 | 3 | None |
 | PERF-7 | Amend PERF-3 implementation (Phase 4 Step 25): make `Session facts:` block mandatory in every delegation once trunk and validation are resolved, rather than optional/advisory. | 1 | 4 | PERF-3 |
-| PERF-8 | Define a delta protocol for `Session facts:` in subsequent delegations: send only changed/new fields; use `(unchanged)` sentinel for confirmed-same fields. Fail-open: if uncertain whether a field changed, send full set. | 1 | 4 | PERF-7 |
+| PERF-8 | Two-part session facts protocol: (1) orchestrator tracks resolved facts internally across phases to avoid re-resolution; (2) delegations include only the task-relevant subset of facts, always as full values — no sentinels or abbreviations. | 1 | 4 | PERF-7 |
 
 ### Durability
 
@@ -1411,7 +1411,7 @@ Phase 7 adds three targeted refinements that improve efficiency and reduce token
 1. **EFF-6 (Step 34)**: Add a change-class validation matrix to `CLAUDE.md` with scoped command sets for docs-only vs. plugin-runtime changes.
 2. **PERF-7 (Step 35)**: Amend `plugin/agents/orchestrator.md` delegation template to make `Session facts:` mandatory (not optional) once trunk and validation are resolved.
 3. **TC-6 (Step 36)**: Extract Version Bump and Review Remediation delegation template bodies in `plugin/agents/orchestrator.md` to appendix locations; keep only invocation criteria inline.
-4. **PERF-8 (Step 37)**: Define a delta protocol for `Session facts:` — subsequent delegations within the same session send only changed/new fields with `(unchanged)` sentinel for unchanged fields. Fail-open when uncertain.
+4. **PERF-8 (Step 37)**: Two-part session facts protocol — (1) orchestrator tracks resolved session facts across phases to avoid re-resolution; (2) each delegation includes only the task-relevant subset of facts, always as full values.
 
 ### Phase 7 Versioning
 
@@ -1513,18 +1513,17 @@ Acceptance criteria:
 
 Modify:
 
-- `plugin/agents/orchestrator.md` — add a delta protocol note within the Delegation Template section (after the mandatory `Session facts:` rule added by Step 35). Define:
-  - After the first delegation that sends the full `Session facts:` block, subsequent delegations within the same session send only fields whose value has changed or is new since the prior delegation.
-  - Fields confirmed unchanged use sentinel value `(unchanged)`.
-  - Fail-open rule: if uncertain whether a field changed, send the full value rather than the sentinel.
-  - Include a brief inline example showing a second delegation with one changed field and the rest marked `(unchanged)`.
+- `plugin/agents/orchestrator.md` — add a two-part session facts protocol note to the Delegation Template section (building on the mandatory `Session facts:` rule added by Step 35):
+  - **Orchestrator tracking (Part 1)**: once a session fact is resolved (trunk, validation, version, etc.), the orchestrator records it and reuses it for the remainder of the session without re-resolving it. Session facts accumulate; re-resolution is not required in subsequent phases.
+  - **Task-scoped inclusion (Part 2)**: when composing a delegation, include only the session facts fields the subagent actually needs for that specific task. Always send full field values — never sentinels, abbreviations, or placeholders. Fields not relevant to the task are omitted entirely.
+  - Include a brief inline example showing one delegation with all three facts (trunk, validation, version) and one with only two (trunk, validation), with a note explaining the omission is task-scope-driven.
 
 Acceptance criteria:
 
-- Delta protocol rule is present in `plugin/agents/orchestrator.md` Delegation Template section.
-- `(unchanged)` sentinel is defined.
-- Fail-open rule is stated (when uncertain → send full value).
-- Inline example demonstrates delta format.
+- Two-part session facts protocol rule is present in `plugin/agents/orchestrator.md` Delegation Template section.
+- Orchestrator tracking behavior is defined: resolve once, accumulate across phases, no re-resolution.
+- Task-scoped inclusion rule is defined: delegations include only relevant fields; always full values; no sentinels.
+- Inline example demonstrates the contrast between delegations with different field subsets.
 - All `tests/workflows/golden-*.json` patterns still match.
 - All `tests/policy/safety-*.json` patterns still match.
 - `tools/policy_check.ps1` passes.
@@ -1538,5 +1537,5 @@ Acceptance criteria:
 - `plugin/.claude-plugin/plugin.json` version is `0.3.3`.
 - `tools/policy_check.ps1` passes after every PR lands.
 - All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match their source files.
-- Delta session facts protocol is defined in `plugin/agents/orchestrator.md`: subsequent delegations send only changed/new fields with `(unchanged)` sentinel; fail-open rule stated.
+- Two-part session facts protocol is defined in `plugin/agents/orchestrator.md`: orchestrator tracks resolved facts across phases (no re-resolution); delegations include only task-relevant fields as full values (no sentinels).
 - Delegation template section prohibits narrative prose in payloads (key/value block format only, except blocked/error states).
