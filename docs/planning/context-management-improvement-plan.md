@@ -175,7 +175,13 @@ Implementation note:
 - Task-capable agents must create/consume an active plan ID.
 - One step in progress at a time.
 - Every `do(step)` writes expected outcome + completion evidence + delta summary.
-- Trivial exceptions allowed only with explicit `bypass_reason`.
+- Trivial exceptions allowed only with a bypass reason drawn from the following allowlist:
+  - `TRIVIAL_CHANGE` — single-statement or mechanical edit meeting all Trivial Change conditions.
+  - `NO_PRIOR_PHASE` — first step in a workflow with no prior phase to hand off from.
+  - `SINGLE_STEP_TASK` — entire task fits in one step with no phase boundary.
+  - `USER_OVERRIDE` — user explicitly directed bypass with a stated reason.
+  
+  Each bypass must include audit metadata in the delegation preamble: reason code + step/task ID.
 
 ### Policy Embedding
 - "No execution without plan artifact" rule for applicable task classes.
@@ -222,7 +228,7 @@ This is the mechanism by which prior phase transcripts drop out of active contex
 - Highest single-item token ROI in this plan.
 - Current framework carries full plan + all prior phase delegation context in orchestrator throughout the workflow. By phase 4 of a 6-phase plan, orchestrator context includes: plan, phases 1–3 full delegations + reports, validation outputs, git state. This is the primary context bloat driver.
 - Step-delta artifacts with phase-closure compaction eliminate this: prior phases drop out of active context after closure; only the compact handoff artifact carries forward.
-- Estimated impact: 40–60% reduction in orchestrator context for workflows with 5+ phases.
+- Hypothesis: 40–60% reduction in orchestrator context for workflows with 5+ phases. This is a pre-implementation hypothesis, not a measured outcome. Validation is tied to pre-declared measurement slices — task type, phase count (5+ phases), and the baseline window defined at Slice 1 entry — per the Validation and Measurement Framework section.
 - Recommendation: accept the framework change. The orchestrator and planner already decompose work into phases/steps — adding STEP-NNN IDs and mandatory step-delta reports to the Shared Worker Report Contract is incremental, not a rewrite.
 
 ---
@@ -245,6 +251,10 @@ Replace verbose history replay with precise references.
   - baseline: in-session report artifacts + `Session facts:` block extensions in `communication-policy.md`
   - optional persistence: `claude-mem` observations (when installed)
   - cross-session retrieval is only guaranteed when a persistent memory substrate is available
+- Minimum anchor quality requirements:
+  - ID format: `<TYPE>-<NNN>` where TYPE ∈ {DEC, RISK, ASM, EVD} and NNN is a zero-padded 3-digit integer unique within the session (e.g., `DEC-001`, `EVD-012`).
+  - Required metadata per anchor: type, one-sentence description, source artifact reference (commit SHA, file path, or step ID).
+  - Stale reference handling: if a referenced artifact is no longer resolvable, mark the anchor `[STALE]` and exclude it from rehydration until re-resolved. Stale anchors must be logged but do not block step completion.
 
 ### Slice 2 Note
 In Slice 1 (in-session only), DEC-*, RISK-*, ASM-*, EVD-* IDs are embedded directly in handoff artifacts — the handoff IS the store. No separate retrieval infrastructure is needed. "Retrieve by ID" becomes non-trivial only for cross-phase or cross-session use cases, which require claude-mem or an equivalent persistent substrate. Avoid over-engineering Slice 1 anchor storage: ID discipline (naming and referencing decisions consistently) is the Slice 1 value, not retrieval infrastructure. Full retrieval anchor infrastructure is a Slice 2 item.
@@ -353,6 +363,17 @@ Apply right-sized context limits based on work class.
 
 In Slice 1, #7 has one trigger only: **phase boundary auto-clear**. No full governance budget-profile table. No per-task-class profiles. Full trigger policy (N tool calls, scope pivot, user reset) and the complete profile table are deferred to Slice 2 after Slice 1 baseline data is available.
 
+### Slice 2 Preparation: Classification Rubric
+
+Required before the full Slice 2 budget profile table can be implemented. Task-type taxonomy with examples:
+
+- **bugfix**: isolated defect fix in a known location with bounded scope.
+- **refactor**: structural change without observable behavior change.
+- **feature**: new capability with partially or fully unknown scope.
+- **incident**: time-boxed investigation combined with a targeted fix.
+
+Tie-break rule: when a task fits multiple labels, use the label with the most restrictive budget profile. When in doubt, prefer `feature` (broadest scope assumption).
+
 ---
 
 ## 8) Trigger-Based Auto-Clear
@@ -460,12 +481,34 @@ Exit criteria:
 
 Implement #3, #4, #5 (hard enforcement), full #7 budget profiles, #9. Evaluate #10 only for proven need.
 
+Note: The following runbooks are required artifacts before hard enforcement gates for #4, #5, and #8 are enabled in Slice 2: (a) reconstruction failure runbook, (b) unresolved contradiction runbook, (c) auto-clear thrash runbook. Each runbook must define: fallback mode, escalation trigger, and recovery actions. Runbooks are governance artifacts produced during Slice 2 implementation — not prerequisites for Slice 1.
+
 Exit criteria:
 - Retrieval anchors (DEC-*, RISK-*, ASM-*, EVD-*) used consistently across handoffs.
 - Reconstruction test passes on major phase transitions.
 - Contradiction detection catches issues without high false-positive burden.
 - Budget breach handled predictably per full profile table.
 - Evidence loading decreases large-context incidence.
+
+### Exit Gate Definitions
+
+Operational definitions for subjective terms used in slice exit criteria:
+
+- **Budget breach**: any step where artifact count or tool-call count exceeds the declared maximum for its task-type profile.
+- **False positive (contradiction detection)**: a contradiction flag raised on a non-conflicting field change, resolved without requiring any code or documentation change.
+- **Quality regression**: a task outcome requiring rework attributable to missing context that was present before Slice 1 adoption.
+- **Rehydrates predictably**: the next phase begins with all prior step-delta observations retrievable via `mem-search` without manual recovery intervention.
+
+### Demotion Triggers
+
+If any of the following signals are observed after Slice 1 or Slice 2 promotion, revert to the prior slice's enforcement mode and re-evaluate before re-promoting:
+
+- **Quality regression**: rework rate increases vs. pre-adoption baseline.
+- **Rehydration failure spike**: step-delta observations missing or incomplete on successive phase boundaries.
+- **Contradiction false-positive surge**: contradiction flags raised on non-conflicting changes at a rate that interrupts normal workflow.
+- **Auto-clear thrash**: context clear + rehydration cycle firing more than once per phase on average.
+
+Required rollback actions: disable hard enforcement gates, revert to warn mode, collect failure telemetry for root cause analysis before re-promoting.
 
 ---
 
@@ -508,7 +551,7 @@ Mitigation: staged enforcement and clear trivial-task bypass path.
 Mitigation: cooldown, targeted rehydration, and threshold tuning.
 
 ### Risk: Policy sprawl
-Mitigation: central schema, versioning, and unified linting.
+Mitigation: central schema, versioning, and unified linting. Ownership and review cadence should be defined before Slice 2 governance expansion — at minimum, a designated policy owner per artifact and a change-control gate for schema modifications.
 
 ---
 
