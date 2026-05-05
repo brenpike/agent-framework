@@ -139,6 +139,17 @@ When changes may affect versioned artifacts:
 - identify version/release files named in `CLAUDE.md`; if undefined, output `Release files likely needed: unknown`
 - output `unknown` for any field whose determination requires inference not directly supported by file content, user input, or governance rules
 
+## Plan Step IDs
+
+Every step in a plan must have a unique `STEP-NNN` identifier (zero-padded 3-digit integer, e.g., `STEP-001`, `STEP-002`). Numbering restarts at `STEP-001` for each new plan instance.
+
+Step IDs must appear in:
+- each step's heading or first line in the plan output
+- the orchestrator's delegation template (`Step: STEP-NNN` field)
+- the worker's `Step delta:` section in the phase-closing report (see `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta))
+
+Step IDs are scoped to the plan instance. A bypass reason (e.g., `SINGLE_STEP_TASK`, `TRIVIAL_CHANGE`) may omit the STEP-NNN when the task genuinely has no phase boundary — document the bypass reason in the plan per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist).
+
 ## Output Mode
 
 Use compact output only when all are true:
@@ -161,7 +172,7 @@ Memory reused:
 - None
 
 Steps:
-1. Owner: [coder|designer]
+1. STEP-001 Owner: [coder|designer]
    Files: [exact file list]
    Outcome: [what must be true]
 
@@ -188,7 +199,7 @@ Memory reused:
 - None
 
 Steps:
-1. Owner: [coder|designer]
+1. STEP-001 Owner: [coder|designer]
    Files: [exact file list]
    Outcome: [what must be true]
    Depends on: [step numbers | none]
