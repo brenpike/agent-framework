@@ -62,8 +62,8 @@ Goal: reduce context load and improve consistency **without degrading quality or
 2. Canonical `make-plan` + `do` execution flow.
 6. Two-tier memory model (durable vs ephemeral, lightweight).
 7. Context budget policy by task type (phase-boundary trigger only).
-5. Quality guardrails (soft/warn mode only).
 8. Trigger-based auto-clear rules.
+5. Quality guardrails (soft/warn mode only).
 
 ### Slice 2 — Harden
 
@@ -169,9 +169,19 @@ Implementation note:
 - When `claude-mem` is installed and approved, its capabilities may implement or accelerate these primitives.
 - When `claude-mem` is absent, agents follow the same lifecycle with native report/state artifacts.
 - Native fallback artifact shape (claude-mem absent):
-  - Plan: a numbered step list in the orchestrator's delegation preamble or a fenced block in a committed `docs/` file, each step with a unique `STEP-NNN` ID, owner, and completion criteria.
+  - Plan: a numbered step list in the orchestrator's delegation preamble or a structured plan artifact under `.agent-framework/plans/` (not `docs/`), each step with a unique `STEP-NNN` ID, owner, and completion criteria.
   - Step delta: a `Step delta:` section appended to the Shared Worker Report Contract at each `do(step)` completion, containing step ID, outcome, evidence refs, and unresolved assumptions.
-  - Phase closure: orchestrator compacts all step deltas from the phase into a single handoff artifact before the next delegation — prior phase reports are not re-injected.
+  - Phase closure: orchestrator compacts all step deltas from the phase into a single handoff artifact under `.agent-framework/handoffs/` before the next delegation — prior phase reports are not re-injected.
+
+Fallback storage hygiene:
+- Runtime orchestration artifacts (`.agent-framework/plans/`, `.agent-framework/handoffs/`, optional `.agent-framework/checkpoints/`) are operational state, not human documentation.
+- Do not mix these runtime artifacts into `docs/` by default.
+- Treat runtime artifacts as ephemeral by default (gitignored unless intentionally promoted for audit/repro).
+- Cleanup/retention defaults to prevent noise:
+  - Keep only the active plan + latest handoff during normal execution.
+  - Auto-archive or delete superseded phase artifacts at phase close.
+  - Keep a short rolling window (for example, latest 3 handoffs/checkpoints) for recovery/debug.
+  - Promote only intentionally selected artifacts into durable docs when needed for audit, postmortem, or reusable runbooks.
 
 ### Agent Integration
 - Task-capable agents must create/consume an active plan ID.
@@ -484,7 +494,7 @@ Exit criteria:
 
 Implement #3, #4, #5 (hard enforcement), full #7 budget profiles, #9. Evaluate #10 only for proven need.
 
-Note: The following runbooks are required artifacts before hard enforcement gates for #4 and #5 are enabled in Slice 2: (a) reconstruction failure runbook, (b) unresolved contradiction runbook, (c) auto-clear thrash runbook. Each runbook must define: fallback mode, escalation trigger, and recovery actions. Runbooks are governance artifacts produced during Slice 2 implementation — not prerequisites for Slice 1.
+Note: The following runbooks are required artifacts before hard enforcement gates for #4, #5, and #8 are enabled in Slice 2: (a) reconstruction failure runbook, (b) unresolved contradiction runbook, (c) auto-clear thrash runbook. Each runbook must define: fallback mode, escalation trigger, and recovery actions. Runbooks are governance artifacts produced during Slice 2 implementation — not prerequisites for Slice 1.
 
 Exit criteria:
 - Retrieval anchors (DEC-*, RISK-*, ASM-*, EVD-*) used consistently across handoffs.
@@ -554,7 +564,7 @@ Mitigation: staged enforcement and clear trivial-task bypass path.
 Mitigation: cooldown, targeted rehydration, and threshold tuning.
 
 ### Risk: Policy sprawl
-Mitigation: central schema, versioning, and unified linting. Ownership and review cadence must be defined before Slice 2 governance expansion — at minimum, a designated policy owner per artifact and a change-control gate for schema modifications. **Gate: Slice 2 kickoff is blocked until ownership is assigned.**
+Mitigation: central schema, versioning, and unified linting. Ownership and review cadence should be defined before Slice 2 governance expansion — at minimum, a designated policy owner per artifact and a change-control gate for schema modifications.
 
 ---
 
@@ -592,5 +602,5 @@ All four should be versioned and cross-referenced in agent runtime governance.
 1. Approve the slice order and dependency structure.
 2. Finalize handoff schema and `make-plan`/`do` step-delta schema.
 3. Define governance v2 migration strategy (warn → enforce).
-4. Define pilot metrics dashboard and baseline cohort (at Slice 1 entry, before enabling enforcement gates).
+4. Define pilot metrics dashboard and baseline cohort.
 5. Start Slice 1 implementation.
