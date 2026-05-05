@@ -34,7 +34,7 @@ Goal: reduce context load and improve consistency **without degrading quality or
 2. **Single execution flow**: use a canonical plan/step lifecycle.
 3. **Evidence-linked decisions**: decisions should be recoverable without full thread replay.
 4. **Guardrails before automation**: enforce quality checks before aggressive context clearing.
-5. **Phased rollout**: deliver high-ROI, low-risk capabilities first.
+5. **Two-slice rollout**: ship savings first, harden second.
 
 ---
 
@@ -56,41 +56,42 @@ Goal: reduce context load and improve consistency **without degrading quality or
 
 ## Recommended Implementation Order
 
-### Phase 0 — Foundation (High ROI, Low Risk)
+### Slice 1 — Ship the Savings (MVP)
 
 1. Structured phase handoffs.
 2. Canonical `make-plan` + `do` execution flow.
+6. Two-tier memory model (durable vs ephemeral, lightweight).
+7. Context budget policy by task type (phase-boundary trigger only).
+8. Trigger-based auto-clear rules.
+5. Quality guardrails (soft/warn mode only).
+
+### Slice 2 — Harden
+
 3. Retrieval anchors (decision/risk/evidence IDs).
 4. Reconstruction test.
-
-### Phase 1 — Safety and Policy Hardening
-
-5. Quality guardrails (invariants/assumptions/contradiction checks).
-6. Two-tier memory model (durable vs ephemeral).
-7. Context budget policy by task type.
-
-### Phase 2 — Automation and Advanced Optimization
-
-8. Trigger-based auto-clear rules.
+5. Quality guardrails (hard enforcement).
+7. Context budget policy (full profiles).
 9. Progressive evidence loading.
-10. Branch-and-merge reasoning (advanced/conditional).
+10. Branch-and-merge reasoning (advanced/conditional — evaluate for proven need only).
 
 ---
 
 ## Why #1 and #2 Are Both Needed
 
-They overlap but solve different layers:
+They solve four distinct concerns — none redundant:
 
-- **Structured handoffs (#1)**: controls the **payload** that crosses phase boundaries.
-- **`make-plan` + `do` (#2)**: controls the **process** by which work is executed.
+- **#1 answers: what fields must be preserved?** (payload schema — decisions, assumptions, artifacts, next actions)
+- **#2 answers: how is work decomposed and tracked?** (step lifecycle — STEP-NNN IDs, step-delta reports)
+- **claude-mem answers: where are those fields stored?** (storage substrate — observations retrieved via mem-search on rehydration)
+- **#8 answers: when does context reset and rehydration fire?** (the actual token-savings mechanism)
 
-They should not be parallel systems. The recommended model is:
+#1 and #2 are not storage systems and are not redundant with each other or with claude-mem. #2 generates the artifacts that #1 defines the schema for. claude-mem is the storage substrate for #1's fields. #8 is the mechanism that makes the savings real.
 
-- `make-plan` establishes canonical step structure.
-- each `do(step)` emits structured delta artifacts.
-- phase closure compacts deltas into the handoff artifact.
-
-This merges #1 and #2 into a unified flow: process + payload.
+The recommended model remains:
+- #2 step lifecycle produces step-delta artifacts at each phase close.
+- #1 schema defines which fields must be in those artifacts.
+- claude-mem stores the artifacts as observations.
+- #8 clears context at phase boundary and orchestrator rehydrates via mem-search.
 
 ---
 
@@ -129,7 +130,13 @@ Replace ad hoc phase transitions with compact, standardized state transfer by ex
 - Disallow large raw logs directly in handoff; require references.
 - Extend `plugin/governance/communication-policy.md` Shared Worker Report Contract with the additional context-management fields below (or define a versioned successor contract), then deprecate legacy-only usage after migration.
 
-### Recommended Handoff Schema
+With claude-mem installed, #1's implementation is a **required observation fields** spec — not a separate in-session artifact format. The handoff artifact IS the claude-mem observation set, stored at phase close and retrieved via `mem-search` on rehydration. #1 still required even with claude-mem because it defines schema discipline: which fields agents must capture. Without it, agents emit inconsistent or incomplete observations and rehydration is lossy.
+
+Without claude-mem, the handoff artifact lives as in-session text or a committed file under `docs/`.
+
+### Required Observation Fields (Handoff Schema)
+
+These fields must be captured at phase close — as claude-mem observations when available, or as an in-session artifact when claude-mem is absent:
 - `objective`
 - `scope_in`
 - `scope_out`
@@ -168,7 +175,13 @@ Implementation note:
 - Task-capable agents must create/consume an active plan ID.
 - One step in progress at a time.
 - Every `do(step)` writes expected outcome + completion evidence + delta summary.
-- Trivial exceptions allowed only with explicit `bypass_reason`.
+- Trivial exceptions allowed only with a bypass reason drawn from the following allowlist:
+  - `TRIVIAL_CHANGE` — single-statement or mechanical edit meeting all Trivial Change conditions.
+  - `NO_PRIOR_PHASE` — first step in a workflow with no prior phase to hand off from.
+  - `SINGLE_STEP_TASK` — entire task fits in one step with no phase boundary.
+  - `USER_OVERRIDE` — user explicitly directed bypass with a stated reason.
+  
+  Each bypass must include audit metadata in the delegation preamble: reason code + step/task ID.
 
 ### Policy Embedding
 - "No execution without plan artifact" rule for applicable task classes.
@@ -180,6 +193,33 @@ Implementation note:
 - Specialist agents (coding/testing/docs/design): execute assigned steps via `do`.
 - Reviewer/validator role: verifies step completion criteria and evidence.
 
+### Mechanical Changes to Existing Framework
+
+#2 does NOT replace the orchestrator's delegation machinery. It adds three fields to existing templates:
+
+**Change 1 — Delegation preamble:** Orchestrator adds `Step: STEP-NNN` to every delegation sent to a worker.
+
+**Change 2 — Shared Worker Report Contract:** Workers must append a mandatory `Step delta:` section to every phase-closing report:
+
+  Step delta:
+    Step: STEP-NNN
+    Outcome: [what was accomplished]
+    Decisions: DEC-NNN — [decision and rationale]
+    Assumptions unresolved: ASM-NNN — [assumption and impact]
+    Evidence: EVD-NNN — [test output / commit SHA / artifact ref]
+
+**Change 3 — Post-verification extraction:** After phase verification, orchestrator extracts the `Step delta:` section, stores it as a claude-mem observation (or in-session artifact when claude-mem absent), then delegates the next phase with only the compact step-delta — not the full prior phase report or tool outputs.
+
+This is the mechanism by which prior phase transcripts drop out of active context. Phase N+1 receives 10–20 lines of structured delta instead of hundreds of lines of Phase N transcript.
+
+### Agent Responsibility
+
+| Primitive | Caller | Notes |
+|---|---|---|
+| `make-plan` | Planner agent | Called as part of planner's output; emits structured plan with STEP-NNN IDs as observations |
+| `do` | Orchestrator (existing delegation machinery) | `claude-mem:do` is NOT used directly — conflicts with orchestrator governance (orchestrator owns delegation, git preflight, phase verification, commit policy). Orchestrator's delegation template IS the `do` primitive. |
+| `mem-search` | Orchestrator + Planner | Orchestrator: rehydration after #8 context clear. Planner: codebase research (existing behavior). |
+
 ### Dependencies
 - Requires handoff schema from #1.
 - Enables #8 automation with lower risk.
@@ -188,7 +228,7 @@ Implementation note:
 - Highest single-item token ROI in this plan.
 - Current framework carries full plan + all prior phase delegation context in orchestrator throughout the workflow. By phase 4 of a 6-phase plan, orchestrator context includes: plan, phases 1–3 full delegations + reports, validation outputs, git state. This is the primary context bloat driver.
 - Step-delta artifacts with phase-closure compaction eliminate this: prior phases drop out of active context after closure; only the compact handoff artifact carries forward.
-- Estimated impact: 40–60% reduction in orchestrator context for workflows with 5+ phases.
+- Hypothesis: 40–60% reduction in orchestrator context for workflows with 5+ phases. This is a pre-implementation hypothesis, not a measured outcome. Validation is tied to pre-declared measurement slices — task type, phase count (5+ phases), and the baseline window defined at Slice 1 entry — per the Validation and Measurement Framework section.
 - Recommendation: accept the framework change. The orchestrator and planner already decompose work into phases/steps — adding STEP-NNN IDs and mandatory step-delta reports to the Shared Worker Report Contract is incremental, not a rewrite.
 
 ---
@@ -211,9 +251,13 @@ Replace verbose history replay with precise references.
   - baseline: in-session report artifacts + `Session facts:` block extensions in `communication-policy.md`
   - optional persistence: `claude-mem` observations (when installed)
   - cross-session retrieval is only guaranteed when a persistent memory substrate is available
+- Minimum anchor quality requirements:
+  - ID format: `<TYPE>-<NNN>` where TYPE ∈ {DEC, RISK, ASM, EVD} and NNN is a zero-padded 3-digit integer unique within the session (e.g., `DEC-001`, `EVD-012`).
+  - Required metadata per anchor: type, one-sentence description, source artifact reference (commit SHA, file path, or step ID).
+  - Stale reference handling: if a referenced artifact is no longer resolvable, mark the anchor `[STALE]` and exclude it from rehydration until re-resolved. Stale anchors must be logged but do not block step completion.
 
-### Phase 0 Simplification
-In Phase 0 (in-session only), DEC-*, RISK-*, ASM-*, EVD-* IDs are embedded directly in handoff artifacts — the handoff IS the store. No separate retrieval infrastructure is needed. "Retrieve by ID" becomes non-trivial only for cross-phase or cross-session use cases, which require claude-mem or an equivalent persistent substrate. Avoid over-engineering Phase 0 anchor storage: ID discipline (naming and referencing decisions consistently) is the Phase 0 value, not retrieval infrastructure.
+### Slice 2 Note
+In Slice 1 (in-session only), DEC-*, RISK-*, ASM-*, EVD-* IDs are embedded directly in handoff artifacts — the handoff IS the store. No separate retrieval infrastructure is needed. "Retrieve by ID" becomes non-trivial only for cross-phase or cross-session use cases, which require claude-mem or an equivalent persistent substrate. Avoid over-engineering Slice 1 anchor storage: ID discipline (naming and referencing decisions consistently) is the Slice 1 value, not retrieval infrastructure. Full retrieval anchor infrastructure is a Slice 2 item.
 
 ### Dependencies
 - Amplifies #1 and #2.
@@ -232,9 +276,9 @@ Verify that artifact-only context is sufficient after reset.
 - If not, request targeted rehydration by ID.
 
 ### Policy Embedding
-- Phase 0/Stage A: define test schema and telemetry only (warn mode). Pass/fail is binary: can the agent continue correctly from handoff + anchors alone? Yes = pass, No = fail. No percentage threshold in Phase 0.
-- Phase 1/Stage B onward: enable blocking gate on binary fail. Percentage-based thresholds may be introduced after Phase 0 telemetry establishes a calibration baseline.
-- Record failure reason/missing fields for telemetry in all phases.
+- Slice 1: define test schema and telemetry only (warn mode). Pass/fail is binary: can the agent continue correctly from handoff + anchors alone? Yes = pass, No = fail. No percentage threshold in Slice 1.
+- Slice 2 onward: enable blocking gate on binary fail. Percentage-based thresholds may be introduced after Slice 1 telemetry establishes a calibration baseline.
+- Record failure reason/missing fields for telemetry in all slices.
 
 ### Dependencies
 - Relies on #1 handoffs and #3 anchors.
@@ -307,13 +351,28 @@ Apply right-sized context limits based on work class.
 ### Policy Embedding
 - Governance table mapping task type → budget profile.
 - Budget breach triggers forced checkpoint/compression using observable proxies (artifact count, replay depth, tool-call count), not token introspection.
-- Most actionable Phase 1 proxies (implement first):
+- Most actionable Slice 1 proxies (implement first):
   - "max tool calls before mandatory checkpoint" — fully observable; agents track call count natively.
   - "max replay depth (number of prior artifacts auto-included per delegation)" — directly governs how many prior phase reports are injected; most direct lever on orchestrator context size.
   - Artifact count and summary size limits are secondary; defer until primary proxies are calibrated.
 
 ### Dependencies
 - Works best after #6 memory tiering.
+
+### Slice 1 Simplification
+
+In Slice 1, #7 has one trigger only: **phase boundary auto-clear**. No full governance budget-profile table. No per-task-class profiles. Full trigger policy (N tool calls, scope pivot, user reset) and the complete profile table are deferred to Slice 2 after Slice 1 baseline data is available.
+
+### Slice 2 Preparation: Classification Rubric
+
+Required before the full Slice 2 budget profile table can be implemented. Task-type taxonomy with examples:
+
+- **bugfix**: isolated defect fix in a known location with bounded scope.
+- **refactor**: structural change without observable behavior change.
+- **feature**: new capability with partially or fully unknown scope.
+- **incident**: time-boxed investigation combined with a targeted fix.
+
+Tie-break rule: when a task fits multiple labels, use the label with the most restrictive budget profile. When in doubt, prefer `feature` (broadest scope assumption).
 
 ---
 
@@ -337,6 +396,18 @@ Automate context reset at safe, predictable boundaries.
 
 ### Dependencies
 - Requires #1/#2/#5 guardrails and #7 budget policy for safe operation.
+
+### Coupling with #1 and #2
+
+#8 requires #1 and #2 to be safe. The rehydration flow:
+
+1. #8 trigger fires at phase boundary.
+2. Context cleared.
+3. Orchestrator runs `mem-search` for current task's step-delta observations.
+4. Compact step-delta artifacts rehydrated — no prior phase transcripts, tool outputs, or raw diffs.
+5. Next phase proceeds with clean context.
+
+Without #1 (schema discipline), rehydrated observations are incomplete. Without #2 (step-delta emission), there is nothing structured to rehydrate from. Both are prerequisites for safe #8 operation.
 
 ---
 
@@ -392,40 +463,52 @@ Support controlled multi-path exploration for complex tasks.
 
 ---
 
-## Rollout Plan and Gates
+## Rollout Plan
 
-## Stage A (Pilot)
+### Slice 1 — Ship the Savings (MVP)
 
-Implement #1, #2, #3, #4 in soft-enforcement mode.
+Implement #1, #2, #6 (lightweight), #7 (phase-boundary trigger only), #8. #5 in soft/warn mode only.
 
-Exit criteria:
-- High completion rate for required handoff fields.
-- Plan/step lifecycle consistently used for applicable tasks.
-- Reconstruction pass rate acceptable.
-
-Note: specific numeric thresholds (e.g., completion rate ≥ X%, reconstruction pass rate ≥ Y%) are defined during pilot calibration at Stage A entry using the baseline cohort, not pre-specified here.
-
-## Stage B (Safety Hardening)
-
-Implement #5, #6, #7 with mixed warn/block gates.
+Rationale: The original Stage A–C structure delivered scaffolding without token savings. Token savings only land when #8 (auto-clear) is operational. Slice 1 ships the minimum viable stack required to make #8 safe and operational.
 
 Exit criteria:
+- Handoff schema fields (per #1) emitted consistently by workers.
+- STEP-NNN IDs and Step delta sections present in worker reports (per #2).
+- Context clear fires at phase boundary and rehydrates from compact step-delta observations only (per #8).
+- No measurable quality regression vs. pre-Slice-1 baseline.
+
+### Slice 2 — Harden
+
+Implement #3, #4, #5 (hard enforcement), full #7 budget profiles, #9. Evaluate #10 only for proven need.
+
+Note: The following runbooks are required artifacts before hard enforcement gates for #4, #5, and #8 are enabled in Slice 2: (a) reconstruction failure runbook, (b) unresolved contradiction runbook, (c) auto-clear thrash runbook. Each runbook must define: fallback mode, escalation trigger, and recovery actions. Runbooks are governance artifacts produced during Slice 2 implementation — not prerequisites for Slice 1.
+
+Exit criteria:
+- Retrieval anchors (DEC-*, RISK-*, ASM-*, EVD-*) used consistently across handoffs.
+- Reconstruction test passes on major phase transitions.
 - Contradiction detection catches issues without high false-positive burden.
-- Durable/ephemeral separation adopted by agents.
-- Budget breaches handled predictably.
-
-Note: specific numeric thresholds for false-positive rate and budget-breach frequency are calibrated from Stage A data before Stage B gates are enforced.
-
-## Stage C (Automation)
-
-Implement #8 and #9; evaluate #10 only for proven need.
-
-Exit criteria:
-- Auto-clear reduces context footprint without increased quality regressions.
+- Budget breach handled predictably per full profile table.
 - Evidence loading decreases large-context incidence.
-- Advanced branching only used on tasks above complexity threshold.
 
-Note: specific numeric thresholds for context footprint reduction and quality regression rate are calibrated from Stage B data before Stage C gates are enforced.
+### Exit Gate Definitions
+
+Operational definitions for subjective terms used in slice exit criteria:
+
+- **Budget breach**: any step where artifact count or tool-call count exceeds the declared maximum for its task-type profile.
+- **False positive (contradiction detection)**: a contradiction flag raised on a non-conflicting field change, resolved without requiring any code or documentation change.
+- **Quality regression**: a task outcome requiring rework attributable to missing context that was present before Slice 1 adoption.
+- **Rehydrates predictably**: the next phase begins with all prior step-delta observations retrievable via `mem-search` without manual recovery intervention.
+
+### Demotion Triggers
+
+If any of the following signals are observed after Slice 1 or Slice 2 promotion, revert to the prior slice's enforcement mode and re-evaluate before re-promoting:
+
+- **Quality regression**: rework rate increases vs. pre-adoption baseline.
+- **Rehydration failure spike**: step-delta observations missing or incomplete on successive phase boundaries.
+- **Contradiction false-positive surge**: contradiction flags raised on non-conflicting changes at a rate that interrupts normal workflow.
+- **Auto-clear thrash**: context clear + rehydration cycle firing more than once per phase on average.
+
+Required rollback actions: disable hard enforcement gates, revert to warn mode, collect failure telemetry for root cause analysis before re-promoting.
 
 ---
 
@@ -434,7 +517,7 @@ Note: specific numeric thresholds for context footprint reduction and quality re
 Use a baseline-vs-treatment evaluation on representative tasks.
 
 Baseline note:
-- Baseline data collection begins at Stage A entry before enabling hard enforcement gates.
+- Baseline data collection begins at Slice 1 entry before enabling hard enforcement gates.
 - If historical baseline is unavailable, run a short baseline-only window first, then start treatment comparison.
 
 ### Track per Task/Session
@@ -452,7 +535,7 @@ Baseline note:
 - Contradiction check interventions.
 
 ### Decision Rule
-Proceed from one stage to the next only if token efficiency improves **without measurable precision degradation**.
+Proceed from one slice to the next only if token efficiency improves **without measurable precision degradation**.
 
 ---
 
@@ -468,7 +551,7 @@ Mitigation: staged enforcement and clear trivial-task bypass path.
 Mitigation: cooldown, targeted rehydration, and threshold tuning.
 
 ### Risk: Policy sprawl
-Mitigation: central schema, versioning, and unified linting.
+Mitigation: central schema, versioning, and unified linting. Ownership and review cadence should be defined before Slice 2 governance expansion — at minimum, a designated policy owner per artifact and a change-control gate for schema modifications.
 
 ---
 
@@ -503,8 +586,8 @@ All four should be versioned and cross-referenced in agent runtime governance.
 
 ## Immediate Next Actions
 
-1. Approve the phased order and dependency structure.
+1. Approve the slice order and dependency structure.
 2. Finalize handoff schema and `make-plan`/`do` step-delta schema.
 3. Define governance v2 migration strategy (warn → enforce).
 4. Define pilot metrics dashboard and baseline cohort.
-5. Start Stage A implementation.
+5. Start Slice 1 implementation.
