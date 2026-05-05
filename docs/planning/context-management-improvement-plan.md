@@ -160,9 +160,19 @@ Implementation note:
 - When `claude-mem` is installed and approved, its capabilities may implement or accelerate these primitives.
 - When `claude-mem` is absent, agents follow the same lifecycle with native report/state artifacts.
 - Native fallback artifact shape (claude-mem absent):
-  - Plan: a numbered step list in the orchestrator's delegation preamble or a fenced block in a committed `docs/` file, each step with a unique `STEP-NNN` ID, owner, and completion criteria.
+  - Plan: a numbered step list in the orchestrator's delegation preamble or a structured plan artifact under `.agent-framework/plans/` (not `docs/`), each step with a unique `STEP-NNN` ID, owner, and completion criteria.
   - Step delta: a `Step delta:` section appended to the Shared Worker Report Contract at each `do(step)` completion, containing step ID, outcome, evidence refs, and unresolved assumptions.
-  - Phase closure: orchestrator compacts all step deltas from the phase into a single handoff artifact before the next delegation — prior phase reports are not re-injected.
+  - Phase closure: orchestrator compacts all step deltas from the phase into a single handoff artifact under `.agent-framework/handoffs/` before the next delegation — prior phase reports are not re-injected.
+
+Fallback storage hygiene:
+- Runtime orchestration artifacts (`.agent-framework/plans/`, `.agent-framework/handoffs/`, optional `.agent-framework/checkpoints/`) are operational state, not human documentation.
+- Do not mix these runtime artifacts into `docs/` by default.
+- Treat runtime artifacts as ephemeral by default (gitignored unless intentionally promoted for audit/repro).
+- Cleanup/retention defaults to prevent noise:
+  - Keep only the active plan + latest handoff during normal execution.
+  - Auto-archive or delete superseded phase artifacts at phase close.
+  - Keep a short rolling window (for example, latest 3 handoffs/checkpoints) for recovery/debug.
+  - Promote only intentionally selected artifacts into durable docs when needed for audit, postmortem, or reusable runbooks.
 
 ### Agent Integration
 - Task-capable agents must create/consume an active plan ID.
