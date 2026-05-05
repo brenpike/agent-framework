@@ -50,6 +50,39 @@ Optional lines. Include each line below only when its trigger fires; otherwise o
 - `Git issue: ...` — when git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` or any preflight item is undefined
 - `Ready to resolve: yes|no` — when the work was review-remediation
 
+## Context Management Fields (Handoff Schema)
+
+At phase close, workers must capture the following fields in addition to the standard report contract fields above. These fields form the handoff artifact — stored as claude-mem observations when available, or as an in-session artifact under `.agent-framework/handoffs/` when claude-mem is absent.
+
+Required observation fields:
+- `Objective:` — the phase's stated goal
+- `Scope in:` — files/areas included
+- `Scope out:` — files/areas explicitly excluded
+- `Decisions:` — DEC-NNN tagged list (use descriptive labels in Slice 1)
+- `Assumptions:` — ASM-NNN tagged list (use descriptive labels in Slice 1)
+- `Open questions:` — unresolved items requiring future attention
+- `Artifacts:` — files created or modified with paths
+- `Evidence refs:` — EVD-NNN tagged list (commit SHAs, test output, artifact refs)
+- `Next actions:` — what the next phase must do
+- `Risk level:` — low | medium | high
+
+Contract compatibility note: existing required report fields (`Status`, `Changed`, `Validated`, `Need scope change`, `Issues`) remain required. Context management fields are additive in Slice 1. Hard requirement enforcement deferred to Slice 2.
+
+## Step Delta
+
+Workers must append a `Step delta:` section to every phase-closing report when a `Step: STEP-NNN` field was included in the delegation. This section enables compact phase-to-phase state transfer.
+
+```text
+Step delta:
+  Step: STEP-NNN
+  Outcome: [what was accomplished]
+  Decisions: DEC-NNN — [decision and rationale]
+  Assumptions unresolved: ASM-NNN — [assumption and impact]
+  Evidence: EVD-NNN — [test output / commit SHA / artifact ref]
+```
+
+The orchestrator extracts the `Step delta:` section after phase verification, stores it (as a claude-mem observation or under `.agent-framework/handoffs/STEP-NNN.md`), and delegates the next phase with only the compact step-delta — not the full prior phase report or tool outputs.
+
 ## Blocked Report Contract
 
 Use this for blocked planning, execution, validation, git, versioning, review, monitoring, or skill states:
@@ -79,6 +112,7 @@ Certain facts are resolved repeatedly during a task. Agents may cache them to av
 | review policy | Whether review-on-PR is true in CLAUDE.md |
 | version file | Current version string at task start |
 | bump-trigger-paths | Whether CLAUDE.md defines project-specific bump-trigger paths (`defined` \| `undefined`) |
+| `active-step` | Current `STEP-NNN` ID from the active plan |
 
 ### Cache Rules
 
@@ -94,3 +128,4 @@ Cache must be discarded when any of the following occurs:
 - Rebase or history rewrite on the working branch
 - Base branch advances (new commits on trunk since cache was set)
 - CLAUDE.md is modified during the task
+- Plan is re-sequenced or step is re-assigned by orchestrator (`active-step`)
