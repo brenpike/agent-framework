@@ -62,8 +62,8 @@ Goal: reduce context load and improve consistency **without degrading quality or
 2. Canonical `make-plan` + `do` execution flow.
 6. Two-tier memory model (durable vs ephemeral, lightweight).
 7. Context budget policy by task type (phase-boundary trigger only).
-8. Trigger-based auto-clear rules.
 5. Quality guardrails (soft/warn mode only).
+8. Trigger-based auto-clear rules.
 
 ### Slice 2 — Harden
 
@@ -494,7 +494,7 @@ Exit criteria:
 
 Implement #3, #4, #5 (hard enforcement), full #7 budget profiles, #9. Evaluate #10 only for proven need.
 
-Note: The following runbooks are required artifacts before hard enforcement gates for #4, #5, and #8 are enabled in Slice 2: (a) reconstruction failure runbook, (b) unresolved contradiction runbook, (c) auto-clear thrash runbook. Each runbook must define: fallback mode, escalation trigger, and recovery actions. Runbooks are governance artifacts produced during Slice 2 implementation — not prerequisites for Slice 1.
+Note: The following runbooks are required artifacts before hard enforcement gates for #4 and #5 are enabled in Slice 2: (a) reconstruction failure runbook, (b) unresolved contradiction runbook, (c) auto-clear thrash runbook. Each runbook must define: fallback mode, escalation trigger, and recovery actions. Runbooks are governance artifacts produced during Slice 2 implementation — not prerequisites for Slice 1.
 
 Exit criteria:
 - Retrieval anchors (DEC-*, RISK-*, ASM-*, EVD-*) used consistently across handoffs.
@@ -564,7 +564,7 @@ Mitigation: staged enforcement and clear trivial-task bypass path.
 Mitigation: cooldown, targeted rehydration, and threshold tuning.
 
 ### Risk: Policy sprawl
-Mitigation: central schema, versioning, and unified linting. Ownership and review cadence should be defined before Slice 2 governance expansion — at minimum, a designated policy owner per artifact and a change-control gate for schema modifications.
+Mitigation: central schema, versioning, and unified linting. Ownership and review cadence must be defined before Slice 2 governance expansion — at minimum, a designated policy owner per artifact and a change-control gate for schema modifications. **Gate: Slice 2 kickoff is blocked until ownership is assigned.**
 
 ---
 
@@ -602,5 +602,5 @@ All four should be versioned and cross-referenced in agent runtime governance.
 1. Approve the slice order and dependency structure.
 2. Finalize handoff schema and `make-plan`/`do` step-delta schema.
 3. Define governance v2 migration strategy (warn → enforce).
-4. Define pilot metrics dashboard and baseline cohort.
+4. Define pilot metrics dashboard and baseline cohort (at Slice 1 entry, before enabling enforcement gates).
 5. Start Slice 1 implementation.
