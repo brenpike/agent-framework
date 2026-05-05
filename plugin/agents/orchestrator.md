@@ -283,7 +283,8 @@ After each phase, verify every item below before starting the next phase. The ph
 - git state is not unsafe per the "Unsafe git state" definition
 - if the changed files match the project's bump-trigger paths (or, when undefined, do not match the "No bump is required by default" list), the report includes `Version: required|none|unknown`
 - the worker's report contains no `Status: blocked` items and no `Need scope change` entries
-- after phase verification passes and the worker's report includes a `Step delta:` section: extract that section; store it as a claude-mem observation (when installed per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)) or write to `.agent-framework/handoffs/STEP-NNN.md`; delegate the next phase with only the compact step-delta, not the full prior phase report or tool outputs
+- when the delegation included a `Step: STEP-NNN` field and the worker's report does NOT include a `Step delta:` section: **fail phase verification** — the phase cannot be accepted without a durable handoff artifact
+- when the delegation included a `Step: STEP-NNN` field and the worker's report includes a `Step delta:` section: extract that section; store it as a claude-mem observation (when installed per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)) or write to `.agent-framework/handoffs/STEP-NNN.md`; delegate the next phase with only the compact step-delta, not the full prior phase report or tool outputs
 
 If a worker touched files outside the assigned scope, or implementation began without every Required Git Preflight item established: do not commit the phase, do not proceed to the next phase, and either re-delegate the phase with corrected scope or escalate to the user if the same violation recurs in a subsequent attempt.
 

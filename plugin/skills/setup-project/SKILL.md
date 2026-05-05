@@ -60,13 +60,15 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    - `enabledPlugins["agent-framework@brenpike"]` = `true`
    - `agent` = `"agent-framework:orchestrator"`
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
-6. If `dry_run` = `yes`, print the merged JSON and stop without writing.
+6. If `dry_run` = `yes`:
+   a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it already contains `.agent-framework/`; set the action to `would-create`, `would-append`, or `already-present` accordingly.
+   b. Print the merged settings JSON and the gitignore action together.
+   c. Stop without writing any files.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
 8. Ensure `.agent-framework/` is listed in the project's `.gitignore`:
    a. If `<project root>/.gitignore` does not exist, create it with a single line `.agent-framework/`.
    b. If `.gitignore` exists, read it. If it already contains `.agent-framework/` as a standalone line (trimmed), report `already present` and skip.
    c. Otherwise append `.agent-framework/` to the end of the file (prepend a blank line if the file does not end with a newline).
-   d. If `dry_run` = `yes`, report what would be done but do not write.
 9. Report which keys were added vs already present.
 
 ## Merge Rules

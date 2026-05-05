@@ -26,7 +26,7 @@ The plan artifact and step-delta requirements may be bypassed only with an expli
 | Code | Condition |
 |---|---|
 | `TRIVIAL_CHANGE` | Single-statement or mechanical edit meeting all Trivial Change conditions |
-| `NO_PRIOR_PHASE` | First step in a workflow with no prior phase to hand off from |
+| `NO_PRIOR_PHASE` | First step in a workflow with no prior phase to hand off from. Waives the requirement to consume a prior handoff artifact only — the step must still produce a `Step delta:` output for subsequent phases to rehydrate from. |
 | `SINGLE_STEP_TASK` | Entire task fits in one step with no phase boundary |
 | `USER_OVERRIDE` | User explicitly directed bypass with a stated reason |
 
@@ -56,7 +56,11 @@ Retention defaults:
 
 ### claude-mem Detection
 
-At session start, check `~/.claude/settings.json` for `"claude-mem@thedotmack": true` under `enabledPlugins`:
+At session start, check for `"claude-mem@thedotmack": true` under `enabledPlugins` in either:
+- `~/.claude/settings.json` (global settings), OR
+- `<project root>/.claude/settings.json` (project-local settings, where project root is resolved via `git rev-parse --show-toplevel`)
+
+If either file contains `"claude-mem@thedotmack": true`, treat claude-mem as **Present**.
 
 - **Present:** store step-deltas as claude-mem observations; rehydrate via `mem-search`.
 - **Absent:** store step-deltas as files under `.agent-framework/handoffs/`; rehydrate by reading files.
