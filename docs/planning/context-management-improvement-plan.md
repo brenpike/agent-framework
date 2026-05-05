@@ -175,6 +175,11 @@ Fallback storage hygiene:
 - Runtime orchestration artifacts (`.agent-framework/plans/`, `.agent-framework/handoffs/`, optional `.agent-framework/checkpoints/`) are operational state, not human documentation.
 - Do not mix these runtime artifacts into `docs/` by default.
 - Treat runtime artifacts as ephemeral by default (gitignored unless intentionally promoted for audit/repro).
+- Cleanup/retention defaults to prevent noise:
+  - Keep only the active plan + latest handoff during normal execution.
+  - Auto-archive or delete superseded phase artifacts at phase close.
+  - Keep a short rolling window (for example, latest 3 handoffs/checkpoints) for recovery/debug.
+  - Promote only intentionally selected artifacts into durable docs when needed for audit, postmortem, or reusable runbooks.
 
 ### Agent Integration
 - Task-capable agents must create/consume an active plan ID.
