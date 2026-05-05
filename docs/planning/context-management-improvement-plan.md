@@ -50,7 +50,7 @@ Goal: reduce context load and improve consistency **without degrading quality or
 
 - Replacing existing governance wholesale.
 - Changing plugin packaging layout.
-- Introducing hard runtime dependencies on optional external plugins.
+- Requiring optional companion plugins as hard runtime prerequisites.
 
 ---
 
@@ -116,7 +116,7 @@ Recommended approach:
 ## 1) Structured Phase Handoffs
 
 ### Intent
-Replace ad hoc phase transitions with compact, standardized state transfer.
+Replace ad hoc phase transitions with compact, standardized state transfer by extending the existing Shared Worker Report Contract rather than running a parallel contract system.
 
 ### Agent Integration
 - Use fixed lifecycle: Discover → Plan → Execute → Verify → Summarize.
@@ -127,6 +127,7 @@ Replace ad hoc phase transitions with compact, standardized state transfer.
 - Require handoff artifact for non-trivial phase transition.
 - Define mandatory fields and field-level size limits.
 - Disallow large raw logs directly in handoff; require references.
+- Extend `plugin/governance/communication-policy.md` Shared Worker Report Contract with the additional context-management fields below (or define a versioned successor contract), then deprecate legacy-only usage after migration.
 
 ### Recommended Handoff Schema
 - `objective`
@@ -140,6 +141,10 @@ Replace ad hoc phase transitions with compact, standardized state transfer.
 - `next_actions[]`
 - `risk_level`
 
+Contract compatibility note:
+- Existing required report fields (`Status`, `Changed`, `Validated`, `Need scope change`, `Issues`) remain required.
+- New context fields are additive in migration phase; hard requirement can be enforced after adoption metrics stabilize.
+
 ### Dependencies
 - Foundation for #2, #4, #9, #10.
 
@@ -150,6 +155,11 @@ Replace ad hoc phase transitions with compact, standardized state transfer.
 ### Intent
 Standardize execution lifecycle so work is consistently decomposed and tracked.
 
+Implementation note:
+- `make-plan` and `do` are **conceptual framework primitives** in this plan, not hard bindings to optional `claude-mem` skills.
+- When `claude-mem` is installed and approved, its capabilities may implement or accelerate these primitives.
+- When `claude-mem` is absent, agents follow the same lifecycle with native report/state artifacts.
+
 ### Agent Integration
 - Task-capable agents must create/consume an active plan ID.
 - One step in progress at a time.
@@ -157,8 +167,8 @@ Standardize execution lifecycle so work is consistently decomposed and tracked.
 - Trivial exceptions allowed only with explicit `bypass_reason`.
 
 ### Policy Embedding
-- "No execution without plan" rule for applicable task classes.
-- "No orphan `do`" rule (must link to step ID).
+- "No execution without plan artifact" rule for applicable task classes.
+- "No orphan step execution record" rule (must link to step ID).
 - Required completion criteria per step.
 
 ### Applicability by Agent Role
@@ -186,6 +196,10 @@ Replace verbose history replay with precise references.
 - Minimum anchor requirements for non-trivial step completion.
 - ID format and uniqueness constraints.
 - Evidence anchor must point to resolvable artifact.
+- Storage substrate must be explicit:
+  - baseline: in-session report artifacts + `Session facts:` block extensions in `communication-policy.md`
+  - optional persistence: `claude-mem` observations (when installed)
+  - cross-session retrieval is only guaranteed when a persistent memory substrate is available
 
 ### Dependencies
 - Amplifies #1 and #2.
@@ -204,8 +218,9 @@ Verify that artifact-only context is sufficient after reset.
 - If not, request targeted rehydration by ID.
 
 ### Policy Embedding
-- Block Execute phase if reconstruction fails below threshold.
-- Record failure reason/missing fields for telemetry.
+- Phase 0/Stage A: define test schema, pass/fail criteria, and telemetry only (warn mode).
+- Phase 1/Stage B onward: enable blocking gate if reconstruction fails below threshold.
+- Record failure reason/missing fields for telemetry in all phases.
 
 ### Dependencies
 - Relies on #1 handoffs and #3 anchors.
@@ -244,10 +259,15 @@ Separate long-lived high-signal memory from transient exploration noise.
 - Durable memory: accepted requirements/constraints/decisions.
 - Ephemeral memory: scratch analysis, discarded options, transient logs.
 - Default purge of ephemeral memory at reset boundaries.
+- Claude-mem-absent fallback:
+  - durable = handoff/report artifacts + `Session facts:` cache extensions
+  - ephemeral = current-phase scratch sections and transient tool output not promoted into artifacts
+  - purge = clear ephemeral sections at phase boundary; retain durable artifacts
 
 ### Policy Embedding
 - Promotion rules from ephemeral → durable (must include evidence/decision link).
 - TTL/retention defaults for ephemeral entries.
+- Reference and extend existing `Session Fact Cache` guidance in `plugin/governance/communication-policy.md` rather than creating a separate cache mechanism from scratch.
 
 ### Dependencies
 - Improved by #3 anchors.
@@ -263,13 +283,15 @@ Apply right-sized context limits based on work class.
 ### Agent Integration
 - Classify task type at start (bugfix/refactor/feature/incident/etc.).
 - Load matching budget profile:
-  - max active context size
+  - max artifact count per phase
+  - max replay depth (number of prior artifacts auto-included)
+  - max tool calls before mandatory checkpoint
   - max artifacts loaded per step
-  - target compression ratio
+  - target summary size limits by field
 
 ### Policy Embedding
 - Governance table mapping task type → budget profile.
-- Budget breach triggers forced checkpoint/compression.
+- Budget breach triggers forced checkpoint/compression using observable proxies (artifact count, replay depth, tool-call count), not token introspection.
 
 ### Dependencies
 - Works best after #6 memory tiering.
@@ -283,14 +305,14 @@ Automate context reset at safe, predictable boundaries.
 
 ### Agent Integration
 - Trigger candidates:
-  - token threshold
   - phase completion
   - N tool calls
   - scope pivot
+  - explicit user reset request
 - On trigger: emit checkpoint, clear ephemeral context, continue from compact state.
 
 ### Policy Embedding
-- Central threshold definitions.
+- Central threshold definitions using observable proxies (phase completion, N tool calls, scope pivot, user reset).
 - Cooldown rules to prevent thrashing.
 - Rehydration logging requirement.
 
@@ -344,6 +366,7 @@ Support controlled multi-path exploration for complex tasks.
 - #1 → #3 → #4
 - #1/#2 → #5
 - #3 → #6 → #7
+- #5 → #8
 - #3/#6 → #9
 - #1/#3/#7 → #10
 
@@ -383,6 +406,10 @@ Exit criteria:
 ## Validation and Measurement Framework
 
 Use a baseline-vs-treatment evaluation on representative tasks.
+
+Baseline note:
+- Baseline data collection begins at Stage A entry before enabling hard enforcement gates.
+- If historical baseline is unavailable, run a short baseline-only window first, then start treatment comparison.
 
 ### Track per Task/Session
 - Total prompt tokens.
