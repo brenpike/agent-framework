@@ -923,7 +923,7 @@ function Test-WorkflowFixtures {
                 continue
             }
             $content = Get-Content $srcPath -Raw -Encoding UTF8
-            if ($content -like "*$($step.source.pattern)*") {
+            if ($content.Contains($step.source.pattern)) {
                 Write-Host "PASS [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state)"
             } else {
                 Write-Host "FAIL [WORKFLOW-FIXTURES] $($f.Name) state=$($step.state): pattern not found: $($step.source.pattern)"

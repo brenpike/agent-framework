@@ -1289,6 +1289,38 @@ Acceptance criteria:
 - All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match.
 - Plugin versions: `0.2.6` after PR A, `0.2.7` after PR C, `0.2.8` after PR D. PR B has no bump.
 
+## Phase 5 Implementation Plan
+
+### Phase 5 Completion Note
+
+Phase 5 items were implemented across two PRs during the same development period as Phase 6. The planning doc was not updated at the time; this section records the actual completion.
+
+| Step | ID | Implemented in | Commit | Version |
+|---:|---|---|---|---|
+| 29 | PERF-1 | PR #27 | `30968b7` | `0.2.8 → 0.3.0` |
+| 26 | TC-1 | PR #28 | `9269f6c` | `0.3.0 → 0.3.1` |
+| 27 | CPX-3 | PR #28 | `9269f6c` | `0.3.0 → 0.3.1` |
+| 28 | CPX-4 | PR #28 | `9269f6c` | `0.3.0 → 0.3.1` |
+
+The detailed implementation plan for TC-1, CPX-3, and CPX-4 is recorded in the `## Phase 6 Implementation Plan` section below — that section was authored during development and mislabeled "Phase 6" at the time. It describes Phase 5 backlog work.
+
+### Phase 5 Done When
+
+All four backlog items (TC-1, CPX-3, CPX-4, PERF-1) are complete. Phase 5 is closed.
+
+## Phase 6 Status: Skipped
+
+Phase 6 backlog items (EFF-5, PERF-5, DUR-5, DUR-3) were evaluated and skipped as low ROI given the current state of the framework.
+
+| Step | ID | Reason skipped |
+|---:|---|---|
+| 33 | DUR-3 | Git history already serves as policy changelog for this repo's usage pattern. |
+| 32 | DUR-5 | Migration notes only valuable across multiple dependent projects; not needed at current scale. |
+| 31 | PERF-5 | Validation is already two commands. Tiered validation adds process overhead with no practical benefit. |
+| 30 | EFF-5 | Remediation batching is difficulty 4 with marginal gain at current PR review volume. |
+
+No implementation planned. Phase 6 is closed.
+
 ## Phase 6 Implementation Plan
 
 ### Phase 6 Goal
