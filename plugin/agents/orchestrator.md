@@ -133,7 +133,7 @@ Before implementation delegation, explicitly establish:
 - checkpoint commit policy
 - PR target
 
-After resolving trunk and validation commands, the orchestrator MAY cache them in a `Session facts:` block for use in subsequent delegations.
+After resolving trunk and validation commands, the orchestrator MUST record them in a `Session facts:` block. Once resolved, session facts are reused for the remainder of the session without re-resolution.
 
 If any are undefined, do not begin implementation. Full detail: `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
 
@@ -167,6 +167,8 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 Use by default:
 
+> **Format rule:** Delegation payloads use key/value block format only. Narrative prose is prohibited in delegation bodies except in blocked/error state reports.
+
 ```text
 Task: [required outcome]
 
@@ -198,11 +200,38 @@ Constraints:
 - [technical/design constraint]
 - Do not modify other files.
 
-Session facts: (optional)
+Session facts:
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
 ```
+
+> **Session facts:** Optional in the first delegation (facts may not yet be resolved). Mandatory in all subsequent delegations within the same session once trunk and validation are established.
+
+### Two-Part Session Facts Protocol
+
+**Part 1 — Orchestrator tracking:** Once a session fact is resolved (trunk, validation, version, etc.), the orchestrator records it and reuses it for the remainder of the session. Session facts accumulate across phases. Re-resolution is never required in subsequent phases.
+
+**Part 2 — Task-scoped inclusion:** When composing a delegation, include only the session facts fields the subagent actually needs for that specific task. Always send full field values — never sentinels, abbreviations, or placeholders. Fields not relevant to the task are omitted entirely.
+
+**Example — delegation needing trunk, validation, and version:**
+
+```text
+Session facts:
+- trunk: main
+- validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
+- version: 0.3.2
+```
+
+**Example — delegation needing only trunk and validation (no version bump involved):**
+
+```text
+Session facts:
+- trunk: main
+- validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
+```
+
+> The `version` field is omitted above because the delegated task does not involve a version bump. Omission is task-scope-driven, not an abbreviation.
 
 Compact form for trivial single-file tasks:
 
@@ -223,72 +252,23 @@ Git:
 Constraints:
 - Do not modify other files.
 - [other critical constraint]
+
+Session facts:
+- trunk: [branch]
+- validation: [command]
 ```
 
 ## Version Bump Delegation Template
 
-```text
-Task: Bump [artifact/package/component] version from X.Y.Z to A.B.C
+Invoke when: a changed file matches the Bump Trigger list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` and a version bump is required.
 
-Files:
-- [canonical version file]
-- [required mirrors]
-- [changelog/release notes]
-
-Done when:
-- Version is consistent across required artifacts.
-- Release notes/changelog are updated when required.
-- No unrelated files are modified.
-
-Git:
-- Class: [same class as parent branch]
-- Base: [branch]
-- Work: [branch]
-- Worktree: [yes|no]
-- Commit: orchestrator checkpoints after verification
-- PR: [target]
-- Model: sonnet — mechanical version bump
-
-Constraints:
-- Follow `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` and project-specific paths from `CLAUDE.md`.
-- Do not modify other files.
-```
+See: [Version Bump Delegation Template — full template](#appendix-version-bump-delegation-template).
 
 ## Review Remediation Delegation Template
 
-```text
-Task: Address PR review feedback
+Invoke when: routing a PR review comment or thread that classifies as actionable per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table).
 
-Review:
-- PR: #[number]
-- Source: [Codex|human reviewer|generic]
-- Thread/comment: [id or URL]
-- Classification: [classification]
-- Severity: [P0|P1|P2|unknown]
-
-Files:
-- [exact file]
-- [exact file]
-
-Done when:
-- Feedback is addressed or reported as invalid/out of scope.
-- Tests/docs/versioning are updated if required.
-- Validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) is run, OR the report includes `Validated: Not run (no validation commands defined)`, OR the worker returned the Blocked Report Contract with `Stage: validation`.
-
-Git:
-- Class: [type]
-- Base: [branch]
-- Work: [branch]
-- Worktree: [yes|no]
-- Commit: [policy]
-- PR: [target]
-- Model: [default|sonnet] — [routing reason]
-
-Constraints:
-- Do not resolve review threads.
-- Do not request re-review.
-- Do not modify other files.
-```
+See: [Review Remediation Delegation Template — full template](#appendix-review-remediation-delegation-template).
 
 ## Phase Verification
 
@@ -348,3 +328,72 @@ Session facts: (optional)
 ```
 
 If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
+
+---
+
+## Appendix: Version Bump Delegation Template
+
+```text
+Task: Bump [artifact/package/component] version from X.Y.Z to A.B.C
+
+Files:
+- [canonical version file]
+- [required mirrors]
+- [changelog/release notes]
+
+Done when:
+- Version is consistent across required artifacts.
+- Release notes/changelog are updated when required.
+- No unrelated files are modified.
+
+Git:
+- Class: [same class as parent branch]
+- Base: [branch]
+- Work: [branch]
+- Worktree: [yes|no]
+- Commit: orchestrator checkpoints after verification
+- PR: [target]
+- Model: sonnet — mechanical version bump
+
+Constraints:
+- Follow `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` and project-specific paths from `CLAUDE.md`.
+- Do not modify other files.
+```
+
+---
+
+## Appendix: Review Remediation Delegation Template
+
+```text
+Task: Address PR review feedback
+
+Review:
+- PR: #[number]
+- Source: [Codex|human reviewer|generic]
+- Thread/comment: [id or URL]
+- Classification: [classification]
+- Severity: [P0|P1|P2|unknown]
+
+Files:
+- [exact file]
+- [exact file]
+
+Done when:
+- Feedback is addressed or reported as invalid/out of scope.
+- Tests/docs/versioning are updated if required.
+- Validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) is run, OR the report includes `Validated: Not run (no validation commands defined)`, OR the worker returned the Blocked Report Contract with `Stage: validation`.
+
+Git:
+- Class: [type]
+- Base: [branch]
+- Work: [branch]
+- Worktree: [yes|no]
+- Commit: [policy]
+- PR: [target]
+- Model: [default|sonnet] — [routing reason]
+
+Constraints:
+- Do not resolve review threads.
+- Do not request re-review.
+- Do not modify other files.
+```
