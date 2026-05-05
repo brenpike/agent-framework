@@ -172,7 +172,7 @@ Memory reused:
 - None
 
 Steps:
-1. STEP-001 Owner: [coder|designer]
+1. STEP-001 Owner: [coder|designer]  (omit STEP-NNN and use bypass reason code when TRIVIAL_CHANGE or SINGLE_STEP_TASK — no phase boundary)
    Files: [exact file list]
    Outcome: [what must be true]
 
@@ -199,7 +199,7 @@ Memory reused:
 - None
 
 Steps:
-1. STEP-001 Owner: [coder|designer]
+1. STEP-001 Owner: [coder|designer]  (omit STEP-NNN and use bypass reason code when TRIVIAL_CHANGE or SINGLE_STEP_TASK — no phase boundary)
    Files: [exact file list]
    Outcome: [what must be true]
    Depends on: [step numbers | none]

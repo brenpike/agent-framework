@@ -360,6 +360,7 @@ If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governan
 
 ```text
 Task: Bump [artifact/package/component] version from X.Y.Z to A.B.C
+Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
 
 Files:
 - [canonical version file]
@@ -396,6 +397,7 @@ Session facts:
 
 ```text
 Task: Address PR review feedback
+Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
 
 Review:
 - PR: #[number]
