@@ -106,6 +106,7 @@ The existing framework should be modified in place rather than replaced. Startin
 | PERF-5 | Add validation tiers in `CLAUDE.md`: required quick checks before commit, full checks before PR/merge. | 4 | 4 | REL-5 |
 | PERF-6 | Investigate whether Claude Code supports per-invocation model overrides to enable true per-task model routing. | 3 | 3 | None |
 | PERF-7 | Amend PERF-3 implementation (Phase 4 Step 25): make `Session facts:` block mandatory in every delegation once trunk and validation are resolved, rather than optional/advisory. | 1 | 4 | PERF-3 |
+| PERF-8 | Two-part session facts protocol: (1) orchestrator tracks resolved facts internally across phases to avoid re-resolution; (2) delegations include only the task-relevant subset of facts, always as full values — no sentinels or abbreviations. | 1 | 4 | PERF-7 |
 
 ### Durability
 
@@ -198,6 +199,7 @@ Known risk: Phases 2 and 3 make structural changes before full golden-path workf
 | 34 | EFF-6 | No dependencies. Lowest effort. CLAUDE.md-only change that makes validation class-aware for docs-only changes without touching plugin/. |
 | 35 | PERF-7 | Low effort, low risk, high value. Amends existing PERF-3 infrastructure to make session facts mandatory. Requires plugin version bump. |
 | 36 | TC-6 | Medium effort, medium risk. Restructures orchestrator delegation templates into appendices. Depends on TC-1 (Phase 6 complete). |
+| 37 | PERF-8 | Extends PERF-7 (Step 35). Once session facts are mandatory, delta protocol reduces token cost of repeated delegations without information loss. Same file as Steps 35–36; bundles into PR B. |
 
 ### Deferred Items
 
@@ -1409,6 +1411,7 @@ Phase 7 adds three targeted refinements that improve efficiency and reduce token
 1. **EFF-6 (Step 34)**: Add a change-class validation matrix to `CLAUDE.md` with scoped command sets for docs-only vs. plugin-runtime changes.
 2. **PERF-7 (Step 35)**: Amend `plugin/agents/orchestrator.md` delegation template to make `Session facts:` mandatory (not optional) once trunk and validation are resolved.
 3. **TC-6 (Step 36)**: Extract Version Bump and Review Remediation delegation template bodies in `plugin/agents/orchestrator.md` to appendix locations; keep only invocation criteria inline.
+4. **PERF-8 (Step 37)**: Two-part session facts protocol — (1) orchestrator tracks resolved session facts across phases to avoid re-resolution; (2) each delegation includes only the task-relevant subset of facts, always as full values.
 
 ### Phase 7 Versioning
 
@@ -1416,7 +1419,7 @@ Phase 7 adds three targeted refinements that improve efficiency and reduce token
 
 Step 34 (EFF-6): `CLAUDE.md` is repo-specific tooling outside `plugin/`. No version bump required.
 
-Steps 35–36 (PERF-7 + TC-6): Both modify files inside `plugin/`. Single PATCH bump: `0.3.2` → `0.3.3` applied in Step 36 (the last plugin-touching step).
+Steps 35–37 (PERF-7 + TC-6 + PERF-8): All modify files inside `plugin/`. Single PATCH bump: `0.3.2` → `0.3.3` applied in Step 36 (the last structural-change step; Step 37 is additive text to the same file).
 
 Canonical version file: `plugin/.claude-plugin/plugin.json`.
 
@@ -1425,9 +1428,9 @@ Canonical version file: `plugin/.claude-plugin/plugin.json`.
 | PR | Steps | Touches `plugin/` | Version bump |
 |---|---|---|---|
 | PR A | 34 | No | None |
-| PR B | 35, 36 | Yes | `0.3.2 → 0.3.3` |
+| PR B | 35, 36, 37 | Yes | `0.3.2 → 0.3.3` |
 
-Steps 35 and 36 are bundled because both modify `plugin/agents/orchestrator.md`; separate PRs would create shared-file conflicts.
+Steps 35, 36, and 37 are bundled because all three modify `plugin/agents/orchestrator.md`; separate PRs would create shared-file conflicts.
 
 Phase 1 safety checks must pass before each PR is opened.
 
@@ -1482,6 +1485,8 @@ Modify:
 - `plugin/agents/orchestrator.md` — replace the inline Version Bump Delegation Template body and Review Remediation Delegation Template body with short invocation criteria blocks and references to appendix sections. Move the full template content to clearly delimited appendix sections at the bottom of the same file (preferred) or to new files `plugin/governance/orchestrator-appendix-version-bump.md` and `plugin/governance/orchestrator-appendix-review-remediation.md` if the coder determines separate files better preserve cross-reference stability. The coder must choose the approach that carries lower cross-reference breakage risk.
 - `plugin/.claude-plugin/plugin.json` — bump version `0.3.2` → `0.3.3`.
 
+Additionally, add an explicit structural rule to the delegation template section: delegation payloads use key/value block format only; narrative prose is prohibited except in blocked/error state reports.
+
 **Invocation criteria format (inline replacement for each template):**
 
 ```markdown
@@ -1501,6 +1506,26 @@ Acceptance criteria:
 - All `tests/workflows/golden-*.json` patterns still match.
 - `plugin/.claude-plugin/plugin.json` version is `0.3.3`.
 - All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
+- Delegation template section states: payloads use key/value block format only; narrative prose prohibited except in blocked/error states.
+- `tools/policy_check.ps1` passes.
+
+### Step 37: Delta Session Facts Protocol (PERF-8)
+
+Modify:
+
+- `plugin/agents/orchestrator.md` — add a two-part session facts protocol note to the Delegation Template section (building on the mandatory `Session facts:` rule added by Step 35):
+  - **Orchestrator tracking (Part 1)**: once a session fact is resolved (trunk, validation, version, etc.), the orchestrator records it and reuses it for the remainder of the session without re-resolving it. Session facts accumulate; re-resolution is not required in subsequent phases.
+  - **Task-scoped inclusion (Part 2)**: when composing a delegation, include only the session facts fields the subagent actually needs for that specific task. Always send full field values — never sentinels, abbreviations, or placeholders. Fields not relevant to the task are omitted entirely.
+  - Include a brief inline example showing one delegation with all three facts (trunk, validation, version) and one with only two (trunk, validation), with a note explaining the omission is task-scope-driven.
+
+Acceptance criteria:
+
+- Two-part session facts protocol rule is present in `plugin/agents/orchestrator.md` Delegation Template section.
+- Orchestrator tracking behavior is defined: resolve once, accumulate across phases, no re-resolution.
+- Task-scoped inclusion rule is defined: delegations include only relevant fields; always full values; no sentinels.
+- Inline example demonstrates the contrast between delegations with different field subsets.
+- All `tests/workflows/golden-*.json` patterns still match.
+- All `tests/policy/safety-*.json` patterns still match.
 - `tools/policy_check.ps1` passes.
 
 ### Phase 7 Done When
@@ -1512,3 +1537,5 @@ Acceptance criteria:
 - `plugin/.claude-plugin/plugin.json` version is `0.3.3`.
 - `tools/policy_check.ps1` passes after every PR lands.
 - All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match their source files.
+- Two-part session facts protocol is defined in `plugin/agents/orchestrator.md`: orchestrator tracks resolved facts across phases (no re-resolution); delegations include only task-relevant fields as full values (no sentinels).
+- Delegation template section prohibits narrative prose in payloads (key/value block format only, except blocked/error states).
