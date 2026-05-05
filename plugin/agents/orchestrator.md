@@ -306,10 +306,7 @@ Cooldown: do not fire more than one clear+rehydrate cycle per phase.
 
 ### claude-mem Detection
 
-Check `~/.claude/settings.json` for `"claude-mem@thedotmack": true` under `enabledPlugins`:
-
-- **Present:** store step-deltas as claude-mem observations; rehydrate via `mem-search`.
-- **Absent:** store step-deltas under `.agent-framework/handoffs/`; rehydrate by reading files.
+Follow `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection) — check both global and project-local settings files. Do not duplicate the detection logic here.
 
 ## Final Report
 
