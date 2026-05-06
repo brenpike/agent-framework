@@ -58,15 +58,15 @@ Required observation fields:
 - `Objective:` — the phase's stated goal
 - `Scope in:` — files/areas included
 - `Scope out:` — files/areas explicitly excluded
-- `Decisions:` — DEC-NNN tagged list (use descriptive labels in Slice 1)
-- `Assumptions:` — ASM-NNN tagged list (use descriptive labels in Slice 1)
+- `Decisions:` — each entry must carry an anchor ID in `DEC-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
+- `Assumptions:` — each entry must carry an anchor ID in `ASM-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
 - `Open questions:` — unresolved items requiring future attention
 - `Artifacts:` — files created or modified with paths
-- `Evidence refs:` — EVD-NNN tagged list (commit SHAs, test output, artifact refs)
+- `Evidence refs:` — each entry must carry an anchor ID in `EVD-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors); evidence exceeding 50 lines must be externalized to `.agent-framework/evidence/` and referenced by anchor ID only (see Progressive Evidence Rule below)
 - `Next actions:` — what the next phase must do
 - `Risk level:` — low | medium | high
 
-Contract compatibility note: existing required report fields (`Status`, `Changed`, `Validated`, `Need scope change`, `Issues`) remain required. Context management fields are additive in Slice 1. Hard requirement enforcement deferred to Slice 2.
+All context management fields above are mandatory for non-trivial phase-closing reports. Existing required report fields (`Status`, `Changed`, `Validated`, `Need scope change`, `Issues`) remain required alongside these fields.
 
 ## Step Delta
 
@@ -76,12 +76,24 @@ Workers must append a `Step delta:` section to every phase-closing report when a
 Step delta:
   Step: STEP-NNN
   Outcome: [what was accomplished]
-  Decisions: DEC-NNN — [decision and rationale]
-  Assumptions unresolved: ASM-NNN — [assumption and impact]
-  Evidence: EVD-NNN — [test output / commit SHA / artifact ref]
+  Decisions: DEC-NNN — [decision and rationale] (anchor ID required)
+  Assumptions unresolved: ASM-NNN — [assumption and impact] (anchor ID required)
+  Evidence: EVD-NNN — [one-line synopsis only] (anchor ID required; full evidence ≤50 lines inline, >50 lines externalized per Progressive Evidence Rule)
 ```
 
 The orchestrator extracts the `Step delta:` section after phase verification, stores it (as a claude-mem observation or under `.agent-framework/handoffs/STEP-NNN.md`), and delegates the next phase with only the compact step-delta — not the full prior phase report or tool outputs.
+
+## Progressive Evidence Rule
+
+Evidence fields in step-delta and context management fields reference anchors only — inline the anchor ID and a one-line synopsis. Full evidence content must not be inlined beyond 50 lines in any delegation, report, or handoff artifact.
+
+Evidence exceeding 50 lines must be externalized:
+
+1. Write the full evidence body to `.agent-framework/evidence/<ANCHOR-ID>.md` (e.g., `EVD-001.md`).
+2. Reference the evidence in the report or step-delta by anchor ID only (e.g., `EVD-001 — [one-line synopsis]`).
+3. Do not inline any portion of the externalized evidence beyond the synopsis.
+
+This rule applies to all evidence types: diffs, logs, test output, tool output, and file excerpts. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for lazy-load triggers and size cap details.
 
 ## Blocked Report Contract
 
@@ -113,6 +125,7 @@ Certain facts are resolved repeatedly during a task. Agents may cache them to av
 | version file | Current version string at task start |
 | bump-trigger-paths | Whether CLAUDE.md defines project-specific bump-trigger paths (`defined` \| `undefined`) |
 | `active-step` | Current `STEP-NNN` ID from the active plan |
+| `task-type` | One of `bugfix\|refactor\|feature\|incident` — resolved at task intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Budget Policy — Task-Type Classification) |
 
 ### Cache Rules
 
