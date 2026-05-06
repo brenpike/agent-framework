@@ -35,8 +35,8 @@ Each bypass must include: reason code + step/task ID in the delegation preamble.
 ### Phase Transition Requirements
 
 - Handoff artifact required for non-trivial phase transitions.
-- Before delegating the next phase: emit checkpoint (if commit policy allows), store step-delta as durable artifact, clear ephemeral context, rehydrate from compact step-delta only.
-- The next phase receives the compact step-delta — not the full prior phase report or tool outputs.
+- Before delegating the next phase: emit checkpoint (if commit policy allows), store full candidate handoff as durable artifact (step-delta + mandatory Context Management Fields), clear ephemeral context, rehydrate from stored candidate handoffs.
+- The next phase receives the full candidate handoff (step-delta + mandatory Context Management Fields) — not the full prior phase report or tool outputs.
 
 ### Runtime Artifact Storage
 
