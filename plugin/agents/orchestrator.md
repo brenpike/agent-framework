@@ -147,6 +147,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 ## Execution Algorithm
 
+0. **Task-type classification (intake).** Before planner delegation or trivial fast path routing, classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `Task type:` in the Session facts block. Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label).
 1. Call `agent-framework:planner` unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
 2. If planner fails, follow policy retry/fallback/blocked handling immediately.
 3. If planner returns open questions, surface them and stop.
@@ -168,6 +169,8 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 Use by default:
 
 > **Format rule:** Delegation payloads use key/value block format only. Narrative prose is prohibited in delegation bodies except in blocked/error state reports.
+>
+> **Evidence loading rule:** Delegations include prior-phase evidence in synopsis mode by default — anchor ID and one-sentence description only. Full evidence content is loaded only when a verification step requires it or when disambiguation between conflicting anchors is needed. Evidence inlined in any delegation must not exceed 50 lines; evidence exceeding this cap must be externalized per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading).
 
 ```text
 Task: [required outcome]
@@ -205,6 +208,7 @@ Session facts: (optional)
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
+- task-type: [bugfix|refactor|feature|incident]
 - active-step: STEP-NNN  (include when a plan with step IDs is active)
 ```
 
@@ -216,13 +220,14 @@ Session facts: (optional)
 
 **Part 2 — Task-scoped inclusion:** When composing a delegation, include only the session facts fields the subagent actually needs for that specific task. Always send full field values — never sentinels, abbreviations, or placeholders. Fields not relevant to the task are omitted entirely.
 
-**Example — delegation needing trunk, validation, and version:**
+**Example — delegation needing trunk, validation, version, and task type:**
 
 ```text
 Session facts:
 - trunk: main
 - validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
 - version: 0.3.2
+- task-type: feature
 ```
 
 **Example — delegation needing only trunk and validation (no version bump involved):**
@@ -231,9 +236,10 @@ Session facts:
 Session facts:
 - trunk: main
 - validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
+- task-type: bugfix
 ```
 
-> The `version` field is omitted above because the delegated task does not involve a version bump. Omission is task-scope-driven, not an abbreviation.
+> The `version` field is omitted above because the delegated task does not involve a version bump. `task-type` is always included once classified. Omission of other fields is task-scope-driven, not an abbreviation.
 
 Compact form for trivial single-file tasks:
 
@@ -259,6 +265,7 @@ Constraints:
 Session facts:
 - trunk: [branch]
 - validation: [command]
+- task-type: [bugfix|refactor|feature|incident]
 ```
 
 ## Version Bump Delegation Template
@@ -285,6 +292,8 @@ After each phase, verify every item below before starting the next phase. The ph
 - the worker's report contains no `Status: blocked` items and no `Need scope change` entries
 - when the delegation included a `Step: STEP-NNN` field and the worker's report does NOT include a `Step delta:` section: **fail phase verification** — the phase cannot be accepted without a durable handoff artifact
 - when the delegation included a `Step: STEP-NNN` field and the worker's report includes a `Step delta:` section: extract that section; store it as a claude-mem observation (when installed per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)) or write to `.agent-framework/handoffs/STEP-NNN.md`; delegate the next phase with only the compact step-delta, not the full prior phase report or tool outputs
+- **Contradiction detection (blocking).** Before finalizing the phase, check for any output that contradicts a prior decision recorded in the handoff artifact. Log contradictions with field name, prior value, new value, and step ID. An unresolved contradiction blocks finalization — do not commit, store the handoff, or delegate the next phase. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` when a contradiction is detected.
+- **Reconstruction test gate (blocking).** After step-delta extraction and storage but before delegating the next phase, run the reconstruction test per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Reconstruction Test). The next phase's objective, scope, and completion criteria must be determinable from the handoff artifact and non-stale retrieval anchors alone. On fail, follow `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md`. Do not delegate the next phase until the reconstruction test passes or the user explicitly acknowledges the gap.
 
 If a worker touched files outside the assigned scope, or implementation began without every Required Git Preflight item established: do not commit the phase, do not proceed to the next phase, and either re-delegate the phase with corrected scope or escalate to the user if the same violation recurs in a subsequent attempt.
 
@@ -292,17 +301,32 @@ If a worker touched files outside the assigned scope, or implementation began wi
 
 Context management policy: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md`.
 
-### Phase-Boundary Auto-Clear (Slice 1)
+### Auto-Clear Triggers
 
-After extracting and storing the step-delta from a completed phase:
+The clear+rehydrate cycle fires on any of the following triggers. Per-task-type tool-call thresholds are defined in `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Budget Policy).
 
-1. Emit checkpoint commit (if commit policy allows).
-2. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`).
-3. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
-4. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (when claude-mem installed) or read from `.agent-framework/handoffs/` (when claude-mem absent).
-5. Delegate next phase with compact step-delta context only.
+| Trigger | Condition |
+|---|---|
+| Phase completion | A phase passes verification and is ready for handoff |
+| N-tool-call threshold | Tool-call count within the current phase reaches the active budget profile's max tool calls/checkpoint limit |
+| Scope pivot | Task classification changes mid-execution (e.g., a `bugfix` is reclassified as `feature` after investigation reveals broader scope) |
+| Explicit user reset | User explicitly requests a context reset or fresh start |
 
-Cooldown: do not fire more than one clear+rehydrate cycle per phase.
+For cooldown and thrash handling when triggers fire too frequently, see `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md`.
+
+### Phase-Boundary Auto-Clear
+
+After extracting and storing the step-delta from a completed phase (or when any auto-clear trigger fires):
+
+1. Phase verification passes (for phase-completion trigger) or trigger condition is met (for other triggers).
+2. Extract `Step delta:` section from the worker's report.
+3. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`).
+4. Emit checkpoint commit (if commit policy allows).
+5. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
+6. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (when claude-mem installed) or read from `.agent-framework/handoffs/` (when claude-mem absent), respecting the replay depth limit from the active budget profile.
+7. Delegate next phase with compact step-delta context only.
+
+Cooldown: do not fire more than one clear+rehydrate cycle per phase on average. If a trigger fires a second clear before the next phase begins, log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
 
 ### claude-mem Detection
 
@@ -350,6 +374,7 @@ Session facts: (optional)
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
+- task-type: [bugfix|refactor|feature|incident]
 ```
 
 If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
