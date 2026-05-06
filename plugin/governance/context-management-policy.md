@@ -138,7 +138,7 @@ Ephemeral content may be promoted to durable only when it carries:
 
 "Purge ephemeral memory" in Claude Code means: full context clear followed by selective rehydration of durable artifacts only. It is not selective removal within a running session (Claude Code context is append-only within a session).
 
-Ephemeral purge is tightly coupled to the auto-clear trigger (see Budget Policy — Phase-Boundary Auto-Clear). The Memory Policy defines *what* to keep; the Budget Policy defines *when* the purge executes.
+Ephemeral purge is tightly coupled to the auto-clear trigger (see Budget Policy — Auto-Clear Procedure). The Memory Policy defines *what* to keep; the Budget Policy defines *when* the purge executes.
 
 ### claude-mem-Absent Fallback
 
@@ -255,20 +255,20 @@ When any profile limit is hit:
 
 ### Auto-Clear Triggers
 
-The following triggers fire the clear+rehydrate cycle defined in Phase-Boundary Auto-Clear below:
+The following triggers fire the clear+rehydrate cycle defined in Auto-Clear Procedure below:
 
-| Trigger | Condition |
-|---|---|
-| Phase completion | A phase passes verification and is ready for handoff |
-| N-tool-call threshold | Tool-call count within the current phase reaches the profile's max tool calls/checkpoint limit |
-| Scope pivot | Task classification changes mid-execution (e.g., a `bugfix` is reclassified as `feature` after investigation reveals broader scope) |
-| Explicit user reset | User explicitly requests a context reset or fresh start |
+| Trigger | Condition | Path |
+|---|---|---|
+| Phase completion | A phase passes verification and is ready for handoff | Path A |
+| N-tool-call threshold | Tool-call count within the current phase reaches the profile's max tool calls/checkpoint limit | Path B |
+| Scope pivot | Task classification changes mid-execution (e.g., a `bugfix` is reclassified as `feature` after investigation reveals broader scope) | Path B |
+| Explicit user reset | User explicitly requests a context reset or fresh start | Path B |
 
 For cooldown and thrash handling when triggers fire too frequently, see `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md`.
 
-### Phase-Boundary Auto-Clear
+### Auto-Clear Procedure
 
-**Procedure:**
+#### Path A — Phase-completion trigger
 
 1. Phase verification passes.
 2. Extract `Step delta:` section from the worker's report.
@@ -278,7 +278,16 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 6. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (or read from `.agent-framework/handoffs/`), respecting the replay depth limit from the active budget profile.
 7. Delegate next phase with compact step-delta context only.
 
-**Cooldown:** Do not fire more than one clear+rehydrate cycle per phase on average. If a phase boundary triggers a second clear before the next phase begins, log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
+#### Path B — Mid-phase threshold triggers (N-tool-call, scope-pivot, explicit user reset)
+
+1. Trigger condition met: tool-call count reached the active budget profile's max tool calls/checkpoint limit, scope pivot detected (task reclassified mid-execution), or user explicitly requested a reset.
+2. Emit mid-phase partial checkpoint: record current step ID, tool-call count at trigger, any DEC/ASM/EVD anchors accumulated so far in the phase, and a scope annotation if the trigger is a scope pivot.
+3. Store partial checkpoint as `.agent-framework/checkpoints/STEP-NNN-partial-NNN.md` (or claude-mem observation tagged `partial-checkpoint` when claude-mem is installed).
+4. Clear ephemeral context (current phase transcript, tool outputs drop out of active context).
+5. Rehydrate: retrieve stored step-deltas from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
+6. Continue current phase — do NOT delegate next phase; the current step is still in progress.
+
+**Cooldown:** Do not fire more than one clear+rehydrate cycle per phase on average. If a trigger fires a second clear before the next phase begins (Path A) or before the current step completes (Path B), log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
 
 ---
 

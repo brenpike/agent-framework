@@ -306,20 +306,20 @@ Context management policy: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-
 
 The clear+rehydrate cycle fires on any of the following triggers. Per-task-type tool-call thresholds are defined in `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Budget Policy).
 
-| Trigger | Condition |
-|---|---|
-| Phase completion | A phase passes verification and is ready for handoff |
-| N-tool-call threshold | Tool-call count within the current phase reaches the active budget profile's max tool calls/checkpoint limit |
-| Scope pivot | Task classification changes mid-execution (e.g., a `bugfix` is reclassified as `feature` after investigation reveals broader scope) |
-| Explicit user reset | User explicitly requests a context reset or fresh start |
+| Trigger | Condition | Path |
+|---|---|---|
+| Phase completion | A phase passes verification and is ready for handoff | Path A |
+| N-tool-call threshold | Tool-call count within the current phase reaches the active budget profile's max tool calls/checkpoint limit | Path B |
+| Scope pivot | Task classification changes mid-execution (e.g., a `bugfix` is reclassified as `feature` after investigation reveals broader scope) | Path B |
+| Explicit user reset | User explicitly requests a context reset or fresh start | Path B |
 
 For cooldown and thrash handling when triggers fire too frequently, see `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md`.
 
-### Phase-Boundary Auto-Clear
+### Auto-Clear Procedure
 
-After extracting and storing the step-delta from a completed phase (or when any auto-clear trigger fires):
+#### Path A — Phase-completion trigger
 
-1. Phase verification passes (for phase-completion trigger) or trigger condition is met (for other triggers).
+1. Phase verification passes.
 2. Extract `Step delta:` section from the worker's report.
 3. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`).
 4. Emit checkpoint commit (if commit policy allows).
@@ -327,7 +327,16 @@ After extracting and storing the step-delta from a completed phase (or when any 
 6. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (when claude-mem installed) or read from `.agent-framework/handoffs/` (when claude-mem absent), respecting the replay depth limit from the active budget profile.
 7. Delegate next phase with compact step-delta context only.
 
-Cooldown: do not fire more than one clear+rehydrate cycle per phase on average. If a trigger fires a second clear before the next phase begins, log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
+#### Path B — Mid-phase threshold triggers (N-tool-call, scope-pivot, explicit user reset)
+
+1. Trigger condition met: tool-call count reached the active budget profile's max tool calls/checkpoint limit, scope pivot detected (task reclassified mid-execution), or user explicitly requested a reset.
+2. Emit mid-phase partial checkpoint: record current step ID, tool-call count at trigger, any DEC/ASM/EVD anchors accumulated so far in the phase, and a scope annotation if the trigger is a scope pivot.
+3. Store partial checkpoint as `.agent-framework/checkpoints/STEP-NNN-partial-NNN.md` (or claude-mem observation tagged `partial-checkpoint` when claude-mem is installed).
+4. Clear ephemeral context (current phase transcript, tool outputs drop out of active context).
+5. Rehydrate: retrieve stored step-deltas from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
+6. Continue current phase — do NOT delegate next phase; the current step is still in progress.
+
+Cooldown: do not fire more than one clear+rehydrate cycle per phase on average. If a trigger fires a second clear before the next phase begins (Path A) or before the current step completes (Path B), log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
 
 ### claude-mem Detection
 
