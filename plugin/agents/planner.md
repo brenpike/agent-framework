@@ -150,6 +150,20 @@ Step IDs must appear in:
 
 Step IDs are scoped to the plan instance. A bypass reason (e.g., `SINGLE_STEP_TASK`, `TRIVIAL_CHANGE`) may omit the STEP-NNN when the task genuinely has no phase boundary — document the bypass reason in the plan per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist).
 
+## Retrieval Anchor Discipline
+
+Plan output must assign retrieval anchors per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors) to decisions, risks, assumptions, and evidence.
+
+Required anchor types in plan output:
+- `DEC-NNN` — every decision recorded in the plan (architecture choices, sequencing rationale, delivery shape selection)
+- `RISK-NNN` — every risk identified (shared-file conflicts, ordering hazards, compatibility concerns)
+- `ASM-NNN` — every assumption the plan relies on (e.g., "file X exists," "API Y is stable")
+- `EVD-NNN` — every inspection result used as basis for a decision (file reads, grep results, git log findings, codebase research outcomes)
+
+Each anchor must include a one-sentence description at its point of creation in the plan output. Evidence anchors reference the source artifact (file path, commit SHA, or `STEP-NNN` identifier).
+
+Anchor IDs are unique within the plan instance and increment monotonically per type (e.g., `DEC-001`, `DEC-002`, `RISK-001`).
+
 ## Output Mode
 
 Use compact output only when all are true:
@@ -175,6 +189,11 @@ Steps:
 1. STEP-001 Owner: [coder|designer]  (omit STEP-NNN and use bypass reason code when TRIVIAL_CHANGE or SINGLE_STEP_TASK — no phase boundary)
    Files: [exact file list]
    Outcome: [what must be true]
+   Decisions: DEC-NNN — [decision and rationale]
+   Assumptions: ASM-NNN — [assumption]
+
+Evidence:
+- EVD-NNN — [inspection result and source]
 
 Versioning:
 - Impact: [none|possible|required|unknown]
@@ -203,14 +222,23 @@ Steps:
    Files: [exact file list]
    Outcome: [what must be true]
    Depends on: [step numbers | none]
+   Decisions: DEC-NNN — [decision and rationale]
+   Assumptions: ASM-NNN — [assumption]
 
 Edge cases:
 - S1: [case]
 - None
 
+Risks:
+- RISK-NNN — [risk description]
+- None
+
 Shared-file risks:
 - [file]: [risk]
 - None
+
+Evidence:
+- EVD-NNN — [inspection result and source]
 
 Versioning:
 - Impact: [none|possible|required|unknown]
@@ -238,5 +266,5 @@ Open questions:
 
 Finalization gate (depends on Output Mode):
 
-- **Compact Output**: do not finalize until every step has one owner; exact file scope (existing files named by full path); the two `Versioning` fields (`Impact`, `Artifact(s)`) are populated; and a `Workflow loadout` field is present. Compact mode is by definition for cases where dependencies, edge cases, shared-file risks, and delivery shape do not apply (per the Compact Output trigger conditions above).
-- **Full Output**: do not finalize until every step has one owner; exact file scope; a `Depends on` entry (step numbers or `none`); the full 4-field `Versioning` block (`Impact`, `Artifact(s)`, `Likely bump`, `Release files likely needed`); a `Workflow loadout` field; a `Review remediation` block when the task originated from PR feedback (otherwise omit the block); and a `Delivery` block.
+- **Compact Output**: do not finalize until every step has one owner; exact file scope (existing files named by full path); the two `Versioning` fields (`Impact`, `Artifact(s)`) are populated; a `Workflow loadout` field is present; and every decision, assumption, and evidence item carries an anchor ID (`DEC-NNN`, `ASM-NNN`, `EVD-NNN`). Compact mode is by definition for cases where dependencies, edge cases, shared-file risks, and delivery shape do not apply (per the Compact Output trigger conditions above).
+- **Full Output**: do not finalize until every step has one owner; exact file scope; a `Depends on` entry (step numbers or `none`); the full 4-field `Versioning` block (`Impact`, `Artifact(s)`, `Likely bump`, `Release files likely needed`); a `Workflow loadout` field; a `Review remediation` block when the task originated from PR feedback (otherwise omit the block); a `Delivery` block; and every decision, risk, assumption, and evidence item carries an anchor ID (`DEC-NNN`, `RISK-NNN`, `ASM-NNN`, `EVD-NNN`).

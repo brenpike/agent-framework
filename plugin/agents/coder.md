@@ -101,4 +101,18 @@ Before completion:
 - when assigned a version bump, confirm every required artifact's version matches per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution)
 
 Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
-- When a `Step: STEP-NNN` field was included in the delegation, append a `Step delta:` section to the report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta).
+- When a `Step: STEP-NNN` field was included in the delegation, append a `Step delta:` section to the report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta). Anchor ID discipline applies: the `Decisions` field must use `DEC-NNN` IDs, the `Assumptions unresolved` field must use `ASM-NNN` IDs, and the `Evidence` field must use `EVD-NNN` IDs — not descriptive labels alone. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors) for format and uniqueness rules.
+
+## Contradiction Detection
+
+Before finalizing any phase, check whether any output contradicts a prior decision recorded in the handoff artifact or step-delta. If a contradiction is detected, do not proceed. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` to resolve it before finalization. This is a blocking gate — not a warning.
+
+## Progressive Evidence Loading
+
+Evidence inlined in a step-delta report, delegation, or handoff must not exceed 50 lines. When evidence output (diffs, logs, test output, command output, file excerpts) exceeds 50 lines:
+
+1. Write the full evidence body to `.agent-framework/evidence/<ANCHOR-ID>.md` (e.g., `EVD-001.md`).
+2. Reference the evidence in the report by anchor ID only (e.g., `EVD-001 — see .agent-framework/evidence/EVD-001.md`).
+3. Do not inline any portion beyond the one-sentence synopsis.
+
+See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the full cap and externalization rules.
