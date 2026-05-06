@@ -1,0 +1,17 @@
+{
+  "rule": "Anchor ID format defined and referenced",
+  "source": {
+    "file": "plugin/governance/context-management-policy.md",
+    "pattern": "zero-padded 3-digit integer"
+  },
+  "consumers": [
+    {
+      "file": "plugin/governance/communication-policy.md",
+      "pattern": "anchor ID in `DEC-NNN` format"
+    },
+    {
+      "file": "plugin/agents/planner.md",
+      "pattern": "## Retrieval Anchor Discipline"
+    }
+  ]
+}

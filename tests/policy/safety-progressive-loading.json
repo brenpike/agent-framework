@@ -1,0 +1,17 @@
+{
+  "rule": "Progressive evidence loading rule",
+  "source": {
+    "file": "plugin/governance/context-management-policy.md",
+    "pattern": "## Progressive Evidence Loading"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "synopsis mode by default"
+    },
+    {
+      "file": "plugin/governance/communication-policy.md",
+      "pattern": "## Progressive Evidence Rule"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "rule": "Contradiction detection blocks finalization",
+  "source": {
+    "file": "plugin/governance/context-management-policy.md",
+    "pattern": "Block finalization until the contradiction is resolved"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "Contradiction detection (blocking)"
+    },
+    {
+      "file": "plugin/agents/coder.md",
+      "pattern": "## Contradiction Detection"
+    }
+  ]
+}
