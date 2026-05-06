@@ -61,7 +61,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    - `agent` = `"agent-framework:orchestrator"`
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
 6. If `dry_run` = `yes`:
-   a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it already contains `.agent-framework/`; set the action to `would-create`, `would-append`, or `already-present` accordingly.
+   a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.agent-framework/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. Print the merged settings JSON and the gitignore action together.
    c. Stop without writing any files.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
