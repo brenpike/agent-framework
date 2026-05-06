@@ -247,11 +247,11 @@ Column definitions:
 
 ### Budget Breach Handling
 
-When any profile limit is hit:
+When any profile limit is hit mid-phase:
 
-1. Force a checkpoint (emit step-delta, store durable artifact).
-2. Log the breach in the step-delta as an evidence entry: `EVD-NNN — budget breach: [limit name] exceeded ([actual] > [max]) for task type [label]`.
-3. Do not block execution. Checkpoint and continue.
+1. Route to Path B (N-tool-call threshold trigger): emit a mid-phase partial checkpoint — record current step ID, tool-call count at trigger, any DEC/ASM/EVD anchors accumulated so far, and a budget breach annotation.
+2. Log the breach in the partial checkpoint as an evidence entry: `EVD-NNN — budget breach: [limit name] exceeded ([actual] > [max]) for task type [label]`.
+3. Do not block execution. Continue the current phase after rehydration (per Path B step 6).
 
 ### Auto-Clear Triggers
 
