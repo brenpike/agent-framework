@@ -1,4 +1,4 @@
-# Auto-Clear Thrash Runbook
+﻿# Auto-Clear Thrash Runbook
 
 ## Purpose
 
@@ -8,7 +8,7 @@ This runbook is a load-bearing governance artifact referenced by hard enforcemen
 
 ## Trigger Condition
 
-Fires when: the auto-clear and rehydration cycle (per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Phase-Boundary Auto-Clear)) fires more than once per phase on average across the current task. This violates the cooldown rule defined in that section and indicates threshold miscalibration.
+Fires when: the auto-clear and rehydration cycle (per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Auto-Clear Procedure)) fires more than once per phase on average across the current task. This violates the cooldown rule defined in that section and indicates threshold miscalibration.
 
 ---
 
@@ -78,7 +78,7 @@ At phase close, the orchestrator performs the following recovery steps:
 
 ## Cross-References
 
-- Phase-boundary auto-clear: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Phase-Boundary Auto-Clear)
+- Phase-boundary auto-clear: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Auto-Clear Procedure)
 - Observable proxies and thresholds: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Budget Profiles)
 - Step-delta format: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta)
 - Blocked Report Contract: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Blocked Report Contract)

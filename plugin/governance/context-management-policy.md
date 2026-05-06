@@ -1,4 +1,4 @@
-# Context Management Policy
+﻿# Context Management Policy
 
 ## Purpose
 
@@ -225,7 +225,7 @@ Every task receives exactly one classification label. The label determines which
 | `feature` | New capability with partially or fully unknown scope |
 | `incident` | Time-boxed investigation combined with targeted fix |
 
-**Tie-break rule:** when a task fits multiple labels, use the most restrictive budget profile (lowest limits). When in doubt, use `feature`.
+**Tie-break rule:** when a task fits multiple labels, use the most restrictive budget profile (lowest limits). When in doubt, use `bugfix` (most restrictive profile).
 
 ### Budget Profiles
 
