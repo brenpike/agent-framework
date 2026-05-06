@@ -321,12 +321,12 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 #### Path A — Phase-completion trigger
 
 1. Phase verification passes.
-2. Extract `Step delta:` section from the worker's report.
-3. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`) — only after both contradiction detection and reconstruction test pass (see Phase Verification above). If either gate fails, phase verification would have already blocked; do not store.
+2. Extract the `Step delta:` section and all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from the worker's report, forming the candidate handoff.
+3. Store the full candidate handoff (step-delta + all mandatory Context Management Fields) as a durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`) — only after both contradiction detection and reconstruction test pass (see Phase Verification above). If either gate fails, phase verification would have already blocked; do not store.
 4. Emit checkpoint commit (if commit policy allows).
 5. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
-6. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (when claude-mem installed) or read from `.agent-framework/handoffs/` (when claude-mem absent), respecting the replay depth limit from the active budget profile.
-7. Delegate next phase with compact step-delta context only.
+6. Rehydrate: retrieve stored candidate handoffs for the current task via `mem-search` (when claude-mem installed) or read from `.agent-framework/handoffs/` (when claude-mem absent), respecting the replay depth limit from the active budget profile.
+7. Delegate next phase with the compact candidate handoff (step-delta + all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)).
 
 #### Path B — Mid-phase threshold triggers (N-tool-call, scope-pivot, explicit user reset)
 

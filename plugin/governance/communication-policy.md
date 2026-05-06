@@ -81,7 +81,7 @@ Step delta:
   Evidence: EVD-NNN — [one-line synopsis only] (anchor ID required; full evidence ≤50 lines inline, >50 lines externalized per Progressive Evidence Rule)
 ```
 
-The orchestrator extracts the `Step delta:` section after phase verification, stores it (as a claude-mem observation or under `.agent-framework/handoffs/STEP-NNN.md`), and delegates the next phase with only the compact step-delta — not the full prior phase report or tool outputs.
+The orchestrator extracts the `Step delta:` section and all mandatory Context Management Fields after phase verification, stores the full candidate handoff (as a claude-mem observation or under `.agent-framework/handoffs/STEP-NNN.md`), and delegates the next phase with the compact candidate handoff — not the full prior phase report or tool outputs.
 
 ## Progressive Evidence Rule
 
