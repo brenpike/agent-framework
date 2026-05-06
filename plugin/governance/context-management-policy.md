@@ -272,7 +272,7 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 
 1. Phase verification passes.
 2. Extract `Step delta:` section from the worker's report.
-3. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`).
+3. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`) -- only after both contradiction detection and reconstruction test pass (see orchestrator Phase Verification). If either gate fails, discard the extracted delta; do not store.
 4. Emit checkpoint commit (if commit policy allows).
 5. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
 6. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (or read from `.agent-framework/handoffs/`), respecting the replay depth limit from the active budget profile.
