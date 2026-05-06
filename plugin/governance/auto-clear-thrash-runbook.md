@@ -59,7 +59,7 @@ Next action:
 At phase close, the orchestrator performs the following recovery steps:
 
 1. **Review trigger thresholds against actual phase complexity:**
-   - Compare the configured N-tool-call threshold (see `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Observable Proxies)) against the actual tool-call count for the thrashing phase.
+   - Compare the configured N-tool-call threshold (see `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Budget Profiles)) against the actual tool-call count for the thrashing phase.
    - Compare the configured phase-boundary trigger against the actual phase boundaries encountered.
 
 2. **If the N-tool-call trigger fired:**
@@ -79,7 +79,7 @@ At phase close, the orchestrator performs the following recovery steps:
 ## Cross-References
 
 - Phase-boundary auto-clear: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Phase-Boundary Auto-Clear)
-- Observable proxies and thresholds: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Observable Proxies)
+- Observable proxies and thresholds: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Budget Profiles)
 - Step-delta format: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta)
 - Blocked Report Contract: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Blocked Report Contract)
 - Handoff fields: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)
