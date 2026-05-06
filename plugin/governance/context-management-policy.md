@@ -6,7 +6,7 @@ This policy augments existing agent-framework governance. It does not replace ro
 
 **Activation condition:** Load this module when the workflow includes more than one execution phase, OR when the plan contains `STEP-NNN` identifiers.
 
-**Slice scope:** This file covers Slice 1 and Slice 2 content. Hard enforcement gates, full per-task budget profiles, and reconstruction test blocking are deferred to a later slice.
+**Slice scope:** This file covers Slice 1 and Slice 2 content. Quality Policy hard enforcement gates are active (Slice 2). Full per-task budget profiles and reconstruction test blocking are deferred to a later slice.
 
 ---
 
@@ -150,7 +150,7 @@ Ephemeral purge is tightly coupled to the auto-clear trigger (see Budget Policy 
 
 ## Quality Policy
 
-> **Slice 1 enforcement: soft/warn only.** All checks in this section log warnings but do not block execution or finalization. Hard blocking gates are deferred to a later slice.
+> **Slice 2 enforcement: hard/block.** All checks in this section are blocking. Failures prevent execution, phase acceptance, or finalization as specified in each subsection.
 
 ### Invariant Categories
 
@@ -163,25 +163,25 @@ The following invariant categories must be checked before and after execution:
 | Compatibility | No existing required contract fields removed; changes are additive |
 | Validation completeness | Validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) was run or explicitly skipped with reason |
 
-### Pre-Execution Checklist (Warn Mode)
+### Pre-Execution Checklist
 
-Before executing a step, verify (warn if any fail — do not block):
-- Active plan artifact exists or bypass reason is recorded
+Before executing a step, verify. If any check fails, block execution — do not proceed:
+- Active plan artifact exists or bypass reason is recorded. If this check fails, follow `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md`.
 - Step ID is assigned (`STEP-NNN`)
 - Completion criteria are stated
 
-### Post-Execution Assumption Validation (Warn Mode)
+### Post-Execution Assumption Validation
 
-After executing a step, verify (warn if any fail — do not block):
-- All stated assumptions from the step-delta are either resolved or carried forward as open questions
+After executing a step, verify. Unresolved assumptions without explicit carry-forward notation block phase acceptance — do not finalize the phase:
+- All stated assumptions from the step-delta are either resolved or explicitly carried forward with `[CARRY-FORWARD]` notation as open questions in the next step-delta
 - Completion evidence is referenced (commit SHA, test output, or artifact path)
 
-### Contradiction Detection (Warn Mode)
+### Contradiction Detection
 
 Before finalizing a phase:
 - Flag any output that contradicts a prior decision recorded in the handoff artifact
 - Log the contradiction with: field name, prior value, new value, and step ID
-- Do not block finalization (Slice 1); carry forward as an open question in the next step-delta
+- Block finalization until the contradiction is resolved. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` when a contradiction is detected.
 
 ---
 
@@ -224,7 +224,6 @@ The following are deferred to a later slice after baseline data is collected:
 - N-tool-call hard trigger
 - Scope-pivot trigger
 - User-reset trigger
-- Hard enforcement of proxy thresholds
 
 ---
 
