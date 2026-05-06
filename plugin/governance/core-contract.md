@@ -33,7 +33,7 @@ These 5 governance modules activate only when their condition is met. Fail-open:
 | `validation-policy.md` | Workflow includes a validation phase |
 | `pr-review-remediation-loop.md` | Workflow includes PR feedback or review remediation |
 | `monitoring-policy.md` | User request contains `watch`, `monitor`, `wait`, `poll`, or `loop` |
-| `context-management-policy.md` | Workflow includes more than one execution phase, OR the plan contains `STEP-NNN` identifiers |
+| `context-management-policy.md` | Plan/step lifecycle, retrieval anchors, memory tiers, quality guardrails (hard enforcement: reconstruction test, contradiction detection, pre/post-execution checks), per-task budget profiles, auto-clear triggers, and progressive evidence loading. **Condition:** Workflow includes more than one execution phase, OR the plan contains `STEP-NNN` identifiers |
 
 ## Core Definitions
 
