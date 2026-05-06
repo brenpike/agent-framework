@@ -6,7 +6,7 @@ This policy augments existing agent-framework governance. It does not replace ro
 
 **Activation condition:** Load this module when the workflow includes more than one execution phase, OR when the plan contains `STEP-NNN` identifiers.
 
-**Slice scope:** This file covers Slice 1 content only. Hard enforcement gates, full per-task budget profiles, retrieval anchor infrastructure, and reconstruction test blocking are deferred to Slice 2.
+**Slice scope:** This file covers Slice 1 and Slice 2 content. Hard enforcement gates, full per-task budget profiles, and reconstruction test blocking are deferred to a later slice.
 
 ---
 
@@ -67,12 +67,58 @@ If either file contains `"claude-mem@thedotmack": true`, treat claude-mem as **P
 
 ---
 
+## Retrieval Anchors
+
+### Anchor ID Format
+
+Every retrieval anchor is identified by a tag of the form `<TYPE>-<NNN>`, where:
+
+- `TYPE` is one of: `DEC` (decision), `RISK` (risk), `ASM` (assumption), `EVD` (evidence).
+- `NNN` is a zero-padded 3-digit integer (e.g., `001`, `012`), unique within the current session.
+
+Examples: `DEC-001`, `RISK-003`, `ASM-002`, `EVD-014`.
+
+### Required Metadata
+
+Each anchor must carry the following metadata at the point of creation:
+
+| Field | Description |
+|---|---|
+| Type | One of `DEC`, `RISK`, `ASM`, `EVD` |
+| Description | One-sentence summary of the anchored item |
+| Source | Artifact reference: commit SHA, file path, or `STEP-NNN` identifier |
+
+### Uniqueness Constraints
+
+- Anchor IDs must be unique within a session. Do not reuse an ID after the anchored item is superseded or invalidated.
+- The `NNN` counter increments monotonically per type within the session (e.g., `DEC-001`, `DEC-002`, ...).
+- If two anchors share the same type and description, merge them under one ID and record the merge in the step-delta.
+
+### Stale Reference Handling
+
+An anchor becomes stale when its source artifact is superseded, reverted, or deleted. When a stale anchor is detected:
+
+1. Mark the anchor `[STALE]` in the current step-delta and any report that references it.
+2. Exclude stale anchors from rehydration — do not inject stale anchor content into future delegations.
+3. Log the stale anchor (ID, reason) in the step-delta. Do not block step completion on a stale anchor.
+
+### Minimum Anchor Requirements
+
+Non-trivial step completion (any step that does not qualify as `TRIVIAL_CHANGE` per the bypass allowlist) must produce at least one retrieval anchor. Steps that produce decisions, identify risks, or validate assumptions should tag each with the appropriate anchor type.
+
+### Storage Substrate
+
+- **Baseline (claude-mem absent):** anchors are recorded in the in-session report artifacts (step-deltas, handoffs) stored under `.agent-framework/handoffs/`.
+- **When claude-mem is installed:** anchors are additionally stored as claude-mem observations, enabling cross-session retrieval via `mem-search`.
+
+---
+
 ## Memory Policy
 
 ### Two-Tier Distinction
 
 **Durable memory** — survives phase boundaries; must be preserved across context resets:
-- Accepted requirements, constraints, and decisions (tagged DEC-NNN in Slice 2+)
+- Accepted requirements, constraints, and decisions (tagged `DEC-NNN` per Retrieval Anchors)
 - Handoff/report artifacts
 - Session Fact Cache entries (see `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache))
 - Step-delta observations stored via claude-mem or `.agent-framework/handoffs/`
@@ -86,7 +132,7 @@ If either file contains `"claude-mem@thedotmack": true`, treat claude-mem as **P
 
 Ephemeral content may be promoted to durable only when it carries:
 - An evidence link (commit SHA, file path, test output reference), OR
-- A decision ID (`DEC-NNN` — available in Slice 2; use descriptive label in Slice 1)
+- A decision ID (`DEC-NNN` per Retrieval Anchors)
 
 ### Purge Semantics
 
@@ -104,7 +150,7 @@ Ephemeral purge is tightly coupled to the auto-clear trigger (see Budget Policy 
 
 ## Quality Policy
 
-> **Slice 1 enforcement: soft/warn only.** All checks in this section log warnings but do not block execution or finalization. Hard blocking gates are deferred to Slice 2.
+> **Slice 1 enforcement: soft/warn only.** All checks in this section log warnings but do not block execution or finalization. Hard blocking gates are deferred to a later slice.
 
 ### Invariant Categories
 
@@ -141,7 +187,7 @@ Before finalizing a phase:
 
 ## Budget Policy
 
-> **Slice 1 scope:** One trigger only — phase-boundary auto-clear. No per-task-class budget profile table. Full trigger policy and profile table deferred to Slice 2 after baseline data is available.
+> **Slice 1 scope:** One trigger only — phase-boundary auto-clear. No per-task-class budget profile table. Full trigger policy and profile table deferred to a later slice after baseline data is available.
 
 ### Phase-Boundary Auto-Clear
 
@@ -170,11 +216,46 @@ These proxies govern when a mandatory checkpoint fires, independent of the phase
 
 Both thresholds are subject to calibration after Slice 1 baseline data is available.
 
-### Slice 2 Deferred Items
+### Deferred Items
 
-The following are deferred to Slice 2 after Slice 1 baseline data is collected:
+The following are deferred to a later slice after baseline data is collected:
 - Per-task-class budget profiles (bugfix / refactor / feature / incident)
+- Reconstruction test blocking (hard gate on rehydration fidelity)
 - N-tool-call hard trigger
 - Scope-pivot trigger
 - User-reset trigger
 - Hard enforcement of proxy thresholds
+
+---
+
+## Progressive Evidence Loading
+
+### Default Load Mode
+
+When rehydrating context across phase boundaries, load evidence in **synopsis mode** by default: include the anchor ID and the one-sentence description only. Do not inline the full evidence body.
+
+### Lazy-Load Trigger
+
+Full evidence content is loaded only when one of the following conditions is met:
+
+- A verification step requires inspecting the evidence to confirm a completion criterion.
+- A disambiguation is needed — two or more anchors appear to conflict or overlap, and the synopsis alone is insufficient to resolve the conflict.
+
+### Inline Evidence Size Cap
+
+Evidence inlined directly into a delegation, report, or handoff artifact must not exceed **50 lines**. This cap applies to all evidence types (diffs, logs, test output, tool output, file excerpts).
+
+### Mandatory Externalization
+
+Evidence exceeding the 50-line cap must be externalized:
+
+1. Write the full evidence body to `.agent-framework/evidence/` (filename: `<ANCHOR-ID>.md`, e.g., `EVD-001.md`).
+2. Reference the evidence in the delegation or report by anchor ID only (e.g., `see EVD-001`).
+3. Do not inline any portion of the externalized evidence beyond the synopsis.
+
+The following evidence types must always be externalized regardless of size:
+
+- Test output (unit, integration, end-to-end)
+- Build logs
+- Large diffs (any diff exceeding 50 lines)
+- Command output exceeding 50 lines
