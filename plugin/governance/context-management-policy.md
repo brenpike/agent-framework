@@ -281,7 +281,7 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 #### Path B — Mid-phase threshold triggers (N-tool-call, scope-pivot, explicit user reset)
 
 1. Trigger condition met: tool-call count reached the active budget profile's max tool calls/checkpoint limit, scope pivot detected (task reclassified mid-execution), or user explicitly requested a reset.
-2. Emit mid-phase partial checkpoint: record current step ID, tool-call count at trigger, any DEC/ASM/EVD anchors accumulated so far in the phase, and a scope annotation if the trigger is a scope pivot.
+2. Emit mid-phase partial checkpoint: record current step ID, tool-call count at trigger, any DEC/ASM/EVD anchors accumulated so far in the phase, a scope annotation if the trigger is a scope pivot, and the active delegation fields (task objective, file scope in/out, completion criteria, and constraints) so the phase can resume within its original contract after rehydration.
 3. Store partial checkpoint as `.agent-framework/checkpoints/STEP-NNN-partial-NNN.md` (or claude-mem observation tagged `partial-checkpoint` when claude-mem is installed).
 4. Clear ephemeral context (current phase transcript, tool outputs drop out of active context).
 5. Rehydrate: retrieve stored step-deltas from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
