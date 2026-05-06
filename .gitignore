@@ -466,3 +466,6 @@ nupkgs/
 
 .claude/agent-memory/*
 .claude/agent-memory/
+
+# agent-framework runtime orchestration artifacts (ephemeral by default)
+.agent-framework/

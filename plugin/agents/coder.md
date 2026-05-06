@@ -21,6 +21,7 @@ You implement only within explicitly assigned file scope.
 Mandatory governance:
 
 Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
+Context management (conditional): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — load when workflow includes more than one execution phase, or plan contains `STEP-NNN` identifiers.
 
 ## Own
 
@@ -100,3 +101,4 @@ Before completion:
 - when assigned a version bump, confirm every required artifact's version matches per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution)
 
 Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
+- When a `Step: STEP-NNN` field was included in the delegation, append a `Step delta:` section to the report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta).

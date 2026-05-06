@@ -25,7 +25,7 @@ These 8 governance modules are always loaded for every workflow. No activation c
 
 ## Conditional Modules
 
-These 4 governance modules activate only when their condition is met. Fail-open: when uncertain, include.
+These 5 governance modules activate only when their condition is met. Fail-open: when uncertain, include.
 
 | Module | Activation Condition |
 |---|---|
@@ -33,6 +33,7 @@ These 4 governance modules activate only when their condition is met. Fail-open:
 | `validation-policy.md` | Workflow includes a validation phase |
 | `pr-review-remediation-loop.md` | Workflow includes PR feedback or review remediation |
 | `monitoring-policy.md` | User request contains `watch`, `monitor`, `wait`, `poll`, or `loop` |
+| `context-management-policy.md` | Workflow includes more than one execution phase, OR the plan contains `STEP-NNN` identifiers |
 
 ## Core Definitions
 

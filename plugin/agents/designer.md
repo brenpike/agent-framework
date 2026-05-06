@@ -21,6 +21,7 @@ You handle presentational work only within explicitly assigned file scope.
 Mandatory governance:
 
 Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
+Context management (conditional): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — load when workflow includes more than one execution phase, or plan contains `STEP-NNN` identifiers.
 
 ## Own
 
@@ -99,5 +100,6 @@ Before completion:
 - verify the change works in every existing theme (or mark `N/A` if the repo has no theme files)
 - run LSP diagnostics on every touched file when LSP is available; report any new diagnostic of severity Error or Warning
 - run validation per the "Validation procedure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- When a `Step: STEP-NNN` field was included in the delegation, append a `Step delta:` section to the report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta).
 
 Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.

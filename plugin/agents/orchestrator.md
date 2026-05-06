@@ -171,6 +171,7 @@ Use by default:
 
 ```text
 Task: [required outcome]
+Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
 
 Files:
 - [exact file]
@@ -200,10 +201,11 @@ Constraints:
 - [technical/design constraint]
 - Do not modify other files.
 
-Session facts:
+Session facts: (optional)
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
+- active-step: STEP-NNN  (include when a plan with step IDs is active)
 ```
 
 > **Session facts:** Optional in the first delegation (facts may not yet be resolved). Mandatory in all subsequent delegations within the same session once trunk and validation are established.
@@ -237,6 +239,7 @@ Compact form for trivial single-file tasks:
 
 ```text
 Task: [required outcome]
+Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
 File: [exact file]
 Done when: [completion condition]
 
@@ -280,8 +283,30 @@ After each phase, verify every item below before starting the next phase. The ph
 - git state is not unsafe per the "Unsafe git state" definition
 - if the changed files match the project's bump-trigger paths (or, when undefined, do not match the "No bump is required by default" list), the report includes `Version: required|none|unknown`
 - the worker's report contains no `Status: blocked` items and no `Need scope change` entries
+- when the delegation included a `Step: STEP-NNN` field and the worker's report does NOT include a `Step delta:` section: **fail phase verification** — the phase cannot be accepted without a durable handoff artifact
+- when the delegation included a `Step: STEP-NNN` field and the worker's report includes a `Step delta:` section: extract that section; store it as a claude-mem observation (when installed per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)) or write to `.agent-framework/handoffs/STEP-NNN.md`; delegate the next phase with only the compact step-delta, not the full prior phase report or tool outputs
 
 If a worker touched files outside the assigned scope, or implementation began without every Required Git Preflight item established: do not commit the phase, do not proceed to the next phase, and either re-delegate the phase with corrected scope or escalate to the user if the same violation recurs in a subsequent attempt.
+
+## Context Management
+
+Context management policy: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md`.
+
+### Phase-Boundary Auto-Clear (Slice 1)
+
+After extracting and storing the step-delta from a completed phase:
+
+1. Emit checkpoint commit (if commit policy allows).
+2. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`).
+3. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
+4. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (when claude-mem installed) or read from `.agent-framework/handoffs/` (when claude-mem absent).
+5. Delegate next phase with compact step-delta context only.
+
+Cooldown: do not fire more than one clear+rehydrate cycle per phase.
+
+### claude-mem Detection
+
+Follow `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection) — check both global and project-local settings files. Do not duplicate the detection logic here.
 
 ## Final Report
 
@@ -335,6 +360,7 @@ If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governan
 
 ```text
 Task: Bump [artifact/package/component] version from X.Y.Z to A.B.C
+Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
 
 Files:
 - [canonical version file]
@@ -371,6 +397,7 @@ Session facts:
 
 ```text
 Task: Address PR review feedback
+Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
 
 Review:
 - PR: #[number]
