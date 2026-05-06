@@ -195,7 +195,7 @@ Hard enforcement gate on major phase transitions. Before delegating the next pha
 
 At every major phase transition (before delegation of the next phase), run the following binary test:
 
-1. Assemble the candidate handoff: the `Step delta:` fields from the completing phase plus all non-stale retrieval anchors produced during the task so far.
+1. Assemble the candidate handoff: the `Step delta:` section from the completing phase, the mandatory Context Management Fields (`Objective:`, `Scope in:`, `Next actions:`, and completion criteria) from the worker's phase-closing report, plus all non-stale retrieval anchors produced during the task so far.
 2. Evaluate: can the next phase's stated objective, scope, and completion criteria be determined from the candidate handoff alone?
 3. Result is binary:
    - **Pass** — the handoff and anchors contain sufficient context. Proceed to delegate the next phase.
