@@ -6,7 +6,7 @@ This policy augments existing agent-framework governance. It does not replace ro
 
 **Activation condition:** Load this module when the workflow includes more than one execution phase, OR when the plan contains `STEP-NNN` identifiers.
 
-**Slice scope:** This file covers Slice 1 and Slice 2 content. Quality Policy hard enforcement gates are active (Slice 2). Full per-task budget profiles and reconstruction test blocking are deferred to a later slice.
+**Slice scope:** This file covers Slice 1 through Slice 2 content. All sections are fully active: Quality Policy hard enforcement gates, reconstruction test blocking, and per-task budget profiles.
 
 ---
 
@@ -185,13 +185,88 @@ Before finalizing a phase:
 
 ---
 
+## Reconstruction Test
+
+### Purpose
+
+Hard enforcement gate on major phase transitions. Before delegating the next phase, the agent must verify that the task can continue correctly from the handoff artifact and retrieval anchors alone — without access to the prior phase's full transcript or tool outputs.
+
+### Test Procedure
+
+At every major phase transition (before delegation of the next phase), run the following binary test:
+
+1. Assemble the candidate handoff: the `Step delta:` fields from the completing phase plus all non-stale retrieval anchors produced during the task so far.
+2. Evaluate: can the next phase's stated objective, scope, and completion criteria be determined from the candidate handoff alone?
+3. Result is binary:
+   - **Pass** — the handoff and anchors contain sufficient context. Proceed to delegate the next phase.
+   - **Fail** — one or more required fields or anchor references are missing or incomplete. Follow `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md`.
+
+### Failure Handling
+
+On reconstruction test failure:
+
+1. Record the failure reason and each missing field in the step-delta as an unresolved assumption: `ASM-NNN — reconstruction failed for [field name]`.
+2. Follow the fallback mode defined in `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md` (Fallback Mode) — attempt targeted rehydration of missing fields before escalating.
+3. Surface the failure to the user before proceeding if the escalation trigger fires (per `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md` (Escalation Trigger)).
+4. Do not delegate the next phase until the reconstruction test passes or the user explicitly acknowledges the gap.
+
+---
+
 ## Budget Policy
 
-> **Slice 1 scope:** One trigger only — phase-boundary auto-clear. No per-task-class budget profile table. Full trigger policy and profile table deferred to a later slice after baseline data is available.
+### Task-Type Classification
+
+Every task receives exactly one classification label. The label determines which budget profile governs resource limits for the task.
+
+| Label | Definition |
+|---|---|
+| `bugfix` | Isolated defect fix in known location, bounded scope |
+| `refactor` | Structural change without observable behavior change |
+| `feature` | New capability with partially or fully unknown scope |
+| `incident` | Time-boxed investigation combined with targeted fix |
+
+**Tie-break rule:** when a task fits multiple labels, use the most restrictive budget profile (lowest limits). When in doubt, use `feature`.
+
+### Budget Profiles
+
+Each task type maps to a budget profile that governs per-phase resource limits:
+
+| Task type | Max artifacts/phase | Max replay depth | Max tool calls/checkpoint | Max inline evidence |
+|---|---|---|---|---|
+| `bugfix` | 5 | 1 | 15 | 50 lines |
+| `refactor` | 8 | 2 | 20 | 50 lines |
+| `feature` | 12 | 3 | 30 | 50 lines |
+| `incident` | 6 | 1 | 20 | 50 lines |
+
+Column definitions:
+
+- **Max artifacts/phase** — maximum number of durable artifacts (handoffs, evidence files, plan updates) produced in a single phase.
+- **Max replay depth** — maximum number of prior phase reports auto-included in a delegation. Prior phases beyond this depth are available only via targeted retrieval (mem-search or file read), not auto-injected.
+- **Max tool calls/checkpoint** — maximum tool calls before a mandatory checkpoint fires within a phase.
+- **Max inline evidence** — hard cap on evidence lines inlined in a delegation, report, or handoff. Fixed at 50 lines for all task types (matches the Progressive Evidence Loading cap).
+
+### Budget Breach Handling
+
+When any profile limit is hit:
+
+1. Force a checkpoint (emit step-delta, store durable artifact).
+2. Log the breach in the step-delta as an evidence entry: `EVD-NNN — budget breach: [limit name] exceeded ([actual] > [max]) for task type [label]`.
+3. Do not block execution. Checkpoint and continue.
+
+### Auto-Clear Triggers
+
+The following triggers fire the clear+rehydrate cycle defined in Phase-Boundary Auto-Clear below:
+
+| Trigger | Condition |
+|---|---|
+| Phase completion | A phase passes verification and is ready for handoff |
+| N-tool-call threshold | Tool-call count within the current phase reaches the profile's max tool calls/checkpoint limit |
+| Scope pivot | Task classification changes mid-execution (e.g., a `bugfix` is reclassified as `feature` after investigation reveals broader scope) |
+| Explicit user reset | User explicitly requests a context reset or fresh start |
+
+For cooldown and thrash handling when triggers fire too frequently, see `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md`.
 
 ### Phase-Boundary Auto-Clear
-
-**Trigger:** phase completion (the only Slice 1 trigger).
 
 **Procedure:**
 
@@ -200,30 +275,10 @@ Before finalizing a phase:
 3. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`).
 4. Emit checkpoint commit (if commit policy allows).
 5. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
-6. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (or read from `.agent-framework/handoffs/`).
+6. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (or read from `.agent-framework/handoffs/`), respecting the replay depth limit from the active budget profile.
 7. Delegate next phase with compact step-delta context only.
 
-**Cooldown:** Do not fire more than one clear+rehydrate cycle per phase on average. If a phase boundary triggers a second clear before the next phase begins, log and skip the redundant clear.
-
-### Observable Proxies (Slice 1)
-
-These proxies govern when a mandatory checkpoint fires, independent of the phase-boundary trigger:
-
-| Proxy | Threshold | Enforcement |
-|---|---|---|
-| Tool calls before mandatory checkpoint | 50 | Warn; checkpoint recommended but not blocking in Slice 1 |
-| Prior artifacts auto-included per delegation (replay depth) | 1 | Warn if > 1 prior phase report is injected into a delegation |
-
-Both thresholds are subject to calibration after Slice 1 baseline data is available.
-
-### Deferred Items
-
-The following are deferred to a later slice after baseline data is collected:
-- Per-task-class budget profiles (bugfix / refactor / feature / incident)
-- Reconstruction test blocking (hard gate on rehydration fidelity)
-- N-tool-call hard trigger
-- Scope-pivot trigger
-- User-reset trigger
+**Cooldown:** Do not fire more than one clear+rehydrate cycle per phase on average. If a phase boundary triggers a second clear before the next phase begins, log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
 
 ---
 
