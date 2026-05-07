@@ -334,7 +334,7 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 2. Emit mid-phase partial checkpoint: record current step ID, tool-call count at trigger, any DEC/ASM/EVD anchors accumulated so far in the phase, a scope annotation if the trigger is a scope pivot, and the active delegation fields (task objective, file scope in/out, completion criteria, and constraints) so the phase can resume within its original contract after rehydration.
 3. Store partial checkpoint as `.agent-framework/checkpoints/STEP-NNN-partial-NNN.md` (or claude-mem observation tagged `partial-checkpoint` when claude-mem is installed).
 4. Clear ephemeral context (current phase transcript, tool outputs drop out of active context).
-5. Rehydrate: retrieve stored step-deltas from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
+5. Rehydrate: retrieve stored candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
 6. Continue current phase — do NOT delegate next phase; the current step is still in progress.
 
 Cooldown: do not fire more than one clear+rehydrate cycle per phase on average. If a trigger fires a second clear before the next phase begins (Path A) or before the current step completes (Path B), log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.

@@ -43,7 +43,7 @@ Each bypass must include: reason code + step/task ID in the delegation preamble.
 Fallback storage paths (used when claude-mem is absent):
 
 - `.agent-framework/plans/` — active plan artifacts
-- `.agent-framework/handoffs/` — step-delta handoff artifacts (named `STEP-NNN.md`)
+- `.agent-framework/handoffs/` — candidate handoff artifacts (step-delta + mandatory Context Management Fields, named `STEP-NNN.md`)
 - `.agent-framework/checkpoints/` — optional checkpoint state
 
 These paths are ephemeral by default (gitignored). Do not mix runtime artifacts into `docs/`.
@@ -62,8 +62,8 @@ At session start, check for `"claude-mem@thedotmack": true` under `enabledPlugin
 
 If either file contains `"claude-mem@thedotmack": true`, treat claude-mem as **Present**.
 
-- **Present:** store step-deltas as claude-mem observations; rehydrate via `mem-search`.
-- **Absent:** store step-deltas as files under `.agent-framework/handoffs/`; rehydrate by reading files.
+- **Present:** store full candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as claude-mem observations; rehydrate via `mem-search`.
+- **Absent:** store full candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as files under `.agent-framework/handoffs/`; rehydrate by reading files.
 
 ---
 
@@ -284,7 +284,7 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 2. Emit mid-phase partial checkpoint: record current step ID, tool-call count at trigger, any DEC/ASM/EVD anchors accumulated so far in the phase, a scope annotation if the trigger is a scope pivot, and the active delegation fields (task objective, file scope in/out, completion criteria, and constraints) so the phase can resume within its original contract after rehydration.
 3. Store partial checkpoint as `.agent-framework/checkpoints/STEP-NNN-partial-NNN.md` (or claude-mem observation tagged `partial-checkpoint` when claude-mem is installed).
 4. Clear ephemeral context (current phase transcript, tool outputs drop out of active context).
-5. Rehydrate: retrieve stored step-deltas from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
+5. Rehydrate: retrieve stored candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
 6. Continue current phase — do NOT delegate next phase; the current step is still in progress.
 
 **Cooldown:** Do not fire more than one clear+rehydrate cycle per phase on average. If a trigger fires a second clear before the next phase begins (Path A) or before the current step completes (Path B), log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
