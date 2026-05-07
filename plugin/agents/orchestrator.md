@@ -205,6 +205,12 @@ Constraints:
 - [technical/design constraint]
 - Do not modify other files.
 
+Anchor reservation: (optional — required when this delegation runs in parallel with another phase)
+- DEC: NNN-NNN
+- RISK: NNN-NNN
+- ASM: NNN-NNN
+- EVD: NNN-NNN
+
 Session facts: (optional)
 - trunk: [branch]
 - validation: [command]
@@ -215,6 +221,8 @@ Session facts: (optional)
 ```
 
 > **Session facts:** Optional in the first delegation (facts may not yet be resolved). Mandatory in all subsequent delegations within the same session once trunk and validation are established. **Exception:** `task-type` and (when `Step:` is omitted) `active-task` are mandatory in every delegation — including the first — because budget profile enforcement and Path B partial checkpoint storage depend on them. The first delegation that uses a Bypass Allowlist code must include both `task-type` and `active-task: TASK-NNN`.
+
+> **Anchor reservation:** Include only when dispatching two or more phases concurrently per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees). Pre-allocate a disjoint NNN block per anchor type to each parallel phase per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Cross-Phase Counter Continuity). Omit the field for sequential phases — workers continue per-type numbering from the highest ID in the inbound candidate handoff.
 
 ### Two-Part Session Facts Protocol
 

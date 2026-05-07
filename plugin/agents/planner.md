@@ -162,7 +162,7 @@ Required anchor types in plan output:
 
 Each anchor must include a one-sentence description at its point of creation in the plan output. Evidence anchors reference the source artifact (file path, commit SHA, or `STEP-NNN` identifier).
 
-Anchor IDs are unique within the plan instance and increment monotonically per type (e.g., `DEC-001`, `DEC-002`, `RISK-001`).
+Anchor IDs are unique within the plan instance and increment monotonically per type (e.g., `DEC-001`, `DEC-002`, `RISK-001`). When workers extend the plan's anchor set during execution, they continue per-type numbering from the highest ID present in the plan output (or in the inbound candidate handoff for downstream phases) per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Cross-Phase Counter Continuity); they do not restart counters.
 
 ## Output Mode
 

@@ -49,6 +49,7 @@ Optional lines. Include each line below only when its trigger fires; otherwise o
 - `Review item: ...` — when the work was review-remediation; include the comment ID or thread ID
 - `Git issue: ...` — when git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` or any preflight item is undefined
 - `Ready to resolve: yes|no` — when the work was review-remediation
+- `Evidence refs: EVD-NNN — synopsis` — when the task externalized any evidence per Progressive Evidence Rule, including for `TRIVIAL_CHANGE` / `SINGLE_STEP_TASK` bypass tasks that omit the `Step delta:` section. Each externalized `EVD-NNN` anchor must appear here so the orchestrator can index it without parsing a step-delta. List one entry per anchor.
 
 ## Context Management Fields (Handoff Schema)
 
@@ -135,7 +136,7 @@ Certain facts are resolved repeatedly during a task. Agents may cache them to av
 | bump-trigger-paths | Whether CLAUDE.md defines project-specific bump-trigger paths (`defined` \| `undefined`) |
 | `active-step` | Current `STEP-NNN` ID from the active plan |
 | `active-task` | Synthetic `TASK-NNN` ID for `STEP-NNN`-bypass tasks (TFP / `TRIVIAL_CHANGE` / `SINGLE_STEP_TASK` / single-step `NO_PRIOR_PHASE`), assigned at intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist). Use this in lieu of `active-step` when no `STEP-NNN` is assigned, so Path B partial checkpoints have a stable identifier. |
-| `task-type` | One of `bugfix\|refactor\|feature\|incident` — resolved at task intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Budget Policy — Task-Type Classification) |
+| `task-type` | One of `bugfix\|refactor\|feature\|incident` — resolved at task intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification) |
 
 ### Cache Rules
 

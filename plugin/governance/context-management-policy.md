@@ -98,6 +98,14 @@ Each anchor must carry the following metadata at the point of creation:
 - The `NNN` counter increments monotonically per type within the session (e.g., `DEC-001`, `DEC-002`, ...).
 - If two anchors share the same type and description, merge them under one ID and record the merge in the step-delta.
 
+### Cross-Phase Counter Continuity
+
+Anchor counters span the whole session, not just a single phase or worker invocation. To keep the per-type counter monotonic across boundaries:
+
+- **Sequential phases.** A worker that produces new anchors continues numbering from the highest `<TYPE>-NNN` already present in the inbound candidate handoff (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) for that type. The worker's own report extends, never restarts, the counter.
+- **Parallel phases (worktrees per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees)).** When the orchestrator dispatches two or more phases concurrently, it pre-allocates a disjoint NNN block per type to each phase and communicates the assignment in the delegation preamble as `Anchor reservation:` (e.g., `DEC: 010-019`, `EVD: 020-039`). Workers must not allocate IDs outside their reserved block.
+- **Reservation merge at phase close.** When parallel phases complete, the orchestrator records the highest used ID per type in the merged candidate handoff so subsequent sequential phases continue from the correct value.
+
 ### Stale Reference Handling
 
 An anchor becomes stale when its source artifact is superseded, reverted, or deleted. When a stale anchor is detected:
@@ -237,19 +245,20 @@ Every task receives exactly one classification label. The label determines which
 
 Each task type maps to a budget profile that governs per-phase resource limits:
 
-| Task type | Max artifacts/phase | Max replay depth | Max tool calls/checkpoint | Max inline evidence |
-|---|---|---|---|---|
-| `bugfix` | 5 | 1 | 15 | 50 lines |
-| `refactor` | 8 | 2 | 20 | 50 lines |
-| `feature` | 12 | 3 | 30 | 50 lines |
-| `incident` | 6 | 1 | 20 | 50 lines |
+| Task type | Max artifacts/phase | Max replay depth | Max tool calls/checkpoint |
+|---|---|---|---|
+| `bugfix` | 5 | 1 | 15 |
+| `refactor` | 8 | 2 | 20 |
+| `feature` | 12 | 3 | 30 |
+| `incident` | 6 | 1 | 20 |
+
+**Max inline evidence** is fixed at 50 lines for all task types — see Progressive Evidence Loading (Inline Evidence Size Cap).
 
 Column definitions:
 
 - **Max artifacts/phase** — maximum number of durable artifacts (handoffs, evidence files, plan updates) produced in a single phase.
 - **Max replay depth** — maximum number of prior phase reports auto-included in a delegation. Prior phases beyond this depth are available only via targeted retrieval (mem-search or file read), not auto-injected.
 - **Max tool calls/checkpoint** — maximum tool calls before a mandatory checkpoint fires within a phase.
-- **Max inline evidence** — hard cap on evidence lines inlined in a delegation, report, or handoff. Fixed at 50 lines for all task types (matches the Progressive Evidence Loading cap).
 
 ### Budget Breach Handling
 
