@@ -181,8 +181,10 @@ After executing a step, verify. Unresolved assumptions without explicit carry-fo
 ### Contradiction Detection
 
 Before finalizing a phase:
-- Flag any output that contradicts a prior decision recorded in the handoff artifact
-- Log the contradiction with: field name, prior value, new value, and step ID
+- Flag any output that contradicts prior context recorded in the candidate handoff. Compare the current phase's outputs against:
+  - All mandatory Context Management Fields recorded in the prior candidate handoff per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields) — including but not limited to `Decisions:`, `Scope in:`, `Scope out:`, `Assumptions:`, `Open questions:`, `Artifacts:`, `Evidence refs:`, and `Risk level:`
+  - All non-stale retrieval anchors of every type (`DEC`, `RISK`, `ASM`, `EVD` per Retrieval Anchors)
+- Log the contradiction with: field or anchor name, prior value, new value, and step or task ID
 - Block finalization until the contradiction is resolved. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` when a contradiction is detected.
 
 ---

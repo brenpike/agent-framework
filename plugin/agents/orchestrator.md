@@ -175,6 +175,7 @@ Use by default:
 ```text
 Task: [required outcome]
 Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|NO_PRIOR_PHASE|USER_OVERRIDE]  (required when Step is omitted; the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist) — must accompany active-task: TASK-NNN in Session facts)
 
 Files:
 - [exact file]
@@ -247,6 +248,7 @@ Compact form for trivial single-file tasks:
 ```text
 Task: [required outcome]
 Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|NO_PRIOR_PHASE|USER_OVERRIDE]  (required when Step is omitted; explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 File: [exact file]
 Done when: [completion condition]
 
@@ -294,7 +296,7 @@ After each phase, verify every item below before starting the next phase. The ph
 - the worker's report contains no `Status: blocked` items and no `Need scope change` entries
 - when the delegation included a `Step: STEP-NNN` field and the worker's report does NOT include a `Step delta:` section: **fail phase verification** — the phase cannot be accepted without a durable handoff artifact
 - when the delegation included a `Step: STEP-NNN` field and the worker's report includes a `Step delta:` section: extract the `Step delta:` section and all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from the worker's report, and hold both in memory as the candidate handoff. Do not store or delegate yet — contradiction detection and reconstruction test must pass first (see below)
-- **Contradiction detection (blocking).** Before finalizing the phase, check for any output that contradicts a prior decision recorded in the handoff artifact. Log contradictions with field name, prior value, new value, and step ID. An unresolved contradiction blocks finalization — do not commit, store the handoff, or delegate the next phase. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` when a contradiction is detected.
+- **Contradiction detection (blocking).** Before finalizing the phase, check for any output that contradicts prior context recorded in the candidate handoff — covering all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) and all non-stale retrieval anchors of every type (`DEC`, `RISK`, `ASM`, `EVD`), not just `Decisions:`. Log contradictions with field or anchor name, prior value, new value, and step or task ID. An unresolved contradiction blocks finalization — do not commit, store the handoff, or delegate the next phase. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` when a contradiction is detected.
 - **Reconstruction test gate (blocking).** After step-delta extraction (before storage) run the reconstruction test per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Reconstruction Test). The next phase's objective, scope, and completion criteria must be determinable from the handoff artifact and non-stale retrieval anchors alone. On fail, follow `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md`. Do not delegate the next phase until the reconstruction test passes or the user explicitly acknowledges the gap.
 - **Store candidate handoff** only after both contradiction detection and reconstruction test pass: store the extracted step-delta and all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) together as a claude-mem observation (when installed per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)) or write to `.agent-framework/handoffs/STEP-NNN.md`.
 - **Delegate next phase** with the compact candidate handoff (step-delta + all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)), not the full prior phase report or tool outputs.
@@ -401,6 +403,7 @@ If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governan
 ```text
 Task: Bump [artifact/package/component] version from X.Y.Z to A.B.C
 Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|NO_PRIOR_PHASE|USER_OVERRIDE]  (required when Step is omitted; explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 
 Files:
 - [canonical version file]
@@ -438,6 +441,7 @@ Session facts:
 ```text
 Task: Address PR review feedback
 Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|NO_PRIOR_PHASE|USER_OVERRIDE]  (required when Step is omitted; explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 
 Review:
 - PR: #[number]
