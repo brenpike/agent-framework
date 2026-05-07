@@ -170,7 +170,7 @@ Use by default:
 
 > **Format rule:** Delegation payloads use key/value block format only. Narrative prose is prohibited in delegation bodies except in blocked/error state reports.
 >
-> **Evidence loading rule:** Delegations include prior-phase evidence in synopsis mode by default — anchor ID and one-sentence description only. Full evidence content is loaded only when a verification step requires it or when disambiguation between conflicting anchors is needed. Evidence inlined in any delegation must not exceed 50 lines; evidence exceeding this cap must be externalized per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading).
+> **Evidence loading rule:** Delegations include prior-phase evidence in synopsis mode by default — anchor ID and one-sentence description only. Full evidence content is loaded only when a verification step requires it or when disambiguation between conflicting anchors is needed. Test output (unit, integration, end-to-end), build logs, large diffs, and command output exceeding 50 lines must always be externalized regardless of size; for all other evidence types, content inlined in any delegation must not exceed 50 lines and exceeding evidence must be externalized. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.
 
 ```text
 Task: [required outcome]
