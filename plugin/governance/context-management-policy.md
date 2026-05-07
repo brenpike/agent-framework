@@ -4,7 +4,7 @@
 
 This policy augments existing agent-framework governance. It does not replace role definitions, safety requirements, or communication standards. All existing governance remains in effect.
 
-**Loading:** This module is mandatory and always loaded for every workflow (per `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Mandatory Modules)). Task-type classification (intake) and per-task budget profile enforcement apply to every task, including the trivial fast path. Phase-handoff, retrieval-anchor, reconstruction-test, contradiction-detection, auto-clear, and progressive-evidence-loading rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers.
+**Loading:** This module is mandatory and always loaded for every workflow (per `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Mandatory Modules)). Task-type classification (intake), per-task budget profile enforcement, and progressive-evidence-loading (inline-evidence caps + always-externalize categories) apply to every task, including the trivial fast path. Phase-handoff, retrieval-anchor, reconstruction-test, contradiction-detection, and auto-clear rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers.
 
 **Slice scope:** This file covers Slice 1 through Slice 2 content. All sections are fully active: Quality Policy hard enforcement gates, reconstruction test blocking, and per-task budget profiles.
 

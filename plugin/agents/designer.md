@@ -21,7 +21,7 @@ You handle presentational work only within explicitly assigned file scope.
 Mandatory governance:
 
 Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
-Context management (mandatory): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — task-type classification and budget profile enforcement always apply; phase-handoff, retrieval-anchor, reconstruction-test, and progressive-evidence rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers.
+Context management (mandatory): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — task-type classification, budget profile enforcement, and progressive-evidence-loading (inline-evidence caps + always-externalize categories) always apply; phase-handoff, retrieval-anchor, and reconstruction-test rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers.
 
 ## Own
 
