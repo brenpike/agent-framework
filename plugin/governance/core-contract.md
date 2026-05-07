@@ -12,7 +12,7 @@ Allowed specialist agents: `agent-framework:planner`, `agent-framework:coder`, `
 
 ## Mandatory Modules
 
-These 8 governance modules are always loaded for every workflow. No activation condition, user override, or workflow classification can suppress them:
+These 9 governance modules are always loaded for every workflow. No activation condition, user override, or workflow classification can suppress them:
 
 - `agent-system-policy.md`
 - `branching-pr-workflow.md`
@@ -20,12 +20,13 @@ These 8 governance modules are always loaded for every workflow. No activation c
 - `scope-policy.md`
 - `communication-policy.md`
 - `escalation-policy.md`
+- `context-management-policy.md` — task-type classification (intake) and per-task budget profile enforcement apply to every task, including the trivial fast path. Phase-handoff, retrieval-anchor, reconstruction-test, contradiction-detection, auto-clear, and progressive-evidence-loading rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers
 - `CLAUDE.md` — project-specific adapter: paths, commands, packages, artifact rules
 - `core-contract.md` — always-loaded module classification, mandatory/conditional lists, and core definition cross-references
 
 ## Conditional Modules
 
-These 5 governance modules activate only when their condition is met. Fail-open: when uncertain, include.
+These 4 governance modules activate only when their condition is met. Fail-open: when uncertain, include.
 
 | Module | Activation Condition |
 |---|---|
@@ -33,7 +34,6 @@ These 5 governance modules activate only when their condition is met. Fail-open:
 | `validation-policy.md` | Workflow includes a validation phase |
 | `pr-review-remediation-loop.md` | Workflow includes PR feedback or review remediation |
 | `monitoring-policy.md` | User request contains `watch`, `monitor`, `wait`, `poll`, or `loop` |
-| `context-management-policy.md` | Plan/step lifecycle, retrieval anchors, memory tiers, quality guardrails (hard enforcement: reconstruction test, contradiction detection, pre/post-execution checks), per-task budget profiles, auto-clear triggers, and progressive evidence loading. **Condition:** Workflow includes more than one execution phase, OR the plan contains `STEP-NNN` identifiers |
 
 ## Core Definitions
 
