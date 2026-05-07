@@ -1,4 +1,4 @@
-﻿# Auto-Clear Thrash Runbook
+# Auto-Clear Thrash Runbook
 
 ## Purpose
 

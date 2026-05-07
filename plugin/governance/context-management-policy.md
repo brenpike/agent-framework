@@ -169,7 +169,7 @@ The following invariant categories must be checked before and after execution:
 
 Before executing a step, verify. If any check fails, block execution — do not proceed:
 - Active plan artifact exists or bypass reason is recorded. If this check fails, follow `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md`.
-- Step ID is assigned (`STEP-NNN`)
+- Step ID is assigned (`STEP-NNN`), OR the task bypasses `STEP-NNN` per the Bypass Allowlist and a synthetic `TASK-NNN` is assigned with the bypass reason code recorded in the delegation preamble
 - Completion criteria are stated
 
 ### Post-Execution Assumption Validation
