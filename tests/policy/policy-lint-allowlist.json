@@ -8,7 +8,7 @@
   {
     "rule": "CHECK1",
     "path": "plugin/skills/setup-project/SKILL.md",
-    "line": 78,
+    "line": 87,
     "reason": "Gate-level hedge: 'proceed if the project root is ambiguous' uses ambiguous as stop-gate condition. Tracked for remediation."
   }
 ]

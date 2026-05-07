@@ -1,0 +1,13 @@
+{
+  "rule": "Reconstruction test hard gate",
+  "source": {
+    "file": "plugin/governance/context-management-policy.md",
+    "pattern": "Hard enforcement gate on major phase transitions"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "Reconstruction test gate (blocking)"
+    }
+  ]
+}

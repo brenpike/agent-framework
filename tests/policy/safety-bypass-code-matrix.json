@@ -1,0 +1,29 @@
+{
+  "rule": "Bypass Code Matrix is the single source of truth for bypass code semantics",
+  "source": {
+    "file": "plugin/governance/context-management-policy.md",
+    "pattern": "#### Bypass Code Matrix"
+  },
+  "consumers": [
+    {
+      "file": "plugin/governance/communication-policy.md",
+      "pattern": "Bypass Code Matrix"
+    },
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "Bypass Code Matrix"
+    },
+    {
+      "file": "plugin/agents/coder.md",
+      "pattern": "Bypass Code Matrix"
+    },
+    {
+      "file": "plugin/agents/designer.md",
+      "pattern": "Bypass Code Matrix"
+    },
+    {
+      "file": "plugin/agents/planner.md",
+      "pattern": "Bypass Code Matrix"
+    }
+  ]
+}

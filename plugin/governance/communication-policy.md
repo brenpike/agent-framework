@@ -49,6 +49,7 @@ Optional lines. Include each line below only when its trigger fires; otherwise o
 - `Review item: ...` — when the work was review-remediation; include the comment ID or thread ID
 - `Git issue: ...` — when git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` or any preflight item is undefined
 - `Ready to resolve: yes|no` — when the work was review-remediation
+- `Evidence refs: EVD-NNN — synopsis` — when the task externalized any evidence per Progressive Evidence Rule and the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Multi-phase delegations that include `Step: STEP-NNN` (including first phases that carry `Bypass: NO_PRIOR_PHASE` alongside the present `Step:`) record `EVD-NNN` anchors in the `Evidence:` field of the `Step delta:` section instead. Each externalized `EVD-NNN` anchor is recorded in exactly one slot per the matrix; list one entry per anchor.
 
 ## Context Management Fields (Handoff Schema)
 
@@ -58,15 +59,16 @@ Required observation fields:
 - `Objective:` — the phase's stated goal
 - `Scope in:` — files/areas included
 - `Scope out:` — files/areas explicitly excluded
-- `Decisions:` — DEC-NNN tagged list (use descriptive labels in Slice 1)
-- `Assumptions:` — ASM-NNN tagged list (use descriptive labels in Slice 1)
+- `Decisions:` — each entry must carry an anchor ID in `DEC-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
+- `Risks:` — each entry must carry an anchor ID in `RISK-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors); list `None` when no concrete risks were identified during the phase
+- `Assumptions:` — each entry must carry an anchor ID in `ASM-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
 - `Open questions:` — unresolved items requiring future attention
 - `Artifacts:` — files created or modified with paths
-- `Evidence refs:` — EVD-NNN tagged list (commit SHAs, test output, artifact refs)
+- `Evidence refs:` — each entry must carry an anchor ID in `EVD-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors); evidence in the always-externalize categories (test output, build logs, large diffs, command output >50 lines) must be externalized to `.agent-framework/evidence/` regardless of size, and any other evidence exceeding 50 lines must also be externalized — referenced by anchor ID only (see Progressive Evidence Rule below)
 - `Next actions:` — what the next phase must do
 - `Risk level:` — low | medium | high
 
-Contract compatibility note: existing required report fields (`Status`, `Changed`, `Validated`, `Need scope change`, `Issues`) remain required. Context management fields are additive in Slice 1. Hard requirement enforcement deferred to Slice 2.
+All context management fields above are mandatory for non-trivial phase-closing reports. Existing required report fields (`Status`, `Changed`, `Validated`, `Need scope change`, `Issues`) remain required alongside these fields.
 
 ## Step Delta
 
@@ -76,12 +78,32 @@ Workers must append a `Step delta:` section to every phase-closing report when a
 Step delta:
   Step: STEP-NNN
   Outcome: [what was accomplished]
-  Decisions: DEC-NNN — [decision and rationale]
-  Assumptions unresolved: ASM-NNN — [assumption and impact]
-  Evidence: EVD-NNN — [test output / commit SHA / artifact ref]
+  Decisions: DEC-NNN — [decision and rationale] (anchor ID required)
+  Risks: RISK-NNN — [risk description and impact] (anchor ID required; list `None` when no concrete risks were identified)
+  Assumptions unresolved: ASM-NNN — [assumption and impact] (anchor ID required)
+  Evidence: EVD-NNN — [one-line synopsis only] (anchor ID required; ≤50 lines inline only when type permits — test output, build logs, large diffs, and command output >50 lines must always be externalized per Progressive Evidence Rule)
 ```
 
-The orchestrator extracts the `Step delta:` section after phase verification, stores it (as a claude-mem observation or under `.agent-framework/handoffs/STEP-NNN.md`), and delegates the next phase with only the compact step-delta — not the full prior phase report or tool outputs.
+The orchestrator extracts the `Step delta:` section and all mandatory Context Management Fields after phase verification, stores the full candidate handoff (as a claude-mem observation or under `.agent-framework/handoffs/STEP-NNN.md`), and delegates the next phase with the compact candidate handoff — not the full prior phase report or tool outputs.
+
+## Progressive Evidence Rule
+
+Evidence fields in step-delta and context management fields reference anchors only — inline the anchor ID and a one-line synopsis. Full evidence content must not be inlined beyond 50 lines in any delegation, report, or handoff artifact.
+
+The following evidence types must always be externalized regardless of size (mirrors `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading)):
+
+- Test output (unit, integration, end-to-end)
+- Build logs
+- Large diffs (any diff exceeding 50 lines)
+- Command output exceeding 50 lines
+
+For all other evidence types, content exceeding 50 lines must be externalized:
+
+1. Write the full evidence body to `.agent-framework/evidence/<ANCHOR-ID>.md` (e.g., `EVD-001.md`).
+2. Reference the evidence in the report or step-delta by anchor ID only (e.g., `EVD-001 — [one-line synopsis]`).
+3. Do not inline any portion of the externalized evidence beyond the synopsis.
+
+See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.
 
 ## Blocked Report Contract
 
@@ -113,6 +135,8 @@ Certain facts are resolved repeatedly during a task. Agents may cache them to av
 | version file | Current version string at task start |
 | bump-trigger-paths | Whether CLAUDE.md defines project-specific bump-trigger paths (`defined` \| `undefined`) |
 | `active-step` | Current `STEP-NNN` ID from the active plan |
+| `active-task` | Synthetic `TASK-NNN` ID for delegations carrying a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assigned at intake. Used in lieu of `active-step` only when `Step: STEP-NNN` is omitted, so Path B partial checkpoints have a stable identifier. |
+| `task-type` | One of `bugfix\|refactor\|feature\|incident` — resolved at task intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification) |
 
 ### Cache Rules
 

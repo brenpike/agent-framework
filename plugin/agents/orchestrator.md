@@ -147,6 +147,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 ## Execution Algorithm
 
+0. **Task-type classification (intake).** Before planner delegation or trivial fast path routing, classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For every Step-omitting bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assign a synthetic task checkpoint ID `TASK-NNN` so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. The matrix is the single source of truth for which codes are Step-omitting and how each interacts with `Step:`, `Step delta:`, `TASK-NNN`, the Session Fact key, and the `EVD-NNN` slot.
 1. Call `agent-framework:planner` unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
 2. If planner fails, follow policy retry/fallback/blocked handling immediately.
 3. If planner returns open questions, surface them and stop.
@@ -168,10 +169,13 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 Use by default:
 
 > **Format rule:** Delegation payloads use key/value block format only. Narrative prose is prohibited in delegation bodies except in blocked/error state reports.
+>
+> **Evidence loading rule:** Delegations include prior-phase evidence in synopsis mode by default — anchor ID and one-sentence description only. Full evidence content is loaded only when a verification step requires it or when disambiguation between conflicting anchors is needed. Test output (unit, integration, end-to-end), build logs, large diffs, and command output exceeding 50 lines must always be externalized regardless of size; for all other evidence types, content inlined in any delegation must not exceed 50 lines and exceeding evidence must be externalized. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.
 
 ```text
 Task: [required outcome]
-Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
+Step: STEP-NNN  (required unless the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix))
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE|NO_PRIOR_PHASE]  (the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). When the matrix marks the code as Step-omitting, this field must accompany `active-task: TASK-NNN` in Session facts. NO_PRIOR_PHASE is non-Step-omitting: it sits alongside `Step: STEP-NNN` as a preamble annotation.)
 
 Files:
 - [exact file]
@@ -201,14 +205,24 @@ Constraints:
 - [technical/design constraint]
 - Do not modify other files.
 
+Anchor reservation: (required for parallel phases per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees) and for the first sequential phase of a multi-phase plan; may be omitted for subsequent sequential phases — see Anchor reservation note below and `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Cross-Phase Counter Continuity))
+- DEC: NNN-NNN
+- RISK: NNN-NNN
+- ASM: NNN-NNN
+- EVD: NNN-NNN
+
 Session facts: (optional)
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
+- task-type: [bugfix|refactor|feature|incident]
 - active-step: STEP-NNN  (include when a plan with step IDs is active)
+- active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
 
-> **Session facts:** Optional in the first delegation (facts may not yet be resolved). Mandatory in all subsequent delegations within the same session once trunk and validation are established.
+> **Session facts:** Optional in the first delegation (facts may not yet be resolved). Mandatory in all subsequent delegations within the same session once trunk and validation are established. **Exception:** `task-type` and (when `Step:` is omitted) `active-task` are mandatory in every delegation — including the first — because budget profile enforcement and Path B partial checkpoint storage depend on them. The first delegation that uses a Bypass Allowlist code must include both `task-type` and `active-task: TASK-NNN`.
+
+> **Anchor reservation:** Always include for parallel phases (per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees)) — pre-allocate a disjoint NNN block per anchor type to each parallel phase per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Cross-Phase Counter Continuity). Also include for the **first sequential phase** of a multi-phase plan: pass the plan's per-type high-water marks (e.g., `DEC: 005-`, meaning continue from `DEC-006`) so the worker continues from the planner-assigned anchors instead of restarting at `001`. May be omitted for subsequent sequential phases — workers continue per-type numbering from the highest ID in the inbound candidate handoff.
 
 ### Two-Part Session Facts Protocol
 
@@ -216,13 +230,14 @@ Session facts: (optional)
 
 **Part 2 — Task-scoped inclusion:** When composing a delegation, include only the session facts fields the subagent actually needs for that specific task. Always send full field values — never sentinels, abbreviations, or placeholders. Fields not relevant to the task are omitted entirely.
 
-**Example — delegation needing trunk, validation, and version:**
+**Example — delegation needing trunk, validation, version, and task type:**
 
 ```text
 Session facts:
 - trunk: main
 - validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
 - version: 0.3.2
+- task-type: feature
 ```
 
 **Example — delegation needing only trunk and validation (no version bump involved):**
@@ -231,15 +246,17 @@ Session facts:
 Session facts:
 - trunk: main
 - validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
+- task-type: bugfix
 ```
 
-> The `version` field is omitted above because the delegated task does not involve a version bump. Omission is task-scope-driven, not an abbreviation.
+> The `version` field is omitted above because the delegated task does not involve a version bump. `task-type` is always included once classified. Omission of other fields is task-scope-driven, not an abbreviation.
 
 Compact form for trivial single-file tasks:
 
 ```text
 Task: [required outcome]
-Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
+Step: STEP-NNN  (required unless the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix))
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE|NO_PRIOR_PHASE]  (the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Step-omitting codes accompany `active-task: TASK-NNN`; NO_PRIOR_PHASE keeps `Step: STEP-NNN` and `active-step`.)
 File: [exact file]
 Done when: [completion condition]
 
@@ -259,6 +276,8 @@ Constraints:
 Session facts:
 - trunk: [branch]
 - validation: [command]
+- task-type: [bugfix|refactor|feature|incident]
+- active-task: TASK-NNN  (required for STEP-NNN-bypass tasks per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 ```
 
 ## Version Bump Delegation Template
@@ -284,7 +303,12 @@ After each phase, verify every item below before starting the next phase. The ph
 - if the changed files match the project's bump-trigger paths (or, when undefined, do not match the "No bump is required by default" list), the report includes `Version: required|none|unknown`
 - the worker's report contains no `Status: blocked` items and no `Need scope change` entries
 - when the delegation included a `Step: STEP-NNN` field and the worker's report does NOT include a `Step delta:` section: **fail phase verification** — the phase cannot be accepted without a durable handoff artifact
-- when the delegation included a `Step: STEP-NNN` field and the worker's report includes a `Step delta:` section: extract that section; store it as a claude-mem observation (when installed per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)) or write to `.agent-framework/handoffs/STEP-NNN.md`; delegate the next phase with only the compact step-delta, not the full prior phase report or tool outputs
+- when the delegation included a `Step: STEP-NNN` field and the worker's report includes a `Step delta:` section: extract the `Step delta:` section and all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from the worker's report, and hold both in memory as the candidate handoff. Do not store or delegate yet — contradiction detection, minimum-anchor check, and reconstruction test must pass first (see below)
+- **Minimum-anchor check (blocking).** For non-trivial step completion (any phase that does not qualify as `TRIVIAL_CHANGE` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist)), the candidate handoff must reference at least one non-stale retrieval anchor (`DEC`, `RISK`, `ASM`, or `EVD` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Minimum Anchor Requirements)). Fail phase verification if the candidate handoff carries zero anchors — do not commit, store the handoff, or delegate the next phase. Re-delegate the phase with instructions to tag at least one anchor, or escalate to the user if the worker repeatedly produces an anchorless handoff.
+- **Contradiction detection (blocking).** Before finalizing the phase, compare the current phase's candidate (worker report + extracted step-delta + extracted Context Management Fields, held in memory) against **prior accepted durable state** from earlier phases of the same task — not against the candidate itself. Sources of prior accepted state: stored handoff artifacts (claude-mem observations or `.agent-framework/handoffs/STEP-NNN.md`) covering all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields), Session Fact Cache entries, and all non-stale retrieval anchors of every type (`DEC`, `RISK`, `ASM`, `EVD`) from prior phases. Log contradictions with field or anchor name, prior value (cite the source phase / handoff path / anchor ID), new value, and current step or task ID. An unresolved contradiction blocks finalization — do not commit, store the handoff, or delegate the next phase. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` when a contradiction is detected.
+- **Reconstruction test gate (blocking).** After step-delta extraction (before storage) run the reconstruction test per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Reconstruction Test). The next phase's objective, scope, and completion criteria must be determinable from the handoff artifact and non-stale retrieval anchors alone. On fail, follow `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md`. Do not delegate the next phase until the reconstruction test passes or the user explicitly acknowledges the gap.
+- **Store candidate handoff** only after the minimum-anchor check, contradiction detection, and reconstruction test all pass: store the extracted step-delta and all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) together as a claude-mem observation (when installed per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)) or write to `.agent-framework/handoffs/STEP-NNN.md`.
+- **Delegate next phase** with the compact candidate handoff (step-delta + all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)), not the full prior phase report or tool outputs.
 
 If a worker touched files outside the assigned scope, or implementation began without every Required Git Preflight item established: do not commit the phase, do not proceed to the next phase, and either re-delegate the phase with corrected scope or escalate to the user if the same violation recurs in a subsequent attempt.
 
@@ -292,17 +316,41 @@ If a worker touched files outside the assigned scope, or implementation began wi
 
 Context management policy: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md`.
 
-### Phase-Boundary Auto-Clear (Slice 1)
+### Auto-Clear Triggers
 
-After extracting and storing the step-delta from a completed phase:
+The clear+rehydrate cycle fires on any of the following triggers. Per-task-type tool-call thresholds are defined in `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Budget Policy).
 
-1. Emit checkpoint commit (if commit policy allows).
-2. Store step-delta as durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`).
-3. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
-4. Rehydrate: retrieve stored step-deltas for the current task via `mem-search` (when claude-mem installed) or read from `.agent-framework/handoffs/` (when claude-mem absent).
-5. Delegate next phase with compact step-delta context only.
+| Trigger | Condition | Path |
+|---|---|---|
+| Phase completion | A phase passes verification and is ready for handoff | Path A |
+| N-tool-call threshold | Tool-call count within the current phase reaches the active budget profile's max tool calls/checkpoint limit | Path B |
+| Scope pivot | Task classification changes mid-execution (e.g., a `bugfix` is reclassified as `feature` after investigation reveals broader scope) | Path B |
+| Explicit user reset | User explicitly requests a context reset or fresh start | Path B |
 
-Cooldown: do not fire more than one clear+rehydrate cycle per phase.
+For cooldown and thrash handling when triggers fire too frequently, see `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md`.
+
+### Auto-Clear Procedure
+
+#### Path A — Phase-completion trigger
+
+1. Phase verification passes.
+2. Extract the `Step delta:` section and all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from the worker's report, forming the candidate handoff.
+3. Store the full candidate handoff (step-delta + all mandatory Context Management Fields) as a durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`) — only after the minimum-anchor check, contradiction detection, and reconstruction test all pass (see Phase Verification above). If any gate fails, phase verification would have already blocked; do not store.
+4. Emit checkpoint commit (if commit policy allows).
+5. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
+6. Rehydrate: retrieve stored candidate handoffs for the current task via `mem-search` (when claude-mem installed) or read from `.agent-framework/handoffs/` (when claude-mem absent), respecting the replay depth limit from the active budget profile.
+7. Delegate next phase with the compact candidate handoff (step-delta + all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)).
+
+#### Path B — Mid-phase threshold triggers (N-tool-call, scope-pivot, explicit user reset)
+
+1. Trigger condition met: tool-call count reached the active budget profile's max tool calls/checkpoint limit, scope pivot detected (task reclassified mid-execution), or user explicitly requested a reset.
+2. Emit mid-phase partial checkpoint: record current step ID (`STEP-NNN`, or the task-level `TASK-NNN` for `STEP-NNN`-bypass work per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist)), tool-call count at trigger, all retrieval anchors accumulated so far in the phase (DEC/RISK/ASM/EVD per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)), a scope annotation if the trigger is a scope pivot, and the active delegation fields (task objective, file scope in/out, completion criteria, and constraints) so the phase can resume within its original contract after rehydration.
+3. Store partial checkpoint as `.agent-framework/checkpoints/STEP-NNN-partial-NNN.md` (or `.agent-framework/checkpoints/TASK-NNN-partial-NNN.md` for `STEP-NNN`-bypass work; or claude-mem observation tagged `partial-checkpoint` when claude-mem is installed).
+4. Clear ephemeral context (current phase transcript, tool outputs drop out of active context).
+5. Rehydrate: retrieve stored candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
+6. Continue current phase — do NOT delegate next phase; the current step is still in progress.
+
+Cooldown: do not fire more than one clear+rehydrate cycle per phase on average. If a trigger fires a second clear before the next phase begins (Path A) or before the current step completes (Path B), log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
 
 ### claude-mem Detection
 
@@ -350,6 +398,9 @@ Session facts: (optional)
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
+- task-type: [bugfix|refactor|feature|incident]
+- active-step: STEP-NNN  (include when a plan with step IDs is active)
+- active-task: TASK-NNN  (include in lieu of active-step for STEP-NNN-bypass tasks per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 ```
 
 If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
@@ -360,7 +411,8 @@ If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governan
 
 ```text
 Task: Bump [artifact/package/component] version from X.Y.Z to A.B.C
-Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
+Step: STEP-NNN  (required unless the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix))
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE|NO_PRIOR_PHASE]  (the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Step-omitting codes accompany `active-task: TASK-NNN`; NO_PRIOR_PHASE keeps `Step: STEP-NNN` and `active-step`.)
 
 Files:
 - [canonical version file]
@@ -389,6 +441,9 @@ Session facts:
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
+- task-type: [bugfix|refactor|feature|incident]
+- active-step: STEP-NNN  (include when a plan with step IDs is active)
+- active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
 
 ---
@@ -397,7 +452,8 @@ Session facts:
 
 ```text
 Task: Address PR review feedback
-Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
+Step: STEP-NNN  (required unless the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix))
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE|NO_PRIOR_PHASE]  (the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Step-omitting codes accompany `active-task: TASK-NNN`; NO_PRIOR_PHASE keeps `Step: STEP-NNN` and `active-step`.)
 
 Review:
 - PR: #[number]
@@ -432,4 +488,7 @@ Constraints:
 Session facts:
 - trunk: [branch]
 - validation: [command]
+- task-type: [bugfix|refactor|feature|incident]
+- active-step: STEP-NNN  (include when a plan with step IDs is active)
+- active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```

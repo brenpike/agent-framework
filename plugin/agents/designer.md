@@ -21,7 +21,7 @@ You handle presentational work only within explicitly assigned file scope.
 Mandatory governance:
 
 Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
-Context management (conditional): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — load when workflow includes more than one execution phase, or plan contains `STEP-NNN` identifiers.
+Context management (mandatory): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — task-type classification (intake), per-task budget profile enforcement, progressive-evidence-loading (inline-evidence caps + always-externalize categories), retrieval-anchor rules (in particular `EVD-NNN` anchors required by Mandatory Externalization), and the Path B auto-clear procedure (N-tool-call / scope-pivot / explicit-reset triggers, using the synthetic `TASK-NNN` identifier for `STEP-NNN`-bypass work) apply to every task, including the trivial fast path. Phase-handoff transition rules, reconstruction-test gating, cross-handoff contradiction detection, and the Path A (phase-completion) auto-clear procedure additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers.
 
 ## Own
 
@@ -100,6 +100,29 @@ Before completion:
 - verify the change works in every existing theme (or mark `N/A` if the repo has no theme files)
 - run LSP diagnostics on every touched file when LSP is available; report any new diagnostic of severity Error or Warning
 - run validation per the "Validation procedure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
-- When a `Step: STEP-NNN` field was included in the delegation, append a `Step delta:` section to the report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta).
+- For every non-trivial phase-closing report, include all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields). These fields form the candidate handoff that the orchestrator's reconstruction gate evaluates and that Path A persists; omitting any of them causes phase verification to fail.
+- When a `Step: STEP-NNN` field was included in the delegation, append a `Step delta:` section to the report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta). Anchor ID discipline applies: the `Decisions` field must use `DEC-NNN` IDs, the `Assumptions unresolved` field must use `ASM-NNN` IDs, and the `Evidence` field must use `EVD-NNN` IDs — not descriptive labels alone. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors) for format and uniqueness rules.
+- Record every externalized `EVD-NNN` anchor in exactly the slot dictated by `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix): `Evidence refs:` line of the worker contract for delegations carrying a Step-omitting bypass code, or the `Evidence:` field of the `Step delta:` section for any delegation that includes `Step: STEP-NNN` (including first phases that carry `Bypass: NO_PRIOR_PHASE` alongside the present `Step:`).
 
 Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
+
+## Contradiction Detection
+
+Before finalizing any phase, compare your current candidate (worker report + step-delta + Context Management Fields you are about to emit) against **prior accepted durable state** from earlier phases — never against your own pending output. Sources of prior accepted state: stored handoff artifacts (claude-mem observations or `.agent-framework/handoffs/STEP-NNN.md`) covering all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields), Session Fact Cache entries supplied in the delegation, and all non-stale retrieval anchors from prior phases of every type (`DEC`, `RISK`, `ASM`, `EVD`), not just `Decisions:`. If a contradiction is detected, do not proceed. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` to resolve it before finalization. This is a blocking gate — not a warning.
+
+## Progressive Evidence Loading
+
+The following evidence types must always be externalized regardless of size (mirrors `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading)):
+
+- Test output (unit, integration, end-to-end)
+- Build logs
+- Large diffs (any diff exceeding 50 lines)
+- Command output exceeding 50 lines
+
+For all other evidence types, content inlined in a step-delta report, delegation, or handoff must not exceed 50 lines. When such evidence exceeds 50 lines:
+
+1. Write the full evidence body to `.agent-framework/evidence/<ANCHOR-ID>.md` (e.g., `EVD-001.md`).
+2. Reference the evidence in the report by anchor ID only (e.g., `EVD-001 — see .agent-framework/evidence/EVD-001.md`).
+3. Do not inline any portion beyond the one-sentence synopsis.
+
+See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.

@@ -1,0 +1,13 @@
+{
+  "rule": "Budget profiles table and task-type classification",
+  "source": {
+    "file": "plugin/governance/context-management-policy.md",
+    "pattern": "### Task-Type Classification"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/orchestrator.md",
+      "pattern": "Task-type classification (intake)"
+    }
+  ]
+}
