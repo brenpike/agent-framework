@@ -107,7 +107,7 @@ Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/com
 
 ## Contradiction Detection
 
-Before finalizing any phase, check whether any output contradicts prior context recorded in the handoff artifact or step-delta — including all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) and all retrieval anchors of every type (`DEC`, `RISK`, `ASM`, `EVD`), not just `Decisions:`. If a contradiction is detected, do not proceed. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` to resolve it before finalization. This is a blocking gate — not a warning.
+Before finalizing any phase, compare your current candidate (worker report + step-delta + Context Management Fields you are about to emit) against **prior accepted durable state** from earlier phases — never against your own pending output. Sources of prior accepted state: stored handoff artifacts (claude-mem observations or `.agent-framework/handoffs/STEP-NNN.md`) covering all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields), Session Fact Cache entries supplied in the delegation, and all non-stale retrieval anchors from prior phases of every type (`DEC`, `RISK`, `ASM`, `EVD`), not just `Decisions:`. If a contradiction is detected, do not proceed. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` to resolve it before finalization. This is a blocking gate — not a warning.
 
 ## Progressive Evidence Loading
 

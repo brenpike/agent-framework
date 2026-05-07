@@ -32,7 +32,9 @@ The plan artifact and step-delta requirements may be bypassed only with an expli
 
 Each bypass must include: reason code + step/task ID in the delegation preamble.
 
-For tasks that bypass `STEP-NNN` identifiers (`TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, or `NO_PRIOR_PHASE` when only a single step exists), assign a synthetic task checkpoint ID `TASK-NNN` (zero-padded 3-digit integer, e.g., `TASK-001`) at intake. Use this `TASK-NNN` wherever the auto-clear procedure or partial-checkpoint storage references `STEP-NNN`, so budget-enforced TFP / single-step work has a stable identifier for checkpoints, rehydration, and EVD references.
+For tasks that bypass `STEP-NNN` identifiers (`TRIVIAL_CHANGE` or `SINGLE_STEP_TASK`), assign a synthetic task checkpoint ID `TASK-NNN` (zero-padded 3-digit integer, e.g., `TASK-001`) at intake. Use this `TASK-NNN` wherever the auto-clear procedure or partial-checkpoint storage references `STEP-NNN`, so budget-enforced TFP / single-step work has a stable identifier for checkpoints, rehydration, and EVD references.
+
+**`NO_PRIOR_PHASE` is not a `STEP-NNN`-omission code.** It annotates that the current step has no prior handoff to consume; the step must still produce a `Step delta:` for subsequent phases. The first phase of a multi-phase plan keeps `Step: STEP-001` and may include `Bypass: NO_PRIOR_PHASE` in the preamble alongside (not in lieu of) the `Step:` field. `Step:` is only omitted when the task is also genuinely single-step — in which case use `SINGLE_STEP_TASK` as the bypass code (or `TRIVIAL_CHANGE` if the trivial conditions are met).
 
 ### Phase Transition Requirements
 
@@ -191,10 +193,11 @@ After executing a step, verify. Unresolved assumptions without explicit carry-fo
 ### Contradiction Detection
 
 Before finalizing a phase:
-- Flag any output that contradicts prior context recorded in the candidate handoff. Compare the current phase's outputs against:
-  - All mandatory Context Management Fields recorded in the prior candidate handoff per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields) — including but not limited to `Decisions:`, `Risks:`, `Scope in:`, `Scope out:`, `Assumptions:`, `Open questions:`, `Artifacts:`, `Evidence refs:`, and `Risk level:`
-  - All non-stale retrieval anchors of every type (`DEC`, `RISK`, `ASM`, `EVD` per Retrieval Anchors)
-- Log the contradiction with: field or anchor name, prior value, new value, and step or task ID
+- Flag any output in the current phase's candidate handoff that contradicts **prior accepted durable state** — that is, state that has been finalized in earlier phases of the same task. The current phase's pending output is **not** the comparison target; comparing the candidate against itself does not exercise the gate. Compare the current phase's outputs (worker report + extracted step-delta + extracted Context Management Fields, held in memory pending this gate) against:
+  - **Prior stored handoff artifacts** for earlier phases of the same task — claude-mem observations (when installed) or `.agent-framework/handoffs/STEP-NNN.md` files, including all mandatory Context Management Fields recorded there per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields) — `Decisions:`, `Risks:`, `Scope in:`, `Scope out:`, `Assumptions:`, `Open questions:`, `Artifacts:`, `Evidence refs:`, and `Risk level:`.
+  - **Session Fact Cache** entries per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache).
+  - **All non-stale retrieval anchors from prior phases** of every type (`DEC`, `RISK`, `ASM`, `EVD` per Retrieval Anchors).
+- Log the contradiction with: field or anchor name, prior value (cite the source phase / handoff path / anchor ID), new value, and the current step or task ID.
 - Block finalization until the contradiction is resolved. Follow `${CLAUDE_PLUGIN_ROOT}/governance/unresolved-contradiction-runbook.md` when a contradiction is detected.
 
 ---
