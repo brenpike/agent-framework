@@ -148,7 +148,7 @@ Step IDs must appear in:
 - the orchestrator's delegation template (`Step: STEP-NNN` field)
 - the worker's `Step delta:` section in the phase-closing report (see `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta))
 
-Step IDs are scoped to the plan instance. A bypass reason (e.g., `SINGLE_STEP_TASK`, `TRIVIAL_CHANGE`) may omit the STEP-NNN when the task genuinely has no phase boundary — document the bypass reason in the plan per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist).
+Step IDs are scoped to the plan instance. A Step-omitting Bypass Allowlist code may omit the STEP-NNN when the task genuinely has no phase boundary — see `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix) for the canonical Step-omitting set, and document the chosen reason code in the plan per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist).
 
 ## Retrieval Anchor Discipline
 

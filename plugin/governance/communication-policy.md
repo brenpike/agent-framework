@@ -49,7 +49,7 @@ Optional lines. Include each line below only when its trigger fires; otherwise o
 - `Review item: ...` — when the work was review-remediation; include the comment ID or thread ID
 - `Git issue: ...` — when git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` or any preflight item is undefined
 - `Ready to resolve: yes|no` — when the work was review-remediation
-- `Evidence refs: EVD-NNN — synopsis` — when the task externalized any evidence per Progressive Evidence Rule, including for `TRIVIAL_CHANGE` / `SINGLE_STEP_TASK` bypass tasks that omit the `Step delta:` section. Each externalized `EVD-NNN` anchor must appear here so the orchestrator can index it without parsing a step-delta. List one entry per anchor.
+- `Evidence refs: EVD-NNN — synopsis` — when the task externalized any evidence per Progressive Evidence Rule and the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Multi-phase delegations that include `Step: STEP-NNN` (including first phases that carry `Bypass: NO_PRIOR_PHASE` alongside the present `Step:`) record `EVD-NNN` anchors in the `Evidence:` field of the `Step delta:` section instead. Each externalized `EVD-NNN` anchor is recorded in exactly one slot per the matrix; list one entry per anchor.
 
 ## Context Management Fields (Handoff Schema)
 
@@ -135,7 +135,7 @@ Certain facts are resolved repeatedly during a task. Agents may cache them to av
 | version file | Current version string at task start |
 | bump-trigger-paths | Whether CLAUDE.md defines project-specific bump-trigger paths (`defined` \| `undefined`) |
 | `active-step` | Current `STEP-NNN` ID from the active plan |
-| `active-task` | Synthetic `TASK-NNN` ID for `STEP-NNN`-bypass tasks (TFP / `TRIVIAL_CHANGE` / `SINGLE_STEP_TASK` / `USER_OVERRIDE` when the override omits `Step:`), assigned at intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist). `NO_PRIOR_PHASE` is **not** a `STEP-NNN`-bypass code — it keeps `Step: STEP-NNN` and uses `active-step` as usual. Use `active-task` in lieu of `active-step` only when no `STEP-NNN` is assigned, so Path B partial checkpoints have a stable identifier. |
+| `active-task` | Synthetic `TASK-NNN` ID for delegations carrying a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assigned at intake. Used in lieu of `active-step` only when `Step: STEP-NNN` is omitted, so Path B partial checkpoints have a stable identifier. |
 | `task-type` | One of `bugfix\|refactor\|feature\|incident` — resolved at task intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification) |
 
 ### Cache Rules

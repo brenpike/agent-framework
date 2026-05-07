@@ -147,7 +147,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 ## Execution Algorithm
 
-0. **Task-type classification (intake).** Before planner delegation or trivial fast path routing, classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For tasks that will bypass `STEP-NNN` identifiers (TFP / `SINGLE_STEP_TASK` / `USER_OVERRIDE` when the override omits `Step:`), assign a synthetic task checkpoint ID `TASK-NNN` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist) so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. `NO_PRIOR_PHASE` is not a `STEP-NNN`-omission code: the first phase of a multi-phase plan keeps `Step: STEP-001` (and may carry `Bypass: NO_PRIOR_PHASE` as a preamble annotation alongside it), so no `TASK-NNN` is assigned for that case.
+0. **Task-type classification (intake).** Before planner delegation or trivial fast path routing, classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For every Step-omitting bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assign a synthetic task checkpoint ID `TASK-NNN` so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. The matrix is the single source of truth for which codes are Step-omitting and how each interacts with `Step:`, `Step delta:`, `TASK-NNN`, the Session Fact key, and the `EVD-NNN` slot.
 1. Call `agent-framework:planner` unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
 2. If planner fails, follow policy retry/fallback/blocked handling immediately.
 3. If planner returns open questions, surface them and stop.
@@ -174,8 +174,8 @@ Use by default:
 
 ```text
 Task: [required outcome]
-Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
-Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE]  (required when Step is omitted; the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist) — must accompany active-task: TASK-NNN in Session facts. NO_PRIOR_PHASE is not listed here: it does not authorize Step omission. For multi-phase first phases, keep `Step: STEP-NNN` and include `Bypass: NO_PRIOR_PHASE` as a preamble annotation alongside the present Step:.)
+Step: STEP-NNN  (required unless the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix))
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE|NO_PRIOR_PHASE]  (the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). When the matrix marks the code as Step-omitting, this field must accompany `active-task: TASK-NNN` in Session facts. NO_PRIOR_PHASE is non-Step-omitting: it sits alongside `Step: STEP-NNN` as a preamble annotation.)
 
 Files:
 - [exact file]
@@ -205,7 +205,7 @@ Constraints:
 - [technical/design constraint]
 - Do not modify other files.
 
-Anchor reservation: (optional — required when this delegation runs in parallel with another phase)
+Anchor reservation: (required for parallel phases per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees) and for the first sequential phase of a multi-phase plan; may be omitted for subsequent sequential phases — see Anchor reservation note below and `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Cross-Phase Counter Continuity))
 - DEC: NNN-NNN
 - RISK: NNN-NNN
 - ASM: NNN-NNN
@@ -255,8 +255,8 @@ Compact form for trivial single-file tasks:
 
 ```text
 Task: [required outcome]
-Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
-Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE]  (required when Step is omitted; explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist). NO_PRIOR_PHASE does not authorize Step omission — for multi-phase first phases keep `Step: STEP-NNN` and add `Bypass: NO_PRIOR_PHASE` as a preamble annotation.)
+Step: STEP-NNN  (required unless the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix))
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE|NO_PRIOR_PHASE]  (the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Step-omitting codes accompany `active-task: TASK-NNN`; NO_PRIOR_PHASE keeps `Step: STEP-NNN` and `active-step`.)
 File: [exact file]
 Done when: [completion condition]
 
@@ -411,8 +411,8 @@ If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governan
 
 ```text
 Task: Bump [artifact/package/component] version from X.Y.Z to A.B.C
-Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
-Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE]  (required when Step is omitted; explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist). NO_PRIOR_PHASE does not authorize Step omission — for multi-phase first phases keep `Step: STEP-NNN` and add `Bypass: NO_PRIOR_PHASE` as a preamble annotation.)
+Step: STEP-NNN  (required unless the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix))
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE|NO_PRIOR_PHASE]  (the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Step-omitting codes accompany `active-task: TASK-NNN`; NO_PRIOR_PHASE keeps `Step: STEP-NNN` and `active-step`.)
 
 Files:
 - [canonical version file]
@@ -452,8 +452,8 @@ Session facts:
 
 ```text
 Task: Address PR review feedback
-Step: STEP-NNN  (omit for TRIVIAL_CHANGE / SINGLE_STEP_TASK delegations and any delegation not part of a multi-phase plan)
-Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE]  (required when Step is omitted; explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist). NO_PRIOR_PHASE does not authorize Step omission — for multi-phase first phases keep `Step: STEP-NNN` and add `Bypass: NO_PRIOR_PHASE` as a preamble annotation.)
+Step: STEP-NNN  (required unless the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix))
+Bypass: [TRIVIAL_CHANGE|SINGLE_STEP_TASK|USER_OVERRIDE|NO_PRIOR_PHASE]  (the explicit bypass reason code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Step-omitting codes accompany `active-task: TASK-NNN`; NO_PRIOR_PHASE keeps `Step: STEP-NNN` and `active-step`.)
 
 Review:
 - PR: #[number]

@@ -32,9 +32,20 @@ The plan artifact and step-delta requirements may be bypassed only with an expli
 
 Each bypass must include: reason code + step/task ID in the delegation preamble.
 
-For tasks that bypass `STEP-NNN` identifiers (`TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, or `USER_OVERRIDE` when the user-stated override omits `Step:`), assign a synthetic task checkpoint ID `TASK-NNN` (zero-padded 3-digit integer, e.g., `TASK-001`) at intake. Use this `TASK-NNN` wherever the auto-clear procedure or partial-checkpoint storage references `STEP-NNN`, so budget-enforced TFP / single-step / user-overridden work has a stable identifier for checkpoints, rehydration, and EVD references.
+#### Bypass Code Matrix
 
-**`NO_PRIOR_PHASE` is not a `STEP-NNN`-omission code.** It annotates that the current step has no prior handoff to consume; the step must still produce a `Step delta:` for subsequent phases. The first phase of a multi-phase plan keeps `Step: STEP-001` and may include `Bypass: NO_PRIOR_PHASE` in the preamble alongside (not in lieu of) the `Step:` field. `Step:` is only omitted when the task is also genuinely single-step — in which case use `SINGLE_STEP_TASK` as the bypass code (or `TRIVIAL_CHANGE` if the trivial conditions are met).
+This table is the **single source of truth** for how each bypass code interacts with `Step:`, `Step delta:`, the synthetic `TASK-NNN`, the Session Fact Cache key, and the `EVD-NNN` recording slot. Every cross-reference elsewhere defers to this matrix; no other section may enumerate a partial subset.
+
+| Code | `Step:` omitted? | `Step delta:` omitted? | `TASK-NNN` assigned? | Session fact key | `EVD-NNN` slot |
+|---|---|---|---|---|---|
+| `TRIVIAL_CHANGE` | yes | yes | yes | `active-task` | `Evidence refs:` (worker contract) |
+| `SINGLE_STEP_TASK` | yes | yes | yes | `active-task` | `Evidence refs:` (worker contract) |
+| `NO_PRIOR_PHASE` | **no** — keeps `Step: STEP-NNN` | **no** | **no** | `active-step` | `Evidence:` (within `Step delta:`) |
+| `USER_OVERRIDE` | only when the user-stated override omits `Step:` | only when the user-stated override omits `Step:` | only when `Step:` is omitted | `active-task` when `Step:` omitted, otherwise `active-step` | `Evidence refs:` when `Step:` omitted, otherwise `Evidence:` (within `Step delta:`) |
+
+**Step-omitting set** (referenced from delegation templates, the worker EVD bullet, and the `active-task` Session Fact): `TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, and `USER_OVERRIDE` when the override omits `Step:`. `NO_PRIOR_PHASE` is **never** in the Step-omitting set — it is a "no prior handoff to consume" preamble annotation that sits alongside `Step: STEP-NNN`.
+
+For every Step-omitting bypass per the matrix above, assign a synthetic task checkpoint ID `TASK-NNN` (zero-padded 3-digit integer, e.g., `TASK-001`) at intake. Use this `TASK-NNN` wherever the auto-clear procedure or partial-checkpoint storage references `STEP-NNN`, so budget-enforced bypass work has a stable identifier for checkpoints, rehydration, and EVD references.
 
 ### Phase Transition Requirements
 
