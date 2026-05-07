@@ -32,7 +32,7 @@ The plan artifact and step-delta requirements may be bypassed only with an expli
 
 Each bypass must include: reason code + step/task ID in the delegation preamble.
 
-For tasks that bypass `STEP-NNN` identifiers (`TRIVIAL_CHANGE` or `SINGLE_STEP_TASK`), assign a synthetic task checkpoint ID `TASK-NNN` (zero-padded 3-digit integer, e.g., `TASK-001`) at intake. Use this `TASK-NNN` wherever the auto-clear procedure or partial-checkpoint storage references `STEP-NNN`, so budget-enforced TFP / single-step work has a stable identifier for checkpoints, rehydration, and EVD references.
+For tasks that bypass `STEP-NNN` identifiers (`TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, or `USER_OVERRIDE` when the user-stated override omits `Step:`), assign a synthetic task checkpoint ID `TASK-NNN` (zero-padded 3-digit integer, e.g., `TASK-001`) at intake. Use this `TASK-NNN` wherever the auto-clear procedure or partial-checkpoint storage references `STEP-NNN`, so budget-enforced TFP / single-step / user-overridden work has a stable identifier for checkpoints, rehydration, and EVD references.
 
 **`NO_PRIOR_PHASE` is not a `STEP-NNN`-omission code.** It annotates that the current step has no prior handoff to consume; the step must still produce a `Step delta:` for subsequent phases. The first phase of a multi-phase plan keeps `Step: STEP-001` and may include `Bypass: NO_PRIOR_PHASE` in the preamble alongside (not in lieu of) the `Step:` field. `Step:` is only omitted when the task is also genuinely single-step — in which case use `SINGLE_STEP_TASK` as the bypass code (or `TRIVIAL_CHANGE` if the trivial conditions are met).
 
