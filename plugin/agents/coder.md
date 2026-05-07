@@ -21,7 +21,7 @@ You implement only within explicitly assigned file scope.
 Mandatory governance:
 
 Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
-Context management (conditional): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — load when workflow includes more than one execution phase, or plan contains `STEP-NNN` identifiers.
+Context management (mandatory): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — task-type classification and budget profile enforcement always apply; phase-handoff, retrieval-anchor, reconstruction-test, and progressive-evidence rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers.
 
 ## Own
 
@@ -110,10 +110,17 @@ Before finalizing any phase, check whether any output contradicts a prior decisi
 
 ## Progressive Evidence Loading
 
-Evidence inlined in a step-delta report, delegation, or handoff must not exceed 50 lines. When evidence output (diffs, logs, test output, command output, file excerpts) exceeds 50 lines:
+The following evidence types must always be externalized regardless of size (mirrors `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading)):
+
+- Test output (unit, integration, end-to-end)
+- Build logs
+- Large diffs (any diff exceeding 50 lines)
+- Command output exceeding 50 lines
+
+For all other evidence types, content inlined in a step-delta report, delegation, or handoff must not exceed 50 lines. When such evidence exceeds 50 lines:
 
 1. Write the full evidence body to `.agent-framework/evidence/<ANCHOR-ID>.md` (e.g., `EVD-001.md`).
 2. Reference the evidence in the report by anchor ID only (e.g., `EVD-001 — see .agent-framework/evidence/EVD-001.md`).
 3. Do not inline any portion beyond the one-sentence synopsis.
 
-See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the full cap and externalization rules.
+See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.
