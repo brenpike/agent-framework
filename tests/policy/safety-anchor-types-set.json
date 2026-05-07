@@ -1,0 +1,20 @@
+{
+  "rule": "Retrieval anchor types are exactly DEC, RISK, ASM, EVD (canonical Anchor ID Format lock — distinct set + occurrence)",
+  "source": {
+    "file": "plugin/governance/context-management-policy.md",
+    "pattern": "### Anchor ID Format"
+  },
+  "set_check": {
+    "extract_regex": "`([A-Z]{2,5})` \\([a-z]+\\)",
+    "expected_set": ["DEC", "RISK", "ASM", "EVD"],
+    "expected_counts": {
+      "DEC": 1,
+      "RISK": 1,
+      "ASM": 1,
+      "EVD": 1
+    },
+    "files": [
+      { "path": "plugin/governance/context-management-policy.md", "mode": "equal" }
+    ]
+  }
+}

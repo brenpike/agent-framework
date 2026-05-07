@@ -498,12 +498,146 @@ function Get-Frontmatter {
     return ($frontmatterLines -join "`n")
 }
 
+function Test-SetCheck {
+    param(
+        [Parameter(Mandatory)] [string]$RuleName,
+        [Parameter(Mandatory)] $SetCheck
+    )
+    # Returns $true on pass, $false on fail. Adds findings on fail.
+    $passed = $true
+
+    $regexText = [string]$SetCheck.extract_regex
+    if ([string]::IsNullOrEmpty($regexText)) {
+        Add-Finding -Rule 'SAFETY' -FilePath '<fixture>' -Line 0 `
+            -Description "[$RuleName] set_check.extract_regex is required"
+        return $false
+    }
+    try {
+        $regex = [regex]::new($regexText)
+    } catch {
+        Add-Finding -Rule 'SAFETY' -FilePath '<fixture>' -Line 0 `
+            -Description "[$RuleName] set_check.extract_regex did not compile: $($_.Exception.Message)"
+        return $false
+    }
+
+    $expected = @()
+    if ($SetCheck.PSObject.Properties.Name -contains 'expected_set') {
+        $expected = @($SetCheck.expected_set)
+    }
+    $expectedSet = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]$expected,
+        [System.StringComparer]::Ordinal
+    )
+
+    foreach ($entry in $SetCheck.files) {
+        $relPath = [string]$entry.path
+        $mode = if ($entry.PSObject.Properties.Name -contains 'mode') { [string]$entry.mode } else { 'equal' }
+        $absPath = Resolve-RepoPath $relPath
+        if (-not (Test-Path $absPath)) {
+            $passed = $false
+            Add-Finding -Rule 'SAFETY' -FilePath $relPath -Line 0 `
+                -Description "[$RuleName] set_check file missing: $relPath"
+            continue
+        }
+        $content = Get-Content -Path $absPath -Raw -Encoding UTF8
+        $matchCollection = $regex.Matches($content)
+        $captured = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::Ordinal
+        )
+        $counts = @{}
+        foreach ($m in $matchCollection) {
+            if ($m.Groups.Count -lt 2) { continue }
+            $val = $m.Groups[1].Value
+            [void]$captured.Add($val)
+            if (-not $counts.ContainsKey($val)) { $counts[$val] = 0 }
+            $counts[$val] = $counts[$val] + 1
+        }
+
+        # Compute extras (captured \ expected) and missing (expected \ captured).
+        $extras = @($captured | Where-Object { -not $expectedSet.Contains($_) })
+        $missing = @($expected | Where-Object { -not $captured.Contains($_) })
+
+        switch ($mode) {
+            'equal' {
+                if ($extras.Count -gt 0 -or $missing.Count -gt 0) {
+                    $passed = $false
+                    $detail = @()
+                    if ($missing.Count -gt 0) { $detail += "missing: $($missing -join ', ')" }
+                    if ($extras.Count -gt 0) { $detail += "extras: $($extras -join ', ')" }
+                    Add-Finding -Rule 'SAFETY' -FilePath $relPath -Line 0 `
+                        -Description "[$RuleName] set_check (equal) failed for ${relPath}: $($detail -join '; ')"
+                }
+            }
+            'subset' {
+                if ($extras.Count -gt 0) {
+                    $passed = $false
+                    Add-Finding -Rule 'SAFETY' -FilePath $relPath -Line 0 `
+                        -Description "[$RuleName] set_check (subset) failed for ${relPath}: extras: $($extras -join ', ')"
+                }
+            }
+            'superset' {
+                if ($missing.Count -gt 0) {
+                    $passed = $false
+                    Add-Finding -Rule 'SAFETY' -FilePath $relPath -Line 0 `
+                        -Description "[$RuleName] set_check (superset) failed for ${relPath}: missing: $($missing -join ', ')"
+                }
+            }
+            default {
+                $passed = $false
+                Add-Finding -Rule 'SAFETY' -FilePath $relPath -Line 0 `
+                    -Description "[$RuleName] set_check unknown mode '$mode' (expected equal|subset|superset)"
+            }
+        }
+
+        # Optional per-element occurrence-count assertion. Catches intra-file
+        # drift that distinct-set checks miss (e.g., one of two mirrored
+        # tables drops an element while the other still contains it).
+        if ($SetCheck.PSObject.Properties.Name -contains 'expected_counts') {
+            $expectedCounts = $SetCheck.expected_counts
+            foreach ($prop in $expectedCounts.PSObject.Properties) {
+                $key = $prop.Name
+                $want = [int]$prop.Value
+                $got = if ($counts.ContainsKey($key)) { [int]$counts[$key] } else { 0 }
+                if ($got -ne $want) {
+                    $passed = $false
+                    Add-Finding -Rule 'SAFETY' -FilePath $relPath -Line 0 `
+                        -Description "[$RuleName] set_check expected_counts mismatch in ${relPath}: '$key' has $got occurrence(s), expected $want"
+                }
+            }
+        }
+    }
+
+    return $passed
+}
+
 foreach ($fixtureFile in $safetyFixtures) {
     $fixtureRaw = Get-Content -Path $fixtureFile.FullName -Raw -Encoding UTF8
     $fixture = $fixtureRaw | ConvertFrom-Json
     $ruleName = $fixture.rule
     $fixturePassed = $true
 
+    # Each presence check (source / consumers / set_check) is independent. A
+    # fixture may carry any combination — under Set-StrictMode -Version Latest,
+    # accessing a missing top-level property aborts, so we must guard each
+    # block with its own .PSObject.Properties.Name -contains check.
+    $hasSource = $fixture.PSObject.Properties.Name -contains 'source'
+    $hasConsumers = $fixture.PSObject.Properties.Name -contains 'consumers'
+    $hasSetCheck = $fixture.PSObject.Properties.Name -contains 'set_check'
+
+    if (-not $hasSource -and -not $hasConsumers -and -not $hasSetCheck) {
+        $fixturePassed = $false
+        Add-Finding -Rule 'SAFETY' -FilePath $fixtureFile.Name -Line 0 `
+            -Description "[$ruleName] fixture has none of source / consumers / set_check"
+    }
+
+    # Set-check assertion (regex extraction + set comparison across files).
+    if ($hasSetCheck) {
+        $setOk = Test-SetCheck -RuleName $ruleName -SetCheck $fixture.set_check
+        if (-not $setOk) { $fixturePassed = $false }
+    }
+
+    # Legacy source presence check.
+    if ($hasSource) {
     # Check source pattern exists in source file.
     $sourceAbsPath = Resolve-RepoPath $fixture.source.file
     if (-not (Test-Path $sourceAbsPath)) {
@@ -518,8 +652,11 @@ foreach ($fixtureFile in $safetyFixtures) {
                 -Description "[$ruleName] Source pattern not found: $($fixture.source.pattern)"
         }
     }
+    }  # end if ($hasSource)
 
-    # Check each consumer.
+    # Legacy consumers presence check (independent of source — strict mode
+    # would otherwise abort on $fixture.consumers when the property is absent).
+    if ($hasConsumers) {
     foreach ($consumer in $fixture.consumers) {
         $consumerAbsPath = Resolve-RepoPath $consumer.file
         if (-not (Test-Path $consumerAbsPath)) {
@@ -551,6 +688,7 @@ foreach ($fixtureFile in $safetyFixtures) {
             }
         }
     }
+    }  # end if ($hasConsumers)
 
     if ($fixturePassed) {
         Write-Host "[PASS] SAFETY: $ruleName"

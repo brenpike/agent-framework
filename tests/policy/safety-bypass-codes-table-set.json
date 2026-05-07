@@ -1,0 +1,16 @@
+{
+  "rule": "Bypass codes are exactly TRIVIAL_CHANGE, NO_PRIOR_PHASE, SINGLE_STEP_TASK, USER_OVERRIDE (table structural lock — distinct set + per-table occurrence)",
+  "set_check": {
+    "extract_regex": "(?m)^\\| `([A-Z_]+)` \\|",
+    "expected_set": ["TRIVIAL_CHANGE", "NO_PRIOR_PHASE", "SINGLE_STEP_TASK", "USER_OVERRIDE"],
+    "expected_counts": {
+      "TRIVIAL_CHANGE": 2,
+      "NO_PRIOR_PHASE": 2,
+      "SINGLE_STEP_TASK": 2,
+      "USER_OVERRIDE": 2
+    },
+    "files": [
+      { "path": "plugin/governance/context-management-policy.md", "mode": "equal" }
+    ]
+  }
+}
