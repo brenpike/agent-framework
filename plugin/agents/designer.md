@@ -100,6 +100,7 @@ Before completion:
 - verify the change works in every existing theme (or mark `N/A` if the repo has no theme files)
 - run LSP diagnostics on every touched file when LSP is available; report any new diagnostic of severity Error or Warning
 - run validation per the "Validation procedure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- For every non-trivial phase-closing report, include all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields). These fields form the candidate handoff that the orchestrator's reconstruction gate evaluates and that Path A persists; omitting any of them causes phase verification to fail.
 - When a `Step: STEP-NNN` field was included in the delegation, append a `Step delta:` section to the report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta). Anchor ID discipline applies: the `Decisions` field must use `DEC-NNN` IDs, the `Assumptions unresolved` field must use `ASM-NNN` IDs, and the `Evidence` field must use `EVD-NNN` IDs — not descriptive labels alone. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors) for format and uniqueness rules.
 
 Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.

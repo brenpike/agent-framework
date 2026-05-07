@@ -101,6 +101,7 @@ Before completion:
 - when assigned a version bump, confirm every required artifact's version matches per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution)
 
 Use the shared worker report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
+- For every non-trivial phase-closing report, include all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields). These fields form the candidate handoff that the orchestrator's reconstruction gate evaluates and that Path A persists; omitting any of them causes phase verification to fail.
 - When a `Step: STEP-NNN` field was included in the delegation, append a `Step delta:` section to the report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta). Anchor ID discipline applies: the `Decisions` field must use `DEC-NNN` IDs, the `Assumptions unresolved` field must use `ASM-NNN` IDs, and the `Evidence` field must use `EVD-NNN` IDs — not descriptive labels alone. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors) for format and uniqueness rules.
 
 ## Contradiction Detection
