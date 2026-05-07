@@ -1,0 +1,30 @@
+name: policy-check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  policy-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate JSON manifests
+        run: |
+          python3 -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
+          python3 -c "import json; json.load(open('.claude-plugin/marketplace.json'))"
+
+      - name: Run policy_check.ps1 -Strict
+        shell: pwsh
+        run: ./tools/policy_check.ps1 -Strict
+
+      - name: Run validate_reports.ps1 (batch)
+        shell: pwsh
+        run: ./tools/validate_reports.ps1 -Batch tests/reports/
