@@ -1,0 +1,14 @@
+{
+  "rule": "Task types are exactly bugfix, refactor, feature, incident (set-equality lock)",
+  "source": {
+    "file": "plugin/governance/context-management-policy.md",
+    "pattern": "### Task-Type Classification"
+  },
+  "set_check": {
+    "extract_regex": "(?m)^\\| `([a-z]+)` \\|",
+    "expected_set": ["bugfix", "refactor", "feature", "incident"],
+    "files": [
+      { "path": "plugin/governance/context-management-policy.md", "mode": "equal" }
+    ]
+  }
+}
