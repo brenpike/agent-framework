@@ -616,13 +616,18 @@ foreach ($fixtureFile in $safetyFixtures) {
     $ruleName = $fixture.rule
     $fixturePassed = $true
 
-    $hasLegacy = $fixture.PSObject.Properties.Name -contains 'source'
+    # Each presence check (source / consumers / set_check) is independent. A
+    # fixture may carry any combination — under Set-StrictMode -Version Latest,
+    # accessing a missing top-level property aborts, so we must guard each
+    # block with its own .PSObject.Properties.Name -contains check.
+    $hasSource = $fixture.PSObject.Properties.Name -contains 'source'
+    $hasConsumers = $fixture.PSObject.Properties.Name -contains 'consumers'
     $hasSetCheck = $fixture.PSObject.Properties.Name -contains 'set_check'
 
-    if (-not $hasLegacy -and -not $hasSetCheck) {
+    if (-not $hasSource -and -not $hasConsumers -and -not $hasSetCheck) {
         $fixturePassed = $false
         Add-Finding -Rule 'SAFETY' -FilePath $fixtureFile.Name -Line 0 `
-            -Description "[$ruleName] fixture has neither source/consumers nor set_check"
+            -Description "[$ruleName] fixture has none of source / consumers / set_check"
     }
 
     # Set-check assertion (regex extraction + set comparison across files).
@@ -631,8 +636,8 @@ foreach ($fixtureFile in $safetyFixtures) {
         if (-not $setOk) { $fixturePassed = $false }
     }
 
-    # Legacy source/consumers presence check (skipped when fixture omits source).
-    if ($hasLegacy) {
+    # Legacy source presence check.
+    if ($hasSource) {
     # Check source pattern exists in source file.
     $sourceAbsPath = Resolve-RepoPath $fixture.source.file
     if (-not (Test-Path $sourceAbsPath)) {
@@ -647,8 +652,11 @@ foreach ($fixtureFile in $safetyFixtures) {
                 -Description "[$ruleName] Source pattern not found: $($fixture.source.pattern)"
         }
     }
+    }  # end if ($hasSource)
 
-    # Check each consumer.
+    # Legacy consumers presence check (independent of source — strict mode
+    # would otherwise abort on $fixture.consumers when the property is absent).
+    if ($hasConsumers) {
     foreach ($consumer in $fixture.consumers) {
         $consumerAbsPath = Resolve-RepoPath $consumer.file
         if (-not (Test-Path $consumerAbsPath)) {
@@ -680,7 +688,7 @@ foreach ($fixtureFile in $safetyFixtures) {
             }
         }
     }
-    }  # end if ($hasLegacy)
+    }  # end if ($hasConsumers)
 
     if ($fixturePassed) {
         Write-Host "[PASS] SAFETY: $ruleName"
