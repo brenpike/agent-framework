@@ -62,7 +62,7 @@ Required observation fields:
 - `Assumptions:` — each entry must carry an anchor ID in `ASM-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
 - `Open questions:` — unresolved items requiring future attention
 - `Artifacts:` — files created or modified with paths
-- `Evidence refs:` — each entry must carry an anchor ID in `EVD-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors); evidence exceeding 50 lines must be externalized to `.agent-framework/evidence/` and referenced by anchor ID only (see Progressive Evidence Rule below)
+- `Evidence refs:` — each entry must carry an anchor ID in `EVD-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors); evidence in the always-externalize categories (test output, build logs, large diffs, command output >50 lines) must be externalized to `.agent-framework/evidence/` regardless of size, and any other evidence exceeding 50 lines must also be externalized — referenced by anchor ID only (see Progressive Evidence Rule below)
 - `Next actions:` — what the next phase must do
 - `Risk level:` — low | medium | high
 
@@ -78,7 +78,7 @@ Step delta:
   Outcome: [what was accomplished]
   Decisions: DEC-NNN — [decision and rationale] (anchor ID required)
   Assumptions unresolved: ASM-NNN — [assumption and impact] (anchor ID required)
-  Evidence: EVD-NNN — [one-line synopsis only] (anchor ID required; full evidence ≤50 lines inline, >50 lines externalized per Progressive Evidence Rule)
+  Evidence: EVD-NNN — [one-line synopsis only] (anchor ID required; ≤50 lines inline only when type permits — test output, build logs, large diffs, and command output >50 lines must always be externalized per Progressive Evidence Rule)
 ```
 
 The orchestrator extracts the `Step delta:` section and all mandatory Context Management Fields after phase verification, stores the full candidate handoff (as a claude-mem observation or under `.agent-framework/handoffs/STEP-NNN.md`), and delegates the next phase with the compact candidate handoff — not the full prior phase report or tool outputs.
@@ -87,13 +87,20 @@ The orchestrator extracts the `Step delta:` section and all mandatory Context Ma
 
 Evidence fields in step-delta and context management fields reference anchors only — inline the anchor ID and a one-line synopsis. Full evidence content must not be inlined beyond 50 lines in any delegation, report, or handoff artifact.
 
-Evidence exceeding 50 lines must be externalized:
+The following evidence types must always be externalized regardless of size (mirrors `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading)):
+
+- Test output (unit, integration, end-to-end)
+- Build logs
+- Large diffs (any diff exceeding 50 lines)
+- Command output exceeding 50 lines
+
+For all other evidence types, content exceeding 50 lines must be externalized:
 
 1. Write the full evidence body to `.agent-framework/evidence/<ANCHOR-ID>.md` (e.g., `EVD-001.md`).
 2. Reference the evidence in the report or step-delta by anchor ID only (e.g., `EVD-001 — [one-line synopsis]`).
 3. Do not inline any portion of the externalized evidence beyond the synopsis.
 
-This rule applies to all evidence types: diffs, logs, test output, tool output, and file excerpts. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for lazy-load triggers and size cap details.
+See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.
 
 ## Blocked Report Contract
 
