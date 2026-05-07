@@ -255,7 +255,7 @@ Inline-evidence breaches are blocking and handled separately from other profile 
 
 **All other profile limits hit mid-phase** (`Max artifacts/phase`, `Max replay depth`, `Max tool calls/checkpoint`):
 
-1. Route to Path B (N-tool-call threshold trigger): emit a mid-phase partial checkpoint per Path B step 2 (record step ID, tool-call count, DEC/ASM/EVD anchors, active delegation fields, and a budget breach annotation).
+1. Route to Path B (N-tool-call threshold trigger): emit a mid-phase partial checkpoint per Path B step 2 (record step ID, tool-call count, DEC/RISK/ASM/EVD anchors, active delegation fields, and a budget breach annotation).
 2. Log the breach in the partial checkpoint as an evidence entry: `EVD-NNN — budget breach: [limit name] exceeded ([actual] > [max]) for task type [label]`.
 3. Do not block execution. Continue the current phase after rehydration (per Path B step 6).
 
@@ -287,7 +287,7 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 #### Path B — Mid-phase threshold triggers (N-tool-call, scope-pivot, explicit user reset)
 
 1. Trigger condition met: tool-call count reached the active budget profile's max tool calls/checkpoint limit, scope pivot detected (task reclassified mid-execution), or user explicitly requested a reset.
-2. Emit mid-phase partial checkpoint: record current step ID (`STEP-NNN`, or the task-level `TASK-NNN` for `STEP-NNN`-bypass work per Bypass Allowlist), tool-call count at trigger, any DEC/ASM/EVD anchors accumulated so far in the phase, a scope annotation if the trigger is a scope pivot, and the active delegation fields (task objective, file scope in/out, completion criteria, and constraints) so the phase can resume within its original contract after rehydration.
+2. Emit mid-phase partial checkpoint: record current step ID (`STEP-NNN`, or the task-level `TASK-NNN` for `STEP-NNN`-bypass work per Bypass Allowlist), tool-call count at trigger, all retrieval anchors accumulated so far in the phase (DEC/RISK/ASM/EVD per Retrieval Anchors), a scope annotation if the trigger is a scope pivot, and the active delegation fields (task objective, file scope in/out, completion criteria, and constraints) so the phase can resume within its original contract after rehydration.
 3. Store partial checkpoint as `.agent-framework/checkpoints/STEP-NNN-partial-NNN.md` (or `.agent-framework/checkpoints/TASK-NNN-partial-NNN.md` for `STEP-NNN`-bypass work; or claude-mem observation tagged `partial-checkpoint` when claude-mem is installed).
 4. Clear ephemeral context (current phase transcript, tool outputs drop out of active context).
 5. Rehydrate: retrieve stored candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
