@@ -20,7 +20,7 @@ These 9 governance modules are always loaded for every workflow. No activation c
 - `scope-policy.md`
 - `communication-policy.md`
 - `escalation-policy.md`
-- `context-management-policy.md` — task-type classification (intake), per-task budget profile enforcement, and progressive-evidence-loading (inline-evidence caps + always-externalize categories) apply to every task, including the trivial fast path. Phase-handoff, retrieval-anchor, reconstruction-test, contradiction-detection, and auto-clear rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers
+- `context-management-policy.md` — task-type classification (intake), per-task budget profile enforcement, progressive-evidence-loading (inline-evidence caps + always-externalize categories), retrieval-anchor rules (in particular `EVD-NNN` anchors required by Mandatory Externalization), and the Path B auto-clear procedure (N-tool-call / scope-pivot / explicit-reset triggers, using the synthetic `TASK-NNN` identifier for `STEP-NNN`-bypass work) apply to every task, including the trivial fast path. Phase-handoff transition rules, reconstruction-test gating, cross-handoff contradiction detection, and the Path A (phase-completion) auto-clear procedure additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers
 - `CLAUDE.md` — project-specific adapter: paths, commands, packages, artifact rules
 - `core-contract.md` — always-loaded module classification, mandatory/conditional lists, and core definition cross-references
 
