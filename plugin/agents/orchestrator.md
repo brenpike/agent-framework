@@ -214,7 +214,7 @@ Session facts: (optional)
 - active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
 
-> **Session facts:** Optional in the first delegation (facts may not yet be resolved). Mandatory in all subsequent delegations within the same session once trunk and validation are established.
+> **Session facts:** Optional in the first delegation (facts may not yet be resolved). Mandatory in all subsequent delegations within the same session once trunk and validation are established. **Exception:** `task-type` and (when `Step:` is omitted) `active-task` are mandatory in every delegation — including the first — because budget profile enforcement and Path B partial checkpoint storage depend on them. The first delegation that uses a Bypass Allowlist code must include both `task-type` and `active-task: TASK-NNN`.
 
 ### Two-Part Session Facts Protocol
 
