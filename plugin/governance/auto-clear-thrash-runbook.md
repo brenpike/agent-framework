@@ -22,7 +22,7 @@ When auto-clear thrash is detected, the agent must:
 
 ```text
 Evidence: EVD-NNN — auto-clear thrash detected
-  Phase: STEP-NNN
+  Phase: [STEP-NNN | TASK-NNN]   (use TASK-NNN for STEP-NNN-bypass tasks per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
   Trigger type: [phase-boundary | N-tool-call | scope-pivot]
   Cycle count: [number of clear+rehydrate cycles in this phase]
   Average cycles per phase: [total cycles / total completed phases]
