@@ -210,6 +210,7 @@ Session facts: (optional)
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
 - active-step: STEP-NNN  (include when a plan with step IDs is active)
+- active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
 
 > **Session facts:** Optional in the first delegation (facts may not yet be resolved). Mandatory in all subsequent delegations within the same session once trunk and validation are established.
@@ -266,6 +267,7 @@ Session facts:
 - trunk: [branch]
 - validation: [command]
 - task-type: [bugfix|refactor|feature|incident]
+- active-task: TASK-NNN  (required for STEP-NNN-bypass tasks per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 ```
 
 ## Version Bump Delegation Template
@@ -386,6 +388,8 @@ Session facts: (optional)
 - validation: [command]
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
+- active-step: STEP-NNN  (include when a plan with step IDs is active)
+- active-task: TASK-NNN  (include in lieu of active-step for STEP-NNN-bypass tasks per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 ```
 
 If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
