@@ -59,6 +59,7 @@ Required observation fields:
 - `Scope in:` — files/areas included
 - `Scope out:` — files/areas explicitly excluded
 - `Decisions:` — each entry must carry an anchor ID in `DEC-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
+- `Risks:` — each entry must carry an anchor ID in `RISK-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors); list `None` when no concrete risks were identified during the phase
 - `Assumptions:` — each entry must carry an anchor ID in `ASM-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
 - `Open questions:` — unresolved items requiring future attention
 - `Artifacts:` — files created or modified with paths
@@ -77,6 +78,7 @@ Step delta:
   Step: STEP-NNN
   Outcome: [what was accomplished]
   Decisions: DEC-NNN — [decision and rationale] (anchor ID required)
+  Risks: RISK-NNN — [risk description and impact] (anchor ID required; list `None` when no concrete risks were identified)
   Assumptions unresolved: ASM-NNN — [assumption and impact] (anchor ID required)
   Evidence: EVD-NNN — [one-line synopsis only] (anchor ID required; ≤50 lines inline only when type permits — test output, build logs, large diffs, and command output >50 lines must always be externalized per Progressive Evidence Rule)
 ```
