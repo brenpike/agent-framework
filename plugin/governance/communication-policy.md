@@ -135,7 +135,7 @@ Certain facts are resolved repeatedly during a task. Agents may cache them to av
 | version file | Current version string at task start |
 | bump-trigger-paths | Whether CLAUDE.md defines project-specific bump-trigger paths (`defined` \| `undefined`) |
 | `active-step` | Current `STEP-NNN` ID from the active plan |
-| `active-task` | Synthetic `TASK-NNN` ID for `STEP-NNN`-bypass tasks (TFP / `TRIVIAL_CHANGE` / `SINGLE_STEP_TASK` / single-step `NO_PRIOR_PHASE`), assigned at intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist). Use this in lieu of `active-step` when no `STEP-NNN` is assigned, so Path B partial checkpoints have a stable identifier. |
+| `active-task` | Synthetic `TASK-NNN` ID for `STEP-NNN`-bypass tasks (TFP / `TRIVIAL_CHANGE` / `SINGLE_STEP_TASK` / `USER_OVERRIDE` when the override omits `Step:`), assigned at intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist). `NO_PRIOR_PHASE` is **not** a `STEP-NNN`-bypass code — it keeps `Step: STEP-NNN` and uses `active-step` as usual. Use `active-task` in lieu of `active-step` only when no `STEP-NNN` is assigned, so Path B partial checkpoints have a stable identifier. |
 | `task-type` | One of `bugfix\|refactor\|feature\|incident` — resolved at task intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification) |
 
 ### Cache Rules
