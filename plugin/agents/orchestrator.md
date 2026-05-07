@@ -432,6 +432,9 @@ Session facts:
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
+- task-type: [bugfix|refactor|feature|incident]
+- active-step: STEP-NNN  (include when a plan with step IDs is active)
+- active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
 
 ---
@@ -476,4 +479,7 @@ Constraints:
 Session facts:
 - trunk: [branch]
 - validation: [command]
+- task-type: [bugfix|refactor|feature|incident]
+- active-step: STEP-NNN  (include when a plan with step IDs is active)
+- active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
