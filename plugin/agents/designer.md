@@ -21,7 +21,7 @@ You handle presentational work only within explicitly assigned file scope.
 Mandatory governance:
 
 Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference docs in `${CLAUDE_PLUGIN_ROOT}/governance/`.
-Context management (mandatory): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — task-type classification, budget profile enforcement, and progressive-evidence-loading (inline-evidence caps + always-externalize categories) always apply; phase-handoff, retrieval-anchor, and reconstruction-test rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers.
+Context management (mandatory): `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` — task-type classification (intake), per-task budget profile enforcement, progressive-evidence-loading (inline-evidence caps + always-externalize categories), retrieval-anchor rules (in particular `EVD-NNN` anchors required by Mandatory Externalization), and the Path B auto-clear procedure (N-tool-call / scope-pivot / explicit-reset triggers, using the synthetic `TASK-NNN` identifier for `STEP-NNN`-bypass work) apply to every task, including the trivial fast path. Phase-handoff transition rules, reconstruction-test gating, cross-handoff contradiction detection, and the Path A (phase-completion) auto-clear procedure additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers.
 
 ## Own
 
