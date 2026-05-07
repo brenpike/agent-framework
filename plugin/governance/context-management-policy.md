@@ -46,7 +46,8 @@ Fallback storage paths (used when claude-mem is absent):
 
 - `.agent-framework/plans/` — active plan artifacts
 - `.agent-framework/handoffs/` — candidate handoff artifacts (step-delta + mandatory Context Management Fields, named `STEP-NNN.md`)
-- `.agent-framework/checkpoints/` — optional checkpoint state
+- `.agent-framework/checkpoints/` — optional checkpoint state, including Path B partial checkpoints (`STEP-NNN-partial-NNN.md` or `TASK-NNN-partial-NNN.md`)
+- `.agent-framework/evidence/` — externalized evidence bodies referenced by `EVD-NNN` anchors per Progressive Evidence Loading (Mandatory Externalization)
 
 These paths are ephemeral by default (gitignored). Do not mix runtime artifacts into `docs/`.
 
@@ -54,6 +55,7 @@ Retention defaults:
 - Keep only the active plan + latest handoff during normal execution.
 - Auto-archive superseded phase artifacts at phase close.
 - Keep a rolling window of the latest 3 handoffs/checkpoints for recovery.
+- Retain every evidence file in `.agent-framework/evidence/` whose `EVD-NNN` anchor is still referenced by a non-stale handoff or active step-delta. Evidence files become eligible for archival only when no active artifact references their anchor.
 - Promote only intentionally selected artifacts into durable docs (audit, postmortem, runbooks).
 
 ### claude-mem Detection
