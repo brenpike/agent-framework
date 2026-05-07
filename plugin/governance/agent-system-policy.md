@@ -111,6 +111,7 @@ Agents must follow these files whether or not the user restates them. Mandatory 
 - `git-policy.md` — git workflow enforcement rules
 - `escalation-policy.md` — conditions requiring agent escalation instead of guessing
 - `communication-policy.md` — agent-to-agent communication standards and report contracts
+- `context-management-policy.md` — task-type classification (intake) and per-task budget profile enforcement apply to every task, including the trivial fast path; phase-handoff, retrieval-anchor, reconstruction-test, contradiction-detection, auto-clear, and progressive-evidence-loading rules additionally apply when the workflow includes more than one execution phase or the plan contains `STEP-NNN` identifiers
 - `CLAUDE.md` — project-specific adapter: paths, commands, packages, artifact rules
 - `core-contract.md` — always-loaded module classification, mandatory/conditional lists, and core definition cross-references
 
@@ -124,7 +125,6 @@ These modules are loaded only when their activation condition is met. When it is
 - `validation-policy.md` — versioning enforcement and external review policy. **Condition:** workflow includes a validation phase.
 - `pr-review-remediation-loop.md` — external PR review feedback handling. **Condition:** workflow includes PR feedback or review remediation.
 - `monitoring-policy.md` — shell/parser constraints, monitoring rules, retry/failure handling. **Condition:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop`.
-- `context-management-policy.md` — execution lifecycle, memory tiering, quality guardrails, budget policy. **Condition:** workflow includes more than one execution phase, OR the plan contains `STEP-NNN` identifiers.
 
 See `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Conditional Modules) for canonical activation conditions.
 
