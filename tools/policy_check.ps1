@@ -544,9 +544,13 @@ function Test-SetCheck {
         $captured = [System.Collections.Generic.HashSet[string]]::new(
             [System.StringComparer]::Ordinal
         )
+        $counts = @{}
         foreach ($m in $matchCollection) {
             if ($m.Groups.Count -lt 2) { continue }
-            [void]$captured.Add($m.Groups[1].Value)
+            $val = $m.Groups[1].Value
+            [void]$captured.Add($val)
+            if (-not $counts.ContainsKey($val)) { $counts[$val] = 0 }
+            $counts[$val] = $counts[$val] + 1
         }
 
         # Compute extras (captured \ expected) and missing (expected \ captured).
@@ -582,6 +586,23 @@ function Test-SetCheck {
                 $passed = $false
                 Add-Finding -Rule 'SAFETY' -FilePath $relPath -Line 0 `
                     -Description "[$RuleName] set_check unknown mode '$mode' (expected equal|subset|superset)"
+            }
+        }
+
+        # Optional per-element occurrence-count assertion. Catches intra-file
+        # drift that distinct-set checks miss (e.g., one of two mirrored
+        # tables drops an element while the other still contains it).
+        if ($SetCheck.PSObject.Properties.Name -contains 'expected_counts') {
+            $expectedCounts = $SetCheck.expected_counts
+            foreach ($prop in $expectedCounts.PSObject.Properties) {
+                $key = $prop.Name
+                $want = [int]$prop.Value
+                $got = if ($counts.ContainsKey($key)) { [int]$counts[$key] } else { 0 }
+                if ($got -ne $want) {
+                    $passed = $false
+                    Add-Finding -Rule 'SAFETY' -FilePath $relPath -Line 0 `
+                        -Description "[$RuleName] set_check expected_counts mismatch in ${relPath}: '$key' has $got occurrence(s), expected $want"
+                }
             }
         }
     }
