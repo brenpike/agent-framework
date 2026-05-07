@@ -247,7 +247,11 @@ Column definitions:
 
 ### Budget Breach Handling
 
-When any profile limit is hit mid-phase:
+Inline-evidence breaches are blocking and handled separately from other profile limits.
+
+**Inline-evidence breach (Max inline evidence cap or always-externalize category inlined):** block. The agent must externalize the offending evidence per Progressive Evidence Loading (Mandatory Externalization) — write the full body to `.agent-framework/evidence/<ANCHOR-ID>.md` and replace the inline content with the anchor ID and one-sentence synopsis — before continuing the phase. Do not log-and-continue; the inline content violates a hard cap and must be removed.
+
+**All other profile limits hit mid-phase** (`Max artifacts/phase`, `Max replay depth`, `Max tool calls/checkpoint`):
 
 1. Route to Path B (N-tool-call threshold trigger): emit a mid-phase partial checkpoint per Path B step 2 (record step ID, tool-call count, DEC/ASM/EVD anchors, active delegation fields, and a budget breach annotation).
 2. Log the breach in the partial checkpoint as an evidence entry: `EVD-NNN — budget breach: [limit name] exceeded ([actual] > [max]) for task type [label]`.
