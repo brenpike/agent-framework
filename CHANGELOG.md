@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.5.1] - 2026-05-08
+
+### Fixed
+
+- **jq `\s` escape in shared GraphQL helper.** Replaced `gsub("\\s+"; "")` with `gsub("[[:space:]]+"; "")` at all three occurrences in `plugin/skills/_shared/github-pr-review-graphql.md` (Fetch Unresolved Thread Summary Lines, Fetch Top-Level PR Comments, Detection Filtering). Agents were emitting `\s` as an invalid jq escape sequence, causing skill execution to fail with "invalid escape sequence" errors.
+- **Standalone `jq` binary prohibition.** Added explicit rules to the "Shell and Parsing Rules" section of `plugin/skills/_shared/github-pr-review-graphql.md` prohibiting use of the standalone `jq` binary (unavailable on Windows) and `/tmp/` paths (Linux-only). Agents must use only `gh … --jq …` for JSON processing.
+
 ## [0.5.0] - 2026-05-07
 
 ### Added

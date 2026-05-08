@@ -15,6 +15,10 @@ Prefer:
 
 Do not dynamically probe for Python, Node, standalone `jq`, or PowerShell parsers. Do not shell-hop for routine parsing.
 
+Never invoke `jq` as a standalone binary command. Use only `gh … --jq …` (the built-in jq processor in the gh CLI).
+
+Never write to or read from `/tmp/` paths. Use inline `--jq` processing instead.
+
 If `gh --jq` cannot produce the required value, return `blocked` instead of improvising parser fallbacks.
 
 ## Pagination Requirement
@@ -141,7 +145,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
         | select(.isResolved == false)
         | . as $thread
         | $thread.comments.nodes[]
-        | select(.body != null and (.body | gsub("\\s+"; "") != ""))
+        | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
         | select(.author.login != $ENV.SELF_LOGIN)
         | "THREAD=\($thread.id) COMMENT=\(.id) AUTHOR=\(.author.login) PATH=\($thread.path) LINE=\($thread.line // "") URL=\(.url)"'
 # SELF_LOGIN is resolved at runtime via: gh api user --jq .login
@@ -204,7 +208,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
   }
 }' \
   --jq '.data.repository.pullRequest.comments.nodes[]
-        | select(.body != null and (.body | gsub("\\s+"; "") != ""))
+        | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
         | select(.author.login != $ENV.SELF_LOGIN)
         | "COMMENT=\(.id) AUTHOR=\(.author.login) URL=\(.url)"'
 # SELF_LOGIN is resolved at runtime via: gh api user --jq .login
@@ -221,7 +225,7 @@ Exclude any comment or review where `body` is `null`, the empty string `""`, or 
 In `--jq` expressions use:
 
 ```
-select(.body != null and (.body | gsub("\\s+"; "") != ""))
+select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
 ```
 
 ### Filter 2 — Exclude self/bot identity
