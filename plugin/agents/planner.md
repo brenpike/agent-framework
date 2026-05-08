@@ -83,7 +83,10 @@ When `Memory context:` is present AND `claude-mem` is also installed locally, pr
 
 ### Fallback — self-invoked
 
-When the orchestrator delegation does not include a `Memory context:` field (e.g., planner invoked directly by a user, or orchestrator is an older version), detect `claude-mem` availability by reading `~/.claude/settings.json` and `<project root>/.claude/settings.json` for `"claude-mem@thedotmack": true` under `enabledPlugins`. If present, invoke `claude-mem:mem-search` before planning.
+When the orchestrator delegation does not include a `Memory context:` field:
+
+- If Session facts includes `claude-mem: absent`, skip detection entirely — the orchestrator already confirmed claude-mem is not installed. No mem-search.
+- Otherwise, detect `claude-mem` availability by reading `~/.claude/settings.json` and `<project root>/.claude/settings.json` for `"claude-mem@thedotmack": true` under `enabledPlugins`. If present, invoke `claude-mem:mem-search` before planning.
 
 ### What to look for (both modes)
 
