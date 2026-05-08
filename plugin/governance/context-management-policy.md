@@ -82,6 +82,21 @@ If either file contains `"claude-mem@thedotmack": true`, treat claude-mem as **P
 - **Present:** store full candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as claude-mem observations; rehydrate via `mem-search`.
 - **Absent:** store full candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as files under `.agent-framework/handoffs/`; rehydrate by reading files.
 
+### Pre-Planning Memory Lookup
+
+This subsection defines the orchestrator's pre-planning search procedure, performed at Execution Algorithm step 0 in `${CLAUDE_PLUGIN_ROOT}/agents/orchestrator.md` when `claude-mem: present`.
+
+**Skip conditions:** Skip the pre-planning memory lookup when any of the following is true:
+
+- The repo has zero commits (brand-new repo).
+- The user explicitly says to skip memory or ignore prior context.
+
+**Procedure:** When skip conditions do not apply and `claude-mem: present`, invoke `claude-mem:mem-search` with keywords extracted from the task description before delegating to the planner.
+
+**Empty-sentinel rule:** When `mem-search` completes but returns no results, pass `Memory context: none` to the planner delegation. Do NOT omit the field. Absence of `Memory context:` means the orchestrator did not search (fallback trigger in planner). Presence of `Memory context: none` means the orchestrator searched and found nothing.
+
+**Non-empty results:** When `mem-search` returns results, pass them as the `Memory context:` field in the planner delegation.
+
 ---
 
 ## Retrieval Anchors
