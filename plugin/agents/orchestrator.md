@@ -149,8 +149,8 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 0. **Intake (task-type classification and claude-mem detection).** Before planner delegation or trivial fast path routing, perform the following intake sub-steps:
    - **Task-type classification.** Classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For every Step-omitting bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assign a synthetic task checkpoint ID `TASK-NNN` so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. The matrix is the single source of truth for which codes are Step-omitting and how each interacts with `Step:`, `Step delta:`, `TASK-NNN`, the Session Fact key, and the `EVD-NNN` slot.
-   - **claude-mem detection.** Read `~/.claude/settings.json` and `<project root>/.claude/settings.json` (where project root is resolved via `git rev-parse --show-toplevel`). If either file contains `"claude-mem@thedotmack": true` under `enabledPlugins`, record `claude-mem: present` in Session facts; otherwise record `claude-mem: absent`. If a settings file does not exist or cannot be parsed as valid JSON, treat that file as not containing the key (do not error). This detection runs once at first task intake; per existing cache rules, fresh checks always override cached values.
-   - **Pre-planning mem-search.** When `claude-mem: present`, invoke `claude-mem:mem-search` with keywords extracted from the task description before delegating to the planner. If `mem-search` returns results, pass them to the planner delegation as a `Memory context:` field. If `mem-search` returns empty results or `claude-mem: absent`, omit the `Memory context:` field and proceed normally.
+   - **claude-mem detection.** Detect and record per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection). Record `claude-mem: present|absent` in Session facts.
+   - **Pre-planning memory lookup.** When `claude-mem: present`, run pre-planning lookup per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Pre-Planning Memory Lookup). Pass results per that section.
 1. Call `agent-framework:planner` unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
 2. If planner fails, follow policy retry/fallback/blocked handling immediately.
 3. If planner returns open questions, surface them and stop.
@@ -214,7 +214,7 @@ Anchor reservation: (required for parallel phases per `${CLAUDE_PLUGIN_ROOT}/gov
 - ASM: NNN-NNN
 - EVD: NNN-NNN
 
-Memory context: (optional — include only when claude-mem is present and mem-search returned results; omit entirely otherwise)
+Memory context: (optional — include when claude-mem searched; set to `none` when search returned no results; omit entirely when claude-mem is absent or orchestrator did not search)
 - [mem-search results relevant to the task]
 
 Session facts: (optional)
