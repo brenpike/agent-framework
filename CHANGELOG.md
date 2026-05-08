@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.5.2] - 2026-05-08
+
+### Fixed
+
+- **Orchestrator claude-mem detection moved to task intake.** Orchestrator now owns claude-mem detection at task intake (Execution Algorithm step 0) and invokes `claude-mem:mem-search` before delegating to the planner. Result cached as session fact `claude-mem: present|absent`. Memory context passed to planner as `Memory context:` field.
+- **Planner Memory-First Planning restructured into two modes.** Primary mode consumes the orchestrator-provided `Memory context:` field directly. Fallback mode self-invokes detection when the planner is invoked without an orchestrator.
+- **Clarified detection timing.** claude-mem detection runs at task intake (not "at session start") per `context-management-policy.md`.
+
 ## [0.5.1] - 2026-05-08
 
 ### Fixed

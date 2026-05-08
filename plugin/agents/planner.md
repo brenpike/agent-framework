@@ -71,19 +71,31 @@ Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference do
 
 ## Memory-First Planning
 
-If the `claude-mem` plugin (https://github.com/thedotmack/claude-mem) is installed, invoke its `claude-mem:mem-search` skill before planning. Skip only when one of the following is true:
+Memory context reaches the planner through one of two modes. Skip conditions apply to both: skip memory when the repo has zero commits (brand-new repo) or when the user explicitly says to skip memory or to ignore prior context.
 
-- the repo has zero commits (brand-new repo)
-- the user explicitly says to skip memory or to ignore prior context
+### Primary — orchestrator-provided
 
-Look for:
+When the orchestrator delegation includes a `Memory context:` field, consume it directly as prior context. Do not invoke `claude-mem:mem-search` — the orchestrator has already queried memory on the planner's behalf.
+
+If the `Memory context:` field is present but empty or contains no relevant results, continue planning without memory and output `Memory reused: None`.
+
+When `Memory context:` is present AND `claude-mem` is also installed locally, primary mode takes precedence. Do not re-invoke mem-search.
+
+### Fallback — self-invoked
+
+When the orchestrator delegation does not include a `Memory context:` field:
+
+- If Session facts includes `claude-mem: absent`, skip detection entirely — the orchestrator already confirmed claude-mem is not installed. No mem-search.
+- Otherwise, detect `claude-mem` availability by reading `~/.claude/settings.json` and `<project root>/.claude/settings.json` for `"claude-mem@thedotmack": true` under `enabledPlugins`. If present, invoke `claude-mem:mem-search` before planning.
+
+### What to look for (both modes)
 
 - prior plans or related tasks
 - user decisions, constraints, preferences
 - known risks, hotspots, blockers
 - prior failed approaches
 
-If `claude-mem` is not installed or returns no relevant results, continue without it. Memory is an accelerator, not a substitute for inspection.
+If neither mode provides relevant results, continue without memory. Memory is an accelerator, not a substitute for inspection.
 
 ## Research Rules
 
