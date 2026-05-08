@@ -147,7 +147,10 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 ## Execution Algorithm
 
-0. **Task-type classification (intake).** Before planner delegation or trivial fast path routing, classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For every Step-omitting bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assign a synthetic task checkpoint ID `TASK-NNN` so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. The matrix is the single source of truth for which codes are Step-omitting and how each interacts with `Step:`, `Step delta:`, `TASK-NNN`, the Session Fact key, and the `EVD-NNN` slot.
+0. **Intake (task-type classification and claude-mem detection).** Before planner delegation or trivial fast path routing, perform the following intake sub-steps:
+   - **Task-type classification.** Classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For every Step-omitting bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assign a synthetic task checkpoint ID `TASK-NNN` so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. The matrix is the single source of truth for which codes are Step-omitting and how each interacts with `Step:`, `Step delta:`, `TASK-NNN`, the Session Fact key, and the `EVD-NNN` slot.
+   - **claude-mem detection.** Read `~/.claude/settings.json` and `<project root>/.claude/settings.json` (where project root is resolved via `git rev-parse --show-toplevel`). If either file contains `"claude-mem@thedotmack": true` under `enabledPlugins`, record `claude-mem: present` in Session facts; otherwise record `claude-mem: absent`. If a settings file does not exist or cannot be parsed as valid JSON, treat that file as not containing the key (do not error). This detection runs once at first task intake; per existing cache rules, fresh checks always override cached values.
+   - **Pre-planning mem-search.** When `claude-mem: present`, invoke `claude-mem:mem-search` with keywords extracted from the task description before delegating to the planner. If `mem-search` returns results, pass them to the planner delegation as a `Memory context:` field. If `mem-search` returns empty results or `claude-mem: absent`, omit the `Memory context:` field and proceed normally.
 1. Call `agent-framework:planner` unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
 2. If planner fails, follow policy retry/fallback/blocked handling immediately.
 3. If planner returns open questions, surface them and stop.
@@ -211,11 +214,15 @@ Anchor reservation: (required for parallel phases per `${CLAUDE_PLUGIN_ROOT}/gov
 - ASM: NNN-NNN
 - EVD: NNN-NNN
 
+Memory context: (optional — include only when claude-mem is present and mem-search returned results; omit entirely otherwise)
+- [mem-search results relevant to the task]
+
 Session facts: (optional)
 - trunk: [branch]
 - validation: [command]
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
+- claude-mem: [present|absent]  (resolved at intake; include when known)
 - active-step: STEP-NNN  (include when a plan with step IDs is active)
 - active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
@@ -230,7 +237,7 @@ Session facts: (optional)
 
 **Part 2 — Task-scoped inclusion:** When composing a delegation, include only the session facts fields the subagent actually needs for that specific task. Always send full field values — never sentinels, abbreviations, or placeholders. Fields not relevant to the task are omitted entirely.
 
-**Example — delegation needing trunk, validation, version, and task type:**
+**Example — delegation needing trunk, validation, version, task type, and claude-mem:**
 
 ```text
 Session facts:
@@ -238,6 +245,7 @@ Session facts:
 - validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
 - version: 0.3.2
 - task-type: feature
+- claude-mem: present
 ```
 
 **Example — delegation needing only trunk and validation (no version bump involved):**
@@ -247,9 +255,10 @@ Session facts:
 - trunk: main
 - validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
 - task-type: bugfix
+- claude-mem: absent
 ```
 
-> The `version` field is omitted above because the delegated task does not involve a version bump. `task-type` is always included once classified. Omission of other fields is task-scope-driven, not an abbreviation.
+> The `version` field is omitted above because the delegated task does not involve a version bump. `task-type` is always included once classified. `claude-mem` is included once resolved at intake. Omission of other fields is task-scope-driven, not an abbreviation.
 
 Compact form for trivial single-file tasks:
 
@@ -277,6 +286,7 @@ Session facts:
 - trunk: [branch]
 - validation: [command]
 - task-type: [bugfix|refactor|feature|incident]
+- claude-mem: [present|absent]  (resolved at intake; include when known)
 - active-task: TASK-NNN  (required for STEP-NNN-bypass tasks per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 ```
 
@@ -354,7 +364,7 @@ Cooldown: do not fire more than one clear+rehydrate cycle per phase on average. 
 
 ### claude-mem Detection
 
-Follow `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection) — check both global and project-local settings files. Do not duplicate the detection logic here.
+Detection is performed in Execution Algorithm step 0 (Intake) as part of the intake sub-steps. Step 0 is the canonical detection point — detection runs once at first task intake and the result is cached as `claude-mem: present|absent` in Session facts. For the underlying detection criteria (settings file paths and key name), see `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection).
 
 ## Final Report
 
@@ -399,6 +409,7 @@ Session facts: (optional)
 - validation: [command]
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
+- claude-mem: [present|absent]  (resolved at intake; include when known)
 - active-step: STEP-NNN  (include when a plan with step IDs is active)
 - active-task: TASK-NNN  (include in lieu of active-step for STEP-NNN-bypass tasks per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist))
 ```
@@ -442,6 +453,7 @@ Session facts:
 - validation: [command]
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
+- claude-mem: [present|absent]  (resolved at intake; include when known)
 - active-step: STEP-NNN  (include when a plan with step IDs is active)
 - active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
@@ -489,6 +501,7 @@ Session facts:
 - trunk: [branch]
 - validation: [command]
 - task-type: [bugfix|refactor|feature|incident]
+- claude-mem: [present|absent]  (resolved at intake; include when known)
 - active-step: STEP-NNN  (include when a plan with step IDs is active)
 - active-task: TASK-NNN  (include in lieu of active-step when the task uses a Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist); required so Path B partial checkpoints have a stable identifier)
 ```
