@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.5.3] - 2026-05-08
+
+### Fixed
+
+- **Orchestrator intake label restored.** Re-added "(intake)" suffix to task-type classification sub-bullet in step 0; fixes safety-budget-profiles CI fixture.
+
 ## [0.5.2] - 2026-05-08
 
 ### Fixed
