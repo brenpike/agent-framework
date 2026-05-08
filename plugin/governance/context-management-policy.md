@@ -73,11 +73,11 @@ Retention defaults:
 
 ### claude-mem Detection
 
-At session start, check for `"claude-mem@thedotmack": true` under `enabledPlugins` in either:
+At task intake (Execution Algorithm step 0 in `${CLAUDE_PLUGIN_ROOT}/agents/orchestrator.md`), check for `"claude-mem@thedotmack": true` under `enabledPlugins` in either:
 - `~/.claude/settings.json` (global settings), OR
 - `<project root>/.claude/settings.json` (project-local settings, where project root is resolved via `git rev-parse --show-toplevel`)
 
-If either file contains `"claude-mem@thedotmack": true`, treat claude-mem as **Present**.
+If either file contains `"claude-mem@thedotmack": true`, treat claude-mem as **Present**. Downstream agents and auto-clear procedures consume the cached detection result; they do not re-run detection.
 
 - **Present:** store full candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as claude-mem observations; rehydrate via `mem-search`.
 - **Absent:** store full candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as files under `.agent-framework/handoffs/`; rehydrate by reading files.
