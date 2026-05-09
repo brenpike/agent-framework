@@ -4,6 +4,7 @@ description: Run a pre-PR local Codex review loop on the working branch, iterate
 disable-model-invocation: false
 allowed-tools:
   - Read
+  - Write
   - Bash(git status *)
   - Bash(git branch *)
   - Bash(git diff *)
@@ -90,8 +91,8 @@ Fix ledger schema:
 
 ## Procedure
 
-1. Confirm `base`, `working_branch`, `trunk` are provided. Return blocked if any missing.
-2. Confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Unsafe git state).
+1. Confirm `base`, `working_branch`, `trunk` are provided. Return blocked with `Stage: skill selection` if any missing.
+2. Confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Unsafe git state). Return blocked with `Stage: git workflow` if unsafe.
 3. Load or initialize fix ledger (from claude-mem or `.agent-framework/review-loop/` file).
 4. Start iteration loop (max `max_iterations`, default 5):
    a. Invoke `agent-framework:local-codex-review` with `base` and current `iteration` number.
@@ -101,7 +102,13 @@ Fix ledger schema:
    e. Update fix ledger: record all findings for this iteration, mark prior findings as `"fixed"` if their `id` no longer appears.
    f. **Break-fix-break detection** (before routing — see Detection section below). If 2 of 3 signals fire, set `exit_reason: "break-fix-break"` and return blocked with conflict summary.
    g. Classify each new finding using the classification taxonomy in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification). Mark as `"open"` in ledger.
-   h. Route per the Local Review Remediation Decision Table in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Local Review Remediation Decision Table): `actionable-*` to coder, `architecture-or-contract-concern` to planner first, `design-or-UX-concern` to designer, `question-needs-user-input` returns blocked with user question.
+   h. Route per the Local Review Remediation Decision Table in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Local Review Remediation Decision Table):
+      - `actionable-*` → delegate to `agent-framework:coder`
+      - `architecture-or-contract-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
+      - `design-or-UX-concern` → delegate to `agent-framework:designer`; after designer returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding
+      - `question-needs-user-input` → set `exit_reason: "user-input-required"`, return blocked with `Stage: review remediation` and the finding as the user question
+      - `non-actionable` → record in ledger with status `"non-actionable"`, skip, continue to next finding
+      - `incorrect-or-rejected` → record in ledger with status `"rejected"`, do not remediate, do not exit loop, continue to next finding
    i. After all findings routed and fixed: record `fix_commit` from the coder's checkpoint commit SHA.
    j. Check exit conditions (see Exit Conditions below).
 5. At loop end: write final fix ledger state.
@@ -126,11 +133,24 @@ Do not auto-resolve. User must decide.
 Stop the loop when any of the following is true:
 - `verdict: "approve"` and findings empty: `exit_reason: "clean"`
 - `verdict: "approve"` and findings non-empty (all informational): `exit_reason: "clean"`
-- Max iterations reached: ask user "Reached N iterations. M findings remain unresolved. Options: (1) continue 5 more iterations, (2) push and open PR now, (3) stop without pushing." Wait for user response.
-- Break-fix-break cycle detected (2-of-3 signals): `exit_reason: "break-fix-break"`, return blocked
-- `question-needs-user-input` finding: `exit_reason: "user-input-required"`, return blocked
-- Unsafe git state: return blocked
-- `local-codex-review` returns blocked: propagate blocked
+- Max iterations reached: set `exit_reason: "max-iterations-reached"` in the ledger, then return blocked:
+  ```
+  Status: blocked
+  Stage: review remediation
+  Blocker: max-iterations-reached
+  Context: Reached <N> iterations. <M> findings remain unresolved.
+  Next action:
+  - Option 1: continue 5 more iterations (reply "continue")
+  - Option 2: push and open PR now (reply "push")
+  - Option 3: stop without pushing (reply "stop")
+  ```
+- Break-fix-break cycle detected (2-of-3 signals): `exit_reason: "break-fix-break"`, return blocked with `Stage: review remediation`
+- `question-needs-user-input` finding: `exit_reason: "user-input-required"`, return blocked with `Stage: review remediation`
+- Planner or designer escalation returns blocked: `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
+- Unsafe git state: return blocked with `Stage: git workflow`
+- `local-codex-review` returns blocked with reason `codex-plugin-cc not available`: propagate blocked with `Stage: route`
+- `local-codex-review` returns blocked for any other reason: propagate blocked with `Stage: review remediation`
+- Missing required inputs (`base`, `working_branch`, or `trunk`): return blocked with `Stage: skill selection`
 
 Do not push. Do not open a PR. Return control to orchestrator.
 
@@ -151,7 +171,7 @@ Loop:
 - Branch: <working_branch>
 - Base: <base>
 - Iterations run: <n>
-- Exit reason: clean | max-iterations-reached | break-fix-break | user-input-required | blocked
+- Exit reason: clean | max-iterations-reached | break-fix-break | user-input-required | planner-blocked | blocked
 - Remaining findings: <count>
 
 Findings summary:

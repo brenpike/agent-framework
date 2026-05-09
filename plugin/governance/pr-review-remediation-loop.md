@@ -188,7 +188,7 @@ Run a Codex review loop on the local working branch before pushing and opening a
 ### Loop Governance
 
 - Default max iterations: 5
-- At max iterations: ask user (continue 5 more / push now / stop entirely)
+- At max iterations: return blocked with three choices (continue 5 more / push now / stop entirely) — see `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller/SKILL.md` (Exit Conditions)
 - Classification: use the same classification taxonomy as the existing Classification section above, applied to Codex findings instead of GitHub PR threads
 - Break-fix-break detection: see `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Break-fix-break cycle)
 
@@ -206,6 +206,7 @@ This table applies to pre-PR local Codex review findings only. For post-PR GitHu
 | `version-or-release-concern` | — | — | `agent-framework:planner` (then `agent-framework:coder`) |
 | `question-needs-user-input` | — | — | user (loop exits) |
 | `non-actionable` | — | — | — (recorded in ledger, not remediated) |
+| `incorrect-or-rejected` | — | — | — (recorded in ledger with status "rejected"; not remediated in pre-PR context; no GitHub thread to reply to) |
 
 ### Fix Ledger
 
