@@ -9,7 +9,7 @@ allowed-tools:
   - Bash(git commit *)
   - Bash(git rev-parse *)
   - Bash(git log *)
-shell: powershell
+shell: bash
 ---
 
 ## Quick Reference

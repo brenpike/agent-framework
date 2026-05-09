@@ -13,7 +13,7 @@ Prefer:
 - `gh pr view --json ... --jq ...`
 - `gh api graphql --jq ...`
 
-Do not dynamically probe for Python, Node, standalone `jq`, or PowerShell parsers. Do not shell-hop for routine parsing.
+Do not dynamically probe for Python, Node, or standalone `jq`. Do not shell-hop for routine parsing.
 
 Never invoke `jq` as a standalone binary command. Use only `gh … --jq …` (the built-in jq processor in the gh CLI).
 
@@ -234,13 +234,10 @@ select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
 
 Exclude any comment or review where `author.login` matches the authenticated identity of the agent running the query. This prevents the agent from treating its own previously posted replies as new incoming feedback.
 
-Resolve and export the identity once per poll cycle before issuing queries. The syntax is shell-specific; both variants achieve the same result:
+Resolve and export the identity once per poll cycle before issuing queries:
 
 ```bash
-# Bash
 export SELF_LOGIN=$(gh api user --jq .login)
-# PowerShell
-$env:SELF_LOGIN = (gh api user --jq .login)
 ```
 
 `SELF_LOGIN` is a runtime-resolved variable. It is **not** a literal string placeholder — it must be assigned to the process environment before the `--jq` expression runs. In `--jq` expressions, pass it through the environment:

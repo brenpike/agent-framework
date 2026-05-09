@@ -18,7 +18,7 @@ allowed-tools:
   - Bash(gh api *)
   - Agent(agent-framework:planner, agent-framework:coder, agent-framework:designer)
   - Skill
-shell: powershell
+shell: bash
 ---
 
 ## Quick Reference

@@ -11,9 +11,7 @@ Use deterministic shell/parser behavior.
 Do not:
 
 - shell-hop for routine parsing
-- call `powershell -Command` from Bash for routine parsing
-- call Bash from PowerShell for routine parsing
-- dynamically probe Python, Node, standalone `jq`, PowerShell, or other parsers during normal execution
+- dynamically probe Python, Node, standalone `jq`, or other parsers during normal execution
 - restart Monitor with different parser strategies without explicit user approval
 - continue monitor loops after parser failures without reporting the failure
 - use `python3`, `python`, or any Python invocation to parse Monitor command output
@@ -25,14 +23,14 @@ Prefer:
 3. `gh api graphql --jq ...`
 4. deterministic commands with bounded retries
 
-### Windows Compatibility
+### Shell Compatibility
 
-Monitor commands must work on both Windows (PowerShell) and Unix (Bash) shells without modification.
+Monitor commands must work across shell environments without modification.
 
 - The Monitor tool's shell context may differ from the skill's declared `shell:` frontmatter value. Do not assume that tools available in the skill's interactive shell are available in the Monitor shell context.
-- Do not assume `python3`, `python`, `node`, or standalone `jq` are on `PATH` in the Monitor shell context. These binaries are absent by default on Windows and unreliable across environments.
-- `gh --jq` and `gh api graphql --jq` use the `gh` CLI's built-in jq processor. This is cross-platform by design and is the only approved parsing mechanism for Monitor commands.
-- If a Monitor command relies on any binary other than `gh`, assume it will fail silently on Windows. Report `Monitoring: not active` rather than attempting parser substitution.
+- Do not assume `python3`, `python`, `node`, or standalone `jq` are on `PATH` in the Monitor shell context. These binaries are unreliable across environments.
+- `gh --jq` and `gh api graphql --jq` use the `gh` CLI's built-in jq processor. This is the canonical cross-environment parsing tool and is the only approved parsing mechanism for Monitor commands.
+- If a Monitor command relies on any binary other than `gh`, assume it may fail. Report `Monitoring: not active` rather than attempting parser substitution.
 
 If the approved shell/parser strategy fails, retry once only when the failure matches the "Transient failure" definition, then return `blocked` rather than improvising parser fallback chains.
 

@@ -5,7 +5,7 @@ disable-model-invocation: false
 allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh pr comment *)
-shell: powershell
+shell: bash
 ---
 
 ## Quick Reference

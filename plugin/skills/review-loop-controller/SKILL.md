@@ -11,7 +11,7 @@ allowed-tools:
   - Bash(git log *)
   - Agent(agent-framework:planner, agent-framework:coder, agent-framework:designer)
   - Skill
-shell: powershell
+shell: bash
 ---
 
 ## Quick Reference

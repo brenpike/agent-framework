@@ -355,18 +355,18 @@ Acceptance criteria:
 
 Create:
 
-- `tools/policy_check.ps1` at the repository root
-- `tools/validate_reports.ps1` at the repository root
+- `tools/policy_check.sh` at the repository root
+- `tools/validate_reports.sh` at the repository root
 - `tests/policy/` at the repository root
 - `tests/reports/` at the repository root
 - `tests/plugin/` at the repository root
 
-Keep the harness PowerShell-friendly because the primary development environment for this repository is Windows/PowerShell. The plugin skill frontmatter is a separate runtime execution context and is not the reason for the dev-tooling shell choice.
+The harness targets bash/Linux — the primary CI and development environment for this repository. The plugin skill frontmatter is a separate runtime execution context and is not the reason for the dev-tooling shell choice.
 
 Suggested command:
 
-```powershell
-./tools/policy_check.ps1
+```bash
+bash tools/policy_check.sh
 ```
 
 Acceptance criteria:
@@ -499,7 +499,7 @@ One PR should:
 
 ### Done When
 
-- `./tools/policy_check.ps1` runs locally.
+- `./tools/policy_check.sh` runs locally.
 - Report validator fixtures prove pass/fail behavior.
 - Plugin compatibility checks pass.
 - Safety regression checks exist for core invariants.
@@ -512,7 +512,7 @@ One PR should:
 
 ### Phase 2 Goal
 
-Phase 2 assigns stable rule IDs to every safety rule inventoried in Phase 1, builds a machine-readable policy index mapping each rule ID to its canonical source and consumers, ensures every safety gate has exactly one owner and one test fixture, then performs the structural separation of policy from procedure — splitting `agent-system-policy.md` into focused modules and adding compact checklists to skills. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.ps1`) must pass before and after every structural change.
+Phase 2 assigns stable rule IDs to every safety rule inventoried in Phase 1, builds a machine-readable policy index mapping each rule ID to its canonical source and consumers, ensures every safety gate has exactly one owner and one test fixture, then performs the structural separation of policy from procedure — splitting `agent-system-policy.md` into focused modules and adding compact checklists to skills. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.sh`) must pass before and after every structural change.
 
 ### Phase 2 Scope
 
@@ -571,7 +571,7 @@ Acceptance criteria:
 - IDs follow `<DOMAIN>-<NN>` format consistently.
 - No two rules share an ID.
 - ID scheme section is added to the rule index.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 10: Policy Index (CPX-5)
 
@@ -615,7 +615,7 @@ Acceptance criteria:
 - Every consumer file exists under `plugin/`.
 - Every non-null `testFixture` names an existing file under `tests/policy/`.
 - Index is consistent with existing safety fixtures.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 11: Safety Gate Ownership (REL-5)
 
@@ -638,7 +638,7 @@ Acceptance criteria:
 - Every fixture exists and parses as valid JSON.
 - Every fixture's `source.pattern` matches text in its source file.
 - Every consumer `pattern` matches or is confirmed absent via `"absent": true`.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 12a: Classify Governance Sections (CPX-1, part 1)
 
@@ -687,7 +687,7 @@ Acceptance criteria:
 - No governance file contains step-by-step procedures already present in a skill file.
 - All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
 - All safety fixture patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 12c: Verify Agent Ownership Boundaries (CPX-1, part 3)
 
@@ -702,7 +702,7 @@ Acceptance criteria:
 
 - Every cell in the Authority Matrix maps to an explicit statement in the corresponding agent file.
 - No agent file claims ownership contradicting the Authority Matrix.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 13: Split agent-system-policy.md (TC-5)
 
@@ -732,7 +732,7 @@ Acceptance criteria:
 - Every cross-reference in every agent and skill file resolves to the correct module.
 - All references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
 - All `tests/policy/safety-*.json` patterns still match (update `source.file` fields in fixtures if needed).
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 - No content is lost — every section present before the split appears in the result.
 
 ### Step 14: Compact Skill Checklists (TC-4)
@@ -771,7 +771,7 @@ Acceptance criteria:
 - Every rule ID referenced exists in `docs/planning/rule-index-draft.md`.
 - Checklists introduce no new rules and do not modify existing rule semantics.
 - No checklist exceeds 10 items.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Phase 2 Done When
 
@@ -782,7 +782,7 @@ Acceptance criteria:
 - `plugin/governance/agent-system-policy.md` is split into focused `<domain>-policy.md` modules with no content loss.
 - Every cross-reference in `plugin/` uses `${CLAUDE_PLUGIN_ROOT}/...` paths and resolves to an existing file and section.
 - Every skill has a compact `## Quick Reference` checklist referencing canonical rule IDs.
-- `tools/policy_check.ps1` passes after every PR lands.
+- `tools/policy_check.sh` passes after every PR lands.
 - All `tests/policy/safety-*.json` patterns match their source files.
 - Plugin version reflects structural changes: `0.2.2` after PR B, `0.2.3` after PR C.
 
@@ -792,7 +792,7 @@ Acceptance criteria:
 
 ### Phase 3 Goal
 
-Phase 3 improves routing clarity and workflow shape. It creates a routing matrix mapping user intent to skill/agent selection, collapses scattered review remediation routing into one canonical decision table, converts git preflight checks into explicit command recipes with expected outputs, and adds explicit "no PR requested" and "no review requested" workflow branches. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.ps1`) must pass before and after every structural change.
+Phase 3 improves routing clarity and workflow shape. It creates a routing matrix mapping user intent to skill/agent selection, collapses scattered review remediation routing into one canonical decision table, converts git preflight checks into explicit command recipes with expected outputs, and adds explicit "no PR requested" and "no review requested" workflow branches. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.sh`) must pass before and after every structural change.
 
 ### Phase 3 Scope
 
@@ -877,7 +877,7 @@ Acceptance criteria:
 - The matrix is consistent with the execution state machine transitions.
 - No new routing rules are introduced; the matrix documents existing behavior.
 - The document is marked as planning/advisory material (not active governance).
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 16: Canonical Remediation Decision Table (CPX-2)
 
@@ -924,7 +924,7 @@ Acceptance criteria:
 - All `tests/policy/safety-*.json` patterns still match.
 - `docs/planning/policy-index.json` entry for `REVIEW-01` is updated if its `source.section` changed.
 - `plugin/.claude-plugin/plugin.json` version is `0.2.4`.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 17: Git Preflight Command Recipes (REL-3)
 
@@ -969,7 +969,7 @@ Acceptance criteria:
 - The execution state machine Git Preflight state cross-references the recipes.
 - All existing cross-references to `(Required Git Preflight)` continue to resolve (header not renamed).
 - All `tests/policy/safety-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 18: Explicit No-PR and No-Review Workflow Branches (EFF-3)
 
@@ -1013,7 +1013,7 @@ Acceptance criteria:
 - Execution state machine PR state includes no-PR transition to Final Report.
 - All `tests/policy/safety-*.json` patterns still match.
 - `plugin/.claude-plugin/plugin.json` version is `0.2.5`.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Phase 3 Done When
 
@@ -1024,7 +1024,7 @@ Acceptance criteria:
 - `plugin/agents/orchestrator.md` Execution Algorithm explicitly handles "no PR requested" and "no review requested" workflow branches.
 - `docs/planning/execution-state-machine.md` transitions updated for no-PR and no-review paths and cross-reference the preflight recipes.
 - All cross-references in `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths and resolve to existing files and sections.
-- `tools/policy_check.ps1` passes after every PR lands.
+- `tools/policy_check.sh` passes after every PR lands.
 - All `tests/policy/safety-*.json` patterns match their source files.
 - Plugin version reflects changes: `0.2.4` after PR A, `0.2.5` after PR B.
 
@@ -1034,7 +1034,7 @@ Acceptance criteria:
 
 ### Phase 4 Goal
 
-Phase 4 adds safe efficiency paths to the framework. It proves the main workflow scenarios with golden-path tests, hardens the trivial fast path with stable condition IDs, classifies governance modules as mandatory or conditional to enable selective loading, investigates per-invocation model override support, adds bounded discovery to the planner to reduce token waste, and caches resolved repo facts in session reports. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.ps1`) must pass before and after every structural change.
+Phase 4 adds safe efficiency paths to the framework. It proves the main workflow scenarios with golden-path tests, hardens the trivial fast path with stable condition IDs, classifies governance modules as mandatory or conditional to enable selective loading, investigates per-invocation model override support, adds bounded discovery to the planner to reduce token waste, and caches resolved repo facts in session reports. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.sh`) must pass before and after every structural change.
 
 ### Phase 4 Scope
 
@@ -1083,7 +1083,7 @@ Create:
 
 Modify:
 
-- `tools/policy_check.ps1` — add a CHECK block that validates workflow test fixtures: parse JSON, verify each step's `source.pattern` exists in the named `source.file`.
+- `tools/policy_check.sh` — add a CHECK block that validates workflow test fixtures: parse JSON, verify each step's `source.pattern` exists in the named `source.file`.
 
 **Fixture format:**
 
@@ -1113,7 +1113,7 @@ Acceptance criteria:
 
 - Five fixture files exist in `tests/workflows/` and parse as valid JSON.
 - Every fixture's source patterns match their target plugin files.
-- `tools/policy_check.ps1` workflow CHECK block passes.
+- `tools/policy_check.sh` workflow CHECK block passes.
 - No `plugin/` files modified.
 
 ### Step 21: Harden Trivial Fast Path and Rename (EFF-1 + CLR-3)
@@ -1149,7 +1149,7 @@ Acceptance criteria:
 - All `tests/policy/safety-*.json` patterns still match.
 - All `tests/workflows/golden-*.json` patterns still match.
 - `plugin/.claude-plugin/plugin.json` version is `0.2.6`.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 22a: Governance Module Classification Spec (EFF-2 part a)
 
@@ -1182,7 +1182,7 @@ Acceptance criteria:
 - Mandatory and conditional sets are internally consistent; modules proposed for reclassification from mandatory to conditional are explicitly listed for update in `plugin/governance/agent-system-policy.md` as part of Step 22b.
 - Fallback rule is fail-open (include when uncertain).
 - No `plugin/` files modified. (Reclassification changes to `agent-system-policy.md` are deferred to Step 22b, which already touches `plugin/`.)
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 22b: Implement Workflow Loadout in Planner (EFF-2 part b)
 
@@ -1211,7 +1211,7 @@ Acceptance criteria:
 - Report validator fixtures updated to include the field.
 - `plugin/governance/agent-system-policy.md` Mandatory Governance Files section updated to remove modules reclassified as conditional by the Step 22a spec.
 - All `tests/policy/safety-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 23: Per-Invocation Model Override Investigation (PERF-6)
 
@@ -1238,7 +1238,7 @@ Acceptance criteria:
 - `docs/planning/perf-6-investigation.md` answers all three questions with cited evidence.
 - A PERF-1 recommendation is stated.
 - No `plugin/` files modified.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 24: Bounded Discovery Commands for Planner (PERF-2)
 
@@ -1252,7 +1252,7 @@ Acceptance criteria:
 - Positioned after `## Research Rules`.
 - Existing Research Rules content unchanged.
 - All `tests/policy/safety-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 25: Session Fact Cache in Reports (PERF-3)
 
@@ -1271,7 +1271,7 @@ Acceptance criteria:
 - Report validator fixture updated.
 - `plugin/.claude-plugin/plugin.json` version is `0.2.8`.
 - All `tests/policy/safety-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Phase 4 Done When
 
@@ -1285,7 +1285,7 @@ Acceptance criteria:
 - `plugin/governance/communication-policy.md` includes `## Session Fact Cache` section.
 - `plugin/agents/orchestrator.md` Delegation Template and Final Report include optional `Session facts:` blocks.
 - All cross-references in `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths.
-- `tools/policy_check.ps1` passes after every PR lands.
+- `tools/policy_check.sh` passes after every PR lands.
 - All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match.
 - Plugin versions: `0.2.6` after PR A, `0.2.7` after PR C, `0.2.8` after PR D. PR B has no bump.
 
@@ -1375,7 +1375,7 @@ Acceptance criteria:
 - All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
 - All `tests/policy/safety-*.json` patterns still match.
 - All `tests/workflows/golden-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 27: Conservative Cross-Reference Additions (CPX-3)
 
@@ -1397,7 +1397,7 @@ Acceptance criteria:
 - All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
 - All `tests/policy/safety-*.json` patterns still match.
 - All `tests/workflows/golden-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 28: Targeted Versioning Activation (CPX-4)
 
@@ -1415,7 +1415,7 @@ Acceptance criteria:
 - `plugin/.claude-plugin/plugin.json` version is `0.3.1`.
 - All `tests/policy/safety-*.json` patterns still match.
 - All `tests/workflows/golden-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Phase 6 Done When
 
@@ -1436,7 +1436,7 @@ Acceptance criteria:
 
 ### Phase 7 Goal
 
-Phase 7 adds three targeted refinements that improve efficiency and reduce token load without weakening safety. It makes CLAUDE.md validation class-aware so docs-only changes skip unnecessary plugin checks, promotes session facts from advisory to mandatory in delegations to eliminate repeated re-resolution across phases, and extracts the long always-visible delegation template bodies in the orchestrator into appendices so only invocation criteria appear inline. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.ps1`) must pass before and after every structural change.
+Phase 7 adds three targeted refinements that improve efficiency and reduce token load without weakening safety. It makes CLAUDE.md validation class-aware so docs-only changes skip unnecessary plugin checks, promotes session facts from advisory to mandatory in delegations to eliminate repeated re-resolution across phases, and extracts the long always-visible delegation template bodies in the orchestrator into appendices so only invocation criteria appear inline. No safety rule may be weakened. Phase 1 safety checks (`tools/policy_check.sh`) must pass before and after every structural change.
 
 ### Phase 7 Scope
 
@@ -1493,7 +1493,7 @@ Acceptance criteria:
 - Matrix covers both classes with unambiguous file-path condition.
 - Mixed-PR rule is stated.
 - No other `CLAUDE.md` content modified.
-- `tools/policy_check.ps1` passes (if applicable to CLAUDE.md changes).
+- `tools/policy_check.sh` passes (if applicable to CLAUDE.md changes).
 
 ### Step 35: Mandatory Session Facts (PERF-7)
 
@@ -1508,7 +1508,7 @@ Acceptance criteria:
 - Compact delegation template form also updated.
 - All `tests/workflows/golden-*.json` patterns still match.
 - All `tests/policy/safety-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 36: Delegation Template Appendices (TC-6)
 
@@ -1539,7 +1539,7 @@ Acceptance criteria:
 - `plugin/.claude-plugin/plugin.json` version is `0.3.3`.
 - All cross-references use `${CLAUDE_PLUGIN_ROOT}/...` paths.
 - Delegation template section states: payloads use key/value block format only; narrative prose prohibited except in blocked/error states.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Step 37: Delta Session Facts Protocol (PERF-8)
 
@@ -1558,7 +1558,7 @@ Acceptance criteria:
 - Inline example demonstrates the contrast between delegations with different field subsets.
 - All `tests/workflows/golden-*.json` patterns still match.
 - All `tests/policy/safety-*.json` patterns still match.
-- `tools/policy_check.ps1` passes.
+- `tools/policy_check.sh` passes.
 
 ### Phase 7 Done When
 
@@ -1567,7 +1567,7 @@ Acceptance criteria:
 - Version Bump and Review Remediation delegation template bodies are moved to appendix locations; only invocation criteria appear inline in `plugin/agents/orchestrator.md`.
 - All cross-references in `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths and resolve to existing files and sections.
 - `plugin/.claude-plugin/plugin.json` version is `0.3.3`.
-- `tools/policy_check.ps1` passes after every PR lands.
+- `tools/policy_check.sh` passes after every PR lands.
 - All `tests/policy/safety-*.json` and `tests/workflows/golden-*.json` patterns match their source files.
 - Two-part session facts protocol is defined in `plugin/agents/orchestrator.md`: orchestrator tracks resolved facts across phases (no re-resolution); delegations include only task-relevant fields as full values (no sentinels).
 - Delegation template section prohibits narrative prose in payloads (key/value block format only, except blocked/error states).
