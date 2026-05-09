@@ -157,7 +157,7 @@ Reply:
 - Not posted because:
 
 Resolved:
-- Thread: resolved | not applicable | failed (reason)
+- Thread: resolved | not applicable | not resolved (N unaddressed comment(s) remain) | failed (reason)
 
 Issues:
 - [issue]
