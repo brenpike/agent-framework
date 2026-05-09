@@ -109,13 +109,15 @@ Optional:
    Every actionable fix gets a reply with the commit SHA so the re-review gate in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Re-review preconditions) is satisfied.
 10. Resolve the review thread when applicable. This step applies only when step 9 used `addPullRequestReviewThreadReply` (inline review thread). When step 9 used `gh pr comment` (top-level PR comment or review summary), mark `Resolved: Thread: not applicable` — these are not GraphQL review threads and have no resolution state.
 
-    When resolving, call the `resolveReviewThread` mutation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` using the thread ID captured in step 2.
-
     Safety preconditions (all must hold before calling `resolveReviewThread`):
     - (a) The fix-SHA reply must already be posted (step 9 complete).
     - (b) The fix must be committed, pushed, and validated (steps 7-8 complete).
     - (c) Do not resolve threads classified as `question-needs-user-input`.
     - (d) Do not resolve threads where feedback was classified as `incorrect-or-rejected` at P0/P1/security/public-API/compatibility/architecture/package-release/versioning severity without explicit user approval — see `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` Safety Rules for the full list of protected categories.
+
+    Pre-resolve re-fetch check (required before calling `resolveReviewThread`): re-fetch the thread's current comment list using the Fetch Thread Comments query from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Apply Detection Filtering rules (exclude empty body; exclude comments whose `author.login` equals `SELF_LOGIN`) to the result. A non-self comment is considered addressed if it was part of the target feedback addressed in this invocation OR if it already has a fix-SHA reply posted by a prior invocation (i.e., the reply body contains a commit SHA pattern). If every non-self comment in the thread is addressed, call `resolveReviewThread`. If any non-self comment remains unaddressed, do not call `resolveReviewThread`; instead log `Thread: not resolved — N unaddressed comment(s) remain` in the `Resolved:` output field and do not change `Status` to `blocked`.
+
+    When all preconditions and the pre-resolve re-fetch check pass, call the `resolveReviewThread` mutation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` using the thread ID captured in step 2.
 
     On `resolveReviewThread` mutation failure, log the failure reason in the `Resolved:` output field and do not change `Status` to `blocked`. Resolution is non-blocking — the fix-SHA reply is the primary re-review gate.
 
