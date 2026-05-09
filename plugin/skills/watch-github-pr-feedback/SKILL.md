@@ -151,7 +151,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
       state
-      reviewThreads(first: 100) {
+      reviewThreads(last: 100) {
         nodes {
           id
           isResolved
@@ -177,7 +177,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           url
         }
       }
-      reviews(first: 50) {
+      reviews(last: 50) {
         nodes {
           id
           author { login }
