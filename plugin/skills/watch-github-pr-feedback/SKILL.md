@@ -23,7 +23,7 @@ Before:
 - [ ] Stop conditions configured
 
 After:
-- [ ] New feedback classified and routed to address-pr-feedback
+- [ ] New feedback classified and routed to address-github-pr-feedback
 - [ ] Monitoring reported truthfully (active or not active)
 - [ ] Stopped on policy stop condition
 - [ ] Output uses skill output contract
@@ -53,7 +53,7 @@ Use only when the user explicitly asks to:
 - loop on Codex/human review feedback
 - use Monitor for PR feedback
 
-Do not use for one-time requests like `fix PR comment on PR #N`; use `agent-framework:address-pr-feedback`.
+Do not use for one-time requests like `fix PR comment on PR #N`; use `agent-framework:address-github-pr-feedback`.
 
 ## Required Inputs
 
@@ -98,7 +98,7 @@ Optional:
    - human reviewer feedback
    - CI/system feedback
    - ambiguous
-8. Route generic/human/ambiguous feedback → `agent-framework:address-pr-feedback`.
+8. Route generic/human/ambiguous feedback → `agent-framework:address-github-pr-feedback`.
 9. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, stop the Monitor (e.g., via TaskStop) and report the terminal state — do not continue polling a terminal resource.
 
 ## Monitor Rules
@@ -176,7 +176,7 @@ Watch:
 - New actionable comments:
 
 Routed:
-- address-pr-feedback: [count]
+- address-github-pr-feedback: [count]
 - None
 
 Stopped because:

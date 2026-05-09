@@ -61,15 +61,15 @@ Do not silently ignore review feedback.
 
 ## Remediation Decision Table
 
-The `Skill` column value depends on user-request keywords: if the request contains `watch`, `monitor`, `wait`, `poll`, or `loop`, use `agent-framework:watch-pr-feedback`; otherwise use `agent-framework:address-pr-feedback`.
+The `Skill` column value depends on user-request keywords: if the request contains `watch`, `monitor`, `wait`, `poll`, or `loop`, use `agent-framework:watch-github-pr-feedback`; otherwise use `agent-framework:address-github-pr-feedback`.
 
 | Classification | Worker | Skill | Escalate to |
 |---|---|---|---|
-| `actionable-code-change` | `agent-framework:coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
-| `actionable-test-change` | `agent-framework:coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
-| `actionable-doc-change` | `agent-framework:coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `actionable-code-change` | `agent-framework:coder` | `address-github-pr-feedback` / `watch-github-pr-feedback` | — |
+| `actionable-test-change` | `agent-framework:coder` | `address-github-pr-feedback` / `watch-github-pr-feedback` | — |
+| `actionable-doc-change` | `agent-framework:coder` | `address-github-pr-feedback` / `watch-github-pr-feedback` | — |
 | `architecture-or-contract-concern` | — | — | `agent-framework:planner` (then `agent-framework:coder`) |
-| `design-or-UX-concern` | `agent-framework:designer` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `design-or-UX-concern` | `agent-framework:designer` | `address-github-pr-feedback` / `watch-github-pr-feedback` | — |
 | `version-or-release-concern` | — | — | `agent-framework:planner` (then `agent-framework:coder`) |
 | `question-needs-user-input` | — | — | user |
 | `non-actionable` | — | — | — (reply only) |
@@ -169,4 +169,4 @@ A remediation skill is not a monitor. A monitor detects new feedback and routes 
 
 Monitoring must be read-only, deterministic, bounded, parser-stable, and truthfully reported. Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md` (Monitoring Policy).
 
-Use `agent-framework:watch-pr-feedback` for monitor-backed behavior. If Monitor, `/loop`, scheduling support, or the approved parser strategy is unavailable, fall back to manual remediation or return `blocked`.
+Use `agent-framework:watch-github-pr-feedback` for monitor-backed behavior. If Monitor, `/loop`, scheduling support, or the approved parser strategy is unavailable, fall back to manual remediation or return `blocked`.

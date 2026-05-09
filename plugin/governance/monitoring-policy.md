@@ -30,7 +30,7 @@ If the approved shell/parser strategy fails, retry once only when the failure ma
 
 A remediation skill is not a monitor. A monitor is not a remediator.
 
-Use `agent-framework:watch-pr-feedback` only when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. See Definitions → One-time vs watch routing.
+Use `agent-framework:watch-github-pr-feedback` only when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. See Definitions → One-time vs watch routing.
 
 Monitoring must be:
 

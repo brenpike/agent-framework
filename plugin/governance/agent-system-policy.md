@@ -93,10 +93,10 @@ Visual changes that reuse existing tokens, scales, and documented patterns are n
 
 Two skills handle PR feedback. Choose by user-request keywords only — the comment author never decides which skill is used, and missing PR identifiers do not exclude the skill at routing time.
 
-- `agent-framework:watch-pr-feedback` — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`
-- `agent-framework:address-pr-feedback` — every other PR-feedback request, including one-time fixes for Codex, human, or bot comments
+- `agent-framework:watch-github-pr-feedback` — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`
+- `agent-framework:address-github-pr-feedback` — every other PR-feedback request, including one-time fixes for Codex, human, or bot comments
 
-PR identification is the skill's responsibility, not the router's. If the user request matches `watch-pr-feedback` but does not name a PR, the orchestrator still routes to `watch-pr-feedback` and passes the available context (current branch, current repo). The skill resolves the PR via `gh pr view --json number,state` against the current branch. If no open PR is associated with the current branch, the skill returns the Blocked Report Contract with `Stage: skill selection` or `Stage: fetch` and `Blocker: no PR identified`. The same applies to `address-pr-feedback`.
+PR identification is the skill's responsibility, not the router's. If the user request matches `watch-github-pr-feedback` but does not name a PR, the orchestrator still routes to `watch-github-pr-feedback` and passes the available context (current branch, current repo). The skill resolves the PR via `gh pr view --json number,state` against the current branch. If no open PR is associated with the current branch, the skill returns the Blocked Report Contract with `Stage: skill selection` or `Stage: fetch` and `Blocker: no PR identified`. The same applies to `address-github-pr-feedback`.
 
 The author of the comment (Codex, human reviewer, bot, automated reviewer) affects classification per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), not skill selection.
 

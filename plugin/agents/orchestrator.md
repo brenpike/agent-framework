@@ -54,18 +54,18 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:create-working-branch`: before implementation, create/confirm the compliant working branch.
 - `agent-framework:checkpoint-commit`: commit a completed phase, milestone, version bump, or review-remediation fix.
 - `agent-framework:open-plan-pr`: open a PR only after completion, validation, and versioning gates pass.
-- `agent-framework:request-codex-review`: request Codex review on an existing pushed PR.
-- `agent-framework:address-pr-feedback`: one-time PR feedback fix where the user request does not contain `watch`, `monitor`, `wait`, `poll`, or `loop`. Used for one-time Codex, human, and bot comment fixes alike. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
-- `agent-framework:watch-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
+- `agent-framework:request-github-codex-review`: request Codex review on an existing pushed PR.
+- `agent-framework:address-github-pr-feedback`: one-time PR feedback fix where the user request does not contain `watch`, `monitor`, `wait`, `poll`, or `loop`. Used for one-time Codex, human, and bot comment fixes alike. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
+- `agent-framework:watch-github-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
 
 Selection order (most specific first — choose the first whose Invocation Boundary matches):
 
 1. `agent-framework:create-working-branch`
 2. `agent-framework:checkpoint-commit`
 3. `agent-framework:open-plan-pr`
-4. `agent-framework:request-codex-review`
-5. `agent-framework:watch-pr-feedback`
-6. `agent-framework:address-pr-feedback`
+4. `agent-framework:request-github-codex-review`
+5. `agent-framework:watch-github-pr-feedback`
+6. `agent-framework:address-github-pr-feedback`
 
 Full PR-feedback selection detail: `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
@@ -165,7 +165,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 12. Delegate version/release edits to `agent-framework:coder` when required.
 13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
 14. If the user explicitly requested no PR (task input contains "no PR", "skip PR", "don't open PR", or equivalent opt-out), skip PR opening and proceed to the Final Report with `PR: not opened (user opted out)`. All other gates still apply — validation, scope verification, and version bump must complete before the Final Report. Otherwise, open PR when the approved plan is complete.
-15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, or `question-needs-user-input` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). The remediation skill itself decides per-class whether to delegate, escalate to the user, or block (see `${CLAUDE_PLUGIN_ROOT}/skills/address-pr-feedback/SKILL.md` Procedure step 3). If neither (a) nor (b) is true, skip external review and proceed to the Final Report with `Review: Requested: no`. External review is opt-in; this is the default path.
+15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, or `question-needs-user-input` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). The remediation skill itself decides per-class whether to delegate, escalate to the user, or block (see `${CLAUDE_PLUGIN_ROOT}/skills/address-github-pr-feedback/SKILL.md` Procedure step 3). If neither (a) nor (b) is true, skip external review and proceed to the Final Report with `Review: Requested: no`. External review is opt-in; this is the default path.
 
 ## Delegation Template
 
