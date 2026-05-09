@@ -12,7 +12,7 @@ allowed-tools:
   - Bash(git push *)
   - Bash(gh pr create *)
   - Bash(gh pr view *)
-shell: powershell
+shell: bash
 ---
 
 ## Quick Reference

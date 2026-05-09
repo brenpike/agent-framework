@@ -8,7 +8,7 @@ allowed-tools:
   - Bash(git rev-parse *)
   - Bash(test *)
   - Bash(mkdir -p *)
-shell: powershell
+shell: bash
 ---
 
 ## Quick Reference

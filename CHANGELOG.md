@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.0.0] - 2026-05-09
+
+### Changed
+
+- **Toolchain converted from PowerShell to bash.** `tools/policy_check.ps1` and `tools/validate_reports.ps1` replaced with `tools/policy_check.sh` and `tools/validate_reports.sh`. All 8 policy checks and all 7 report validators preserved with identical semantics.
+- **CI workflow updated to bash.** `.github/workflows/policy-check.yml` now runs `bash ./tools/policy_check.sh --strict` and `bash ./tools/validate_reports.sh --batch tests/reports/` on `ubuntu-latest` (no `shell: pwsh` override).
+- **All 9 skill `shell:` declarations changed to `bash`.** Every `SKILL.md` frontmatter now declares `shell: bash`.
+- **`local-codex-review` skill: PowerShell path-discovery replaced with bash.** `Get-Item | Sort-Object | Select-Object` pattern replaced with `ls -t ... | head -1`; allowed-tools entries updated to bash variable syntax.
+- **`watch-github-pr-feedback` skill: `$env:SELF_LOGIN` replaced with `export SELF_LOGIN=`.** PowerShell environment variable syntax replaced with bash export throughout procedure and comment-filtering documentation.
+- **`monitoring-policy.md`: "Windows Compatibility" section renamed to "Shell Compatibility".** Windows/PowerShell-specific language removed; `gh --jq` rationale updated to "canonical cross-environment tool".
+- **`github-pr-review-graphql.md`: PowerShell parser prohibition and PowerShell `SELF_LOGIN` variant removed.**
+
+### Breaking
+
+- **Drops PowerShell/Windows support.** The plugin toolchain and all skill shell declarations now require a bash/Linux environment. PowerShell is no longer a supported shell for skills or tooling.
+
 ## [0.9.0] - 2026-05-09
 
 ### Added

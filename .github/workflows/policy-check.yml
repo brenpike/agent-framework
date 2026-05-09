@@ -21,10 +21,8 @@ jobs:
           python3 -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
           python3 -c "import json; json.load(open('.claude-plugin/marketplace.json'))"
 
-      - name: Run policy_check.ps1 -Strict
-        shell: pwsh
-        run: ./tools/policy_check.ps1 -Strict
+      - name: Run policy_check.sh --strict
+        run: bash ./tools/policy_check.sh --strict
 
-      - name: Run validate_reports.ps1 (batch)
-        shell: pwsh
-        run: ./tools/validate_reports.ps1 -Batch tests/reports/
+      - name: Run validate_reports.sh (batch)
+        run: bash ./tools/validate_reports.sh --batch tests/reports/

@@ -9,7 +9,7 @@ allowed-tools:
   - Bash(git checkout *)
   - Bash(git switch *)
   - Bash(git fetch *)
-shell: powershell
+shell: bash
 ---
 
 ## Quick Reference

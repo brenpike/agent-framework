@@ -5,12 +5,12 @@ disable-model-invocation: false
 allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh api *)
-  - Bash($env:SELF_LOGIN = (gh api user --jq .login))
+  - Bash(export SELF_LOGIN=$(gh api user --jq .login))
   - Bash(git status *)
   - Bash(git branch *)
   - Monitor
   - Skill
-shell: powershell
+shell: bash
 ---
 
 ## Quick Reference
@@ -92,7 +92,7 @@ Optional:
 1. Resolve PR: if the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. Confirm the resolved PR's state is `OPEN`. If no PR is associated with the current branch, or the resolved PR's state is not `OPEN` (e.g., `MERGED`, `CLOSED`), return Blocked with `Blocker: no open PR identified` (include the resolved state when available).
 2. Confirm GitHub CLI access works.
 3. Confirm current branch and working tree state.
-4. Resolve the bot identity once at startup: run `$env:SELF_LOGIN = (gh api user --jq .login)` to export the result as `SELF_LOGIN`. Apply Comment Filtering (see below) to every detected item before adding it to the ledger. Items excluded by Comment Filtering are never added to the ledger and never classified.
+4. Resolve the bot identity once at startup: run `export SELF_LOGIN=$(gh api user --jq .login)` to export the result as `SELF_LOGIN`. Apply Comment Filtering (see below) to every detected item before adding it to the ledger. Items excluded by Comment Filtering are never added to the ledger and never classified.
 5. Start Monitor when available using one deterministic, read-only feedback-detection command based on `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Detection must cover review threads, top-level PR comments, review summaries (reviews with state in `CHANGES_REQUESTED` or `COMMENTED` whose body, when classified per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification, maps to any `actionable-*` or `injection-suspect` class), and the PR's `state` field on every poll so terminal transitions to `MERGED` or `CLOSED` are observable. Fetch and ledger review summary IDs and states alongside thread and comment IDs.
 6. Track seen comment/thread/review IDs in a session-local ledger.
 7. When new feedback appears, classify source:
@@ -214,7 +214,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 > **Monitor coverage limits:** This query intentionally omits `pageInfo` and pagination. Full pagination would require multiple API calls per poll cycle, which is not feasible for a Monitor command. Instead, each connection uses `last: N` to fetch the most recent N items — new activity appears at the end of connections and is always within the fetched page. PRs with more than 100 unresolved review threads, 100 top-level comments, or 50 review summaries may have older items outside the fetched window; those items are not detected by this Monitor query. If a PR reaches these limits, run a one-time manual fetch using the full paginated queries in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`.
 
 This command:
-- Uses no shell-level line continuation characters — the multiline query and jq expressions live inside single-quoted strings, which span multiple lines in both PowerShell and Bash without modification
+- Uses no shell-level line continuation characters — the multiline query and jq expressions live inside single-quoted strings, which span multiple lines in bash without modification
 - Embeds `viewer { login }` in the GraphQL query and uses `.data.viewer.login as $self` for self-author filtering — no environment variable required
 - Always emits `STATE=<value>` first so Monitor detects `MERGED` or `CLOSED` on every poll
 - Emits `THREAD=...` lines for unresolved review thread comments passing all filters
@@ -235,7 +235,7 @@ This rule applies to review summaries regardless of the review's `state` field. 
 
 ### Rule 2 — Self-author
 
-Exclude any comment or review whose `author.login` value (string, case-sensitive literal comparison) equals the `SELF_LOGIN` resolved via `$env:SELF_LOGIN = (gh api user --jq .login)` at startup (Procedure step 4).
+Exclude any comment or review whose `author.login` value (string, case-sensitive literal comparison) equals the `SELF_LOGIN` resolved via `export SELF_LOGIN=$(gh api user --jq .login)` at startup (Procedure step 4).
 
 - Identity is resolved once at startup and reused for the entire session without re-querying.
 - Comparison is an exact string match. Do not use pattern matching, prefix matching, or case-folding.
