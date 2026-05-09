@@ -103,7 +103,8 @@ Fix ledger schema:
    e. Update fix ledger: record all findings for this iteration, mark prior findings as `"fixed"` if their `id` no longer appears.
    f. **Break-fix-break detection** (before routing — see Detection section below). If 2 of 3 signals fire, set `exit_reason: "break-fix-break"` and return blocked with conflict summary.
    g. Classify each new finding using the classification taxonomy in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification). Mark as `"open"` in ledger.
-   h. Route per the Local Review Remediation Decision Table in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Local Review Remediation Decision Table):
+   h. **All-non-actionable check**: If every finding in the current iteration has status `non-actionable` or `incorrect-or-rejected` (zero actionable findings remain after classification): set `exit_reason: "clean"`, record in ledger, exit loop. Re-running would review the same unchanged diff and reproduce the same result.
+   i. Route per the Local Review Remediation Decision Table in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Local Review Remediation Decision Table):
       - `actionable-*` → delegate to `agent-framework:coder`; after coder returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding
       - `architecture-or-contract-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); after coder returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding; if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
       - `version-or-release-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); after coder returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding; if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
@@ -111,8 +112,8 @@ Fix ledger schema:
       - `question-needs-user-input` → set `exit_reason: "user-input-required"`, return blocked with `Stage: review remediation` and the finding as the user question
       - `non-actionable` → record in ledger with status `"non-actionable"`, skip, continue to next finding
       - `incorrect-or-rejected` → record in ledger with status `"rejected"`, do not remediate, do not exit loop, continue to next finding
-   i. After all findings routed and fixed: record `fix_commit` from the coder's checkpoint commit SHA.
-   j. Check exit conditions (see Exit Conditions below).
+   j. After all findings routed and fixed: record `fix_commit` from the coder's checkpoint commit SHA.
+   k. Check exit conditions (see Exit Conditions below).
 5. At loop end: write final fix ledger state.
 
 ## Break-Fix-Break Detection
@@ -135,6 +136,7 @@ Do not auto-resolve. User must decide.
 Stop the loop when any of the following is true:
 - `verdict: "approve"` and findings empty: `exit_reason: "clean"`
 - `verdict: "approve"` and findings non-empty (all informational): `exit_reason: "clean"`
+- All findings in current iteration are `non-actionable` or `incorrect-or-rejected`: `exit_reason: "clean"` (no actionable remediation possible; re-running would reproduce the same result on the same diff)
 - Max iterations reached: set `exit_reason: "max-iterations-reached"` in the ledger, then return blocked:
   ```
   Status: blocked
