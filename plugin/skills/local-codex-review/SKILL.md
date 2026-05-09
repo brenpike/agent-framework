@@ -50,7 +50,8 @@ $codexScript = Get-Item "$HOME/.claude/plugins/cache/openai-codex/codex/*/script
 **Review invocation** — run the review command with the resolved path:
 
 ```powershell
-node "<resolved-path>" review --base <base> --wait
+$baseRef = '<base>'   # assigned earlier from the caller-provided base input
+node $codexScript review --base $baseRef --wait
 ```
 
 The command writes rendered text to stdout. Do not add `--json`; the default output is rendered text, not JSON.
@@ -117,7 +118,7 @@ Normalize each finding by adding a stable `id` field (deterministic SHA-256 hash
 1. Confirm `base` and `iteration` are provided. Return blocked if either is missing.
 2. Confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 3. Run the PowerShell path-discovery command (`Get-Item "$HOME/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName`). If the result is empty (no file found), return blocked with `Blocker: codex-plugin-cc not available`.
-4. Run `node "<resolved-path>" review --base <base> --wait`. Capture stdout as the review result.
+4. Run `node $codexScript review --base $baseRef --wait` where `$baseRef` holds the caller-supplied base input, assigned before the node invocation to prevent shell metacharacter injection. Capture stdout as the review result.
 5. Parse the captured stdout as rendered text per the Output Schema parsing rules. If stdout is empty or does not begin with `# Codex Review`, return blocked with `Blocker: unexpected output shape` and include the raw output in `Issues:`.
 6. If the `node` command exits with a non-zero exit code, return blocked with `Blocker: review CLI failed` and include the exit code and any stderr in `Issues:`.
 7. Normalize findings: compute `id` as SHA-256 hex digest of the concatenation `file + line_start + line_end + title` for each finding. Add `iteration` and `base` to the top-level output.
