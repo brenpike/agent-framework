@@ -60,6 +60,16 @@ A review finding repeats when any of the following matches a finding seen in a p
 
 A finding "repeats after attempted remediation" when one of the above matches and at least one full remediation cycle (delegate → commit → push) has run on that finding since it first appeared.
 
+### Break-fix-break cycle
+
+A break-fix-break cycle is detected when 2 of the following 3 signals fire in the same iteration of the pre-PR local review loop:
+
+1. **Line-range overlap**: a new finding's (`file`, `line_start`, `line_end`) overlaps with a finding that was marked `"fixed"` in a prior iteration.
+2. **Git revert**: the current fix commit's diff contains lines that are the inverse of changes made in a prior fix commit recorded in the fix ledger.
+3. **N-2 iteration delta**: the current iteration's finding `id` set is identical to the finding `id` set from two iterations prior (iteration N-2), indicating oscillation.
+
+When a break-fix-break cycle is detected, the loop must stop and escalate to the user. The escalation must include: which signals fired, the conflicting finding IDs, the affected file and line ranges, and the prior fix commit SHA being undone or re-introduced.
+
 ### Smallest correct fix
 
 The smallest correct fix is the change with the fewest changed files that addresses the targeted feedback or task without modifying any file outside the assigned scope, unless cross-file change is required to make the project build, typecheck, or pass referenced tests. Among fixes with equal file count, choose the one with the fewest changed lines.

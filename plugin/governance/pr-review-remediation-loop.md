@@ -170,3 +170,47 @@ A remediation skill is not a monitor. A monitor detects new feedback and routes 
 Monitoring must be read-only, deterministic, bounded, parser-stable, and truthfully reported. Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md` (Monitoring Policy).
 
 Use `agent-framework:watch-github-pr-feedback` for monitor-backed behavior. If Monitor, `/loop`, scheduling support, or the approved parser strategy is unavailable, fall back to manual remediation or return `blocked`.
+
+## Pre-PR Local Review Loop
+
+### Purpose
+
+Run a Codex review loop on the local working branch before pushing and opening a PR. Entry does not require a PR to exist. The loop is orchestrator-owned; `agent-framework:review-loop-controller` executes it.
+
+### Entry Criteria
+
+- Working branch exists and is not trunk
+- Git state is not unsafe
+- Validation (per orchestrator step 13) has completed
+- `codex-plugin-cc` is available (detected by `agent-framework:local-codex-review`)
+- User has not opted out
+
+### Loop Governance
+
+- Default max iterations: 5
+- At max iterations: ask user (continue 5 more / push now / stop entirely)
+- Classification: use the same classification taxonomy as the existing Classification section above, applied to Codex findings instead of GitHub PR threads
+- Break-fix-break detection: see `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Break-fix-break cycle)
+
+### Local Review Remediation Decision Table
+
+This table applies to pre-PR local Codex review findings only. For post-PR GitHub review, use the Remediation Decision Table above.
+
+| Classification | Worker | Skill | Escalate to |
+|---|---|---|---|
+| `actionable-code-change` | `agent-framework:coder` | `review-loop-controller` (internal) | — |
+| `actionable-test-change` | `agent-framework:coder` | `review-loop-controller` (internal) | — |
+| `actionable-doc-change` | `agent-framework:coder` | `review-loop-controller` (internal) | — |
+| `architecture-or-contract-concern` | — | — | `agent-framework:planner` (then `agent-framework:coder`) |
+| `design-or-UX-concern` | `agent-framework:designer` | `review-loop-controller` (internal) | — |
+| `version-or-release-concern` | — | — | `agent-framework:planner` (then `agent-framework:coder`) |
+| `question-needs-user-input` | — | — | user (loop exits) |
+| `non-actionable` | — | — | — (recorded in ledger, not remediated) |
+
+### Fix Ledger
+
+Maintain a durable fix ledger per branch (see `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller/SKILL.md` for schema). Persist in claude-mem when present; else `.agent-framework/review-loop/loop-state-<branch>.json`.
+
+### Push + PR Gate
+
+The orchestrator must not push or open a PR until the loop exits with `exit_reason: "clean"` or the user explicitly approves push after max-iterations. See orchestrator Execution Algorithm step 13a.

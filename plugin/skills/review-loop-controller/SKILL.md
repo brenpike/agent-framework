@@ -1,0 +1,168 @@
+---
+name: review-loop-controller
+description: Run a pre-PR local Codex review loop on the working branch, iterate up to 5 times remediating findings, detect break-fix-break cycles, and return a loop-exit report to the orchestrator. Does not push or open a PR.
+disable-model-invocation: false
+allowed-tools:
+  - Read
+  - Bash(git status *)
+  - Bash(git branch *)
+  - Bash(git diff *)
+  - Bash(git log *)
+  - Agent(agent-framework:planner, agent-framework:coder, agent-framework:designer)
+  - Skill
+shell: powershell
+---
+
+## Quick Reference
+
+Rules: `VAL-01`, `REPORT-01`, `REVIEW-01`
+
+Before:
+- [ ] `base`, `working_branch`, and `trunk` inputs are provided
+- [ ] Git state is not unsafe
+- [ ] `codex-plugin-cc` is available (verified by `local-codex-review` on first call)
+
+After:
+- [ ] Loop exited with documented `exit_reason`
+- [ ] Fix ledger written to `.agent-framework/review-loop/loop-state-<branch>.json` or claude-mem
+- [ ] Output uses skill output contract
+
+## Purpose
+
+Own the pre-PR local Codex review loop. Per iteration: invoke `agent-framework:local-codex-review`, classify findings, route remediation, commit fix, check exit conditions. Does NOT push or open a PR — returns control to orchestrator with loop-exit report.
+
+Invoked by orchestrator only.
+
+Follow:
+
+- `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`
+- `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`
+
+## Required Inputs
+
+The caller resolves and passes these. The skill does not resolve them on its own.
+
+- `base`: base branch/ref to review against (e.g., `main`).
+- `working_branch`: current working branch name.
+- `trunk`: resolved trunk branch name.
+- `claude_mem`: `present` or `absent` (for state persistence routing).
+
+Optional:
+- `max_iterations`: integer, default `5`
+
+## State Persistence
+
+When `claude_mem: present`: store fix ledger as claude-mem observations tagged with `review-loop` and the branch name.
+When `claude_mem: absent`: write to `.agent-framework/review-loop/loop-state-<working_branch>.json`. Create directory if it does not exist.
+
+Fix ledger schema:
+```json
+{
+  "branch": "string",
+  "base": "string",
+  "max_iterations": 5,
+  "iterations": [
+    {
+      "iteration": 1,
+      "findings": [
+        {
+          "id": "string",
+          "severity": "string",
+          "title": "string",
+          "file": "string",
+          "line_start": 0,
+          "line_end": 0,
+          "status": "open|fixing|fixed|regressed|cycling",
+          "introduced_iteration": 1,
+          "fixed_iteration": null,
+          "fix_commit": null
+        }
+      ],
+      "verdict": "approve|needs-attention",
+      "exit_reason": null
+    }
+  ],
+  "exit_reason": null,
+  "exit_iteration": null
+}
+```
+
+## Procedure
+
+1. Confirm `base`, `working_branch`, `trunk` are provided. Return blocked if any missing.
+2. Confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Unsafe git state).
+3. Load or initialize fix ledger (from claude-mem or `.agent-framework/review-loop/` file).
+4. Start iteration loop (max `max_iterations`, default 5):
+   a. Invoke `agent-framework:local-codex-review` with `base` and current `iteration` number.
+   b. If `local-codex-review` returns blocked: propagate blocked with context.
+   c. If `verdict: "approve"` and `findings` is empty: set `exit_reason: "clean"`, exit loop.
+   d. If `verdict: "approve"` and `findings` is non-empty: surface informational findings in output, set `exit_reason: "clean"` (verdict drives exit, not finding count).
+   e. Update fix ledger: record all findings for this iteration, mark prior findings as `"fixed"` if their `id` no longer appears.
+   f. **Break-fix-break detection** (before routing — see Detection section below). If 2 of 3 signals fire, set `exit_reason: "break-fix-break"` and return blocked with conflict summary.
+   g. Classify each new finding using the classification taxonomy in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification). Mark as `"open"` in ledger.
+   h. Route per the Local Review Remediation Decision Table in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Local Review Remediation Decision Table): `actionable-*` to coder, `architecture-or-contract-concern` to planner first, `design-or-UX-concern` to designer, `question-needs-user-input` returns blocked with user question.
+   i. After all findings routed and fixed: record `fix_commit` from the coder's checkpoint commit SHA.
+   j. Check exit conditions (see Exit Conditions below).
+5. At loop end: write final fix ledger state.
+
+## Break-Fix-Break Detection
+
+Run before routing each iteration's findings. Three signals per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Break-fix-break cycle):
+
+1. **Line-range overlap**: any new finding's (`file`, `line_start`, `line_end`) overlaps with a finding marked `"fixed"` in a prior iteration.
+2. **Git revert**: `git diff HEAD~1 HEAD` contains lines that are the inverse of changes made in any prior fix commit recorded in the ledger.
+3. **N-2 iteration delta**: the current iteration's finding `id` set is identical to the finding `id` set from two iterations ago (N-2), indicating oscillation.
+
+Escalate when 2 of 3 signals fire. Return blocked with:
+- which signals fired
+- the conflicting findings (id, file, line range, title)
+- the prior fix commit SHA that is being undone or re-introduced
+
+Do not auto-resolve. User must decide.
+
+## Exit Conditions
+
+Stop the loop when any of the following is true:
+- `verdict: "approve"` and findings empty: `exit_reason: "clean"`
+- `verdict: "approve"` and findings non-empty (all informational): `exit_reason: "clean"`
+- Max iterations reached: ask user "Reached N iterations. M findings remain unresolved. Options: (1) continue 5 more iterations, (2) push and open PR now, (3) stop without pushing." Wait for user response.
+- Break-fix-break cycle detected (2-of-3 signals): `exit_reason: "break-fix-break"`, return blocked
+- `question-needs-user-input` finding: `exit_reason: "user-input-required"`, return blocked
+- Unsafe git state: return blocked
+- `local-codex-review` returns blocked: propagate blocked
+
+Do not push. Do not open a PR. Return control to orchestrator.
+
+## Do Not
+
+- push the working branch
+- open a PR
+- resolve GitHub review threads (this is a local pre-PR skill)
+- modify files outside the fix scope delegated to coder/designer
+- classify findings from the GitHub PR remediation table (use local classification table in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`)
+
+## Output
+
+```text
+Status: complete | blocked
+
+Loop:
+- Branch: <working_branch>
+- Base: <base>
+- Iterations run: <n>
+- Exit reason: clean | max-iterations-reached | break-fix-break | user-input-required | blocked
+- Remaining findings: <count>
+
+Findings summary:
+- Iteration N: <count> findings, <count> fixed, <count> remaining
+
+Fix ledger:
+- Location: .agent-framework/review-loop/loop-state-<branch>.json | claude-mem
+
+Issues:
+- [issue]
+- None
+```
+
+Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` for blocked states.

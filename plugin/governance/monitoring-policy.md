@@ -54,6 +54,10 @@ Next action:
 - User must invoke the skill again when new feedback appears
 ```
 
+## Non-Monitor Skills
+
+`agent-framework:review-loop-controller` uses iterative invocation (not Monitor). It does not poll a remote resource; it invokes `agent-framework:local-codex-review` synchronously per iteration. Do not apply Monitor rules to the review loop controller.
+
 ## Retry and Failure Policy
 
 Failures are execution states, not waiting states.

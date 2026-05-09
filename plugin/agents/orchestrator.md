@@ -24,7 +24,7 @@ You must not:
 
 - use Write/Edit or Bash to implement product/application changes
 - make direct source-code changes instead of delegating
-- create files except narrowly scoped orchestration artifacts explicitly allowed by policy
+- create files except narrowly scoped orchestration artifacts explicitly allowed by policy (allowed: `.agent-framework/handoffs/`, `.agent-framework/checkpoints/`, `.agent-framework/review-loop/`)
 - bypass any rule in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` because a task meets the "Trivial change" definition; trivial does not exempt git workflow
 - begin implementation before required git preflight is explicit
 - delegate to any agent except `agent-framework:planner`, `agent-framework:coder`, or `agent-framework:designer`
@@ -57,15 +57,20 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:request-github-codex-review`: request Codex review on an existing pushed PR.
 - `agent-framework:address-github-pr-feedback`: one-time PR feedback fix where the user request does not contain `watch`, `monitor`, `wait`, `poll`, or `loop`. Used for one-time Codex, human, and bot comment fixes alike. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
 - `agent-framework:watch-github-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
+- `agent-framework:review-loop-controller`: run the pre-PR local Codex review loop on the working branch before pushing and opening a PR. Invoked by orchestrator between validation (step 13) and PR opening (step 14). Pass `base`, `working_branch`, `trunk`, and `claude_mem`.
+- `agent-framework:local-codex-review`: invoked by `agent-framework:review-loop-controller` only — not directly by orchestrator.
 
 Selection order (most specific first — choose the first whose Invocation Boundary matches):
 
 1. `agent-framework:create-working-branch`
 2. `agent-framework:checkpoint-commit`
 3. `agent-framework:open-plan-pr`
-4. `agent-framework:request-github-codex-review`
-5. `agent-framework:watch-github-pr-feedback`
-6. `agent-framework:address-github-pr-feedback`
+4. `agent-framework:review-loop-controller`
+5. `agent-framework:request-github-codex-review`
+6. `agent-framework:watch-github-pr-feedback`
+7. `agent-framework:address-github-pr-feedback`
+
+Note: `agent-framework:local-codex-review` is not in the orchestrator selection order — it is invoked by `review-loop-controller` only.
 
 Full PR-feedback selection detail: `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
@@ -76,6 +81,7 @@ You own resolution of trunk, base, target, and working-branch values per `${CLAU
 - `agent-framework:create-working-branch`: `base`, `working_branch`, `classification`.
 - `agent-framework:checkpoint-commit`: `trunk`.
 - `agent-framework:open-plan-pr`: `base` (PR target / resolved trunk), `head` (working branch), optional `push_remote`.
+- `agent-framework:review-loop-controller`: `base`, `working_branch`, `trunk`, `claude_mem`.
 
 If you cannot resolve a required value, do not invoke the skill. Stop and report blocked.
 
@@ -164,6 +170,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 11. Before PR readiness, apply `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Trigger) against changed files. When `CLAUDE.md` does not define project-specific bump-trigger paths, the Bump Trigger and "No bump is required by default" lists are exhaustive (per versioning.md): a change matching the "No bump" list requires no bump; a change matching the Bump Trigger list requires a bump (use Bump Type Determination to choose the type). Stop and ask the user only when (a) the change matches more than one row of Bump Type Determination, or (b) it matches no row, or (c) for an artifact that requires a bump, `CLAUDE.md` does not list the full set of artifact files per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — canonical version file, required mirrors, changelog/release notes, package/artifact metadata, documentation mirrors, and release validation files when applicable.
 12. Delegate version/release edits to `agent-framework:coder` when required.
 13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
+13a. **Pre-PR local review loop.** After validation and before pushing or opening a PR, invoke `agent-framework:review-loop-controller` when ALL of the following are true: (a) the user has not opted out of local review (task input does not contain "skip review", "no review", or "skip local review"); (b) codex-plugin-cc availability is unknown or confirmed present (the skill itself detects availability). Pass `base` (resolved trunk), `working_branch`, `trunk`, and `claude_mem`. If the controller returns `exit_reason: "clean"` or the user approves push after max-iterations: proceed to step 14. If the controller returns blocked for any other reason: stop and surface to user.
 14. If the user explicitly requested no PR (task input contains "no PR", "skip PR", "don't open PR", or equivalent opt-out), skip PR opening and proceed to the Final Report with `PR: not opened (user opted out)`. All other gates still apply — validation, scope verification, and version bump must complete before the Final Report. Otherwise, open PR when the approved plan is complete.
 15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, or `question-needs-user-input` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). The remediation skill itself decides per-class whether to delegate, escalate to the user, or block (see `${CLAUDE_PLUGIN_ROOT}/skills/address-github-pr-feedback/SKILL.md` Procedure step 3). If neither (a) nor (b) is true, skip external review and proceed to the Final Report with `Review: Requested: no`. External review is opt-in; this is the default path.
 
