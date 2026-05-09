@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.9.0] - 2026-05-09
+
+### Added
+
+- **`address-github-pr-feedback` skill: thread resolution after fix-SHA reply.** Step 10 added: after committing, pushing, and posting the fix-SHA reply on an inline review thread, the skill now calls `resolveReviewThread` to mark the thread resolved on GitHub. Applies only to inline review threads (not top-level PR comments or review summaries). Resolution failure is non-blocking — the fix-SHA reply remains the primary re-review gate.
+
 ## [0.8.1] - 2026-05-09
 
 ### Fixed
