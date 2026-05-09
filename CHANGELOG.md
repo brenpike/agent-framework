@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.8.1] - 2026-05-09
+
+### Fixed
+
+- **`local-codex-review` skill invocation corrected.** Replaced erroneous Skill-tool invocation with a direct `codex` bash CLI call, restoring the pre-PR local review loop to functional operation.
+
 ## [0.8.0] - 2026-05-09
 
 ### Added
