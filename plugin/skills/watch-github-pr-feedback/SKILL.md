@@ -105,12 +105,12 @@ Optional:
 
 ## Monitor Pre-Flight Validation
 
-Before starting Monitor, validate that the detection command works in the current shell context. Run this check after Procedure step 4 (SELF_LOGIN resolved) and before Procedure step 5 (Monitor start).
+Before starting Monitor, validate that the detection command works in the current shell context. Run this check before Procedure step 5 (Monitor start).
 
-1. Confirm `SELF_LOGIN` is non-empty after running `$env:SELF_LOGIN = (gh api user --jq .login)`. An empty value means Monitor will not filter self-authored items correctly — do not proceed.
-2. Run the Monitor Command Template (see `## Monitor Command Template` below) once manually — not inside Monitor — substituting the resolved `OWNER`, `REPO`, and `PR_NUMBER`.
+1. Resolve `OWNER`, `REPO`, and `PR_NUMBER` using the commands in `## Monitor Command Template` below. Verify all three are non-empty.
+2. Run the Monitor Command Template once manually — not inside Monitor — substituting the resolved `OWNER`, `REPO`, and `PR_NUMBER`.
 3. Verify the command exits with code 0 and produces no error output. Empty stdout (no new threads/comments) is a valid result; non-zero exit or stderr output is a failure.
-4. If the output contains any `AUTHOR=` lines where the login equals `SELF_LOGIN`, the environment variable is not propagating into the `--jq` context — do not start Monitor.
+4. Verify that no `AUTHOR=` lines in the output show your own GitHub login (compare against `gh api user --jq .login`). If self-authored items appear, the `viewer.login` value in the query is not resolving correctly — do not start Monitor.
 5. Only if pre-flight passes (exit 0, no stderr, no self-author leak): start Monitor with the identical command.
 6. If pre-flight fails for any reason: do not start Monitor. Report `Monitoring: not active` with the exact failure (exit code, stderr text, or self-author leak). Do not substitute a different parser to work around the failure.
 
@@ -141,17 +141,13 @@ Do not start a second Monitor with a different parser strategy unless the user e
 Use this exact command as the Monitor detection command. Do not modify it to use `python3`, `python`, `node`, standalone `jq`, PowerShell parsing, or any external parser. If this template does not produce usable output after pre-flight validation, report `Monitoring: not active` — do not improvise an alternative parser.
 
 Before using this template, resolve:
-- `OWNER` and `REPO` from `gh repo view --json owner,name --jq '.owner.login + " " + .name'` (split on space)
+- `OWNER` and `REPO` from `gh pr view PR_NUMBER --json baseRepository --jq '.baseRepository.owner.login + " " + .baseRepository.name'` (split on space; `Bash(gh pr view *)` is already in the skill's allowed tools)
 - `PR_NUMBER`: the integer PR number from the PR resolution step
-- `SELF_LOGIN`: set per Procedure step 4
 
-```bash
-gh api graphql \
-  -f owner="OWNER" \
-  -f repo="REPO" \
-  -F pr=PR_NUMBER \
-  -f query='
+```
+gh api graphql -f owner="OWNER" -f repo="REPO" -F pr=PR_NUMBER -f query='
 query($owner: String!, $repo: String!, $pr: Int!) {
+  viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
       state
@@ -193,30 +189,31 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       }
     }
   }
-}' \
-  --jq '
-    "STATE=" + .data.repository.pullRequest.state,
-    (.data.repository.pullRequest.reviewThreads.nodes[]
-     | select(.isResolved == false)
-     | . as $thread
-     | $thread.comments.nodes[]
-     | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
-     | select(.author.login != $ENV.SELF_LOGIN)
-     | "THREAD=\($thread.id) COMMENT=\(.id) AUTHOR=\(.author.login) PATH=\($thread.path) LINE=\($thread.line // "") URL=\(.url)"),
-    (.data.repository.pullRequest.comments.nodes[]
-     | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
-     | select(.author.login != $ENV.SELF_LOGIN)
-     | "COMMENT=\(.id) AUTHOR=\(.author.login) URL=\(.url)"),
-    (.data.repository.pullRequest.reviews.nodes[]
-     | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
-     | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
-     | select(.author.login != $ENV.SELF_LOGIN)
-     | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
-  '
-# SELF_LOGIN must be set before invocation: $env:SELF_LOGIN = (gh api user --jq .login)
+}' --jq '
+  .data.viewer.login as $self |
+  "STATE=" + .data.repository.pullRequest.state,
+  (.data.repository.pullRequest.reviewThreads.nodes[]
+   | select(.isResolved == false)
+   | . as $thread
+   | $thread.comments.nodes[]
+   | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+   | select(.author.login != $self)
+   | "THREAD=\($thread.id) COMMENT=\(.id) AUTHOR=\(.author.login) PATH=\($thread.path) LINE=\($thread.line // \"\") URL=\(.url)"),
+  (.data.repository.pullRequest.comments.nodes[]
+   | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+   | select(.author.login != $self)
+   | "COMMENT=\(.id) AUTHOR=\(.author.login) URL=\(.url)"),
+  (.data.repository.pullRequest.reviews.nodes[]
+   | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
+   | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+   | select(.author.login != $self)
+   | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
+'
 ```
 
 This command:
+- Uses no shell-level line continuation characters — the multiline query and jq expressions live inside single-quoted strings, which span multiple lines in both PowerShell and Bash without modification
+- Embeds `viewer { login }` in the GraphQL query and uses `.data.viewer.login as $self` for self-author filtering — no environment variable required
 - Always emits `STATE=<value>` first so Monitor detects `MERGED` or `CLOSED` on every poll
 - Emits `THREAD=...` lines for unresolved review thread comments passing all filters
 - Emits `COMMENT=...` lines for top-level PR comments passing all filters
