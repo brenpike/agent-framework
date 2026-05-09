@@ -67,19 +67,20 @@ The review command returns rendered text to stdout — not JSON. Parse this text
 ```
 # Codex Review
 Target: <ref>
-<summary paragraph>
-Full review comments:
+<summary text>
 - [Pn] Title — file:line_start-line_end
   body text
 - [Pn] Title — file:line
   body text
 ```
 
+Note: `Full review comments:` does NOT appear in native output and must not be used as a delimiter.
+
 **Parsing rules:**
 
 - **verdict:** `"needs-attention"` if any `[P0]`, `[P1]`, `[P2]`, or `[P3]` findings are present; `"approve"` if none.
-- **summary:** text between the `Target:` line and the `Full review comments:` header (or the entire remaining text if no findings section appears).
-- **findings:** each `- [Pn] Title — file:line_start[-line_end]` entry, parsed as:
+- **summary:** all non-finding lines after the `Target:` line (lines that do not begin with `- [P0]`, `- [P1]`, `- [P2]`, `- [P3]`, or `- [P4]`). The `Full review comments:` header, if encountered, is treated as a non-finding line and included in summary or skipped (it does not delimit findings).
+- **findings:** each line after `Target:` matching `^- \[P[0-4]\] ` prefix is a finding entry, regardless of position relative to any section header. Each `- [Pn] Title — file:line_start[-line_end]` entry, parsed as:
   - `severity`: `P0` → `critical`, `P1` → `critical`, `P2` → `high`, `P3` → `medium`, `P4` → `low`
   - `title`: text before ` — ` on the entry line
   - `file`: match `^(.+):(\d+)(?:-(\d+))?$` against the full location string — group 1 is the file path (handles Windows absolute paths such as `C:\...\file.md:53-56` where a naïve first-`:` split would yield only the drive letter)
