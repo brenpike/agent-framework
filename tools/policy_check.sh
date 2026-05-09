@@ -585,14 +585,12 @@ test_set_check() {
         local content
         content="$(<"$abs_path")"
 
-        # Extract all capture group 1 matches and count occurrences
+        # Extract capture group 1 matches; Perl is primary (handles PCRE regexes correctly)
         local captured_json
-        captured_json="$(echo "$content" | grep -oP "$regex_text" 2>/dev/null | sed -E "s/$regex_text/\1/" | jq -R . | jq -s 'group_by(.) | map({key: .[0], value: length}) | from_entries' 2>/dev/null || echo '{}')"
-        # Fallback: use perl for reliable capture-group extraction
-        local captured_json_perl
-        captured_json_perl="$(echo "$content" | perl -ne "while (/$regex_text/g) { print \"\$1\n\" }" 2>/dev/null | jq -R . | jq -s 'group_by(.) | map({key: .[0], value: length}) | from_entries' 2>/dev/null || echo '{}')"
-        if [[ "$captured_json" == '{}' && "$captured_json_perl" != '{}' ]]; then
-            captured_json="$captured_json_perl"
+        captured_json="$(echo "$content" | perl -ne "while (/$regex_text/g) { print \"\$1\n\" }" 2>/dev/null | jq -R . | jq -s 'group_by(.) | map({key: .[0], value: length}) | from_entries' 2>/dev/null || echo '{}')"
+        # Fallback: grep -oP + sed-E for environments without Perl
+        if [[ "$captured_json" == '{}' ]]; then
+            captured_json="$(echo "$content" | grep -oP "$regex_text" 2>/dev/null | sed -E "s/$regex_text/\1/" | jq -R . | jq -s 'group_by(.) | map({key: .[0], value: length}) | from_entries' 2>/dev/null || echo '{}')"
         fi
 
         local captured_set
