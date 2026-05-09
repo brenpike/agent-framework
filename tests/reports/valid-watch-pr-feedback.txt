@@ -15,7 +15,7 @@ Watch:
 - New actionable comments: 1
 
 Routed:
-- address-pr-feedback: 1
+- address-github-pr-feedback: 1
 
 Stopped because:
 - All actionable comments remediated

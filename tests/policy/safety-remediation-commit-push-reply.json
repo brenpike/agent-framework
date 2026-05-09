@@ -6,7 +6,7 @@
   },
   "consumers": [
     {
-      "file": "plugin/skills/address-pr-feedback/SKILL.md",
+      "file": "plugin/skills/address-github-pr-feedback/SKILL.md",
       "pattern": "Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed"
     }
   ]
