@@ -17,7 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`local-codex-review` skill invocation corrected.** Replaced erroneous Skill-tool invocation with a direct `codex` bash CLI call, restoring the pre-PR local review loop to functional operation.
+- **`local-codex-review` skill: replaced broken Skill-tool invocation with bash CLI.** `codex:review` has `disable-model-invocation: true` and cannot be called via the Skill tool from within another skill; skill now invokes `codex-companion.mjs` directly via `node`.
+- **`local-codex-review` skill: corrected output parsing from rendered text.** `codex-companion.mjs review` emits rendered markdown, not JSON; skill now documents the rendered text format and parsing rules instead of treating stdout as a JSON payload.
+- **`local-codex-review` skill: cross-platform companion path discovery.** Path-discovery command now uses `$HOME` (works on Windows, macOS, and Linux PowerShell) and forward slashes instead of `$env:USERPROFILE` and backslash separators.
+- **`local-codex-review` skill: P0 findings now trigger `needs-attention` verdict.** Verdict rule previously checked only `[P1]`–`[P3]`; `[P0]` findings would have been silently passed as approved; P0 added to both the verdict check and severity mapping (`P0 → critical`).
+- **`local-codex-review` skill: base ref assigned to variable before shell invocation.** Prevents PowerShell metacharacter injection when `base` contains characters such as `;`, `&`, or `|`.
+- **`local-codex-review` skill: location parsing uses rightmost-colon split.** Naïve first-`:` split misparses Windows absolute paths (e.g. `C:\...\file.md:53-56` → file=`C`); parser now matches `^(.+):(\d+)(?:-(\d+))?$` to correctly extract file path and line range.
 
 ## [0.8.0] - 2026-05-09
 
