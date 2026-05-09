@@ -52,7 +52,9 @@ $codexScript = Get-Item "$HOME/.claude/plugins/cache/openai-codex/codex/*/script
 **Review invocation** — run the review command with the resolved path:
 
 ```powershell
-$baseRef = '<base>' -replace "'","''"   # escape single quotes in caller-supplied ref before substituting <base>
+$baseRef = @'
+<base>
+'@.Trim()   # here-string: immune to single quotes in caller-supplied ref; .Trim() removes surrounding newlines
 node $codexScript review --base $baseRef --wait
 ```
 
