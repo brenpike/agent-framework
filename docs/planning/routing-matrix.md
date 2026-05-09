@@ -14,11 +14,11 @@
 | 5 | Branch creation or confirmation needed before implementation | `agent-framework:create-working-branch` | First matching skill (most specific first) | `plugin/agents/orchestrator.md` (Skill Routing) |
 | 6 | Phase, milestone, version bump, or review-remediation fix complete | `agent-framework:checkpoint-commit` | Second in selection order | `plugin/agents/orchestrator.md` (Skill Routing) |
 | 7 | Plan complete, validation passed, versioning done | `agent-framework:open-plan-pr` | Third in selection order | `plugin/agents/orchestrator.md` (Skill Routing) |
-| 8 | User request contains `review`, `codex`, or `audit`; OR `CLAUDE.md` sets review-on-PR = true | `agent-framework:request-codex-review` | Fourth in selection order | `plugin/agents/orchestrator.md` (Skill Routing, Execution Algorithm step 15) |
-| 9 | PR feedback + user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` | `agent-framework:watch-pr-feedback` | Fifth in selection order; keyword-driven | `plugin/agents/orchestrator.md` (Skill Routing), `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
-| 10 | PR feedback + no watch keywords | `agent-framework:address-pr-feedback` | Sixth in selection order (most permissive) | `plugin/agents/orchestrator.md` (Skill Routing), `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
-| 11 | Remediation: `actionable-code-change`, `actionable-test-change`, `actionable-doc-change` | `agent-framework:coder` (via `address-pr-feedback` or `watch-pr-feedback`) | Classification match | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
-| 12 | Remediation: `design-or-UX-concern` | `agent-framework:designer` (via `address-pr-feedback` or `watch-pr-feedback`) | Classification match | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 8 | User request contains `review`, `codex`, or `audit`; OR `CLAUDE.md` sets review-on-PR = true | `agent-framework:request-github-codex-review` | Fourth in selection order | `plugin/agents/orchestrator.md` (Skill Routing, Execution Algorithm step 15) |
+| 9 | PR feedback + user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` | `agent-framework:watch-github-pr-feedback` | Fifth in selection order; keyword-driven | `plugin/agents/orchestrator.md` (Skill Routing), `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 10 | PR feedback + no watch keywords | `agent-framework:address-github-pr-feedback` | Sixth in selection order (most permissive) | `plugin/agents/orchestrator.md` (Skill Routing), `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 11 | Remediation: `actionable-code-change`, `actionable-test-change`, `actionable-doc-change` | `agent-framework:coder` (via `address-github-pr-feedback` or `watch-github-pr-feedback`) | Classification match | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
+| 12 | Remediation: `design-or-UX-concern` | `agent-framework:designer` (via `address-github-pr-feedback` or `watch-github-pr-feedback`) | Classification match | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
 | 13 | Remediation: `architecture-or-contract-concern`, `version-or-release-concern`, or actionable fix touching files across multiple planner steps | `agent-framework:planner` | Classification match or cross-step scope | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
 | 14 | Remediation: product, public API, architecture, security, compatibility, release, or versioning decision that cannot be safely inferred | User | Cannot be safely inferred | `plugin/governance/pr-review-remediation-loop.md` (Remediation Decision Table) |
 
@@ -29,9 +29,9 @@ Skills are selected most-specific-first. Rows 5 through 10 in the table above fo
 1. `agent-framework:create-working-branch`
 2. `agent-framework:checkpoint-commit`
 3. `agent-framework:open-plan-pr`
-4. `agent-framework:request-codex-review`
-5. `agent-framework:watch-pr-feedback`
-6. `agent-framework:address-pr-feedback`
+4. `agent-framework:request-github-codex-review`
+5. `agent-framework:watch-github-pr-feedback`
+6. `agent-framework:address-github-pr-feedback`
 
 The orchestrator chooses the first skill whose invocation boundary matches the current context.
 
@@ -43,7 +43,7 @@ The Planner-First Rule (row 1) applies before any skill selection. The orchestra
 
 - **Skill-routing row vs. Planner-First Rule:** When a task matches both a skill-routing row and the Planner-First Rule, planner-first wins unless all six skip conditions are met.
 - **Multiple remediation rows:** When a task matches multiple remediation rows (rows 11 through 14), escalate to the more conservative target (user > planner > designer > coder).
-- **Watch keywords + remediation routing:** When watch keywords and remediation routing both apply, `agent-framework:watch-pr-feedback` is selected for the skill; remediation routing (rows 11 through 14) determines the worker that the skill delegates to.
+- **Watch keywords + remediation routing:** When watch keywords and remediation routing both apply, `agent-framework:watch-github-pr-feedback` is selected for the skill; remediation routing (rows 11 through 14) determines the worker that the skill delegates to.
 
 ## Related Documents
 

@@ -28,8 +28,10 @@ Workers may remediate assigned feedback within explicit file scope. They must no
 
 Use the narrowest matching skill:
 
-- `agent-framework:address-pr-feedback` — one-time PR-feedback fix (Codex, human reviewer, or bot comments); user request lacks watch-mode keywords
-- `agent-framework:watch-pr-feedback` — user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`
+- `agent-framework:review-loop-controller` — pre-PR local Codex review loop; invoked by orchestrator between validation and PR opening
+- `agent-framework:local-codex-review` — invoked by `agent-framework:review-loop-controller` only; not invoked directly
+- `agent-framework:address-github-pr-feedback` — one-time PR-feedback fix (Codex, human reviewer, or bot comments); user request lacks watch-mode keywords
+- `agent-framework:watch-github-pr-feedback` — user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`
 
 Full routing rule: see Definitions → One-time vs watch routing.
 

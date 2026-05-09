@@ -91,7 +91,7 @@
         "pattern": "claim monitoring is active unless Monitor (or an equivalent real background trigger) returned a non-error response"
       },
       {
-        "file": "plugin/skills/watch-pr-feedback/SKILL.md",
+        "file": "plugin/skills/watch-github-pr-feedback/SKILL.md",
         "referenceType": "enforces",
         "pattern": "report `Monitoring: not active`"
       }
@@ -157,12 +157,12 @@
         "pattern": "Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states"
       },
       {
-        "file": "plugin/skills/address-pr-feedback/SKILL.md",
+        "file": "plugin/skills/address-github-pr-feedback/SKILL.md",
         "referenceType": "depends-on",
         "pattern": "Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states"
       },
       {
-        "file": "plugin/skills/watch-pr-feedback/SKILL.md",
+        "file": "plugin/skills/watch-github-pr-feedback/SKILL.md",
         "referenceType": "depends-on",
         "pattern": "Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` for blocked states"
       },
@@ -210,12 +210,12 @@
         "pattern": "review-remediation planning when delegated"
       },
       {
-        "file": "plugin/skills/address-pr-feedback/SKILL.md",
+        "file": "plugin/skills/address-github-pr-feedback/SKILL.md",
         "referenceType": "enforces",
         "pattern": "Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed"
       },
       {
-        "file": "plugin/skills/watch-pr-feedback/SKILL.md",
+        "file": "plugin/skills/watch-github-pr-feedback/SKILL.md",
         "referenceType": "enforces",
         "pattern": "This skill detects and routes. It must not directly edit files, commit, push, reply, resolve threads"
       }
@@ -314,12 +314,12 @@
         "pattern": "Stage only files that belong to the completed phase, milestone, version bump, or review-remediation item"
       },
       {
-        "file": "plugin/skills/address-pr-feedback/SKILL.md",
+        "file": "plugin/skills/address-github-pr-feedback/SKILL.md",
         "referenceType": "enforces",
         "pattern": "Run validation per the \"Validation procedure\" definition"
       },
       {
-        "file": "plugin/skills/watch-pr-feedback/SKILL.md",
+        "file": "plugin/skills/watch-github-pr-feedback/SKILL.md",
         "referenceType": "depends-on",
         "pattern": "Monitoring must be read-only, deterministic, bounded, parser-stable, and truthfully reported"
       }

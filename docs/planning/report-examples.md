@@ -210,7 +210,7 @@ Issues:
 
 ## 7. PR Feedback Remediation Report
 
-Source contract: `plugin/skills/address-pr-feedback/SKILL.md` -- Output.
+Source contract: `plugin/skills/address-github-pr-feedback/SKILL.md` -- Output.
 
 ```text
 Status: complete
@@ -260,7 +260,7 @@ Next action:
 - User must invoke the skill again when new feedback appears
 ```
 
-Extended form from `plugin/skills/watch-pr-feedback/SKILL.md` -- Output:
+Extended form from `plugin/skills/watch-github-pr-feedback/SKILL.md` -- Output:
 
 ```text
 Status: blocked

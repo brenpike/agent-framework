@@ -1,6 +1,6 @@
 ---
-name: address-pr-feedback
-description: Fix a specific generic GitHub PR comment or reviewer comment on an existing pull request. Use for one-time fixes of Codex, human reviewer, or bot comments — anything that is not a watch/monitor/poll/wait/loop/continue request.
+name: address-github-pr-feedback
+description: Fix a specific GitHub PR comment or reviewer comment on an existing GitHub pull request. Use for one-time fixes of Codex, human reviewer, or bot comments — anything that is not a watch/monitor/poll/wait/loop/continue request.
 disable-model-invocation: false
 allowed-tools:
   - Read

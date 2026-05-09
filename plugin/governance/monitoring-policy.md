@@ -30,7 +30,7 @@ If the approved shell/parser strategy fails, retry once only when the failure ma
 
 A remediation skill is not a monitor. A monitor is not a remediator.
 
-Use `agent-framework:watch-pr-feedback` only when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. See Definitions → One-time vs watch routing.
+Use `agent-framework:watch-github-pr-feedback` only when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. See Definitions → One-time vs watch routing.
 
 Monitoring must be:
 
@@ -53,6 +53,10 @@ Monitoring: not active
 Next action:
 - User must invoke the skill again when new feedback appears
 ```
+
+## Non-Monitor Skills
+
+`agent-framework:review-loop-controller` uses iterative invocation (not Monitor). It does not poll a remote resource; it invokes `agent-framework:local-codex-review` synchronously per iteration. Do not apply Monitor rules to the review loop controller.
 
 ## Retry and Failure Policy
 

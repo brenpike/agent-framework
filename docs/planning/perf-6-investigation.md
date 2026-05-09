@@ -38,7 +38,7 @@ This means the orchestrator can invoke the same agent definition (e.g., `agent-f
 
 #### 3. Skills do not have independent model selection
 
-Skill YAML frontmatter uses `disable-model-invocation: false` but does not include a `model` field. All seven skills in the plugin (`address-pr-feedback`, `checkpoint-commit`, `create-working-branch`, `open-plan-pr`, `request-codex-review`, `setup-project`, `watch-pr-feedback`) follow this pattern. Skills inherit the model context of the calling agent or session — they do not independently select a model tier.
+Skill YAML frontmatter uses `disable-model-invocation: false` but does not include a `model` field. All seven skills in the plugin (`address-github-pr-feedback`, `checkpoint-commit`, `create-working-branch`, `open-plan-pr`, `request-github-codex-review`, `setup-project`, `watch-github-pr-feedback`) follow this pattern. Skills inherit the model context of the calling agent or session — they do not independently select a model tier.
 
 #### 4. CLAUDE.md confirmation of frontmatter limits
 
@@ -54,7 +54,7 @@ WebSearch was unavailable during this investigation. No official Claude Code plu
 
 The Agent() tool's `model` parameter provides per-invocation model override:
 
-- **Caller:** Any agent or skill with `Agent(...)` in its tools list (currently: orchestrator, `address-pr-feedback` skill, `watch-pr-feedback` skill via the address skill)
+- **Caller:** Any agent or skill with `Agent(...)` in its tools list (currently: orchestrator, `address-github-pr-feedback` skill, `watch-github-pr-feedback` skill via the address skill)
 - **Syntax:** Pass `model` as a parameter when invoking Agent(), e.g., `Agent(agent-framework:coder, model=haiku)`
 - **Precedence:** The per-invocation `model` value takes precedence over the agent definition's frontmatter `model` field. If `model` is omitted from the Agent() call, the frontmatter default is used.
 - **Valid values:** `sonnet`, `opus`, `haiku` (short names mapping to the current generation of each model tier)
@@ -124,13 +124,13 @@ Implementation plan:
 - `plugin/agents/planner.md` — frontmatter: `model: claude-opus-4-6`
 - `plugin/agents/coder.md` — frontmatter: `model: claude-opus-4-6`
 - `plugin/agents/designer.md` — frontmatter: `model: claude-sonnet-4-6`
-- `plugin/skills/address-pr-feedback/SKILL.md` — frontmatter: `disable-model-invocation: false`, tools include `Agent(...)`
+- `plugin/skills/address-github-pr-feedback/SKILL.md` — frontmatter: `disable-model-invocation: false`, tools include `Agent(...)`
 - `plugin/skills/checkpoint-commit/SKILL.md` — frontmatter: `disable-model-invocation: false`, no `model` field
 - `plugin/skills/create-working-branch/SKILL.md` — frontmatter: `disable-model-invocation: false`, no `model` field
 - `plugin/skills/open-plan-pr/SKILL.md` — frontmatter: `disable-model-invocation: false`, no `model` field
-- `plugin/skills/request-codex-review/SKILL.md` — frontmatter: `disable-model-invocation: false`, no `model` field
+- `plugin/skills/request-github-codex-review/SKILL.md` — frontmatter: `disable-model-invocation: false`, no `model` field
 - `plugin/skills/setup-project/SKILL.md` — frontmatter: `disable-model-invocation: false`, no `model` field
-- `plugin/skills/watch-pr-feedback/SKILL.md` — frontmatter: `disable-model-invocation: false`, no `model` field
+- `plugin/skills/watch-github-pr-feedback/SKILL.md` — frontmatter: `disable-model-invocation: false`, no `model` field
 - `tests/plugin/agent-frontmatter-valid.json` — validates required frontmatter fields including `model`
 - `CLAUDE.md` — documents agent frontmatter limits (plugin system does not honor `mcpServers` or `permissionMode`)
 - `docs/planning/framework-review-and-improvement-plan.md` — Step 23 definition, PERF-1/PERF-6 descriptions

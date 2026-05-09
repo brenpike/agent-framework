@@ -742,9 +742,9 @@ Add a `## Quick Reference` section immediately after the YAML frontmatter closin
 - `plugin/skills/checkpoint-commit/SKILL.md`
 - `plugin/skills/create-working-branch/SKILL.md`
 - `plugin/skills/open-plan-pr/SKILL.md`
-- `plugin/skills/request-codex-review/SKILL.md`
-- `plugin/skills/address-pr-feedback/SKILL.md`
-- `plugin/skills/watch-pr-feedback/SKILL.md`
+- `plugin/skills/request-github-codex-review/SKILL.md`
+- `plugin/skills/address-github-pr-feedback/SKILL.md`
+- `plugin/skills/watch-github-pr-feedback/SKILL.md`
 - `plugin/skills/setup-project/SKILL.md`
 
 **Format example (checkpoint-commit):**
@@ -855,9 +855,9 @@ The matrix maps user intent patterns to the correct skill or agent. It consolida
 4. Branch creation needed → `agent-framework:create-working-branch` (Skill Routing item 1)
 5. Phase/milestone/version complete → `agent-framework:checkpoint-commit` (Skill Routing item 2)
 6. Plan complete, validation passed → `agent-framework:open-plan-pr` (Skill Routing item 3)
-7. User says `review`/`codex`/`audit` or project requires review → `agent-framework:request-codex-review` (Skill Routing item 4)
-8. User says `watch`/`monitor`/`wait`/`poll`/`loop` for PR feedback → `agent-framework:watch-pr-feedback` (Skill Selection)
-9. PR feedback fix (no watch keywords) → `agent-framework:address-pr-feedback` (Skill Selection)
+7. User says `review`/`codex`/`audit` or project requires review → `agent-framework:request-github-codex-review` (Skill Routing item 4)
+8. User says `watch`/`monitor`/`wait`/`poll`/`loop` for PR feedback → `agent-framework:watch-github-pr-feedback` (Skill Selection)
+9. PR feedback fix (no watch keywords) → `agent-framework:address-github-pr-feedback` (Skill Selection)
 10. Remediation routing: `actionable-code-change`/`actionable-test-change`/`actionable-doc-change` → `coder` (Routing)
 11. Remediation routing: `design-or-UX-concern` → `designer` (Routing)
 12. Remediation routing: `architecture-or-contract-concern`/`version-or-release-concern`/cross-step fix → `planner` (Routing)
@@ -893,17 +893,17 @@ Replace the current three separate sections (Classification list, Routing list, 
 
 | Classification | Worker | Skill | Escalate to |
 |---|---|---|---|
-| `actionable-code-change` | `coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
-| `actionable-test-change` | `coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
-| `actionable-doc-change` | `coder` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `actionable-code-change` | `coder` | `address-github-pr-feedback` / `watch-github-pr-feedback` | — |
+| `actionable-test-change` | `coder` | `address-github-pr-feedback` / `watch-github-pr-feedback` | — |
+| `actionable-doc-change` | `coder` | `address-github-pr-feedback` / `watch-github-pr-feedback` | — |
 | `architecture-or-contract-concern` | — | — | `planner` (then `coder`) |
-| `design-or-UX-concern` | `designer` | `address-pr-feedback` / `watch-pr-feedback` | — |
+| `design-or-UX-concern` | `designer` | `address-github-pr-feedback` / `watch-github-pr-feedback` | — |
 | `version-or-release-concern` | — | — | `planner` (then `coder`) |
 | `question-needs-user-input` | — | — | user |
 | `non-actionable` | — | — | — (reply only) |
 | `incorrect-or-rejected` | — | — | — (reply with rationale) |
 
-The `Skill` column value depends on user-request keywords (`watch`/`monitor`/`wait`/`poll`/`loop` selects `watch-pr-feedback`; otherwise `address-pr-feedback`). This keyword rule is stated once in the table footnote, not repeated.
+The `Skill` column value depends on user-request keywords (`watch`/`monitor`/`wait`/`poll`/`loop` selects `watch-github-pr-feedback`; otherwise `address-github-pr-feedback`). This keyword rule is stated once in the table footnote, not repeated.
 
 **What moves and what stays:**
 
@@ -1107,7 +1107,7 @@ Modify:
 2. **feature**: Intake → Plan → Git Preflight → Branch → Implement → Validate → Checkpoint Commit → PR → Final Report. Source patterns: planner-first rule in `plugin/agents/orchestrator.md`; delegation template; plan state in execution state machine.
 3. **pr-open**: Validate → Version Bump → PR. Source patterns: six PR-open gate conditions in `plugin/agents/orchestrator.md`; bump trigger in `plugin/governance/versioning.md`; PR state in execution state machine.
 4. **review-remediation**: PR → External Review → Remediation → Checkpoint Commit → PR. Source patterns: Remediation Decision Table in `plugin/governance/pr-review-remediation-loop.md`; review remediation delegation template in `plugin/agents/orchestrator.md`; review state in execution state machine.
-5. **monitor-request**: Monitor keyword → `watch-pr-feedback` skill. Source patterns: monitor keyword list in `plugin/agents/orchestrator.md`; monitoring policy reference in `plugin/governance/monitoring-policy.md`.
+5. **monitor-request**: Monitor keyword → `watch-github-pr-feedback` skill. Source patterns: monitor keyword list in `plugin/agents/orchestrator.md`; monitoring policy reference in `plugin/governance/monitoring-policy.md`.
 
 Acceptance criteria:
 

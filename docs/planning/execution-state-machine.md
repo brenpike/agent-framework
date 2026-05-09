@@ -137,7 +137,7 @@ The orchestrator opens a pull request via `agent-framework:open-plan-pr`. PRs ar
 
 The orchestrator requests external review (Codex, human reviewer, or other external reviewer). This state is optional -- entered only when review is explicitly requested or required by project policy.
 
-- **Owner:** orchestrator (via `agent-framework:request-codex-review` skill for Codex; direct for other reviewers)
+- **Owner:** orchestrator (via `agent-framework:request-github-codex-review` skill for Codex; direct for other reviewers)
 - **Entry gate:** PR exists and has been pushed; validation completed or known to be in progress
 - **Transitions:**
   - &rarr; **Remediation** (review feedback received with at least one actionable item per the Classification list)
