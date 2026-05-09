@@ -211,6 +211,8 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 '
 ```
 
+> **Monitor coverage limits:** This query intentionally omits `pageInfo` and pagination. Full pagination would require multiple API calls per poll cycle, which is not feasible for a Monitor command. Instead, each connection uses `last: N` to fetch the most recent N items — new activity appears at the end of connections and is always within the fetched page. PRs with more than 100 unresolved review threads, 100 top-level comments, or 50 review summaries may have older items outside the fetched window; those items are not detected by this Monitor query. If a PR reaches these limits, run a one-time manual fetch using the full paginated queries in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`.
+
 This command:
 - Uses no shell-level line continuation characters — the multiline query and jq expressions live inside single-quoted strings, which span multiple lines in both PowerShell and Bash without modification
 - Embeds `viewer { login }` in the GraphQL query and uses `.data.viewer.login as $self` for self-author filtering — no environment variable required
@@ -219,6 +221,7 @@ This command:
 - Emits `COMMENT=...` lines for top-level PR comments passing all filters
 - Emits `REVIEW=...` lines for actionable review summaries passing all filters
 - Uses only `gh api graphql --jq` — no external parser binaries required
+- Uses `last: N` on all connections instead of `first: N` — new activity is always at the end of connections; `last:` ensures recent items are always in the fetched page without requiring pagination
 
 ## Comment Filtering
 
