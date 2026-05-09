@@ -21,6 +21,8 @@ Never write to or read from `/tmp/` paths. Use inline `--jq` processing instead.
 
 If `gh --jq` cannot produce the required value, return `blocked` instead of improvising parser fallbacks.
 
+When these queries are used as Monitor detection commands, do not pipe their output through `python3`, `python`, `node`, or any external parser binary — use only the inline `--jq` expressions shown in each example.
+
 ## Pagination Requirement
 
 Examples below fetch first pages. Implementations must page through any connection that may exceed the page size, including:

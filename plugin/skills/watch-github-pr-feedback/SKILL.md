@@ -103,6 +103,17 @@ Optional:
 8. Route generic/human/ambiguous feedback → `agent-framework:address-github-pr-feedback`.
 9. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, stop the Monitor (e.g., via TaskStop) and report the terminal state — do not continue polling a terminal resource.
 
+## Monitor Pre-Flight Validation
+
+Before starting Monitor, validate that the detection command works in the current shell context. Run this check before Procedure step 5 (Monitor start).
+
+1. Resolve `OWNER`, `REPO`, and `PR_NUMBER` using the commands in `## Monitor Command Template` below. Verify all three are non-empty.
+2. Run the Monitor Command Template once manually — not inside Monitor — substituting the resolved `OWNER`, `REPO`, and `PR_NUMBER`.
+3. Verify the command exits with code 0 and produces no error output. Empty stdout (no new threads/comments) is a valid result; non-zero exit or stderr output is a failure.
+4. Verify that no `AUTHOR=` lines in the output show your own GitHub login (compare against `gh api user --jq .login`). If self-authored items appear, the `viewer.login` value in the query is not resolving correctly — do not start Monitor.
+5. Only if pre-flight passes (exit 0, no stderr, no self-author leak): start Monitor with the identical command.
+6. If pre-flight fails for any reason: do not start Monitor. Report `Monitoring: not active` with the exact failure (exit code, stderr text, or self-author leak). Do not substitute a different parser to work around the failure.
+
 ## Monitor Rules
 
 Monitor commands must be:
@@ -124,6 +135,93 @@ If Monitor startup or parser strategy fails:
 3. report `Monitoring: not active`
 
 Do not start a second Monitor with a different parser strategy unless the user explicitly approves.
+
+## Monitor Command Template
+
+Use this exact command as the Monitor detection command. Do not modify it to use `python3`, `python`, `node`, standalone `jq`, PowerShell parsing, or any external parser. If this template does not produce usable output after pre-flight validation, report `Monitoring: not active` — do not improvise an alternative parser.
+
+Before using this template, resolve:
+- `OWNER` and `REPO` from `gh pr view PR_NUMBER --json baseRepository --jq '.baseRepository.owner.login + " " + .baseRepository.name'` (split on space; `Bash(gh pr view *)` is already in the skill's allowed tools)
+- `PR_NUMBER`: the integer PR number from the PR resolution step
+
+```
+gh api graphql -f owner="OWNER" -f repo="REPO" -F pr=PR_NUMBER -f query='
+query($owner: String!, $repo: String!, $pr: Int!) {
+  viewer { login }
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      state
+      reviewThreads(last: 100) {
+        nodes {
+          id
+          isResolved
+          path
+          line
+          comments(last: 20) {
+            nodes {
+              id
+              author { login }
+              body
+              createdAt
+              url
+            }
+          }
+        }
+      }
+      comments(last: 100) {
+        nodes {
+          id
+          author { login }
+          body
+          createdAt
+          url
+        }
+      }
+      reviews(last: 50) {
+        nodes {
+          id
+          author { login }
+          state
+          body
+          submittedAt
+          url
+        }
+      }
+    }
+  }
+}' --jq '
+  .data.viewer.login as $self |
+  "STATE=" + .data.repository.pullRequest.state,
+  (.data.repository.pullRequest.reviewThreads.nodes[]
+   | select(.isResolved == false)
+   | . as $thread
+   | $thread.comments.nodes[]
+   | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+   | select(.author.login != $self)
+   | "THREAD=\($thread.id) COMMENT=\(.id) AUTHOR=\(.author.login) PATH=\($thread.path) LINE=\($thread.line // "") URL=\(.url)"),
+  (.data.repository.pullRequest.comments.nodes[]
+   | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+   | select(.author.login != $self)
+   | "COMMENT=\(.id) AUTHOR=\(.author.login) URL=\(.url)"),
+  (.data.repository.pullRequest.reviews.nodes[]
+   | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
+   | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+   | select(.author.login != $self)
+   | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
+'
+```
+
+> **Monitor coverage limits:** This query intentionally omits `pageInfo` and pagination. Full pagination would require multiple API calls per poll cycle, which is not feasible for a Monitor command. Instead, each connection uses `last: N` to fetch the most recent N items — new activity appears at the end of connections and is always within the fetched page. PRs with more than 100 unresolved review threads, 100 top-level comments, or 50 review summaries may have older items outside the fetched window; those items are not detected by this Monitor query. If a PR reaches these limits, run a one-time manual fetch using the full paginated queries in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`.
+
+This command:
+- Uses no shell-level line continuation characters — the multiline query and jq expressions live inside single-quoted strings, which span multiple lines in both PowerShell and Bash without modification
+- Embeds `viewer { login }` in the GraphQL query and uses `.data.viewer.login as $self` for self-author filtering — no environment variable required
+- Always emits `STATE=<value>` first so Monitor detects `MERGED` or `CLOSED` on every poll
+- Emits `THREAD=...` lines for unresolved review thread comments passing all filters
+- Emits `COMMENT=...` lines for top-level PR comments passing all filters
+- Emits `REVIEW=...` lines for actionable review summaries passing all filters
+- Uses only `gh api graphql --jq` — no external parser binaries required
+- Uses `last: N` on all connections instead of `first: N` — new activity is always at the end of connections; `last:` ensures recent items are always in the fetched page without requiring pagination
 
 ## Comment Filtering
 
