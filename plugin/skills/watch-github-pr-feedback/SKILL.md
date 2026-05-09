@@ -198,7 +198,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
    | $thread.comments.nodes[]
    | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
    | select(.author.login != $self)
-   | "THREAD=\($thread.id) COMMENT=\(.id) AUTHOR=\(.author.login) PATH=\($thread.path) LINE=\($thread.line // \"\") URL=\(.url)"),
+   | "THREAD=\($thread.id) COMMENT=\(.id) AUTHOR=\(.author.login) PATH=\($thread.path) LINE=\($thread.line // "") URL=\(.url)"),
   (.data.repository.pullRequest.comments.nodes[]
    | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
    | select(.author.login != $self)
