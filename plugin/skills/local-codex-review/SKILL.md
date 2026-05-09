@@ -5,7 +5,9 @@ disable-model-invocation: false
 allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)
+  - Bash($codexScript = *)
   - Bash(Get-Item *)
+  - Bash($baseRef = *)
   - Bash(node *)
 shell: powershell
 ---
@@ -50,7 +52,7 @@ $codexScript = Get-Item "$HOME/.claude/plugins/cache/openai-codex/codex/*/script
 **Review invocation** — run the review command with the resolved path:
 
 ```powershell
-$baseRef = '<base>'   # assigned earlier from the caller-provided base input
+$baseRef = '<base>' -replace "'","''"   # escape single quotes in caller-supplied ref before substituting <base>
 node $codexScript review --base $baseRef --wait
 ```
 
