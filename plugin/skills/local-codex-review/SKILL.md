@@ -42,7 +42,7 @@ Invoke the Codex CLI directly via `node` after discovering the installed path wi
 **Path discovery** — locate the most recently installed codex companion script:
 
 ```powershell
-$codexScript = Get-Item "$env:USERPROFILE\.claude\plugins\cache\openai-codex\codex\*\scripts\codex-companion.mjs" -ErrorAction SilentlyContinue |
+$codexScript = Get-Item "$HOME\.claude\plugins\cache\openai-codex\codex\*\scripts\codex-companion.mjs" -ErrorAction SilentlyContinue |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1 -ExpandProperty FullName
 ```
@@ -53,31 +53,37 @@ $codexScript = Get-Item "$env:USERPROFILE\.claude\plugins\cache\openai-codex\cod
 node "<resolved-path>" review --base <base> --wait
 ```
 
-The command writes JSON to stdout. Do not add `--json`; JSON output is the default.
+The command writes rendered text to stdout. Do not add `--json`; the default output is rendered text, not JSON.
 
 ## Output Schema (from codex-plugin-cc)
 
-The review returns JSON with this structure:
+The review command returns rendered text to stdout — not JSON. Parse this text to extract structured data.
 
-```json
-{
-  "verdict": "approve | needs-attention",
-  "summary": "string",
-  "findings": [
-    {
-      "severity": "string",
-      "title": "string",
-      "body": "string (markdown)",
-      "file": "string (path)",
-      "line_start": "number",
-      "line_end": "number",
-      "confidence": "number (0.0-1.0)",
-      "recommendation": "string"
-    }
-  ],
-  "next_steps": ["string"]
-}
+**Rendered text format:**
+
 ```
+# Codex Review
+Target: <ref>
+<summary paragraph>
+Full review comments:
+- [Pn] Title — file:line_start-line_end
+  body text
+- [Pn] Title — file:line
+  body text
+```
+
+**Parsing rules:**
+
+- **verdict:** `"needs-attention"` if any `[P1]`, `[P2]`, or `[P3]` findings are present; `"approve"` if none.
+- **summary:** text between the `Target:` line and the `Full review comments:` header (or the entire remaining text if no findings section appears).
+- **findings:** each `- [Pn] Title — file:line_start[-line_end]` entry, parsed as:
+  - `severity`: `P1` → `critical`, `P2` → `high`, `P3` → `medium`, `P4` → `low`
+  - `title`: text before ` — ` on the entry line
+  - `file`: path component before `:` in the location field
+  - `line_start`: first line number; `line_end`: second line number when a range is present, otherwise same as `line_start`
+  - `body`: indented continuation lines following the entry header
+  - `recommendation`: extracted from body text, or empty string if not present
+- **next_steps:** empty array (not present in rendered format)
 
 ## Internal Findings Schema (normalized output)
 
@@ -110,9 +116,9 @@ Normalize each finding by adding a stable `id` field (deterministic SHA-256 hash
 
 1. Confirm `base` and `iteration` are provided. Return blocked if either is missing.
 2. Confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
-3. Run the PowerShell path-discovery command (`Get-Item "$env:USERPROFILE\.claude\plugins\cache\openai-codex\codex\*\scripts\codex-companion.mjs" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName`). If the result is empty (no file found), return blocked with `Blocker: codex-plugin-cc not available`.
+3. Run the PowerShell path-discovery command (`Get-Item "$HOME\.claude\plugins\cache\openai-codex\codex\*\scripts\codex-companion.mjs" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName`). If the result is empty (no file found), return blocked with `Blocker: codex-plugin-cc not available`.
 4. Run `node "<resolved-path>" review --base <base> --wait`. Capture stdout as the review result.
-5. Parse the captured stdout as JSON. Validate shape (required fields: `verdict`, `findings`). If `findings` is missing or malformed, return blocked with `Blocker: unexpected output shape` and include raw output in `Issues:`.
+5. Parse the captured stdout as rendered text per the Output Schema parsing rules. If stdout is empty or does not begin with `# Codex Review`, return blocked with `Blocker: unexpected output shape` and include the raw output in `Issues:`.
 6. If the `node` command exits with a non-zero exit code, return blocked with `Blocker: review CLI failed` and include the exit code and any stderr in `Issues:`.
 7. Normalize findings: compute `id` as SHA-256 hex digest of the concatenation `file + line_start + line_end + title` for each finding. Add `iteration` and `base` to the top-level output.
 8. Return normalized output using the skill output contract.
@@ -120,7 +126,7 @@ Normalize each finding by adding a stable `id` field (deterministic SHA-256 hash
 ## Timeout / Error Handling
 
 - If review does not complete within 10 minutes, return blocked with `Blocker: review timed out`.
-- If output shape is invalid (missing `verdict` or `findings`), return blocked with `Blocker: unexpected output shape` and include raw output in `Issues:`.
+- If stdout is empty or does not begin with `# Codex Review`, return blocked with `Blocker: unexpected output shape` and include raw output in `Issues:`.
 
 ## Do Not
 
