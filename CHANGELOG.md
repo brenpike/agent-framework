@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.8.0] - 2026-05-09
+
+### Added
+
+- **`codex` optional input for `agent-framework:setup-project`.** When `codex: yes` is passed, the skill writes `enabledPlugins["codex@openai-codex"] = true` to `.claude/settings.json` alongside the required plugin entry and the optional `claude-mem` key.
+- **`codex@openai-codex` companion plugin documented.** `README.md` and `CLAUDE.md` now list `codex@openai-codex` as a recommended companion plugin with installation instructions (`/plugin marketplace add`, `/plugin install`, `/reload-plugins`, `codex:setup`) and graceful-degradation notes (local review steps skipped if not installed).
+
+### Changed
+
+### Fixed
+
 ## [0.7.0] - 2026-05-09
 
 ### Added

@@ -77,3 +77,5 @@ When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runt
 ## Companion plugins referenced
 
 `claude-mem:mem-search` is optional — planner uses it when present, skips when absent. Do not hard-require it from any agent or skill.
+
+`codex@openai-codex` is optional — the orchestrator uses `codex-plugin-cc` for pre-PR local review (`agent-framework:review-loop-controller`, `agent-framework:local-codex-review`) and post-PR review (`agent-framework:request-github-codex-review`). If not installed, the orchestrator skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
