@@ -96,7 +96,7 @@ Normalize each finding by adding a stable `id` field (deterministic SHA-256 hash
 
 1. Confirm `base` and `iteration` are provided. Return blocked if either is missing.
 2. Confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
-3. Confirm `codex-plugin-cc` is available (attempt to call `codex:review`; if the skill/command is not found, return blocked with `Blocker: codex-plugin-cc not available`).
+3. Confirm `codex-plugin-cc` is available (attempt to call `codex:review`; if the skill/command is not found, return blocked with `Blocker: codex-plugin-cc not available`). Note: if not available, the user can install it by running `/plugin marketplace add https://github.com/openai/codex-plugin-cc.git`, then `/plugin install codex@openai-codex`, then `/reload-plugins`, then `codex:setup`.
 4. Run `/codex:review --base <base> --wait`.
 5. If result is inline: parse JSON, validate shape (required fields: `verdict`, `findings`). If `findings` is missing or malformed, return blocked.
 6. If result is a job ID (no inline result): call `/codex:result <job-id>`, parse JSON output.

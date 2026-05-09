@@ -51,6 +51,15 @@ Once configured, the orchestrator is the session default agent. All skills are a
 
 - [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `claude-mem:mem-search` skill referenced by the planner for cross-session memory and continuity. Install separately as a Claude Code plugin. The agent framework works without it; if installed, planning invokes `claude-mem:mem-search` before every plan unless the repo has zero commits or the user explicitly opts out.
 
+- [`codex`](https://github.com/openai/codex-plugin-cc) — provides local and GitHub-integrated Codex code review. Install and configure with:
+  ```text
+  /plugin marketplace add https://github.com/openai/codex-plugin-cc.git
+  /plugin install codex@openai-codex
+  /reload-plugins
+  /codex:setup
+  ```
+  When installed, enables local pre-PR Codex review via `agent-framework:review-loop-controller` and `agent-framework:local-codex-review`, and post-PR Codex review via `agent-framework:request-github-codex-review`. The framework works without it; if not installed, local review steps are skipped gracefully.
+
 ## After cloning a project that uses this plugin
 
 ```text
