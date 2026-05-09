@@ -81,7 +81,7 @@ You own resolution of trunk, base, target, and working-branch values per `${CLAU
 - `agent-framework:create-working-branch`: `base`, `working_branch`, `classification`.
 - `agent-framework:checkpoint-commit`: `trunk`.
 - `agent-framework:open-plan-pr`: `base` (PR target / resolved trunk), `head` (working branch), optional `push_remote`.
-- `agent-framework:review-loop-controller`: `base`, `working_branch`, `trunk`, `claude_mem`.
+- `agent-framework:review-loop-controller`: `base`, `working_branch`, `trunk`, `claude_mem`. Optional: `continuation_max_iterations` (integer) — pass when re-invoking after `max-iterations-reached`.
 
 If you cannot resolve a required value, do not invoke the skill. Stop and report blocked.
 
@@ -172,7 +172,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
 13a. **Pre-PR local review loop.** After validation and before pushing or opening a PR, invoke `agent-framework:review-loop-controller` when ALL of the following are true: (a) the user has not opted out of local review (task input does not contain "skip review", "no review", or "skip local review"); (b) codex-plugin-cc availability is unknown or confirmed present (the skill itself detects availability). Pass `base` (resolved trunk), `working_branch`, `trunk`, and `claude_mem`. Handle the controller result by exit reason:
 - `exit_reason: "clean"` → proceed to step 14
-- `exit_reason: "max-iterations-reached"` → surface the three choices to user (continue 5 more iterations / push and open PR now / stop without pushing); wait for user response; act accordingly (continue: re-invoke controller; push: proceed to step 14; stop: halt)
+- `exit_reason: "max-iterations-reached"` → surface the three choices to user (continue 5 more iterations / push and open PR now / stop without pushing); wait for user response; act accordingly (continue: re-invoke controller passing `continuation_max_iterations: 5` in addition to the usual `base`, `working_branch`, `trunk`, `claude_mem`; push: proceed to step 14; stop: halt)
 - `exit_reason: "break-fix-break"` → stop; surface conflict summary to user; do not proceed to step 14
 - `exit_reason: "user-input-required"` → stop; surface the finding requiring user input; do not proceed to step 14
 - `exit_reason: "planner-blocked"` → stop; surface planner context to user; do not proceed to step 14

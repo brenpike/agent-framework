@@ -25,7 +25,7 @@ Before:
 
 After:
 - [ ] Loop exited with documented `exit_reason`
-- [ ] Fix ledger written to `.agent-framework/review-loop/loop-state-<branch>.json` or claude-mem
+- [ ] Fix ledger written to `.agent-framework/review-loop/loop-state-<branch-with-slashes-as-dashes>.json` or claude-mem
 - [ ] Output uses skill output contract
 
 ## Purpose
@@ -51,11 +51,12 @@ The caller resolves and passes these. The skill does not resolve them on its own
 
 Optional:
 - `max_iterations`: integer, default `5`
+- `continuation_max_iterations`: integer, overrides `max_iterations` for this invocation when continuing a previous loop. When provided, the controller resumes from the existing ledger and runs up to `continuation_max_iterations` additional iterations before checking the exit condition again.
 
 ## State Persistence
 
 When `claude_mem: present`: store fix ledger as claude-mem observations tagged with `review-loop` and the branch name.
-When `claude_mem: absent`: write to `.agent-framework/review-loop/loop-state-<working_branch>.json`. Create directory if it does not exist.
+When `claude_mem: absent`: write to `.agent-framework/review-loop/loop-state-<working_branch>.json` where `/` in the branch name is replaced with `-` (e.g., `feature/foo` → `loop-state-feature-foo.json`). Create `.agent-framework/review-loop/` if it does not exist (single flat directory — no subdirectories).
 
 Fix ledger schema:
 ```json
@@ -94,7 +95,7 @@ Fix ledger schema:
 1. Confirm `base`, `working_branch`, `trunk` are provided. Return blocked with `Stage: skill selection` if any missing.
 2. Confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Unsafe git state). Return blocked with `Stage: git workflow` if unsafe.
 3. Load or initialize fix ledger (from claude-mem or `.agent-framework/review-loop/` file).
-4. Start iteration loop (max `max_iterations`, default 5):
+4. Start iteration loop (max `max_iterations`, default 5; if `continuation_max_iterations` is provided, use it as the iteration budget for this invocation — in addition to iterations already recorded in the ledger):
    a. Invoke `agent-framework:local-codex-review` with `base` and current `iteration` number.
    b. If `local-codex-review` returns blocked: propagate blocked with context.
    c. If `verdict: "approve"` and `findings` is empty: set `exit_reason: "clean"`, exit loop.
@@ -104,8 +105,8 @@ Fix ledger schema:
    g. Classify each new finding using the classification taxonomy in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification). Mark as `"open"` in ledger.
    h. Route per the Local Review Remediation Decision Table in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Local Review Remediation Decision Table):
       - `actionable-*` → delegate to `agent-framework:coder`; after coder returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding
-      - `architecture-or-contract-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
-      - `version-or-release-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
+      - `architecture-or-contract-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); after coder returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding; if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
+      - `version-or-release-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); after coder returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding; if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
       - `design-or-UX-concern` → delegate to `agent-framework:designer`; after designer returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding
       - `question-needs-user-input` → set `exit_reason: "user-input-required"`, return blocked with `Stage: review remediation` and the finding as the user question
       - `non-actionable` → record in ledger with status `"non-actionable"`, skip, continue to next finding
@@ -179,7 +180,7 @@ Findings summary:
 - Iteration N: <count> findings, <count> fixed, <count> remaining
 
 Fix ledger:
-- Location: .agent-framework/review-loop/loop-state-<branch>.json | claude-mem
+- Location: .agent-framework/review-loop/loop-state-<branch-with-slashes-as-dashes>.json | claude-mem
 
 Issues:
 - [issue]
