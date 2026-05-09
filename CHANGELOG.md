@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.6.0] - 2026-05-08
+
+### Added
+
+- **`local-codex-review` skill.** New skill that runs a pre-PR local Codex review on the current branch diff without requiring a pushed PR or GitHub interaction.
+- **`review-loop-controller` skill.** New skill that drives the pre-PR local Codex review loop: up to 5 iterations with break-fix-break detection, routing each iteration to `local-codex-review` and `agent-framework:coder` for fix passes.
+- **Pre-PR local Codex review loop.** Orchestrator now supports a local review-and-fix loop (up to 5 iterations) before opening a PR. Loop terminates early on break-fix-break cycle detection to prevent thrash.
+- **`Break-fix-break cycle` definition in `agent-system-policy.md`.** Canonical definition for a review iteration where a prior fix introduces a new finding of the same category as the finding it resolved — triggers early loop exit.
+
+### Changed
+
+- `request-codex-review` renamed to `request-github-codex-review`. Consumers referencing these skills by name in CLAUDE.md or project config must update to the new `-github-` prefixed names.
+- `address-pr-feedback` renamed to `address-github-pr-feedback`. Consumers referencing these skills by name in CLAUDE.md or project config must update to the new `-github-` prefixed names.
+- `watch-pr-feedback` renamed to `watch-github-pr-feedback`. Consumers referencing these skills by name in CLAUDE.md or project config must update to the new `-github-` prefixed names.
+
 ## [0.5.3] - 2026-05-08
 
 ### Fixed
