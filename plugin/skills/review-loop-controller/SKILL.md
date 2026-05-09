@@ -103,8 +103,9 @@ Fix ledger schema:
    f. **Break-fix-break detection** (before routing — see Detection section below). If 2 of 3 signals fire, set `exit_reason: "break-fix-break"` and return blocked with conflict summary.
    g. Classify each new finding using the classification taxonomy in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification). Mark as `"open"` in ledger.
    h. Route per the Local Review Remediation Decision Table in `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Local Review Remediation Decision Table):
-      - `actionable-*` → delegate to `agent-framework:coder`
+      - `actionable-*` → delegate to `agent-framework:coder`; after coder returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding
       - `architecture-or-contract-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
+      - `version-or-release-concern` → escalate to `agent-framework:planner` first (then `agent-framework:coder`); if planner returns blocked: set `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
       - `design-or-UX-concern` → delegate to `agent-framework:designer`; after designer returns `Status: complete`: invoke `agent-framework:checkpoint-commit` via the Skill tool (pass `trunk` value); record the returned commit SHA in the fix ledger as `fix_commit` for the finding
       - `question-needs-user-input` → set `exit_reason: "user-input-required"`, return blocked with `Stage: review remediation` and the finding as the user question
       - `non-actionable` → record in ledger with status `"non-actionable"`, skip, continue to next finding
