@@ -168,7 +168,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           }
         }
       }
-      comments(first: 100) {
+      comments(last: 100) {
         nodes {
           id
           author { login }
