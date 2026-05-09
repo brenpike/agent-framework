@@ -543,7 +543,7 @@ test_set_check() {
     if [[ -z "$regex_text" ]]; then
         add_finding 'SAFETY' '<fixture>' 0 \
             "[$rule_name] set_check.extract_regex is required"
-        echo "false"
+        TEST_SET_CHECK_RESULT="false"
         return
     fi
 
@@ -553,7 +553,7 @@ test_set_check() {
         if echo "" | grep -P "$regex_text" 2>&1 | grep -qi 'error\|invalid\|unknown'; then
             add_finding 'SAFETY' '<fixture>' 0 \
                 "[$rule_name] set_check.extract_regex did not compile"
-            echo "false"
+            TEST_SET_CHECK_RESULT="false"
             return
         fi
     fi
@@ -678,7 +678,7 @@ test_set_check() {
         fi_idx=$((fi_idx + 1))
     done
 
-    echo "$passed"
+    TEST_SET_CHECK_RESULT="$passed"
 }
 
 for fixture_file in "${SAFETY_FIXTURES[@]}"; do
@@ -699,8 +699,9 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
     # Set-check assertion
     if [[ "$has_set_check" == "true" ]]; then
         set_check_json="$(echo "$fixture_raw" | jq '.set_check')"
-        set_ok="$(test_set_check "$rule_name" "$set_check_json")"
-        if [[ "$set_ok" != "true" ]]; then
+        TEST_SET_CHECK_RESULT=""
+        test_set_check "$rule_name" "$set_check_json"
+        if [[ "$TEST_SET_CHECK_RESULT" != "true" ]]; then
             fixture_passed=false
         fi
     fi
@@ -1141,16 +1142,16 @@ test_workflow_fixtures() {
         done < <(find "$fixtures_dir" -maxdepth 1 -name 'golden-*.json' -type f -print0)
     fi
 
+    WF_PASSED=0
+    WF_FAILED=0
+
     if [[ ${#fixtures[@]} -eq 0 ]]; then
         echo "FAIL [WORKFLOW-FIXTURES] No golden-*.json fixtures found in tests/workflows/"
         add_finding 'WORKFLOW-FIXTURES' "$fixtures_dir" 0 \
             'No golden-*.json fixtures found in tests/workflows/'
-        echo "0 1"
+        WF_FAILED=1
         return
     fi
-
-    local wf_passed=0
-    local wf_failed=0
 
     local expected_fixtures=(
         'golden-feature.json'
@@ -1166,7 +1167,7 @@ test_workflow_fixtures() {
             echo "FAIL [WORKFLOW-FIXTURES] Missing required fixture: $expected"
             add_finding 'WORKFLOW-FIXTURES' "$fixtures_dir/$expected" 0 \
                 "Missing required fixture: $expected"
-            wf_failed=$((wf_failed + 1))
+            WF_FAILED=$((WF_FAILED + 1))
         fi
     done
 
@@ -1179,7 +1180,7 @@ test_workflow_fixtures() {
             echo "FAIL [WORKFLOW-FIXTURES] $f_name: JSON parse error"
             add_finding 'WORKFLOW-FIXTURES' "$f" 0 \
                 "Fixture JSON parse error: $f_name"
-            wf_failed=$((wf_failed + 1))
+            WF_FAILED=$((WF_FAILED + 1))
             continue
         fi
 
@@ -1189,7 +1190,7 @@ test_workflow_fixtures() {
             echo "FAIL [WORKFLOW-FIXTURES] $f_name: fixture has no steps"
             add_finding 'WORKFLOW-FIXTURES' "$f" 0 \
                 "Fixture has no steps: $f_name"
-            wf_failed=$((wf_failed + 1))
+            WF_FAILED=$((WF_FAILED + 1))
             continue
         fi
 
@@ -1228,23 +1229,16 @@ test_workflow_fixtures() {
         done
 
         if [[ "$file_passed" == true ]]; then
-            wf_passed=$((wf_passed + 1))
+            WF_PASSED=$((WF_PASSED + 1))
         else
-            wf_failed=$((wf_failed + 1))
+            WF_FAILED=$((WF_FAILED + 1))
         fi
     done
-
-    echo "$wf_passed $wf_failed"
 }
 
-WF_OUTPUT="$(test_workflow_fixtures)"
-WF_RESULT_LINE="$(echo "$WF_OUTPUT" | tail -1)"
-WF_DISPLAY="$(echo "$WF_OUTPUT" | head -n -1)"
-if [[ -n "$WF_DISPLAY" ]]; then
-    echo "$WF_DISPLAY"
-fi
-WF_PASSED="$(echo "$WF_RESULT_LINE" | awk '{print $1}')"
-WF_FAILED="$(echo "$WF_RESULT_LINE" | awk '{print $2}')"
+WF_PASSED=0
+WF_FAILED=0
+test_workflow_fixtures
 CHECKS_PASSED=$((CHECKS_PASSED + WF_PASSED))
 CHECKS_FAILED=$((CHECKS_FAILED + WF_FAILED))
 
