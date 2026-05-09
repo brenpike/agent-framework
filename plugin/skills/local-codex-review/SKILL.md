@@ -74,10 +74,10 @@ Full review comments:
 
 **Parsing rules:**
 
-- **verdict:** `"needs-attention"` if any `[P1]`, `[P2]`, or `[P3]` findings are present; `"approve"` if none.
+- **verdict:** `"needs-attention"` if any `[P0]`, `[P1]`, `[P2]`, or `[P3]` findings are present; `"approve"` if none.
 - **summary:** text between the `Target:` line and the `Full review comments:` header (or the entire remaining text if no findings section appears).
 - **findings:** each `- [Pn] Title — file:line_start[-line_end]` entry, parsed as:
-  - `severity`: `P1` → `critical`, `P2` → `high`, `P3` → `medium`, `P4` → `low`
+  - `severity`: `P0` → `critical`, `P1` → `critical`, `P2` → `high`, `P3` → `medium`, `P4` → `low`
   - `title`: text before ` — ` on the entry line
   - `file`: path component before `:` in the location field
   - `line_start`: first line number; `line_end`: second line number when a range is present, otherwise same as `line_start`
