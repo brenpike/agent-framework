@@ -49,12 +49,12 @@ $codexScript = Get-Item "$HOME/.claude/plugins/cache/openai-codex/codex/*/script
   Select-Object -First 1 -ExpandProperty FullName
 ```
 
+**Base ref validation** — before constructing the invocation, confirm the caller-supplied `base` value matches `^[a-zA-Z0-9/_.\-]+$`. If it contains any character outside that set (including `'`, `"`, `` ` ``, `$`, `@`, `\`, space, or newline), return blocked with `Blocker: base ref contains characters unsafe for PowerShell invocation`.
+
 **Review invocation** — run the review command with the resolved path:
 
 ```powershell
-$baseRef = @'
-<base>
-'@.Trim()   # here-string: immune to single quotes in caller-supplied ref; .Trim() removes surrounding newlines
+$baseRef = '<base>'   # safe: base was validated against ^[a-zA-Z0-9/_.\-]+$ before this step
 node $codexScript review --base $baseRef --wait
 ```
 
