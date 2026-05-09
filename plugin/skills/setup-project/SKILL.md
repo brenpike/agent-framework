@@ -86,7 +86,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 - modify project files outside `.claude/settings.json` and `.gitignore`
 - commit, push, or otherwise touch git state
 - invoke other skills
-- proceed if the project root is ambiguous
+- proceed if the project root cannot be resolved
 
 ## Output
 
