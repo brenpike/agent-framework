@@ -3,9 +3,10 @@ name: local-codex-review
 description: Run a local pre-PR Codex code review via codex-plugin-cc, capture structured output, normalize findings, and return them to the caller. Review-only — does not fix findings.
 disable-model-invocation: false
 allowed-tools:
-  - Skill
   - Bash(git status *)
   - Bash(git branch *)
+  - Bash(Get-Item *)
+  - Bash(node *)
 shell: powershell
 ---
 
@@ -36,10 +37,23 @@ The caller resolves and passes these. The skill does not resolve them on its own
 
 ## Review Invocation
 
-Use `codex-plugin-cc` slash commands via the Skill tool.
+Invoke the Codex CLI directly via `node` after discovering the installed path with PowerShell.
 
-- Primary: `/codex:review --base <base> --wait` (foreground, blocking — returns result inline).
-- Fallback: if `--wait` does not return an inline result but returns a job ID, follow up with `/codex:result <job-id>`.
+**Path discovery** — locate the most recently installed codex companion script:
+
+```powershell
+$codexScript = Get-Item "$env:USERPROFILE\.claude\plugins\cache\openai-codex\codex\*\scripts\codex-companion.mjs" -ErrorAction SilentlyContinue |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1 -ExpandProperty FullName
+```
+
+**Review invocation** — run the review command with the resolved path:
+
+```powershell
+node "<resolved-path>" review --base <base> --wait
+```
+
+The command writes JSON to stdout. Do not add `--json`; JSON output is the default.
 
 ## Output Schema (from codex-plugin-cc)
 
@@ -96,10 +110,10 @@ Normalize each finding by adding a stable `id` field (deterministic SHA-256 hash
 
 1. Confirm `base` and `iteration` are provided. Return blocked if either is missing.
 2. Confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
-3. Confirm `codex-plugin-cc` is available (attempt to call `codex:review`; if the skill/command is not found, return blocked with `Blocker: codex-plugin-cc not available`).
-4. Run `/codex:review --base <base> --wait`.
-5. If result is inline: parse JSON, validate shape (required fields: `verdict`, `findings`). If `findings` is missing or malformed, return blocked.
-6. If result is a job ID (no inline result): call `/codex:result <job-id>`, parse JSON output.
+3. Run the PowerShell path-discovery command (`Get-Item "$env:USERPROFILE\.claude\plugins\cache\openai-codex\codex\*\scripts\codex-companion.mjs" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName`). If the result is empty (no file found), return blocked with `Blocker: codex-plugin-cc not available`.
+4. Run `node "<resolved-path>" review --base <base> --wait`. Capture stdout as the review result.
+5. Parse the captured stdout as JSON. Validate shape (required fields: `verdict`, `findings`). If `findings` is missing or malformed, return blocked with `Blocker: unexpected output shape` and include raw output in `Issues:`.
+6. If the `node` command exits with a non-zero exit code, return blocked with `Blocker: review CLI failed` and include the exit code and any stderr in `Issues:`.
 7. Normalize findings: compute `id` as SHA-256 hex digest of the concatenation `file + line_start + line_end + title` for each finding. Add `iteration` and `base` to the top-level output.
 8. Return normalized output using the skill output contract.
 
