@@ -48,6 +48,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Optional Inputs
 
 - `claude_mem`: `yes`|`no` (default `no`) — also enable `claude-mem@thedotmack` if the user has installed that plugin
+- `codex`: `yes`|`no` (default `no`) — also enable `codex@openai-codex` if the user has installed that plugin
 - `dry_run`: `yes`|`no` (default `no`) — print proposed settings, do not write
 
 ## Procedure
@@ -60,6 +61,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    - `enabledPlugins["agent-framework@brenpike"]` = `true`
    - `agent` = `"agent-framework:orchestrator"`
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
+   - if `codex` = `yes`: `enabledPlugins["codex@openai-codex"]` = `true`
 6. If `dry_run` = `yes`:
    a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.agent-framework/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. Print the merged settings JSON and the gitignore action together.
@@ -104,6 +106,7 @@ Keys applied:
 - enabledPlugins["agent-framework@brenpike"]: added | already present
 - agent: added | already present | unchanged
 - enabledPlugins["claude-mem@thedotmack"]: added | already present | not requested
+- enabledPlugins["codex@openai-codex"]: added | already present | not requested
 
 Dry run: yes | no
 
