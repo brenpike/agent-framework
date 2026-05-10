@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.0.2] - 2026-05-09
+
+### Fixed
+
+- **Monitor self-exit on terminal PR state.** The `watch-github-pr-feedback` Monitor Command Template now includes a complete polling loop with `exit 0` on `STATE=MERGED` or `STATE=CLOSED`, so the background Monitor process terminates automatically when the PR closes. Removed references to `TaskStop` (not an available tool) in favour of self-exit semantics.
+
 ## [1.0.1] - 2026-05-09
 
 ### Fixed

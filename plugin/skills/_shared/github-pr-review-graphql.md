@@ -17,7 +17,7 @@ Do not dynamically probe for Python, Node, or standalone `jq`. Do not shell-hop 
 
 Never invoke `jq` as a standalone binary command. Use only `gh … --jq …` (the built-in jq processor in the gh CLI).
 
-Never write to or read from `/tmp/` paths. Use inline `--jq` processing instead.
+Never write to or read from `/tmp/` paths for storing or processing query results. Use inline `--jq` processing instead. Exception: Monitor command scripts may use bounded `/tmp/` control files (e.g., `af_poll_err_*` for stderr capture and `af_watch_stop_*` for stop signaling) — these are Monitor lifecycle files, not data-processing paths.
 
 If `gh --jq` cannot produce the required value, return `blocked` instead of improvising parser fallbacks.
 

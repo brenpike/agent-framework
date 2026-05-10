@@ -30,7 +30,7 @@ Monitor commands must work across shell environments without modification.
 - The Monitor tool's shell context may differ from the skill's declared `shell:` frontmatter value. Do not assume that tools available in the skill's interactive shell are available in the Monitor shell context.
 - Do not assume `python3`, `python`, `node`, or standalone `jq` are on `PATH` in the Monitor shell context. These binaries are unreliable across environments.
 - `gh --jq` and `gh api graphql --jq` use the `gh` CLI's built-in jq processor. This is the canonical cross-environment parsing tool and is the only approved parsing mechanism for Monitor commands.
-- If a Monitor command relies on any binary other than `gh`, assume it may fail. Report `Monitoring: not active` rather than attempting parser substitution.
+- Standard POSIX shell builtins and utilities used for flow control, timeout enforcement, and output filtering (e.g., `date`, `sleep`, `grep`, `head`, `trap`, `rm`, `test`, `echo`, `exit`) are permitted in Monitor commands — they provide shell primitives, not parsing logic, and are available in all POSIX-compliant environments. If a Monitor command relies on any external parser or runtime binary (any binary not in the POSIX utilities category and not `gh`), assume it may fail. Report `Monitoring: not active` rather than attempting parser substitution.
 
 If the approved shell/parser strategy fails, retry once only when the failure matches the "Transient failure" definition, then return `blocked` rather than improvising parser fallback chains.
 
