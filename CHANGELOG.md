@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`local-codex-review`: injection-suspect scan added for direct invocations.** When invoked by a user directly (not via `review-loop-controller`), findings were returned without injection scanning. Step 9 now scans every finding before output regardless of caller.
 - **`local-codex-review`: `body` and `recommendation` JSON-encoded before output.** Raw multi-line finding text could corrupt the structured output format. Both fields are now JSON-encoded (newlines as `\n`, quotes escaped) before rendering.
 - **`review-loop-controller`: `exit_reason: "injection-suspect"` not set when `local-codex-review` blocks.** Step 4b now distinguishes injection-suspect blocked returns from `local-codex-review` and sets the ledger exit reason correctly before propagating the blocked response.
+- **`review-loop-controller`: Exit Conditions injection-suspect bullet incomplete after renumbering.** The exit condition for `injection-suspect` listed only step 4c and `local-codex-review` step 9 as detection sources, omitting step 4i (the post-classification injection scan for needs-attention paths). Both step 4c and 4i are now listed.
 
 ## [1.0.2] - 2026-05-09
 
