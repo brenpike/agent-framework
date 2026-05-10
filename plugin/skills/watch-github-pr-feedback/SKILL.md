@@ -173,7 +173,7 @@ Before starting Monitor, validate that the detection command works in the curren
       | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
       | select(.author.login != $self)
       | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
-   ' 2>/dev/null
+   '
    ```
    (Use the exact query and jq expression from the Monitor Command Template, minus the `while true` wrapper, `output=$(...)` capture, `echo "$output"`, `grep`, `exit 0`, and `sleep 60`.)
 3. Verify the command exits with code 0 and produces no error output. Empty stdout (no new threads/comments) is a valid result; non-zero exit or stderr output is a failure.
