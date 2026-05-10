@@ -89,7 +89,7 @@ If you cannot resolve a required value, do not invoke the skill. Stop and report
 
 ## Planner-First Rule
 
-Call `agent-framework:planner` before any delegation, branch creation, or implementation work.
+Call `agent-framework:planner` via the Agent tool before any delegation, branch creation, or implementation work.
 
 Skip planner only when the trivial fast path applies — every one of the following is answered "yes" using only the task input as written, with no inference:
 
@@ -159,7 +159,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
    - **Task-type classification (intake).** Classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For every Step-omitting bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assign a synthetic task checkpoint ID `TASK-NNN` so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. The matrix is the single source of truth for which codes are Step-omitting and how each interacts with `Step:`, `Step delta:`, `TASK-NNN`, the Session Fact key, and the `EVD-NNN` slot.
    - **claude-mem detection.** Detect and record per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection). Record `claude-mem: present|absent` in Session facts.
    - **Pre-planning memory lookup.** When `claude-mem: present`, run pre-planning lookup per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Pre-Planning Memory Lookup). Pass results per that section.
-1. Call `agent-framework:planner` unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
+1. Call `agent-framework:planner` via the Agent tool unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
 2. If planner fails, follow policy retry/fallback/blocked handling immediately.
 3. If planner returns open questions, surface them and stop.
 4. Determine delivery shape and branch classification.
@@ -170,7 +170,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 9. After each phase, verify per Phase Verification below.
 10. Create checkpoint commits per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Commit Policy).
 11. Before PR readiness, apply `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Trigger) against changed files. When `CLAUDE.md` does not define project-specific bump-trigger paths, the Bump Trigger and "No bump is required by default" lists are exhaustive (per versioning.md): a change matching the "No bump" list requires no bump; a change matching the Bump Trigger list requires a bump (use Bump Type Determination to choose the type). Stop and ask the user only when (a) the change matches more than one row of Bump Type Determination, or (b) it matches no row, or (c) for an artifact that requires a bump, `CLAUDE.md` does not list the full set of artifact files per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — canonical version file, required mirrors, changelog/release notes, package/artifact metadata, documentation mirrors, and release validation files when applicable.
-12. Delegate version/release edits to `agent-framework:coder` when required.
+12. Delegate version/release edits to `agent-framework:coder` via the Agent tool when required.
 13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
 13a. **Pre-PR local review loop.** After validation and before pushing or opening a PR, invoke `agent-framework:review-loop-controller` when ALL of the following are true: (a) the user has not opted out of local review (task input does not contain "skip review", "no review", or "skip local review"); (b) codex-plugin-cc availability is unknown or confirmed present (the skill itself detects availability). Pass `base` (resolved trunk), `working_branch`, `trunk`, and `claude_mem`. Handle the controller result by exit reason:
 - `exit_reason: "clean"` → if the controller created any fix commits (fix ledger contains at least one `fix_commit` entry), re-run step 11 (version bump detection) and step 13 (validation) against the new HEAD before proceeding to step 14; if no fix commits were created, proceed to step 14 directly

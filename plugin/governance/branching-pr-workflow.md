@@ -271,6 +271,6 @@ If implementation reveals extra work outside the approved plan:
 
 1. stop
 2. reassess scope
-3. invoke `agent-framework:planner` again whenever the added work changes any of: file scope, owner agent, edge cases, dependencies, delivery shape, version impact, or branch classification
+3. invoke `agent-framework:planner` via the Agent tool again whenever the added work changes any of: file scope, owner agent, edge cases, dependencies, delivery shape, version impact, or branch classification
 
 Remain on the same branch only when the added work fits inside the same approved plan's file scope and does not change any of the items above.
