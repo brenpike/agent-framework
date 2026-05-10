@@ -58,37 +58,7 @@ Optional:
 When `claude_mem: present`: store fix ledger as claude-mem observations tagged with `review-loop` and the branch name.
 When `claude_mem: absent`: write to `.agent-framework/review-loop/loop-state-<working_branch>.json` where `/` in the branch name is replaced with `-` (e.g., `feature/foo` → `loop-state-feature-foo.json`). Create `.agent-framework/review-loop/` if it does not exist (single flat directory — no subdirectories).
 
-Fix ledger schema:
-```json
-{
-  "branch": "string",
-  "base": "string",
-  "max_iterations": 10,
-  "iterations": [
-    {
-      "iteration": 1,
-      "findings": [
-        {
-          "id": "string",
-          "severity": "string",
-          "title": "string",
-          "file": "string",
-          "line_start": 0,
-          "line_end": 0,
-          "status": "open|fixing|fixed|regressed|cycling",
-          "introduced_iteration": 1,
-          "fixed_iteration": null,
-          "fix_commit": null
-        }
-      ],
-      "verdict": "approve|needs-attention",
-      "exit_reason": null
-    }
-  ],
-  "exit_reason": null,
-  "exit_iteration": null
-}
-```
+For fix ledger schema, read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller/references/fix-ledger-schema.md`
 
 ## Procedure
 
