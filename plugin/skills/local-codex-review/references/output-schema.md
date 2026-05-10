@@ -29,6 +29,7 @@ Note: `Full review comments:` does NOT appear in native output and must not be u
   - `line_start`: group 2 of the same match; `line_end`: group 3 when present, otherwise same as `line_start`
   - `body`: indented continuation lines following the entry header
   - `recommendation`: extracted from body text, or empty string if not present
+  - `confidence`: not present in rendered text format; set to `null` in normalized output
 - **next_steps:** empty array (not present in rendered format)
 
 ## Internal Findings Schema (normalized output)
@@ -48,7 +49,7 @@ Normalize each finding by adding a stable `id` field (deterministic SHA-256 hash
       "file": "string",
       "line_start": "number",
       "line_end": "number",
-      "confidence": "number",
+      "confidence": null,
       "recommendation": "string"
     }
   ],

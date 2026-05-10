@@ -60,7 +60,7 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:address-github-pr-feedback`: one-time PR feedback fix where the user request does not contain `watch`, `monitor`, `wait`, `poll`, or `loop`. Used for one-time Codex, human, and bot comment fixes alike. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
 - `agent-framework:watch-github-pr-feedback`: when the user request contains at least one of `watch`, `monitor`, `wait`, `poll`, or `loop`. PR identification is the skill's responsibility — pass the user-named PR number if any, otherwise pass the current branch and let the skill resolve.
 - `agent-framework:review-loop-controller`: run the pre-PR local Codex review loop on the working branch before pushing and opening a PR. Invoked by orchestrator between validation (step 13) and PR opening (step 14). Pass `base`, `working_branch`, `trunk`, and `claude_mem`.
-- `agent-framework:local-codex-review`: invoked by `agent-framework:review-loop-controller` only — not directly by orchestrator.
+- `agent-framework:local-codex-review`: invoked by `agent-framework:review-loop-controller` during the pre-PR loop — not directly by the orchestrator; users may invoke directly.
 
 Selection order (most specific first — choose the first whose Invocation Boundary matches):
 
@@ -72,7 +72,7 @@ Selection order (most specific first — choose the first whose Invocation Bound
 6. `agent-framework:watch-github-pr-feedback`
 7. `agent-framework:address-github-pr-feedback`
 
-Note: `agent-framework:local-codex-review` is not in the orchestrator selection order — it is invoked by `review-loop-controller` only.
+Note: `agent-framework:local-codex-review` is not in the orchestrator selection order — the orchestrator delegates to `review-loop-controller`, which invokes it. Users may invoke it directly.
 
 Full PR-feedback selection detail: `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
