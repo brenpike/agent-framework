@@ -13,7 +13,6 @@ allowed-tools:
   - Bash(EXIT_CODE=*)
   - Bash(node *)
   - Bash(python3 - *)
-  - Bash(python3 *)
 shell: bash
 ---
 
@@ -92,7 +91,7 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
 7. Parse stdout as rendered text per the Output Schema parsing rules in `${CLAUDE_PLUGIN_ROOT}/skills/local-codex-review/references/output-schema.md`.
 8. Normalize findings: for each finding, compute a stable `id` as the SHA-256 hex digest of `file + line_start + line_end + title` (concatenated as strings, UTF-8). Use args-based invocation to avoid shell-quoting issues:
    ```bash
-   python3 -c "import hashlib, sys; print(hashlib.sha256((sys.argv[1]+sys.argv[2]+sys.argv[3]+sys.argv[4]).encode()).hexdigest())" "$file" "$line_start" "$line_end" "$title"
+   node -e "const c=require('crypto');const h=c.createHash('sha256');h.update(process.argv[1]+process.argv[2]+process.argv[3]+process.argv[4]);console.log(h.digest('hex'))" "$file" "$line_start" "$line_end" "$title"
    ```
    Set `confidence` to `null` (not present in rendered text format). Add `iteration` and `base` to top-level output.
 9. Return normalized output using the skill output contract below.
