@@ -70,6 +70,7 @@ except subprocess.TimeoutExpired:
     sys.exit(124)
 PYEOF
 EXIT_CODE=$?
+exit $EXIT_CODE
 ```
 
 Capture stdout and exit code separately. Exit code `124` means the review was killed after 10 minutes (portable across macOS and Linux — uses Python subprocess timeout rather than the GNU `timeout` command which is unavailable on macOS by default).
