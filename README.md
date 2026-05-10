@@ -11,6 +11,14 @@ Inside Claude Code, add the marketplace then install the plugin:
 /plugin install agent-framework@brenpike
 ```
 
+## Requirements
+
+- **bash** (macOS, Linux, or WSL on Windows)
+- **git** and **gh** (GitHub CLI)
+- Claude Code CLI
+
+As of v1.0.0, PowerShell and native Windows support have been removed. All toolchain scripts are bash-based.
+
 ## Per-project setup
 
 1. Enable the plugin and set the orchestrator as the session default agent in `.claude/settings.json`:
@@ -82,6 +90,9 @@ docs/
   planning/                 # advisory planning material and implementation backlog — not active plugin governance
 tools/                      # dev-only validation scripts (policy linter, report validator)
 tests/                      # dev-only test fixtures and checks (policy, reports, plugin compatibility)
+AGENTS.md                   # project-specific Codex reviewer guidance
+CHANGELOG.md                # project changelog (Keep a Changelog format)
+CLAUDE.md                   # project instructions for Claude Code
 README.md
 ```
 
@@ -108,7 +119,7 @@ All skills are invoked using the namespaced form:
 
 | Skill | Purpose |
 |---|---|
-| `agent-framework:address-github-pr-feedback` | Fix a specific generic or human PR comment (one-time) |
+| `agent-framework:address-github-pr-feedback` | Fix a specific GitHub PR comment or reviewer comment on an existing pull request (one-time) |
 | `agent-framework:checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff without a pushed PR |
@@ -124,13 +135,25 @@ Reference documentation in `plugin/governance/`:
 
 | File | Contents |
 |---|---|
-| `agent-system-policy.md` | Cross-agent constraints, authority matrix, allowed agent topology |
+| `core-contract.md` | Master contract defining mandatory/conditional modules, agent roles, and governance structure |
+| `agent-system-policy.md` | Cross-agent constraints, authority matrix, allowed agent topology, definitions |
 | `branching-pr-workflow.md` | Branch taxonomy, naming rules, commit and PR policy |
-| `pr-review-remediation-loop.md` | External PR review feedback handling and classification |
+| `communication-policy.md` | Phase-closing reports, step deltas, handoff formats |
+| `context-management-policy.md` | Retrieval anchors, bypass codes, compaction rules |
+| `git-policy.md` | Git operation constraints and safety rules |
+| `scope-policy.md` | File-scope enforcement and scope-change escalation |
+| `pr-review-remediation-loop.md` | External PR review feedback handling, classification, and remediation routing |
 | `versioning.md` | SemVer rules, bump triggers, changelog and tag policy |
+| `security-policy.md` | Security constraints and secret-handling rules |
+| `escalation-policy.md` | Escalation triggers and routing rules |
+| `monitoring-policy.md` | Runtime monitoring and health-check policy |
+| `validation-policy.md` | Validation gates and verification requirements |
+| `auto-clear-thrash-runbook.md` | Runbook for auto-clear thrashing incidents |
+| `reconstruction-failure-runbook.md` | Runbook for context reconstruction failures |
+| `unresolved-contradiction-runbook.md` | Runbook for unresolved governance contradictions |
 | `AGENTS.template.md` | Template for project-specific Codex reviewer guidance |
 
-Governance rules are embedded in agent definitions. These files are reference material for humans and for agents that need to re-read specific rules.
+Governance docs are plugin runtime data — agents load them via `${CLAUDE_PLUGIN_ROOT}/governance/` paths at runtime. They are load-bearing: renaming section headers or files can break agent rules that reference them. See `CLAUDE.md` for editing constraints.
 
 ## Plugin limitations
 
