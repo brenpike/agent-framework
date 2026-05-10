@@ -17,7 +17,8 @@ When a policy decision is needed, resolve in this order. Use the first source th
 1. Explicit user override for the current task.
 2. Project `CLAUDE.md` (e.g. `trunk branch`, `merge strategy`, `review policy`).
 3. Repo metadata at runtime:
-   - GitHub default branch: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`
+   - 3a. Local default branch (preferred): `git symbolic-ref refs/remotes/origin/HEAD --short | sed 's|^origin/||'` — use if exit code is 0 and output is non-empty. This is the fastest and most portable resolution: no network, no auth, available in all git versions.
+   - 3b. GitHub default branch (fallback): `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` — use only when 3a fails (e.g., `origin/HEAD` is not set, as can happen with `git init` + manual remote add, or `git clone --no-checkout`). To refresh a stale `origin/HEAD` after a remote default-branch rename, run `git remote set-head origin --auto` (requires network).
    - Branch protection / required reviews: `gh api repos/{owner}/{repo}/branches/{branch}/protection` when accessible.
 4. Framework defaults below.
 
@@ -96,7 +97,7 @@ Each item below includes the resolution command and expected output shape. Run t
 | Preflight Item | Command | Expected Output |
 |---|---|---|
 | Work classification | (determined from plan or user input) | One of: `feature\|bugfix\|hotfix\|refactor\|chore\|docs\|test\|ci` |
-| Base branch | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` | Branch name string (e.g. `main`) — unless overridden by user or `CLAUDE.md` |
+| Base branch | Try `git symbolic-ref refs/remotes/origin/HEAD --short \| sed 's\|^origin/\|\|'` first (exits 0 + non-empty = done). Fall back to `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` when 3a fails. | Branch name string — resolved via local `origin/HEAD` first, then GitHub API fallback, unless overridden by user or `CLAUDE.md` |
 | Working branch name | (constructed from classification + topic per Branch Taxonomy) | `<prefix>/<topic>` matching naming constraints |
 | Branch exists vs create | `git branch --list <name>` (local); `git ls-remote --heads origin <name>` (remote — required only when the workflow will push or open a PR; skip when using a no-PR opt-out or when no remote is configured) | Empty = create; non-empty = exists. Local check alone is sufficient for no-PR/offline scenarios |
 | Worktree decision | (determined from plan parallelism requirements per Worktrees section) | `yes` or `no` |
@@ -114,7 +115,7 @@ Run before any git write operation. Each check maps to a condition from the Unsa
 | No unmerged paths | `git ls-files -u` | Empty output |
 | No in-progress operation | For each sentinel in `MERGE_HEAD REBASE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG`: resolve via `git rev-parse --git-path <sentinel>`, then `test ! -f <resolved path>` | All resolved sentinel paths are absent (do not hardcode `.git/`; the git dir may be a pointer file in linked worktrees) |
 | No out-of-scope changes | `git status --porcelain` | Empty output, or every listed path is within the agent's assigned file scope |
-| Trunk branch identifiable | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` | Returns a non-empty branch name string |
+| Trunk branch identifiable | Try `git symbolic-ref refs/remotes/origin/HEAD --short \| sed 's\|^origin/\|\|'` first (exits 0 + non-empty = done). Fall back to `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`. | Returns a non-empty branch name string from either command |
 | Remote reachable | `git ls-remote --exit-code origin HEAD` | Exits 0. Required only when the workflow will push or open a PR; skip when using a no-PR opt-out or when no remote is configured |
 
 ## Branch Creation
