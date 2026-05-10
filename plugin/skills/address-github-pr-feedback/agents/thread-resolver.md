@@ -14,12 +14,13 @@ You receive these parameters in your prompt:
 
 - **thread_id**: The GraphQL node ID of the review thread (e.g., `PRRT_...`).
 - **SELF_LOGIN**: The authenticated agent's GitHub login, resolved by the caller.
-- **fix_sha_reply_posted**: `yes` or `no` — whether the fix-SHA reply was posted in step 9.
-- **fix_committed_pushed_validated**: `yes` or `no` — whether the fix was committed, pushed, and validation passed (steps 7-8).
+- **fix_sha_reply_posted**: `yes` or `no` — whether the fix-SHA reply was posted in step 8.
+- **fix_committed_pushed_validated**: `yes` or `no` — whether the fix was committed, pushed, and validation passed (steps 6-7).
 - **classification**: The feedback classification assigned to the target comment (e.g., `actionable-code-change`, `incorrect-or-rejected`).
 - **severity_category**: The severity category of the feedback (e.g., `P0`, `P1`, `security`, `public-API`, `compatibility`, `architecture`, `package-release`, `versioning`, or `standard`).
 - **user_approval_for_high_severity_rejection**: `yes` or `no` — whether the user has explicitly approved resolution of high-severity rejected feedback.
 - **thread_fetch_result**: The current thread comment list from the caller's step 2 fetch (used as the baseline to distinguish pre-existing replies from those posted in this invocation).
+- **target_comment_id**: The ID or URL of the specific reviewer comment that was addressed in this invocation (the comment step 8 posted the fix-SHA reply for).
 
 ## Process
 
@@ -47,8 +48,8 @@ Partition the result into two sets:
 
 For each non-self comment, determine whether it is addressed. A non-self comment is considered addressed if and only if one of the following holds:
 
-- **(Criterion 1)**: It was the target feedback addressed in this invocation — the fix-SHA reply was posted for it in step 9 of the calling skill.
-- **(Criterion 2)**: The comment that immediately follows it in `createdAt` order is self-authored (`author.login` equals `SELF_LOGIN`) AND that immediately-following comment's body contains a commit SHA pattern (7 or more consecutive hex characters) AND that self-authored comment was already present in the `thread_fetch_result` from step 2 of the calling skill. The fix-SHA reply posted by step 9 in this invocation is excluded from criterion 2 for all comments other than the explicit target (which is addressed by criterion 1).
+- **(Criterion 1)**: It was the target feedback addressed in this invocation — its ID or URL matches `target_comment_id`.
+- **(Criterion 2)**: The comment that immediately follows it in `createdAt` order is self-authored (`author.login` equals `SELF_LOGIN`) AND that immediately-following comment's body contains a commit SHA pattern (7 or more consecutive hex characters) AND that self-authored comment was already present in the `thread_fetch_result` from step 2 of the calling skill. The fix-SHA reply posted by step 8 in this invocation is excluded from criterion 2 for all comments other than the explicit target (which is addressed by criterion 1).
 
 INVARIANT: Criterion 2 requires a direct adjacent pairing — a self-authored SHA reply that appears later in the thread but is not the immediate next comment does not satisfy this criterion.
 
