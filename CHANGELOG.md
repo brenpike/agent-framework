@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.0.1] - 2026-05-09
+
+### Fixed
+
+- **Agent tool disambiguation for subagent invocations.** Added explicit "via the Agent tool" qualifier to all orchestrator and skill instructions that invoke planner, coder, or designer subagents. Prevents the LLM from confusing Agent-tool delegation with Skill-tool invocation when both tool types are available in the same context.
+
 ## [1.0.0] - 2026-05-09
 
 ### Changed
