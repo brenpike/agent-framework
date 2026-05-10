@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(export SELF_LOGIN=$(gh api user --jq .login))
   - Bash(git status *)
   - Bash(git branch *)
+  - Bash(touch /tmp/af_watch_stop_pr_*)
   - Monitor
   - Skill
 shell: bash
