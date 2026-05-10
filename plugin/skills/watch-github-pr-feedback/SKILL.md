@@ -307,10 +307,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     continue
   fi
   fail_count=0
-  echo "$output"
   if echo "$output" | grep -qE '^STATE=(MERGED|CLOSED)$'; then
+    echo "$output" | grep '^STATE='
     exit 0
   fi
+  echo "$output"
   sleep $POLL_INTERVAL_SECONDS
 done
 ```
