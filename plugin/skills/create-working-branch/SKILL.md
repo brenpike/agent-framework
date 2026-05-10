@@ -52,7 +52,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 - commit
 - push
 - open a PR
-- continue when branch state is unsafe or ambiguous
+- continue when branch state is unsafe or indeterminate
 - invent values for `base`, `working_branch`, or `classification` — return blocked if any are missing
 
 ## Output
