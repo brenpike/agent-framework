@@ -193,6 +193,8 @@ Monitor commands must be:
 
 Do not probe or fallback through Python, Node, standalone `jq`, PowerShell, or shell translations.
 
+Standard POSIX shell builtins and utilities used for flow control and output filtering (e.g., `date`, `sleep`, `grep`, `head`, `trap`, `rm`) are permitted and are not subject to the parser prohibition.
+
 Full rules: `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md` (Monitoring Policy and Shell and Parser Policy).
 
 If Monitor startup or parser strategy fails:
