@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.1.0] - 2026-05-10
+
+### Added
+
+- **`local-codex-review` skill: direct user invocation.** The skill is now `user-invocable: true` — users can invoke `agent-framework:local-codex-review` directly for ad-hoc pre-push reviews without going through `review-loop-controller`. Includes a portable 10-minute timeout (Python subprocess, macOS-compatible), an expanded output contract (`body` and `recommendation` fields per finding, JSON-encoded), and an injection-suspect scan before output regardless of caller.
+
+### Fixed
+
+- **`local-codex-review`: exit code not surfaced from timeout wrapper.** The `EXIT_CODE=$?` assignment was the last command in the Bash block, so the block always exited 0. Added `exit $EXIT_CODE` to propagate the real subprocess exit code (including 124 for timeout).
+- **`local-codex-review`: procedure steps 5 and 6 were ordered incorrectly.** Exit-code check now runs before stdout validation, preventing false `unexpected output shape` errors on CLI failure.
+- **`local-codex-review`: injection-suspect scan added for direct invocations.** When invoked by a user directly (not via `review-loop-controller`), findings were returned without injection scanning. Step 9 now scans every finding before output regardless of caller.
+- **`local-codex-review`: `body` and `recommendation` JSON-encoded before output.** Raw multi-line finding text could corrupt the structured output format. Both fields are now JSON-encoded (newlines as `\n`, quotes escaped) before rendering.
+- **`review-loop-controller`: `exit_reason: "injection-suspect"` not set when `local-codex-review` blocks.** Step 4b now distinguishes injection-suspect blocked returns from `local-codex-review` and sets the ledger exit reason correctly before propagating the blocked response.
+
 ## [1.0.2] - 2026-05-09
 
 ### Fixed
