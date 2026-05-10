@@ -163,8 +163,8 @@ Before using the template, resolve:
 - `OWNER` and `REPO` from `gh pr view PR_NUMBER --json baseRepository --jq '.baseRepository.owner.login + " " + .baseRepository.name'` (split on space; `Bash(gh pr view *)` is already in the skill's allowed tools)
 - `PR_NUMBER`: the integer PR number from the PR resolution step
 - `STOP_FILE`: `/tmp/af_watch_stop_<OWNER>_<REPO>_pr<PR_NUMBER>` — substitute the resolved OWNER, REPO, and integer PR number. Record this path; it is used in step 7 to signal the Monitor to stop on injection-suspect detection.
-- `MAX_WATCH_SECONDS`: resolved `max watch duration` optional input (default: `14400`). Substitute the integer seconds value for `14400` in the template.
-- `POLL_INTERVAL_SECONDS`: resolved `polling interval` optional input (default: `60`). Substitute the integer seconds value for `60` in the template.
+- `MAX_WATCH_DEFAULT`: resolved `max watch duration` optional input (default: `14400`). Substitute the integer seconds value for the `MAX_WATCH_DEFAULT` placeholder token in the template (RHS of the `MAX_WATCH_SECONDS=` assignment). Do NOT replace the shell variable name `MAX_WATCH_SECONDS`.
+- `POLL_INTERVAL_DEFAULT`: resolved `polling interval` optional input (default: `60`). Substitute the integer seconds value for the `POLL_INTERVAL_DEFAULT` placeholder token in the template (RHS of the `POLL_INTERVAL_SECONDS=` assignment). Do NOT replace the shell variable name `POLL_INTERVAL_SECONDS`.
 
 Substitute all placeholders in the template, then pass the resulting script as the `command` parameter to the Monitor tool.
 

@@ -5,18 +5,28 @@
 # resolved values, and passes the resulting script as the `command` parameter
 # to the Monitor tool.
 #
-# Placeholders (substitute before passing to Monitor):
-#   OWNER              — repository owner login
-#   REPO               — repository name
-#   PR_NUMBER          — integer PR number
-#   MAX_WATCH_SECONDS  — max watch duration in seconds (default: 14400)
-#   POLL_INTERVAL_SECONDS — polling interval in seconds (default: 60)
+# Placeholders (substitute before passing to Monitor). All placeholders are
+# bare-token replacements applied to the script body. The shell variable
+# names MAX_WATCH_SECONDS and POLL_INTERVAL_SECONDS are NOT placeholders —
+# they are referenced later in the script (e.g. $POLL_INTERVAL_SECONDS) and
+# must remain literal. Only the RHS placeholder tokens below are substituted.
+#
+# Identifier placeholders:
+#   OWNER       — repository owner login
+#   REPO        — repository name
+#   PR_NUMBER   — integer PR number
+#
+# Value placeholders (RHS of assignments only):
+#   MAX_WATCH_DEFAULT       — resolved 'max watch duration' optional input
+#                             (integer seconds; default if no override: 14400)
+#   POLL_INTERVAL_DEFAULT   — resolved 'polling interval' optional input
+#                             (integer seconds; default if no override: 60)
 #
 # The stop file path /tmp/af_watch_stop_OWNER_REPO_prPR_NUMBER is derived
 # from the resolved OWNER, REPO, and PR_NUMBER values.
 
-MAX_WATCH_SECONDS=14400  # Override: substitute resolved 'max watch duration' optional input (integer seconds)
-POLL_INTERVAL_SECONDS=60  # Override: substitute resolved 'polling interval' optional input (integer seconds)
+MAX_WATCH_SECONDS=MAX_WATCH_DEFAULT  # placeholder; substitute integer seconds (default: 14400)
+POLL_INTERVAL_SECONDS=POLL_INTERVAL_DEFAULT  # placeholder; substitute integer seconds (default: 60)
 deadline=$(($(date +%s) + MAX_WATCH_SECONDS))
 fail_count=0
 trap "rm -f /tmp/af_poll_err_$$ /tmp/af_watch_stop_OWNER_REPO_prPR_NUMBER" EXIT
