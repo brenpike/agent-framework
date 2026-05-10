@@ -91,18 +91,9 @@ For fix ledger schema, read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller
 
 ## Break-Fix-Break Detection
 
-Run before routing each iteration's findings. Three signals per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Break-fix-break cycle):
+Run before routing each iteration's findings. Read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller/agents/break-fix-detector.md` then spawn a subagent with those instructions. Pass: current iteration findings (each with `id`, `file`, `line_start`, `line_end`), fix ledger state (all prior iterations with finding statuses and `fix_commit` SHAs), `git diff HEAD~1 HEAD` output, and the finding `id` set from the N-2 iteration (empty if fewer than 3 iterations in ledger).
 
-1. **Line-range overlap**: any new finding's (`file`, `line_start`, `line_end`) overlaps with a finding marked `"fixed"` in a prior iteration.
-2. **Git revert**: `git diff HEAD~1 HEAD` contains lines that are the inverse of changes made in any prior fix commit recorded in the ledger.
-3. **N-2 iteration delta**: the current iteration's finding `id` set is identical to the finding `id` set from two iterations ago (N-2), indicating oscillation.
-
-Escalate when 2 of 3 signals fire. Return blocked with:
-- which signals fired
-- the conflicting findings (id, file, line range, title)
-- the prior fix commit SHA that is being undone or re-introduced
-
-Do not auto-resolve. User must decide.
+If the agent returns `Escalate: true`, set `exit_reason: "break-fix-break"` and return blocked with `Stage: review remediation`, including the agent's `Signals fired`, `Conflicting findings`, and `Prior fix commit` in the blocked report. Do not auto-resolve. User must decide.
 
 ## Exit Conditions
 
