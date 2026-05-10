@@ -72,7 +72,7 @@ Selection order (most specific first — choose the first whose Invocation Bound
 6. `agent-framework:watch-github-pr-feedback`
 7. `agent-framework:address-github-pr-feedback`
 
-Note: `agent-framework:local-codex-review` is not in the orchestrator selection order — it is invoked by `review-loop-controller` only.
+Note: `agent-framework:local-codex-review` is not in the orchestrator selection order — the orchestrator delegates to `review-loop-controller`, which invokes it. Users may invoke it directly.
 
 Full PR-feedback selection detail: `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 

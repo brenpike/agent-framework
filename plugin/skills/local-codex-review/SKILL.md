@@ -12,7 +12,7 @@ allowed-tools:
   - Bash(baseRef=*)
   - Bash(EXIT_CODE=*)
   - Bash(node *)
-  - Bash(timeout *)
+  - Bash(python3 - *)
   - Bash(python3 *)
 shell: bash
 ---
@@ -56,11 +56,22 @@ codexScript=$(ls -t "$HOME/.claude/plugins/cache/openai-codex/codex/"*/scripts/c
 
 ```bash
 baseRef='<base>'   # safe: base was validated against ^[a-zA-Z0-9/_.\-]+$ before this step
-timeout 600 node "$codexScript" review --base "$baseRef" --wait
+python3 - "$codexScript" "$baseRef" <<'PYEOF'
+import subprocess, sys
+codex_script, base_ref = sys.argv[1], sys.argv[2]
+try:
+    result = subprocess.run(
+        ["node", codex_script, "review", "--base", base_ref, "--wait"],
+        timeout=600
+    )
+    sys.exit(result.returncode)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+PYEOF
 EXIT_CODE=$?
 ```
 
-Capture stdout and exit code separately. Exit code `124` means `timeout` killed the process after 10 minutes.
+Capture stdout and exit code separately. Exit code `124` means the review was killed after 10 minutes (portable across macOS and Linux — uses Python subprocess timeout rather than the GNU `timeout` command which is unavailable on macOS by default).
 
 The command writes rendered text to stdout. Do not add `--json`; the default output is rendered text, not JSON.
 
@@ -73,7 +84,7 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
 1. Resolve `base` and `iteration`. If `base` was not supplied, resolve from git remote or default to `main`. If `iteration` was not supplied, default to `1`. Return blocked if `base` cannot be resolved.
 2. Confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 3. Discover `codexScript` by running the path-discovery block from **Review Invocation**. If `codexScript` is empty, return blocked with `Blocker: codex-plugin-cc not available`.
-4. Validate `base` against `^[a-zA-Z0-9/_.\-]+$`; return blocked with `Blocker: base ref contains characters unsafe for shell invocation` if it fails. Assign `baseRef='<base>'` and run `timeout 600 node "$codexScript" review --base "$baseRef" --wait`. Capture stdout and exit code.
+4. Validate `base` against `^[a-zA-Z0-9/_.\-]+$`; return blocked with `Blocker: base ref contains characters unsafe for shell invocation` if it fails. Assign `baseRef='<base>'` and run the portable Python timeout wrapper from **Review Invocation**. Capture stdout and exit code.
 5. Check exit code first:
    - `124`: return blocked with `Blocker: review timed out`.
    - Any other non-zero: return blocked with `Blocker: review CLI failed`; include exit code and stderr in `Issues:`.
