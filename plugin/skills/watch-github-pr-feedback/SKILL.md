@@ -297,7 +297,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   fi
   fail_count=0
   echo "$output"
-  if echo "$output" | grep -q '^STATE=MERGED$\|^STATE=CLOSED$'; then
+  if echo "$output" | grep -qE '^STATE=(MERGED|CLOSED)$'; then
     exit 0
   fi
   sleep 60
