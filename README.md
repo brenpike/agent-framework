@@ -125,7 +125,7 @@ All skills are invoked using the namespaced form:
 | `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff without a pushed PR |
 | `agent-framework:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `agent-framework:request-github-codex-review` | Request Codex review on an existing pushed PR |
-| `agent-framework:review-loop-controller` | Drive the pre-PR local Codex review loop (up to 5 iterations) with break-fix-break detection |
+| `agent-framework:review-loop-controller` | Drive the pre-PR local Codex review loop (up to 10 iterations) with break-fix-break detection |
 | `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.agent-framework/` to `.gitignore` |
 | `agent-framework:watch-github-pr-feedback` | Monitor a PR for new review feedback and route to remediation skills |
 
