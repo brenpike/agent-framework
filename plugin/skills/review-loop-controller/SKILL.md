@@ -115,7 +115,7 @@ Stop the loop when any of the following is true:
   ```
 - Break-fix-break cycle detected (2-of-3 signals): `exit_reason: "break-fix-break"`, return blocked with `Stage: review remediation`
 - `question-needs-user-input` finding: `exit_reason: "user-input-required"`, return blocked with `Stage: review remediation`
-- Planner or designer escalation returns blocked: `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
+- Planner escalation returns blocked: `exit_reason: "planner-blocked"`, return blocked with `Stage: review remediation`
 - Coder returns `Status: blocked` during remediation: `exit_reason: "coder-blocked"`, return blocked with `Stage: review remediation`
 - Designer returns `Status: blocked` during remediation: `exit_reason: "designer-blocked"`, return blocked with `Stage: review remediation`
 - Injection-suspect content detected (either by controller's step 4c or 4i scan, or by `local-codex-review` step 9 returning blocked with `Blocker: injection-suspect content detected in Codex finding`): `exit_reason: "injection-suspect"`, return blocked with `Stage: review remediation`
