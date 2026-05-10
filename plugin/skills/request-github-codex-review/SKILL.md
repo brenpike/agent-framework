@@ -1,7 +1,6 @@
 ---
 name: request-github-codex-review
 description: Request Codex review on the current GitHub pull request.
-disable-model-invocation: false
 allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh pr comment *)
@@ -24,6 +23,15 @@ After:
 Request Codex review on the current pull request.
 
 Codex is an external reviewer, not a Claude Code subagent.
+
+## Required Inputs
+
+At minimum one of:
+
+- PR number or PR URL, OR
+- a current git branch with exactly one open PR on the configured remote (the skill resolves the PR via `gh pr view --json number,state` against the current branch)
+
+If neither is available, return the Blocked Report Contract with `Stage: fetch` and `Blocker: no PR identified`.
 
 ## Requirements
 

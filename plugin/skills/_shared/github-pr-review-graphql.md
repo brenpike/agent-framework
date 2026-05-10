@@ -4,6 +4,21 @@ Use these operations for pull request review remediation.
 
 Resolvable pull request review threads are GraphQL objects. Do not try to resolve review threads using REST review-comment IDs.
 
+## Contents
+
+- [Shell and Parsing Rules](#shell-and-parsing-rules) — deterministic CLI commands, jq usage constraints, and `/tmp/` restrictions
+- [Pagination Requirement](#pagination-requirement) — mandatory paging for all connections that may exceed page size
+- [Fetch Reviews](#fetch-reviews) — retrieve review summaries including `CHANGES_REQUESTED` and `COMMENTED` states
+- [Fetch Review Threads](#fetch-review-threads) — retrieve inline review threads with comments and metadata
+- [Fetch Unresolved Thread Summary Lines](#fetch-unresolved-thread-summary-lines) — compact one-line-per-thread output for unresolved threads
+- [Fetch Thread Comments (Paginated)](#fetch-thread-comments-paginated) — retrieve additional comment pages from a single thread
+- [Fetch Top-Level PR Comments](#fetch-top-level-pr-comments) — retrieve issue-level comments (not inline review threads)
+- [Detection Filtering](#detection-filtering) — filters to apply before yielding any result as actionable feedback
+- [Reply to Review Thread](#reply-to-review-thread) — mutation to post a reply to an existing review thread
+- [Resolve Review Thread](#resolve-review-thread) — mutation to mark a review thread as resolved
+- [Author Filtering](#author-filtering) — rules for scoping feedback to specific reviewer identities
+- [Safety Rules](#safety-rules) — ordering and approval constraints for reply and resolve operations
+
 ## Shell and Parsing Rules
 
 Use deterministic GitHub CLI commands.
