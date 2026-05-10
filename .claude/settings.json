@@ -1,9 +1,4 @@
 {
-  "enabledPlugins": {
-    "agent-framework@brenpike": true,
-    "claude-mem@thedotmack": true
-  },
-  "agent": "agent-framework:orchestrator",
   "permissions": {
     "allow": [
       "Bash(git -C * status *)",
@@ -12,5 +7,11 @@
       "Bash(git -C * diff *)",
       "Bash(git -C * show *)"
     ]
-  }
+  },
+  "enabledPlugins": {
+    "agent-framework@brenpike": true,
+    "claude-mem@thedotmack": true,
+    "codex@openai-codex": true
+  },
+  "agent": "agent-framework:orchestrator"
 }
