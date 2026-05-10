@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`review-loop-controller`: double injection-suspect scan on needs-attention paths.** Step 4b2 (now 4c) previously scanned all findings unconditionally before verdict check; on needs-attention paths this caused the same findings to be scanned twice (4c + 4i). Step 4c is now conditioned to fire only when `verdict: "approve"` and findings are non-empty — guarding approve-exit paths. Needs-attention paths are covered exclusively by step 4i.
+- **`review-loop-controller`: double injection-suspect scan on needs-attention paths.** Step 4b2 (now 4c) previously scanned all findings unconditionally before verdict check; on needs-attention paths this caused the same findings to be scanned twice (4c + 4h). Step 4c is now conditioned to fire only when `verdict: "approve"` and findings are non-empty — guarding approve-exit paths. Needs-attention paths are covered exclusively by step 4h.
 - **`review-loop-controller`: procedure sub-step numbering.** Steps 4b2 and 4g2 were afterthought labels from hotfix additions. All sub-steps are now sequentially lettered (4a–4l).
 - **`review-loop-controller`: coder/designer-blocked not handled during remediation.** Step 4k routing sub-bullets only handled `Status: complete` from coder/designer. If either returns `Status: blocked`, the controller now exits with `coder-blocked` or `designer-blocked` exit reason and returns blocked with `Stage: review remediation`.
 - **`review-loop-controller`: redundant fix_commit recording step removed.** Step 4j ("After all findings routed and fixed: record fix_commit") was a duplicate of the per-finding recording already done in step 4k routing sub-bullets. Removed.
