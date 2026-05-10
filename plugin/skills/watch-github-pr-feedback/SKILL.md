@@ -176,7 +176,7 @@ Before starting Monitor, validate that the detection command works in the curren
       | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
    '
    ```
-   (Use the exact query and jq expression from the Monitor Command Template, minus the `while true` wrapper, `output=$(...)` capture, `echo "$output"`, `grep`, `exit 0`, and `sleep 60`.)
+   (Use the exact query and jq expression from the Monitor Command Template, minus the `while true` wrapper, `output=$(...)` capture, `echo "$output"`, `grep`, `exit 0`, and `sleep $POLL_INTERVAL_SECONDS`.)
 3. Verify the command exits with code 0 and produces no error output. Empty stdout (no new threads/comments) is a valid result; non-zero exit or stderr output is a failure.
 4. Verify that no `AUTHOR=` lines in the output show your own GitHub login (compare against `gh api user --jq .login`). If self-authored items appear, the `viewer.login` value in the query is not resolving correctly — do not start Monitor.
 5. Only if pre-flight passes (exit 0, no stderr, no self-author leak): start Monitor with the full Monitor Command Template (the complete `while true` loop script from the `## Monitor Command Template` section below).
@@ -214,9 +214,13 @@ Before using this template, resolve:
 - `OWNER` and `REPO` from `gh pr view PR_NUMBER --json baseRepository --jq '.baseRepository.owner.login + " " + .baseRepository.name'` (split on space; `Bash(gh pr view *)` is already in the skill's allowed tools)
 - `PR_NUMBER`: the integer PR number from the PR resolution step
 - `STOP_FILE`: `/tmp/af_watch_stop_<OWNER>_<REPO>_pr<PR_NUMBER>` — substitute the resolved OWNER, REPO, and integer PR number. Record this path; it is used in step 7 to signal the Monitor to stop on injection-suspect detection.
+- `MAX_WATCH_SECONDS`: resolved `max watch duration` optional input (default: `14400`). Substitute the integer seconds value for `14400` in the template.
+- `POLL_INTERVAL_SECONDS`: resolved `polling interval` optional input (default: `60`). Substitute the integer seconds value for `60` in the template.
 
 ```bash
-deadline=$(($(date +%s) + 14400))
+MAX_WATCH_SECONDS=14400  # Override: substitute resolved 'max watch duration' optional input (integer seconds)
+POLL_INTERVAL_SECONDS=60  # Override: substitute resolved 'polling interval' optional input (integer seconds)
+deadline=$(($(date +%s) + MAX_WATCH_SECONDS))
 fail_count=0
 trap "rm -f /tmp/af_poll_err_$$ /tmp/af_watch_stop_OWNER_REPO_prPR_NUMBER" EXIT
 while true; do
@@ -299,7 +303,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       echo "POLL_ERROR: $(head -1 "/tmp/af_poll_err_$$")"
       exit 1
     fi
-    sleep 60
+    sleep $POLL_INTERVAL_SECONDS
     continue
   fi
   fail_count=0
@@ -307,11 +311,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   if echo "$output" | grep -qE '^STATE=(MERGED|CLOSED)$'; then
     exit 0
   fi
-  sleep 60
+  sleep $POLL_INTERVAL_SECONDS
 done
 ```
 
-> **Complete Monitor command:** This is the full Monitor command including the 4-hour deadline, consecutive-failure exit, polling loop, and self-exit logic. Do not wrap it in an additional loop. When `STATE=MERGED` or `STATE=CLOSED` is detected, the script calls `exit 0` — this terminates the Monitor background process ("Exit ends the watch"). After 4 hours (14400 seconds) the script emits `WATCH_TIMEOUT` and calls `exit 0`. After 2 consecutive poll failures the script emits `POLL_ERROR: <first line of stderr>` and calls `exit 1`.
+> **Complete Monitor command:** This is the full Monitor command including the 4-hour deadline, consecutive-failure exit, polling loop, and self-exit logic. Do not wrap it in an additional loop. When `STATE=MERGED` or `STATE=CLOSED` is detected, the script calls `exit 0` — this terminates the Monitor background process ("Exit ends the watch"). After `MAX_WATCH_SECONDS` seconds (default: 14400 / 4 hours) the script emits `WATCH_TIMEOUT` and calls `exit 0`. After 2 consecutive poll failures the script emits `POLL_ERROR: <first line of stderr>` and calls `exit 1`.
 
 > **Monitor coverage limits:** This query intentionally omits `pageInfo` and pagination. Full pagination would require multiple API calls per poll cycle, which is not feasible for a Monitor command. Instead, each connection uses `last: N` to fetch the most recent N items — new activity appears at the end of connections and is always within the fetched page. PRs with more than 100 unresolved review threads, 100 top-level comments, or 50 review summaries may have older items outside the fetched window; those items are not detected by this Monitor query. If a PR reaches these limits, run a one-time manual fetch using the full paginated queries in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`.
 
