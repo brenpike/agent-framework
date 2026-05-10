@@ -1,7 +1,6 @@
 ---
 name: review-loop-controller
 description: Run a pre-PR local Codex review loop on the working branch, iterate up to 10 times remediating findings, detect break-fix-break cycles, and return a loop-exit report to the orchestrator. Does not push or open a PR.
-disable-model-invocation: false
 allowed-tools:
   - Read
   - Write

@@ -1,7 +1,7 @@
 ---
 name: local-codex-review
 description: Run a local pre-PR Codex code review via codex-plugin-cc, capture structured output, normalize findings, and return them to the caller. Review-only — does not fix findings.
-disable-model-invocation: false
+user-invocable: false
 allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)

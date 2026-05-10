@@ -1,7 +1,6 @@
 ---
 name: create-working-branch
 description: Create or confirm the compliant working branch for the current approved plan before implementation begins.
-disable-model-invocation: false
 allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)

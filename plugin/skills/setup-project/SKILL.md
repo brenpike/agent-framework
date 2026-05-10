@@ -1,7 +1,6 @@
 ---
 name: setup-project
 description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the orchestrator becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.agent-framework/` is excluded from git via `.gitignore`.
-disable-model-invocation: false
 allowed-tools:
   - Read
   - Write
