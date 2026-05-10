@@ -15,6 +15,7 @@ You receive these parameters in your prompt:
 - **current_findings**: List of findings from the current iteration. Each entry has: `id`, `file`, `line_start`, `line_end`.
 - **fix_ledger**: The fix ledger from prior iterations. Contains all findings with their status (`open`, `fixed`, `non-actionable`, `rejected`) and associated `fix_commit` SHAs. Includes the iteration number each finding was recorded in.
 - **head_diff**: Output of `git diff HEAD~1 HEAD` for the most recent commit.
+- **prior_fix_diffs**: Map keyed by `fix_commit` SHA → diff content (output of `git diff <sha>^ <sha>`) for every fix commit recorded in the ledger. Used by signal 2 to detect reverts of any prior fix, not just the immediately preceding one. Empty map if no prior fix commits exist.
 - **n_minus_2_finding_ids**: The set of finding `id` values from the iteration two iterations ago (N-2). Empty if the current ledger has fewer than 3 iterations.
 
 ## Process
@@ -35,7 +36,9 @@ If any overlap is found, signal 1 fires. Record which current finding(s) overlap
 
 ### Step 3: Evaluate Signal 2 — Git Revert
 
-Examine `head_diff` for lines that are the inverse of changes made in any prior `fix_commit` recorded in the `fix_ledger`. A revert is detected when added lines in `head_diff` match removed lines from a prior fix commit, or removed lines in `head_diff` match added lines from a prior fix commit, within the same file and approximate line range.
+For each `fix_commit` SHA in `prior_fix_diffs`, compare `head_diff` against the prior fix's diff content. A revert is detected when added lines in `head_diff` match removed lines from a prior fix commit's diff, or removed lines in `head_diff` match added lines from a prior fix commit's diff, within the same file and approximate line range. This must compare against every entry in `prior_fix_diffs` — not just the most recent fix — so that a revert of an earlier fix in a later iteration is still caught.
+
+If `prior_fix_diffs` is empty (no fix commits recorded yet), mark signal 2 as `not-fired` and proceed.
 
 If any revert pattern is found, signal 2 fires. Record the prior `fix_commit` SHA being reverted.
 
