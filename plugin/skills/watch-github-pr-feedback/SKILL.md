@@ -212,7 +212,14 @@ Before using this template, resolve:
 - `PR_NUMBER`: the integer PR number from the PR resolution step
 
 ```bash
+deadline=$(($(date +%s) + 14400))
+fail_count=0
+trap "rm -f /tmp/af_poll_err_$$" EXIT
 while true; do
+  if [ "$(date +%s)" -ge "$deadline" ]; then
+    echo "WATCH_TIMEOUT"
+    exit 0
+  fi
   output=$(gh api graphql -f owner="OWNER" -f repo="REPO" -F pr=PR_NUMBER -f query='
 query($owner: String!, $repo: String!, $pr: Int!) {
   viewer { login }
@@ -276,7 +283,17 @@ query($owner: String!, $repo: String!, $pr: Int!) {
    | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
    | select(.author.login != $self)
    | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
-' 2>/dev/null) || true
+' 2>"/tmp/af_poll_err_$$")
+  if [ $? -ne 0 ]; then
+    fail_count=$((fail_count + 1))
+    if [ "$fail_count" -ge 2 ]; then
+      echo "POLL_ERROR: $(head -1 "/tmp/af_poll_err_$$")"
+      exit 1
+    fi
+    sleep 60
+    continue
+  fi
+  fail_count=0
   echo "$output"
   if echo "$output" | grep -q '^STATE=MERGED$\|^STATE=CLOSED$'; then
     exit 0
@@ -285,7 +302,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 done
 ```
 
-> **Complete Monitor command:** This is the full Monitor command including the polling loop and self-exit logic. Do not wrap it in an additional loop. When `STATE=MERGED` or `STATE=CLOSED` is detected, the script calls `exit 0` — this terminates the Monitor background process ("Exit ends the watch").
+> **Complete Monitor command:** This is the full Monitor command including the 4-hour deadline, consecutive-failure exit, polling loop, and self-exit logic. Do not wrap it in an additional loop. When `STATE=MERGED` or `STATE=CLOSED` is detected, the script calls `exit 0` — this terminates the Monitor background process ("Exit ends the watch"). After 4 hours (14400 seconds) the script emits `WATCH_TIMEOUT` and calls `exit 0`. After 2 consecutive poll failures the script emits `POLL_ERROR: <first line of stderr>` and calls `exit 1`.
 
 > **Monitor coverage limits:** This query intentionally omits `pageInfo` and pagination. Full pagination would require multiple API calls per poll cycle, which is not feasible for a Monitor command. Instead, each connection uses `last: N` to fetch the most recent N items — new activity appears at the end of connections and is always within the fetched page. PRs with more than 100 unresolved review threads, 100 top-level comments, or 50 review summaries may have older items outside the fetched window; those items are not detected by this Monitor query. If a PR reaches these limits, run a one-time manual fetch using the full paginated queries in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`.
 
