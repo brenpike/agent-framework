@@ -108,10 +108,77 @@ Optional:
 Before starting Monitor, validate that the detection command works in the current shell context. Run this check before Procedure step 5 (Monitor start).
 
 1. Resolve `OWNER`, `REPO`, and `PR_NUMBER` using the commands in `## Monitor Command Template` below. Verify all three are non-empty.
-2. Run the Monitor Command Template once manually — not inside Monitor — substituting the resolved `OWNER`, `REPO`, and `PR_NUMBER`.
+2. Run a single-poll pre-flight check — NOT the full Monitor Command Template (which contains a `while true` loop). Run only the inner `gh api graphql` detection command once, substituting the resolved `OWNER`, `REPO`, and `PR_NUMBER`:
+   ```bash
+   gh api graphql -f owner="OWNER" -f repo="REPO" -F pr=PR_NUMBER -f query='
+   query($owner: String!, $repo: String!, $pr: Int!) {
+     viewer { login }
+     repository(owner: $owner, name: $repo) {
+       pullRequest(number: $pr) {
+         state
+         reviewThreads(last: 100) {
+           nodes {
+             id
+             isResolved
+             path
+             line
+             comments(last: 20) {
+               nodes {
+                 id
+                 author { login }
+                 body
+                 createdAt
+                 url
+               }
+             }
+           }
+         }
+         comments(last: 100) {
+           nodes {
+             id
+             author { login }
+             body
+             createdAt
+             url
+           }
+         }
+         reviews(last: 50) {
+           nodes {
+             id
+             author { login }
+             state
+             body
+             submittedAt
+             url
+           }
+         }
+       }
+     }
+   }' --jq '
+     .data.viewer.login as $self |
+     "STATE=" + .data.repository.pullRequest.state,
+     (.data.repository.pullRequest.reviewThreads.nodes[]
+      | select(.isResolved == false)
+      | . as $thread
+      | $thread.comments.nodes[]
+      | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+      | select(.author.login != $self)
+      | "THREAD=\($thread.id) COMMENT=\(.id) AUTHOR=\(.author.login) PATH=\($thread.path) LINE=\($thread.line // "") URL=\(.url)"),
+     (.data.repository.pullRequest.comments.nodes[]
+      | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+      | select(.author.login != $self)
+      | "COMMENT=\(.id) AUTHOR=\(.author.login) URL=\(.url)"),
+     (.data.repository.pullRequest.reviews.nodes[]
+      | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
+      | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
+      | select(.author.login != $self)
+      | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
+   ' 2>/dev/null
+   ```
+   (Use the exact query and jq expression from the Monitor Command Template, minus the `while true` wrapper, `output=$(...)` capture, `echo "$output"`, `grep`, `exit 0`, and `sleep 60`.)
 3. Verify the command exits with code 0 and produces no error output. Empty stdout (no new threads/comments) is a valid result; non-zero exit or stderr output is a failure.
 4. Verify that no `AUTHOR=` lines in the output show your own GitHub login (compare against `gh api user --jq .login`). If self-authored items appear, the `viewer.login` value in the query is not resolving correctly — do not start Monitor.
-5. Only if pre-flight passes (exit 0, no stderr, no self-author leak): start Monitor with the identical command.
+5. Only if pre-flight passes (exit 0, no stderr, no self-author leak): start Monitor with the full Monitor Command Template (the complete `while true` loop script from the `## Monitor Command Template` section below).
 6. If pre-flight fails for any reason: do not start Monitor. Report `Monitoring: not active` with the exact failure (exit code, stderr text, or self-author leak). Do not substitute a different parser to work around the failure.
 
 ## Monitor Rules
