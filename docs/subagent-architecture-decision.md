@@ -159,7 +159,7 @@ Elevate helpers to full skills invocable via the `Skill` tool (e.g., `agent-fram
 
 **Pros:** No bare `Agent` needed. `Skill` is already in orchestrator `tools:`. Helpers become formal, documented components with explicit invocation contracts.
 
-**Cons:** Same security regression as Option 3 — `Skill` runs inline, so there is no fresh-context isolation for injection checking. Additionally, the `Skill` tool is not available inside `Agent` subagent contexts (framework agents such as coder or planner cannot call skills), so helpers promoted to skills would be uncallable from non-orchestrator contexts. High migration cost for no isolation benefit.
+**Cons:** Same security regression as Option 3 — `Skill` runs inline, so there is no fresh-context isolation for injection checking. High migration cost for no isolation benefit.
 
 ---
 
@@ -236,4 +236,4 @@ Accepting Option 1 produces the following outcomes:
 - The orchestrator's `tools:` includes bare `Agent`. Runtime enforcement of `Agent` type for helper subagents is policy-only rather than runtime-enforced.
 - Helper agents remain encapsulated within their owning skills (`_shared/agents/` and skill-local `agents/` directories).
 - The `_shared/agents/` cross-skill dependency (shared helpers used by multiple skills) remains. This is a separate encapsulation concern outside the scope of this decision.
-- Skills retain lift-and-shift portability: moving a skill to another project brings its helper `.md` files with it, without requiring any framework-level helpers to be present at the destination.
+- Skills with only skill-local helpers retain lift-and-shift portability: moving the skill directory brings its helper `.md` files with it. Skills that reference `_shared/agents/` helpers require that subtree to be co-located at the destination — a bounded dependency, but not zero.
