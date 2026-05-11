@@ -131,6 +131,7 @@ Optional:
     - (d) Not `incorrect-or-rejected` at high severity without user approval.
 
     Read `${CLAUDE_PLUGIN_ROOT}/skills/address-github-pr-feedback/agents/thread-resolver.md` then spawn a subagent to determine whether to call `resolveReviewThread`. Pass: thread ID (from step 2), `SELF_LOGIN` (from step 1), fix-SHA posted status (`yes`/`no`), fix committed/pushed/validated status (`yes`/`no`), classification, `severity_category` (from step 5), user approval for high-severity rejection (`yes`/`no`), the thread fetch result from step 2, and `target_comment_id`.
+    If the agent returns `Decision: resolve`, call the `resolveReviewThread` mutation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` using the thread ID. If the agent returns `Decision: skip`, log the agent's reason in the `Resolved:` output field and do not change `Status` to `blocked`.
 
     On `resolveReviewThread` failure, log the reason in `Resolved:` — resolution is non-blocking; the fix-SHA reply is the primary re-review gate.
 
