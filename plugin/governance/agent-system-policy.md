@@ -154,6 +154,8 @@ No other agent type may be called, requested, invented, or used as a fallback.
 
 External reviewers, CI, GitHub, Codex, and other services are not Claude Code subagents.
 
+**Skill subagent pattern**: Skills may spawn general-purpose subagents (bare `Agent` tool call, no `subagent_type`) using custom instruction `.md` files for narrow classification and analysis tasks (e.g. injection-suspect checking, feedback classification, thread resolution decisions). These are NOT framework agents and must not be listed in the Allowed Agent Topology. Only the orchestrator may delegate to framework agents — skills must return classification results and routing recommendations to the orchestrator, which owns all framework agent delegation.
+
 ## Authority Matrix
 
 | Area | orchestrator | planner | coder | designer |
@@ -172,6 +174,7 @@ External reviewers, CI, GitHub, Codex, and other services are not Claude Code su
 | Version/release file edits | delegates | no | delegated only | no |
 | External review request | owns | no | no | no |
 | Feedback classification/routing | owns | recommend when delegated | no | no |
+| Framework agent delegation | owns exclusively | no | no | no |
 | Remediation planning | coordinates | owns when delegated | no | no |
 | Remediation implementation | no | no | owns | presentational only |
 | Review replies/resolution | owns | no | no | no |
@@ -179,6 +182,8 @@ External reviewers, CI, GitHub, Codex, and other services are not Claude Code su
 ## Role Boundaries
 
 Authority Matrix above is canonical. Per-agent files in `${CLAUDE_PLUGIN_ROOT}/agents/` define role-specific deltas.
+
+**Skill agent boundary**: A skill may spawn narrow general-purpose subagents (no `subagent_type`) for classification and analysis tasks using custom instruction files. A skill must NOT delegate to framework agents (`planner`, `coder`, `designer`, `orchestrator`). Skills that classify feedback or findings must return routing recommendations as data — the orchestrator acts on those recommendations and delegates to the appropriate framework agent.
 
 ### orchestrator
 
