@@ -175,7 +175,7 @@ Document the isolation degradation. Leave helpers in place. Skills continue to r
 | Fresh-context isolation | Fail — helpers run inline in the orchestrator's context; isolation is absent |
 | Runtime-enforced permissions | Not applicable |
 | Migration burden | Pass — zero work |
-| Explicit dependency declaration | Fail — helpers function inline but isolation loss is undocumented and unaddressed |
+| Explicit dependency declaration | Fail — helpers function inline but isolation loss is unaddressed |
 
 **Pros:** Zero implementation cost.
 
@@ -210,7 +210,7 @@ Two constraints are highest priority based on the architectural discussion that 
 Elimination by constraint:
 - Options 3 and 4 fail constraint 2 (no fresh-context isolation; `Skill` and inline logic both run in the orchestrator's context).
 - Option 2 fails constraint 1 (helpers relocated to `plugin/agents/`, breaking lift-and-shift portability).
-- Option 5 fails constraint 2 (no isolation) and leaves the isolation degradation undocumented.
+- Option 5 fails constraint 2 (no isolation) — it documents the isolation degradation but accepts it without resolution.
 
 Option 1 satisfies both primary constraints. The accepted trade-off is policy-only enforcement of the bare `Agent` permission: the orchestrator's allowlist does not type-restrict `Agent` to specific helper names.
 
