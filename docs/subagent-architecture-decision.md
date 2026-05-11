@@ -21,6 +21,10 @@ The agent-framework plugin defines the following runtime components:
 
 The design intent: skills invoke these helpers by reading their `.md` instruction file and spawning a general-purpose subagent via the bare `Agent` tool. The `Agent` tool spawns a **fresh context window** with its own tool scope, providing isolation so that injected content in review comments cannot access the orchestrator's governance context or system prompt.
 
+**Companion plugin agents** — agents defined by other Claude Code plugins installed alongside agent-framework (e.g., `caveman:cavecrew-builder`, `caveman:cavecrew-investigator`, `caveman:cavecrew-reviewer`). These agents are invoked via `Agent(plugin:name)` calls. When agent-framework's orchestrator is the active agent, companion plugin agents are subject to the same `tools:` allowlist restriction as helper agents: the orchestrator's `tools:` list does not include them, so the runtime blocks their invocation. This is the same mechanism described in Section 3 — the orchestrator's typed `Agent(agent-framework:planner, ...)` entries do not cover agents from other plugin namespaces.
+
+The repo already recognizes optional companion plugins for skills and tooling — `claude-mem` (planner memory) and `codex@openai-codex` (pre-PR and post-PR review) are documented in `CLAUDE.md` as optional companions whose absence is handled gracefully. Those companions provide **skills and MCP tools**, which run inline via the `Skill` tool already present in the orchestrator's allowlist. Companion plugin **agents** are the missing equivalent: there is no current mechanism for the orchestrator to invoke agents from other plugin namespaces without adding them explicitly to `tools:`.
+
 ---
 
 ## Section 2: Current Governance Rules
@@ -63,6 +67,8 @@ Agent type 'general-purpose' has been denied by permission rule 'Agent(general-p
 ```
 
 Secondary issue: `Agent(agent-framework:name)` resolves against `plugin/agents/` only. Helpers living in `plugin/skills/` or `plugin/skills/_shared/` are not resolvable via the named `Agent` form. Promoting helpers to `_shared/agents/` without moving them to `plugin/agents/` still requires bare `Agent` calls, so the secondary issue does not create an independent path to fix the root cause.
+
+**Companion plugin agents are affected by the same restriction.** When other plugins installed alongside agent-framework define their own agents (e.g., `caveman:cavecrew-builder`), those agents require `Agent(plugin:name)` calls. The orchestrator's `tools:` list does not include agents from other plugin namespaces, so the runtime blocks these calls identically to the bare `Agent` case. This extends the problem scope beyond framework-internal helpers to the broader plugin ecosystem.
 
 **Impact of the isolation loss:**
 
@@ -215,7 +221,7 @@ Elimination by constraint:
 Option 1 satisfies both primary constraints. The accepted trade-off is policy-only enforcement of the bare `Agent` permission: the orchestrator's allowlist does not type-restrict `Agent` to specific helper names.
 
 This trade-off is acceptable for the following reasons:
-- Framework agents (planner, coder, designer) are already named explicitly in `tools:`, so the orchestrator has typed, runtime-enforced entries for all legitimate framework delegation. Bare `Agent` is only needed as a passthrough for skill-invoked helpers.
+- Framework agents (planner, coder, designer) are already named explicitly in `tools:`, so the orchestrator has typed, runtime-enforced entries for all legitimate framework delegation. Bare `Agent` is needed as a passthrough for skill-invoked helpers. It does not, however, resolve the companion plugin agent restriction — agents from other plugin namespaces require `Agent(plugin:name)` calls, not bare `Agent`, and are a separate limitation documented in Section 8.
 - The current policy in `plugin/governance/agent-system-policy.md` prohibits bare `Agent` calls outright: "No other agent type may be called, requested, invented, or used as a fallback." Implementing Option 1 requires adding an explicit exception to this rule for skill-invoked helper subagents — a bounded policy change with clear scope. That exception is enforced through code review and governance documentation.
 - The risk of misuse — a contributor using bare `Agent` to bypass framework routing — is lower than the risk of leaving injection defense running without isolation.
 
@@ -239,3 +245,22 @@ Accepting Option 1 produces the following outcomes:
 - Helper agents remain encapsulated within their owning skills (`_shared/agents/` and skill-local `agents/` directories).
 - The `_shared/agents/` cross-skill dependency (shared helpers used by multiple skills) remains. This is a separate encapsulation concern outside the scope of this decision.
 - Skills with only skill-local helpers retain lift-and-shift portability: moving the skill directory brings its helper `.md` files with it. Skills that reference `_shared/agents/` helpers require that subtree to be co-located at the destination — a bounded dependency, but not zero.
+
+---
+
+## Section 8: Open-World Ecosystem Limitation
+
+This ADR's scope is the framework's internal helper agent isolation problem. The recommended Option 1 (bare `Agent` in orchestrator `tools:`) resolves that problem but does not address a related limitation in the open-world plugin ecosystem.
+
+**The limitation:** When agent-framework's orchestrator is the active agent, companion plugin agents — agents defined by other installed plugins — cannot be invoked. The orchestrator's `tools:` allowlist uses typed `Agent(agent-framework:planner, ...)` entries that only cover agents in the `agent-framework` namespace. Agents from other namespaces (e.g., `caveman:cavecrew-builder`) require `Agent(caveman:cavecrew-builder)` calls, which are not in the allowlist and are blocked by the runtime.
+
+**Why bare `Agent` does not fix this:** Bare `Agent` (Option 1's addition) spawns a general-purpose subagent from a raw `.md` instruction file. Companion plugin agents are not raw `.md` files — they are named agents registered in their plugin's namespace, invoked via typed `Agent(plugin:name)` syntax. Bare `Agent` does not provide a path to invoke them.
+
+**Relationship to existing companion plugin precedent:** The repo documents optional companion plugins (`claude-mem`, `codex@openai-codex`) in `CLAUDE.md`. Those companions provide skills and MCP tools, which work because `Skill` is already in the orchestrator's `tools:` list and MCP tools are resolved independently. Companion plugin **agents** are the gap — there is no equivalent mechanism for cross-plugin agent invocation under a restrictive `tools:` allowlist.
+
+**Possible future approaches** (not evaluated in this ADR):
+- Wildcard or pattern-based `Agent` entries in `tools:` (e.g., `Agent(*)` or `Agent(caveman:*)`) — depends on Claude Code runtime support
+- Explicit enumeration of known companion plugin agents in `tools:` — requires per-installation customization
+- A plugin-level capability declaration allowing plugins to declare agent dependencies — requires Claude Code platform changes
+
+Resolution of this limitation is outside the scope of this ADR and may require Claude Code platform changes to the `tools:` allowlist syntax.
