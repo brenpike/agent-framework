@@ -253,7 +253,7 @@ Accepting Option 1 produces the following outcomes:
 
 ## Section 8: Open-World Ecosystem Limitation
 
-This ADR's scope is the framework's internal helper agent isolation problem. The recommended Option 1 (bare `Agent` in orchestrator `tools:`) resolves that problem and, per Claude Code's subagent documentation, likely also resolves the companion plugin agent restriction documented here — though runtime validation is recommended before treating this as confirmed.
+This ADR's scope is the framework's internal helper agent isolation problem. The recommended Option 1 (bare `Agent` in orchestrator `tools:`) resolves that problem. At the runtime level, bare `Agent` likely also removes the technical restriction on companion plugin agent invocation documented here — though runtime validation is recommended before treating this as confirmed. Governance authorization is a separate concern: Section 6 Implementation item 2 prohibits companion-agent delegation unless a separate policy explicitly authorizes that path, regardless of runtime capability.
 
 **The limitation:** When agent-framework's orchestrator is the active agent, companion plugin agents — agents defined by other installed plugins — cannot be invoked. The orchestrator's `tools:` allowlist uses typed `Agent(agent-framework:planner, ...)` entries that only cover agents in the `agent-framework` namespace. Agents from other namespaces (e.g., `caveman:cavecrew-builder`) require `Agent(caveman:cavecrew-builder)` calls, which are not in the allowlist and are blocked by the runtime.
 
@@ -266,4 +266,4 @@ This ADR's scope is the framework's internal helper agent isolation problem. The
 - Explicit enumeration of known companion plugin agents in `tools:` — requires per-installation customization
 - A plugin-level capability declaration allowing plugins to declare agent dependencies — requires Claude Code platform changes
 
-If runtime validation confirms that bare `Agent` permits companion plugin agent invocation, Option 1 resolves both the helper isolation problem and the companion agent restriction simultaneously. If runtime behavior differs from documentation, the approaches above remain valid future directions.
+If runtime validation confirms that bare `Agent` permits companion plugin agent invocation, Option 1 resolves both the helper isolation problem and the companion agent runtime restriction simultaneously. If runtime behavior differs from documentation, the approaches above remain valid future directions.
