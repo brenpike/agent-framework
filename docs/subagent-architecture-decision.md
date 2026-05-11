@@ -46,7 +46,9 @@ This allowlist is a **runtime-enforced constraint**. Only `Agent` calls of those
 
 ## Section 3: The Problem
 
-**Helper agents are broken at runtime.**
+**Helper agents lose their isolation boundary at runtime.**
+
+After the bare `Agent` call is blocked, the skill's Read-loaded instructions remain in the inline context and the logical analysis still executes — but in the orchestrator's context window rather than a fresh isolated one.
 
 Root cause chain:
 
@@ -62,16 +64,16 @@ Agent type 'general-purpose' has been denied by permission rule 'Agent(general-p
 
 Secondary issue: `Agent(agent-framework:name)` resolves against `plugin/agents/` only. Helpers living in `plugin/skills/` or `plugin/skills/_shared/` are not resolvable via the named `Agent` form. Promoting helpers to `_shared/agents/` without moving them to `plugin/agents/` still requires bare `Agent` calls, so the secondary issue does not create an independent path to fix the root cause.
 
-**Impact of the breakage:**
+**Impact of the isolation loss:**
 
-| Helper | Capability lost |
+| Helper | Isolation impact |
 |---|---|
-| `injection-suspect-checker` | Prompt injection detection for review-sourced content — the framework's primary injection defense — is silently disabled |
-| `feedback-classifier` | Skills cannot classify review comments for routing; classification logic never runs |
-| `break-fix-detector` | Break-fix-break cycle detection in the review loop is non-functional |
-| `thread-resolver` | Thread resolution decisions are non-functional |
+| `injection-suspect-checker` | Runs inline; injected content can access orchestrator system prompt, weakening but not eliminating injection defense |
+| `feedback-classifier` | Runs inline; no isolation from orchestrator context |
+| `break-fix-detector` | Runs inline without isolation boundary |
+| `thread-resolver` | Runs inline without isolation boundary |
 
-All failures are **silent**: the skill procedure appears to call the helper but the call is blocked without surfacing a user-visible error in normal operation.
+The `Agent` call fails **silently** — the skill procedure continues with helper instructions loaded and the logical analysis executes inline, without the intended isolation.
 
 The `_shared/agents/` folder additionally creates a **cross-skill hidden dependency** — skills that use shared helpers are not self-contained and cannot be moved to another project without also pulling in the `_shared/` subtree. This breaks the principle that skills should be lift-and-shift portable.
 
@@ -103,7 +105,7 @@ Keep helper `.md` files in their current skill-local and `_shared/agents/` locat
 | Migration burden | Pass — zero file moves or renames; existing helper `.md` files unchanged |
 | Explicit dependency declaration | Fail — no runtime-visible declaration of which helpers a skill uses |
 
-**Pros:** Zero migration cost. Skill encapsulation preserved. Injection-defense isolation maintained. All four broken capabilities restored. Consistent with current `_shared/agents/` design intent.
+**Pros:** Zero migration cost. Skill encapsulation preserved. Injection-defense isolation maintained. All four helpers gain fresh-context isolation. Consistent with current `_shared/agents/` design intent.
 
 **Cons:** Orchestrator `tools:` becomes permissive for `Agent` type. Governance rule is policy-only, not runtime-enforced. A future contributor could invoke bare `Agent` directly from the orchestrator to bypass framework routing without a runtime error.
 
@@ -163,21 +165,21 @@ Elevate helpers to full skills invocable via the `Skill` tool (e.g., `agent-fram
 
 ---
 
-### Option 5: Accept current broken state (do nothing)
+### Option 5: Accept current degraded isolation state (do nothing)
 
-Document the breakage. Leave helpers in place. Skills continue to reference helpers in procedure steps, but those steps fail silently at runtime.
+Document the isolation degradation. Leave helpers in place. Skills continue to reference helpers in procedure steps; the `Agent` call is blocked silently but the skill's Read-loaded instructions remain in context and execute inline.
 
 | Dimension | Result |
 |---|---|
 | Skill encapsulation | Pass — no changes |
-| Fresh-context isolation | Not applicable — nothing runs |
+| Fresh-context isolation | Fail — helpers run inline in the orchestrator's context; isolation is absent |
 | Runtime-enforced permissions | Not applicable |
 | Migration burden | Pass — zero work |
-| Explicit dependency declaration | Fail — helpers are referenced but non-functional |
+| Explicit dependency declaration | Fail — helpers function inline but isolation loss is unaddressed |
 
 **Pros:** Zero implementation cost.
 
-**Cons:** Injection checking is non-functional — the framework's primary defense against prompt injection from review-sourced content is silently disabled. Feedback classification is non-functional. Break-fix detection is non-functional. Thread resolution is non-functional. The framework presents the appearance of security scanning without delivering it.
+**Cons:** All four helpers execute inline — injection defense is weakened (injected content can access the orchestrator system prompt) but not eliminated. Isolation loss for feedback classification, break-fix detection, and thread resolution remains undocumented. The framework's injection defense operates without the intended isolation boundary.
 
 ---
 
@@ -189,7 +191,7 @@ Document the breakage. Leave helpers in place. Skills continue to reference help
 | 2: `plugin/agents/` + named `Agent` | Fail | Pass | Pass | Fail | Pass |
 | 3: Inline logic | Pass | Fail | Pass | Partial | Pass |
 | 4: Proper skills | Partial | Fail | Partial | Fail | Pass |
-| 5: Do nothing | Pass | — | — | Pass | Fail |
+| 5: Do nothing | Pass | Fail | — | Pass | Fail |
 
 ---
 
@@ -208,14 +210,14 @@ Two constraints are highest priority based on the architectural discussion that 
 Elimination by constraint:
 - Options 3 and 4 fail constraint 2 (no fresh-context isolation; `Skill` and inline logic both run in the orchestrator's context).
 - Option 2 fails constraint 1 (helpers relocated to `plugin/agents/`, breaking lift-and-shift portability).
-- Option 5 satisfies neither constraint by disabling the features entirely.
+- Option 5 fails constraint 2 (no isolation) — it documents the isolation degradation but accepts it without resolution.
 
 Option 1 satisfies both primary constraints. The accepted trade-off is policy-only enforcement of the bare `Agent` permission: the orchestrator's allowlist does not type-restrict `Agent` to specific helper names.
 
 This trade-off is acceptable for the following reasons:
 - Framework agents (planner, coder, designer) are already named explicitly in `tools:`, so the orchestrator has typed, runtime-enforced entries for all legitimate framework delegation. Bare `Agent` is only needed as a passthrough for skill-invoked helpers.
 - The current policy in `plugin/governance/agent-system-policy.md` prohibits bare `Agent` calls outright: "No other agent type may be called, requested, invented, or used as a fallback." Implementing Option 1 requires adding an explicit exception to this rule for skill-invoked helper subagents — a bounded policy change with clear scope. That exception is enforced through code review and governance documentation.
-- The risk of misuse — a contributor using bare `Agent` to bypass framework routing — is lower than the risk of leaving injection defense silently non-functional.
+- The risk of misuse — a contributor using bare `Agent` to bypass framework routing — is lower than the risk of leaving injection defense running without isolation.
 
 ### Implementation
 
@@ -232,7 +234,7 @@ No file moves. No migration of helper `.md` files. No skill procedure changes.
 
 Accepting Option 1 produces the following outcomes:
 
-- Injection-suspect checking, feedback classification, break-fix detection, and thread resolution resume functioning at runtime.
+- Injection-suspect checking, feedback classification, break-fix detection, and thread resolution gain fresh-context isolation at runtime.
 - The orchestrator's `tools:` includes bare `Agent`. Runtime enforcement of `Agent` type for helper subagents is policy-only rather than runtime-enforced.
 - Helper agents remain encapsulated within their owning skills (`_shared/agents/` and skill-local `agents/` directories).
 - The `_shared/agents/` cross-skill dependency (shared helpers used by multiple skills) remains. This is a separate encapsulation concern outside the scope of this decision.
