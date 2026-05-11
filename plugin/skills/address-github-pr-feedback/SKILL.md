@@ -157,7 +157,7 @@ Steps:
 
 1. **Validate required inputs.** If `fix_sha`, `validated`, or `pr_number` are missing, return blocked with `Stage: post-fix`, `Blocker: missing required post-fix inputs`.
 
-2. **Post fix-SHA reply.** Post a reply on the feedback thread with the fix SHA. Use the GraphQL `addComment` mutation (see `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`). If `validated: no`, note in the reply that validation did not pass. Reply mechanism by feedback source:
+2. **Post fix-SHA reply.** Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed. Use the GraphQL `addComment` mutation (see `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`). If `validated: no`, note in the reply that validation did not pass. Reply mechanism by feedback source:
    - inline review thread → `addPullRequestReviewThreadReply` GraphQL mutation on the originating thread (requires `thread_id`)
    - top-level PR comment → `gh pr comment <pr> --body "..."` with the original comment URL included in the body for traceability
    - review summary → `gh pr comment` with the review URL included in the body for traceability
