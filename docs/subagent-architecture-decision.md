@@ -214,7 +214,7 @@ Option 1 satisfies both primary constraints. The accepted trade-off is policy-on
 
 This trade-off is acceptable for the following reasons:
 - Framework agents (planner, coder, designer) are already named explicitly in `tools:`, so the orchestrator has typed, runtime-enforced entries for all legitimate framework delegation. Bare `Agent` is only needed as a passthrough for skill-invoked helpers.
-- The governance rule in `plugin/governance/agent-system-policy.md` (Skill agent boundary) already documents that orchestrator bare `Agent` calls must only occur via skill invocation, never directly. This is enforced through code review.
+- The current policy in `plugin/governance/agent-system-policy.md` prohibits bare `Agent` calls outright: "No other agent type may be called, requested, invented, or used as a fallback." Implementing Option 1 requires adding an explicit exception to this rule for skill-invoked helper subagents — a bounded policy change with clear scope. That exception is enforced through code review and governance documentation.
 - The risk of misuse — a contributor using bare `Agent` to bypass framework routing — is lower than the risk of leaving injection defense silently non-functional.
 
 ### Implementation
@@ -222,7 +222,7 @@ This trade-off is acceptable for the following reasons:
 Implementation is not in scope for this ADR and is tracked separately. The required changes are:
 
 1. Add bare `Agent` to the orchestrator's `tools:` allowlist in `plugin/agents/orchestrator.md`
-2. Add a governance annotation to `plugin/governance/agent-system-policy.md` (Skill agent boundary) documenting the constraint: bare `Agent` in the orchestrator is permitted only as a passthrough for skill helper invocations; direct orchestrator-level use is prohibited
+2. Add an exception clause to the prohibition in `plugin/governance/agent-system-policy.md` ("No other agent type may be called") — permitting bare `Agent` in the orchestrator exclusively when invoked transitively via a skill; direct orchestrator-level bare `Agent` use remains prohibited
 
 No file moves. No migration of helper `.md` files. No skill procedure changes.
 
