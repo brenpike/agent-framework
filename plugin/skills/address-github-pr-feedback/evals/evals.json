@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Fix the review feedback on PR #42 in the agent-framework repo. For this simulation: PR #42 is OPEN on branch feature/foo targeting main. One unresolved review thread: thread ID PRRT_abc123, from reviewer 'alice', body: 'The function name processData is misleading — it modifies state in place. Rename to mutateData or return a new value.', on file src/utils.md line 45. SELF_LOGIN is 'test-bot'. No other candidates. Validation: python -c \"import json; json.load(open('plugin/.claude-plugin/plugin.json'))\". Do NOT make real GitHub API calls — simulate the full skill procedure and report what you would do at each step. Save your procedure report to outputs/procedure_report.md.",
+      "prompt": "Fix the review feedback on PR #42 in the agent-framework repo. For this simulation: PR #42 is OPEN on branch feature/foo targeting main. One unresolved review thread: thread ID PRRT_abc123, from reviewer 'alice', body: 'The function name processData is misleading — it modifies state in place. Rename to mutateData or return a new value.', on file src/utils.md line 45. SELF_LOGIN is 'test-bot'. No other candidates. Validation: python -c \"import json; json.load(open('${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json'))\". Do NOT make real GitHub API calls — simulate the full skill procedure and report what you would do at each step. Save your procedure report to outputs/procedure_report.md.",
       "expected_output": "Skill classifies the comment as actionable-code-change, routes to agent-framework:coder, scopes fix to src/utils.md, runs validation, commits and pushes, posts fix-SHA reply to PRRT_abc123, resolves thread. Status: complete.",
       "files": [],
       "expectations": [
