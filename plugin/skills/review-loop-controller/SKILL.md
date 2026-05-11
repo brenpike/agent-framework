@@ -90,7 +90,7 @@ For fix ledger schema, read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller
 
 5. **Check exit conditions before running review.**
    - If iteration count >= `max_iterations`: return with `exit_reason: "max-iterations-reached"`, current ledger state, and all open findings (see Per-Iteration Result Contract).
-   - If all previously returned findings are now in `resolved` or `fixed` state in the ledger: return with `exit_reason: "clean"`.
+   - If all previously returned findings are now in `resolved` or `fixed` state in the ledger AND there are zero fix commits recorded in the ledger since the last completed review pass (i.e., no `fix_commit` entries with an iteration number greater than or equal to the last iteration that ran a review): return with `exit_reason: "clean"`. If there are unverified fix commits (fix commits recorded after the last review pass), do not short-circuit — proceed to step 6 to run a fresh review pass that verifies the fixes did not introduce new issues.
 
 6. **Invoke local-codex-review.** Invoke `agent-framework:local-codex-review` via the Skill tool with `base` and current `iteration` number.
    - If `local-codex-review` returns blocked:
@@ -107,15 +107,17 @@ For fix ledger schema, read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller
 
 10. **Classify each finding.** For each non-suspect finding: read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/agents/feedback-classifier.md` and spawn a subagent with those instructions, passing the finding body as `item_body`, the finding ID as `item_url`, `codex-finding` as `item_source`, and `context: local-review`. The agent reads the classification taxonomy from `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` and applies the Local Review Remediation Decision Table. Mark as `"open"` in ledger.
 
-11. **All-non-actionable check.** If every finding in the current iteration classifies as `non-actionable` or `incorrect-or-rejected` (zero actionable findings remain after classification): set `exit_reason: "clean"`, record in ledger, return. Re-running would review the same unchanged diff and reproduce the same result.
+11. **User-input-required check.** If any finding in the current iteration classifies as `question-needs-user-input`: set `exit_reason: "user-input-required"` in the ledger, and return blocked with `Stage: review remediation`, `Blocker: question-needs-user-input`, and the finding(s) that classified as `question-needs-user-input` (ID, first 200 characters of body). This check runs before break-fix detection and the normal iteration result — `question-needs-user-input` is a terminal exit condition that must not be masked by `routing: none` mapping.
 
-12. **Break-fix detection.** Read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller/agents/break-fix-detector.md` and spawn a subagent with those instructions. Before invoking, capture prior fix-commit diffs: for every `fix_commit` SHA recorded in the ledger, run `git diff <sha>^ <sha>` and collect the output into a map keyed by SHA (`prior_fix_diffs`). Pass: current iteration findings (each with `id`, `file`, `line_start`, `line_end`), fix ledger state (all prior iterations with finding statuses and `fix_commit` SHAs), `git diff HEAD~1 HEAD` output as `head_diff`, the `prior_fix_diffs` map (empty if no prior fix commits exist), and the finding `id` set from the N-2 iteration (empty if fewer than 3 iterations in ledger). Without `prior_fix_diffs`, signal 2 (git revert) cannot fire when the latest commit reverts an earlier — not the immediately preceding — fix, so escalation can be missed unless signals 1 and 3 also fire. If the agent returns `Escalate: true`: set `exit_reason: "break-fix-break"` and return blocked with `Stage: review remediation`, including the agent's `Signals fired`, `Conflicting findings`, and `Prior fix commit` in the blocked report. Do not auto-resolve. User must decide.
+12. **All-non-actionable check.** If every finding in the current iteration classifies as `non-actionable` or `incorrect-or-rejected` (zero actionable findings remain after classification): set `exit_reason: "clean"`, record in ledger, return. Re-running would review the same unchanged diff and reproduce the same result.
 
-13. **Update fix ledger.** Record all findings for this iteration with their classifications. Mark prior findings as `"fixed"` if their `id` no longer appears in the current iteration's findings.
+13. **Break-fix detection.** Read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller/agents/break-fix-detector.md` and spawn a subagent with those instructions. Before invoking, capture prior fix-commit diffs: for every `fix_commit` SHA recorded in the ledger, run `git diff <sha>^ <sha>` and collect the output into a map keyed by SHA (`prior_fix_diffs`). Pass: current iteration findings (each with `id`, `file`, `line_start`, `line_end`), fix ledger state (all prior iterations with finding statuses and `fix_commit` SHAs), `git diff HEAD~1 HEAD` output as `head_diff`, the `prior_fix_diffs` map (empty if no prior fix commits exist), and the finding `id` set from the N-2 iteration (empty if fewer than 3 iterations in ledger). Without `prior_fix_diffs`, signal 2 (git revert) cannot fire when the latest commit reverts an earlier — not the immediately preceding — fix, so escalation can be missed unless signals 1 and 3 also fire. If the agent returns `Escalate: true`: set `exit_reason: "break-fix-break"` and return blocked with `Stage: review remediation`, including the agent's `Signals fired`, `Conflicting findings`, and `Prior fix commit` in the blocked report. Do not auto-resolve. User must decide.
 
-14. **Persist iteration state.** Write updated ledger with this iteration's findings and classifications to storage (claude-mem or `.agent-framework/review-loop/`).
+14. **Update fix ledger.** Record all findings for this iteration with their classifications. Mark prior findings as `"fixed"` if their `id` no longer appears in the current iteration's findings.
 
-15. **Return iteration result.** Return per-iteration result using the contract below.
+15. **Persist iteration state.** Write updated ledger with this iteration's findings and classifications to storage (claude-mem or `.agent-framework/review-loop/`).
+
+16. **Return iteration result.** Return per-iteration result using the contract below.
 
 ## Exit Conditions
 
