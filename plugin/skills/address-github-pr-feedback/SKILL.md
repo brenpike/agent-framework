@@ -117,7 +117,7 @@ Optional:
 
 9. **Commit and push** when all of: a change was made; the head branch is not the resolved trunk; validation returned every declared command passed OR `Not run (no validation commands defined)`. Do not commit if validation returned Blocked or any declared command failed.
 
-10. **Reply with fix summary.** Post a reply containing the fix summary, validation result, and commit SHA whenever a change was made and pushed. Reply mechanism by feedback source:
+10. **Reply with fix summary.** Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed. Reply mechanism by feedback source:
     - inline review thread → `addPullRequestReviewThreadReply` GraphQL mutation on the originating thread
     - top-level PR comment → `gh pr comment <pr> --body "..."` with the original comment URL included in the body for traceability (`gh pr comment` does not thread — the URL is for human reference only)
     - review summary → `gh pr comment` with the review URL included in the body for traceability
