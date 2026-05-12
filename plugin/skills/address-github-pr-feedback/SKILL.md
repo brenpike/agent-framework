@@ -140,6 +140,8 @@ Optional:
    Rationale: <one sentence>
    Thread-id: <thread node ID if inline review thread, else none>
    Target-comment-id: <comment ID, else none>
+   Candidate-url: <full URL of the candidate comment/thread/review>
+   Source-kind: inline-review-thread | top-level-pr-comment | review-summary
    Rationale-action: post-rejection-reply | none
    Rationale-text: <rationale text | none>
    ```
@@ -154,6 +156,8 @@ Invoked by the orchestrator after the fix has been applied, committed, and pushe
 - `classification`: the classification returned from classify mode
 - `severity_category`: the severity returned from classify mode
 - `pr_number`: the PR number (or resolve from current branch if not supplied)
+- `candidate_url`: the full URL of the candidate from classify mode's `Candidate-url:` field
+- `source_kind`: `inline-review-thread | top-level-pr-comment | review-summary` from classify mode's `Source-kind:` field
 - `user_approval_for_high_severity_rejection` (optional, default `no`) — pass `yes` only when the user has explicitly approved resolution of high-severity rejected feedback.
 
 Steps:
@@ -162,8 +166,8 @@ Steps:
 
 2. **Post fix-SHA reply.** Reply with fix summary, validation result, and commit SHA whenever a change was made and pushed. Use the GraphQL `addComment` mutation (see `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`). If `validated: no`, note in the reply that validation did not pass. Reply mechanism by feedback source:
    - inline review thread → `addPullRequestReviewThreadReply` GraphQL mutation on the originating thread (requires `thread_id`)
-   - top-level PR comment → `gh pr comment <pr> --body "..."` with the original comment URL included in the body for traceability
-   - review summary → `gh pr comment` with the review URL included in the body for traceability
+   - top-level PR comment → `gh pr comment <pr> --body "..."` with `candidate_url` included in the body for traceability
+   - review summary → `gh pr comment` with `candidate_url` included in the body for traceability
 
 3. **Resolve thread.** This step applies only when step 2 used `addPullRequestReviewThreadReply` (inline review threads). When step 2 used `gh pr comment`, set `Thread-resolved: not applicable`.
 
@@ -221,6 +225,8 @@ Candidate:
 - Rationale:
 - Thread-id:
 - Target-comment-id:
+- Candidate-url:
+- Source-kind:
 
 Issues:
 - [issue]
