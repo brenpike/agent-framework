@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.3.0] - 2026-05-12
+
+### Added
+
+- **Bare `Agent` in orchestrator tools list.** Added `Agent` to the orchestrator's `tools:` frontmatter, enabling skills to transitively invoke helper subagents in fresh context windows (injection-defense isolation).
+
+### Changed
+
+- **Agent-type prohibition scoped with skill-transitive carve-out.** `agent-system-policy.md` now scopes the absolute agent-type prohibition to direct orchestrator use and permits bare `Agent` in the orchestrator's `tools:` exclusively for skill-transitive helper invocations (narrow classification/analysis tasks only).
+- **ADR Section 7 untrusted-data constraints applied to helper agents.** All four helper `.md` files (`injection-suspect-checker`, `feedback-classifier`, `thread-resolver`, `break-fix-detector`) now carry explicit untrusted-data constraints per ADR Section 7.
+
 ## [1.1.1] - 2026-05-10
 
 ### Fixed
