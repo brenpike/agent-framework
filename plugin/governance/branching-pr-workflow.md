@@ -99,7 +99,7 @@ Each item below includes the resolution command and expected output shape. Run t
 |---|---|---|
 | Work classification | (determined from plan or user input) | One of: `feature\|bugfix\|hotfix\|refactor\|chore\|docs\|test\|ci` |
 | Base branch | Try `git symbolic-ref refs/remotes/origin/HEAD --short \| sed 's\|^origin/\|\|'` first (exits 0 + non-empty = done). Fall back to `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` when 3a fails. | Branch name string — resolved via local `origin/HEAD` first, then GitHub API fallback, unless overridden by user or `CLAUDE.md` |
-| Trunk freshness | `git fetch origin <trunk> && git rev-list <local-trunk>..origin/<trunk> --count` | `0` = fresh (proceed); `≥1` = stale (N commits behind) — block branch creation, present user choice |
+| Trunk freshness | `git fetch origin <trunk>:refs/remotes/origin/<trunk> && git rev-list <local-trunk>..origin/<trunk> --count` | `0` = fresh (proceed); `≥1` = stale (N commits behind) — block branch creation, present user choice |
 | Working branch name | (constructed from classification + topic per Branch Taxonomy) | `<prefix>/<topic>` matching naming constraints |
 | Branch exists vs create | `git branch --list <name>` (local); `git ls-remote --heads origin <name>` (remote — required only when the workflow will push or open a PR; skip when using a no-PR opt-out or when no remote is configured) | Empty = create; non-empty = exists. Local check alone is sufficient for no-PR/offline scenarios |
 | Worktree decision | (determined from plan parallelism requirements per Worktrees section) | `yes` or `no` |
@@ -110,7 +110,7 @@ Each item below includes the resolution command and expected output shape. Run t
 
 Purpose: detect a stale local trunk before branching. A stale trunk leads to rebase pain later and can cause wrong-baseline version bumps when the remote trunk has already been bumped.
 
-The fetch command (`git fetch origin <trunk>`) is a single-ref, read-only fetch — it updates only `origin/<trunk>` and has no side effects on the working tree or local branches.
+The fetch command (`git fetch origin <trunk>:refs/remotes/origin/<trunk>`) is a single-ref, read-only fetch — it updates only `origin/<trunk>` and has no side effects on the working tree or local branches.
 
 **Divergence check:** compare `<local-trunk>..origin/<trunk>` (not `HEAD..origin/<trunk>`). When the orchestrator is already on a working branch at preflight time, `HEAD` points at the working branch, not trunk. Always use the resolved local trunk branch name for the left side of the range.
 
@@ -118,7 +118,7 @@ The fetch command (`git fetch origin <trunk>`) is a single-ref, read-only fetch 
 
 **Blocking behavior:** when stale, the orchestrator must NOT invoke `agent-framework:create-working-branch`. Instead, surface the behind-count and present the user with two choices:
 
-1. **Pull and continue** — orchestrator runs `git pull --ff-only origin <trunk>` (when currently on trunk) or `git merge --ff-only origin/<trunk>` into the local trunk branch (when currently on a working branch), re-checks divergence to confirm `0`, then proceeds to branch creation.
+1. **Pull and continue** — orchestrator runs `git fetch origin <trunk>:<trunk>` to fast-forward the local trunk ref without switching branches, then re-checks divergence to confirm `0`, then proceeds to branch creation. (Works whether currently on trunk or a working branch — no checkout required. If the local trunk cannot be fast-forwarded, git returns a non-zero exit; treat that as a blocker and report to user.)
 2. **Proceed anyway (your risk)** — orchestrator records `trunk-freshness: stale (N behind)` in Session facts and proceeds to branch creation without updating local trunk.
 
 **When fresh:** record `trunk-freshness: fresh` in Session facts (optional but recommended).
@@ -130,7 +130,7 @@ The fetch command (`git fetch origin <trunk>`) is a single-ref, read-only fetch 
 
 **When local trunk branch does not exist:** skip the divergence check and warn the user. The fetch will still update `origin/<trunk>`, but without a local tracking branch the rev-list comparison has no left side. The orchestrator should note this in the report and proceed — branch creation from `origin/<trunk>` is still valid.
 
-**When `git fetch origin <trunk>` fails despite remote being reachable:** treat the trunk as stale, surface the fetch error, and present the same two choices (pull and continue, or proceed anyway).
+**When `git fetch origin <trunk>:refs/remotes/origin/<trunk>` fails despite remote being reachable:** treat the trunk as stale, surface the fetch error, and present the same two choices (pull and continue, or proceed anyway).
 
 ### Safe Git State Check
 
