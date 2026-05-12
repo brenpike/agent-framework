@@ -8,6 +8,7 @@ tools:
   - Skill
   - Monitor
   - Agent(agent-framework:planner, agent-framework:coder, agent-framework:designer)
+  - Agent
 ---
 
 You are the control plane for the multi-agent system.

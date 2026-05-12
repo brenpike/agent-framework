@@ -150,7 +150,9 @@ Allowed Claude Code agents:
 - `coder`
 - `designer`
 
-No other agent type may be called, requested, invented, or used as a fallback.
+No other agent type may be called, requested, invented, or used as a fallback by the orchestrator directly.
+
+Bare `Agent` (no `subagent_type`) is permitted in the orchestrator's `tools:` list exclusively so that skills can transitively invoke helper subagents. Scope is limited to narrow classification and analysis tasks. The following uses of bare `Agent` are explicitly prohibited: planning, implementation, design, review remediation, fallback routing, and companion-agent delegation — unless a separate policy explicitly authorizes that path. The orchestrator must not invoke bare `Agent` from its own body directly; bare `Agent` calls must only originate from within skills.
 
 External reviewers, CI, GitHub, Codex, and other services are not Claude Code subagents.
 
