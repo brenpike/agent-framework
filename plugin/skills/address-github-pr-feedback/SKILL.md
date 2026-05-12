@@ -194,7 +194,7 @@ Steps:
    Read `${CLAUDE_PLUGIN_ROOT}/skills/address-github-pr-feedback/agents/thread-resolver.md` and spawn a subagent with those instructions. Before spawning, resolve the following:
    - `SELF_LOGIN`: run `gh api user --jq '.login'`.
    - `thread_fetch_result`: fetch the current thread comment list using the Fetch Thread Comments (Paginated) query from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. This provides the pre-reply baseline for the resolver's criterion 2 evaluation.
-   - `fix_committed_pushed_validated`: set to `yes` when `validated` input is `yes` (post-fix mode contract requires the fix to be committed and pushed before invocation); set to `no` when `validated` is `no`.
+   - `fix_committed_pushed_validated`: set to `yes` when `validated` input is `yes` or `not applicable` (both mean the fix is committed, pushed, and either passed validation or no validation commands are defined); set to `no` only when `validated` is `no`.
    - `user_approval_for_high_severity_rejection`: use the optional post-fix input value if provided; otherwise default to `no`.
 
    Pass to subagent: `thread_id`, `SELF_LOGIN`, `fix_sha_reply_posted: yes`, `fix_committed_pushed_validated`, `classification`, `severity_category`, `user_approval_for_high_severity_rejection`, `thread_fetch_result`, `target_comment_id`.
