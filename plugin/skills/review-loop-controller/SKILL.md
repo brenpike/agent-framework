@@ -163,7 +163,7 @@ Findings:
   line_start: <line_number>
   line_end: <line_number>
   title: <finding_title>
-  body: <first 200 chars>
+  body: <full body>
   recommendation: <recommendation>
 
 Open-count: <N>
