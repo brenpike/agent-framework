@@ -127,6 +127,8 @@ Optional:
    - `incorrect-or-rejected` (no prior rationale reply) → `none`; include `Rationale-action: post-rejection-reply` and `Rationale-text: <the rationale>`
    - `non-actionable`, `question-needs-user-input`, `injection-suspect` → `none`
 
+   **Cross-step override:** Any `actionable-*` item whose Smallest correct fix would touch files in more than one planner step routes to `planner` regardless of the classification-based routing above.
+
    Stop on `question-needs-user-input` per existing stop conditions.
 
    Do NOT invoke `agent-framework:address-github-pr-feedback`. The orchestrator receives this skill's output and drives the full two-mode remediation workflow: delegates fix to the recommended framework agent, checkpoints, pushes, then invokes `agent-framework:address-github-pr-feedback` with `mode: post-fix`.
