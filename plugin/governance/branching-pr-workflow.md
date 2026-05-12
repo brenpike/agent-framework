@@ -82,6 +82,7 @@ Before implementation begins, the orchestrator must define:
 
 - work classification
 - base branch (resolved per resolution order)
+- trunk freshness (fetch + divergence check)
 - working branch name
 - whether the branch exists or must be created
 - whether worktrees are used
@@ -98,11 +99,38 @@ Each item below includes the resolution command and expected output shape. Run t
 |---|---|---|
 | Work classification | (determined from plan or user input) | One of: `feature\|bugfix\|hotfix\|refactor\|chore\|docs\|test\|ci` |
 | Base branch | Try `git symbolic-ref refs/remotes/origin/HEAD --short \| sed 's\|^origin/\|\|'` first (exits 0 + non-empty = done). Fall back to `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` when 3a fails. | Branch name string — resolved via local `origin/HEAD` first, then GitHub API fallback, unless overridden by user or `CLAUDE.md` |
+| Trunk freshness | `git fetch origin <trunk> && git rev-list <local-trunk>..origin/<trunk> --count` | `0` = fresh (proceed); `≥1` = stale (N commits behind) — block branch creation, present user choice |
 | Working branch name | (constructed from classification + topic per Branch Taxonomy) | `<prefix>/<topic>` matching naming constraints |
 | Branch exists vs create | `git branch --list <name>` (local); `git ls-remote --heads origin <name>` (remote — required only when the workflow will push or open a PR; skip when using a no-PR opt-out or when no remote is configured) | Empty = create; non-empty = exists. Local check alone is sufficient for no-PR/offline scenarios |
 | Worktree decision | (determined from plan parallelism requirements per Worktrees section) | `yes` or `no` |
 | Checkpoint commit policy | (derived from plan phase count and risk flags per Commit Policy section) | One of: `none\|checkpoint allowed\|checkpoint expected` |
 | PR target | Same resolution as base branch | Branch name string |
+
+### Trunk Freshness Gate
+
+Purpose: detect a stale local trunk before branching. A stale trunk leads to rebase pain later and can cause wrong-baseline version bumps when the remote trunk has already been bumped.
+
+The fetch command (`git fetch origin <trunk>`) is a single-ref, read-only fetch — it updates only `origin/<trunk>` and has no side effects on the working tree or local branches.
+
+**Divergence check:** compare `<local-trunk>..origin/<trunk>` (not `HEAD..origin/<trunk>`). When the orchestrator is already on a working branch at preflight time, `HEAD` points at the working branch, not trunk. Always use the resolved local trunk branch name for the left side of the range.
+
+**Threshold:** one or more commits behind (`≥1`) = stale.
+
+**Blocking behavior:** when stale, the orchestrator must NOT invoke `agent-framework:create-working-branch`. Instead, surface the behind-count and present the user with two choices:
+
+1. **Pull and continue** — orchestrator runs `git pull --ff-only origin <trunk>` (when currently on trunk) or `git merge --ff-only origin/<trunk>` into the local trunk branch (when currently on a working branch), re-checks divergence to confirm `0`, then proceeds to branch creation.
+2. **Proceed anyway (your risk)** — orchestrator records `trunk-freshness: stale (N behind)` in Session facts and proceeds to branch creation without updating local trunk.
+
+**When fresh:** record `trunk-freshness: fresh` in Session facts (optional but recommended).
+
+**Skip conditions:** skip the fetch and divergence check entirely when any of the following is true:
+
+- The workflow will not push or open a PR (no-PR opt-out), matching the existing "Remote reachable" skip condition in Safe Git State Check.
+- No remote is configured.
+
+**When local trunk branch does not exist:** skip the divergence check and warn the user. The fetch will still update `origin/<trunk>`, but without a local tracking branch the rev-list comparison has no left side. The orchestrator should note this in the report and proceed — branch creation from `origin/<trunk>` is still valid.
+
+**When `git fetch origin <trunk>` fails despite remote being reachable:** treat the trunk as stale, surface the fetch error, and present the same two choices (pull and continue, or proceed anyway).
 
 ### Safe Git State Check
 
