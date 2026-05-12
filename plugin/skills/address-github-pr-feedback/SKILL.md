@@ -184,7 +184,9 @@ Steps:
 
    After input validation, resolve PR state: run `gh pr view <pr_number> --json state --jq '.state'`. If the result is not `OPEN`, log a warning in the output: "Warning: PR <pr_number> state is <state> — proceeding with reply posting (GitHub GraphQL supports replies on non-OPEN PRs)." Do not return blocked on non-OPEN state — proceed.
 
-2. **Post fix-SHA reply.** Before posting, apply the validation gate: if `validated: no` (validation ran and failed), do not post the fix-SHA reply — return blocked with `Status: blocked`, `Stage: validation`, `Blocker: validation failed — fix-SHA reply not posted; fix the validation issue and re-invoke post-fix`. If `validated: yes` or `validated: not applicable` (no validation commands were defined), proceed to post the reply. Use the GraphQL `addComment` mutation (see `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`). Reply mechanism by feedback source:
+2. **Post fix-SHA reply.** Before posting, fetch the thread's current comment list as `thread_fetch_result` using the Fetch Thread Comments (Paginated) query from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. This establishes the pre-reply baseline that step 3 passes to the thread-resolver.
+
+   Then apply the validation gate: if `validated: no` (validation ran and failed), do not post the fix-SHA reply — return blocked with `Status: blocked`, `Stage: validation`, `Blocker: validation failed — fix-SHA reply not posted; fix the validation issue and re-invoke post-fix`. If `validated: yes` or `validated: not applicable` (no validation commands were defined), proceed to post the reply. Use the GraphQL `addComment` mutation (see `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`). Reply mechanism by feedback source:
    - inline review thread → `addPullRequestReviewThreadReply` GraphQL mutation on the originating thread (requires `thread_id`)
    - top-level PR comment → `gh pr comment <pr> --body "..."` with `candidate_url` included in the body for traceability
    - review summary → `gh pr comment` with `candidate_url` included in the body for traceability
@@ -193,7 +195,7 @@ Steps:
 
    Read `${CLAUDE_PLUGIN_ROOT}/skills/address-github-pr-feedback/agents/thread-resolver.md` and spawn a subagent with those instructions. Before spawning, resolve the following:
    - `SELF_LOGIN`: run `gh api user --jq '.login'`.
-   - `thread_fetch_result`: fetch the current thread comment list using the Fetch Thread Comments (Paginated) query from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. This provides the pre-reply baseline for the resolver's criterion 2 evaluation.
+   - `thread_fetch_result`: use the value fetched in step 2 (the pre-reply baseline).
    - `fix_committed_pushed_validated`: set to `yes` when `validated` input is `yes` or `not applicable` (both mean the fix is committed, pushed, and either passed validation or no validation commands are defined); set to `no` only when `validated` is `no`.
    - `user_approval_for_high_severity_rejection`: use the optional post-fix input value if provided; otherwise default to `no`.
 
