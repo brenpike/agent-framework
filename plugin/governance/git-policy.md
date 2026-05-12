@@ -12,6 +12,7 @@ Before implementation begins, the orchestrator must explicitly establish:
 
 - work classification: `feature|bugfix|hotfix|refactor|chore|docs|test|ci`
 - base branch
+- trunk freshness (fetch + divergence check)
 - working branch name
 - branch exists vs create
 - worktree decision
