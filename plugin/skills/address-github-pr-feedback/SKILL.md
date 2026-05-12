@@ -86,6 +86,8 @@ Optional:
 - file path
 - quoted comment text
 
+## Classify Mode
+
 ## Procedure
 
 1. **Resolve PR and context.** If the caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. If the current branch has multiple open PRs, return the Blocked Report Contract with `Blocker: multiple open PRs on branch — specify PR number`.
@@ -162,7 +164,25 @@ Invoked by the orchestrator after the fix has been applied, committed, and pushe
 
 Steps:
 
-1. **Validate required inputs.** If `fix_sha`, `validated`, or `pr_number` are missing, return blocked with `Stage: post-fix`, `Blocker: missing required post-fix inputs`.
+1. **Validate required inputs.** Validate all inputs against the following requirements:
+
+   Required (return blocked with `Stage: post-fix`, `Blocker: missing required post-fix inputs` if any are missing or null):
+   - `fix_sha`
+   - `validated` (`yes` | `no` | `not applicable`)
+   - `pr_number`
+   - `candidate_url`
+   - `source_kind`
+   - `classification`
+   - `severity_category`
+
+   Conditionally required:
+   - `thread_id`: required when `source_kind` is `inline-review-thread`; `none` is accepted otherwise
+   - `target_comment_id`: required when `source_kind` is `inline-review-thread`; `none` is accepted otherwise
+
+   Optional:
+   - `user_approval_for_high_severity_rejection` (default `no`)
+
+   After input validation, resolve PR state: run `gh pr view <pr_number> --json state --jq '.state'`. If the result is not `OPEN`, log a warning in the output: "Warning: PR <pr_number> state is <state> — proceeding with reply posting (GitHub GraphQL supports replies on non-OPEN PRs)." Do not return blocked on non-OPEN state — proceed.
 
 2. **Post fix-SHA reply.** Before posting, apply the validation gate: if `validated: no` (validation ran and failed), do not post the fix-SHA reply — return blocked with `Status: blocked`, `Stage: validation`, `Blocker: validation failed — fix-SHA reply not posted; fix the validation issue and re-invoke post-fix`. If `validated: yes` or `validated: not applicable` (no validation commands were defined), proceed to post the reply. Use the GraphQL `addComment` mutation (see `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`). Reply mechanism by feedback source:
    - inline review thread → `addPullRequestReviewThreadReply` GraphQL mutation on the originating thread (requires `thread_id`)

@@ -248,7 +248,18 @@ Watch:
 - New actionable comments:
 
 Feedback:
+# When multiple items are returned, repeat the block below for each item:
 - Candidate-url: <item URL>
+  Source-kind: inline-review-thread | top-level-pr-comment | review-summary
+  Classification: <classification>
+  Severity: <severity_category>
+  Routing: <planner | coder | designer | none>
+  Rationale: <one sentence>
+  Thread-id: <thread node ID | none>
+  Target-comment-id: <comment ID | none>
+  Rationale-action: <post-rejection-reply | none>
+  Rationale-text: <text | none>
+- Candidate-url: <item URL 2>
   Source-kind: inline-review-thread | top-level-pr-comment | review-summary
   Classification: <classification>
   Severity: <severity_category>
