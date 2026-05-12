@@ -159,6 +159,10 @@ Findings:
   classification: <classification>
   routing: <coder | designer | planner | none>
   severity: <severity_category>
+  file: <file_path>
+  line_start: <line_number>
+  line_end: <line_number>
+  title: <finding_title>
   body: <first 200 chars>
   recommendation: <recommendation>
 
