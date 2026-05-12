@@ -136,6 +136,7 @@ Before implementation delegation, explicitly establish:
 
 - work classification: `feature|bugfix|hotfix|refactor|chore|docs|test|ci`
 - base branch
+- trunk freshness (fetch + divergence check)
 - working branch name
 - branch exists vs create
 - worktree: yes/no
@@ -245,6 +246,7 @@ Memory context: (optional — include when claude-mem searched; set to `none` wh
 
 Session facts: (optional)
 - trunk: [branch]
+- trunk-freshness: [fresh|stale (N behind)]  (optional; informational — recorded at preflight per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate))
 - validation: [command]
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
@@ -310,6 +312,7 @@ Constraints:
 
 Session facts:
 - trunk: [branch]
+- trunk-freshness: [fresh|stale (N behind)]  (optional; informational)
 - validation: [command]
 - task-type: [bugfix|refactor|feature|incident]
 - claude-mem: [present|absent]  (resolved at intake; include when known)
@@ -432,6 +435,7 @@ Issues:
 
 Session facts: (optional)
 - trunk: [branch]
+- trunk-freshness: [fresh|stale (N behind)]  (optional; informational)
 - validation: [command]
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
@@ -476,6 +480,7 @@ Constraints:
 
 Session facts:
 - trunk: [branch]
+- trunk-freshness: [fresh|stale (N behind)]  (optional; informational)
 - validation: [command]
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
@@ -526,6 +531,7 @@ Constraints:
 
 Session facts:
 - trunk: [branch]
+- trunk-freshness: [fresh|stale (N behind)]  (optional; informational)
 - validation: [command]
 - task-type: [bugfix|refactor|feature|incident]
 - claude-mem: [present|absent]  (resolved at intake; include when known)
