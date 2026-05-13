@@ -142,7 +142,7 @@ When any skip condition applies, record `trunk-freshness: skipped` in Session fa
 
 ### Safe Git State Check
 
-Run before any git write operation. Each check maps to a condition from the Unsafe git state definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). Do not begin implementation if any check fails.
+Run before any git write operation. Exception: the trunk-freshness Fix-and-continue `git pull --ff-only origin <trunk>` (see Trunk Freshness Gate) is a pre-implementation preflight recovery step — it runs before branch creation and before this check is applied, and is exempt from the Not-on-trunk requirement. Each check maps to a condition from the Unsafe git state definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). Do not begin implementation if any check fails.
 
 | Check | Command | Pass Condition |
 |---|---|---|

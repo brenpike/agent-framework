@@ -73,7 +73,7 @@ Base branch:
 Previous branch:
 Working branch:
 Created: yes | no
-Trunk freshness: fresh | stale (N behind, user acknowledged) | skipped (intentional) | blocked (absent)
+Trunk freshness: fresh | stale (N behind, user acknowledged) | stale (diverged — local N ahead, user acknowledged) | stale (diverged — local M ahead, N behind, user acknowledged) | skipped (intentional) | blocked (absent)
 Warnings:
 - [warning]
 - None
