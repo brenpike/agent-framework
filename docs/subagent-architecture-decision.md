@@ -1,6 +1,6 @@
 # Subagent Architecture Decision Record
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-05-10
 
 ---
@@ -205,7 +205,7 @@ Document the isolation degradation. Leave helpers in place. Skills continue to r
 
 **Recommended: Option 1 — Raw `.md` files + bare `Agent` in orchestrator `tools:`**
 
-**Pre-acceptance criterion:** Option 1 is accepted subject to runtime validation confirming that bare `Agent` in the orchestrator `tools:` allowlist permits skill helper invocations without unexpected framework-agent routing changes. The decision is treated as "accepted after proof," not "accepted by assumption." See Section 8 for validation scope.
+**Pre-acceptance criterion (resolved):** Runtime validation confirmed that coexistence of named `Agent(agent-framework:planner)`, `Agent(agent-framework:coder)`, `Agent(agent-framework:designer)` entries alongside bare `Agent` in the orchestrator `tools:` allowlist does NOT work — the named entries generate implicit DENY rules that override the bare `Agent` ALLOW, leaving bare `Agent` calls blocked. The fix requires removing all named `Agent(agent-framework:*)` entries and retaining only bare `Agent` in the orchestrator's `tools:` allowlist. As a result, framework agent routing (planner, coder, designer) is no longer runtime type-restricted; it is policy-enforced exclusively via `plugin/governance/agent-system-policy.md`.
 
 ### Rationale
 
