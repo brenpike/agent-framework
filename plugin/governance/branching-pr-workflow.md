@@ -123,7 +123,7 @@ The fetch command (`git fetch origin <trunk>:refs/remotes/origin/<trunk>`) is a 
    - When currently on a working branch: `git fetch origin <trunk>:<trunk>` (updates the local trunk ref directly without switching). If the local trunk cannot be fast-forwarded, git returns a non-zero exit; treat that as a blocker and report to user.
 2. **Proceed anyway (your risk)** — orchestrator records `trunk-freshness: stale (N behind)` in Session facts and proceeds to branch creation without updating local trunk.
 
-**When fresh:** record `trunk-freshness: fresh` in Session facts (optional but recommended).
+**When fresh:** record `trunk-freshness: fresh` in Session facts.
 
 **Skip conditions:** skip the fetch and divergence check entirely when any of the following is true:
 
@@ -132,7 +132,7 @@ The fetch command (`git fetch origin <trunk>:refs/remotes/origin/<trunk>`) is a 
 
 When any skip condition applies, record `trunk-freshness: skipped` in Session facts before invoking `agent-framework:create-working-branch`.
 
-**When local trunk branch does not exist:** skip the divergence check and warn the user. The fetch will still update `origin/<trunk>`, but without a local tracking branch the rev-list comparison has no left side. The orchestrator should note this in the report and proceed — branch creation from `origin/<trunk>` is still valid.
+**When local trunk branch does not exist:** skip the divergence check and warn the user. The fetch will still update `origin/<trunk>`, but without a local tracking branch the rev-list comparison has no left side. The orchestrator should note this in the report and proceed — branch creation from `origin/<trunk>` is still valid. Record `trunk-freshness: skipped` in Session facts before invoking `agent-framework:create-working-branch`.
 
 **When `git fetch origin <trunk>:refs/remotes/origin/<trunk>` fails despite remote being reachable:** treat the trunk as stale, surface the fetch error, and present the same two choices (pull and continue, or proceed anyway).
 

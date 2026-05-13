@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Trunk-freshness gate enforcement tightened.** Absent `trunk-freshness` in `create-working-branch` is now blocking instead of warn-and-proceed. A `skipped` state is added for documented skip conditions (no remote, no-PR opt-out); the orchestrator must record `trunk-freshness: skipped` when those conditions apply.
+- **Trunk-freshness recording clarified.** The "When fresh" sentence in `branching-pr-workflow.md` no longer carries "optional but recommended" — recording `trunk-freshness: fresh` is mandatory. The local-trunk-missing paragraph now explicitly instructs the orchestrator to record `trunk-freshness: skipped` before invoking `agent-framework:create-working-branch`, consistent with all other skip-condition paths.
 
 ## [1.3.0] - 2026-05-12
 
