@@ -130,6 +130,8 @@ The fetch command (`git fetch origin <trunk>:refs/remotes/origin/<trunk>`) is a 
 - The workflow will not push or open a PR (no-PR opt-out), matching the existing "Remote reachable" skip condition in Safe Git State Check.
 - No remote is configured.
 
+When any skip condition applies, record `trunk-freshness: skipped` in Session facts before invoking `agent-framework:create-working-branch`.
+
 **When local trunk branch does not exist:** skip the divergence check and warn the user. The fetch will still update `origin/<trunk>`, but without a local tracking branch the rev-list comparison has no left side. The orchestrator should note this in the report and proceed — branch creation from `origin/<trunk>` is still valid.
 
 **When `git fetch origin <trunk>:refs/remotes/origin/<trunk>` fails despite remote being reachable:** treat the trunk as stale, surface the fetch error, and present the same two choices (pull and continue, or proceed anyway).
