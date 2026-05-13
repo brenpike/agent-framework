@@ -138,6 +138,7 @@ Certain facts are resolved repeatedly during a task. Agents may cache them to av
 | `active-task` | Synthetic `TASK-NNN` ID for delegations carrying a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assigned at intake. Used in lieu of `active-step` only when `Step: STEP-NNN` is omitted, so Path B partial checkpoints have a stable identifier. |
 | `task-type` | One of `bugfix\|refactor\|feature\|incident` — resolved at task intake per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification) |
 | `claude-mem` | One of `present\|absent` — resolved at task intake by checking `~/.claude/settings.json` and `<project root>/.claude/settings.json` for `"claude-mem@thedotmack": true` under `enabledPlugins` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection) |
+| `trunk-freshness` | One of `fresh\|stale (N behind)\|stale (diverged — local N ahead)\|stale (diverged — local M ahead, N behind)\|skipped` — resolved during Required Git Preflight trunk freshness check; skipped when skip conditions from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate) apply |
 
 ### Cache Rules
 

@@ -122,7 +122,7 @@ All skills are invoked using the namespaced form:
 | `agent-framework:address-github-pr-feedback` | Fix a specific GitHub PR comment or reviewer comment on an existing pull request (one-time) |
 | `agent-framework:checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
-| `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff without a pushed PR |
+| `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `agent-framework:review-loop-controller` |
 | `agent-framework:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `agent-framework:request-github-codex-review` | Request Codex review on an existing pushed PR |
 | `agent-framework:review-loop-controller` | Drive the pre-PR local Codex review loop (up to 10 iterations) with break-fix-break detection |
