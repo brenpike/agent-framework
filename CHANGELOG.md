@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Trunk-freshness preflight gate.** Required Git Preflight now runs `git fetch origin <trunk>` and a `rev-list` divergence check before branch creation. When the local trunk is stale (one or more commits behind remote), the orchestrator blocks and presents a user choice: pull-and-continue or proceed on stale trunk. Result recorded as `trunk-freshness` session fact. Gate propagated to `create-working-branch` skill, orchestrator preflight, `communication-policy.md` session fact cache, and `git-policy.md` preflight mirror.
-
 ### Changed
 
 ### Fixed
+
+## [1.4.0] - 2026-05-12
+
+### Added
+
+- **Trunk-freshness preflight gate.** Required Git Preflight now runs `git fetch origin <trunk>` and a `rev-list` divergence check before branch creation. When the local trunk is stale (one or more commits behind remote), the orchestrator blocks and presents a user choice: pull-and-continue or proceed on stale trunk. Result recorded as `trunk-freshness` session fact. Gate propagated to `create-working-branch` skill, orchestrator preflight, `communication-policy.md` session fact cache, and `git-policy.md` preflight mirror.
 
 ## [1.3.0] - 2026-05-12
 
