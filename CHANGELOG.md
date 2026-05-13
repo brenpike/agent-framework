@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.4.1] - 2026-05-13
+
+### Fixed
+
+- **Remove named `Agent(agent-framework:*)` entries from orchestrator `tools:` frontmatter.** Coexistence of named and bare `Agent` entries blocks skill-transitive helper subagent invocations — named entries generate implicit DENY rules overriding the bare `Agent` ALLOW. Bare `Agent` alone enables skill helpers to spawn in fresh context windows as intended.
+
 ## [1.4.0] - 2026-05-12
 
 ### Added

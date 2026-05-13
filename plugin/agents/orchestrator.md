@@ -7,7 +7,6 @@ tools:
   - Bash
   - Skill
   - Monitor
-  - Agent(agent-framework:planner, agent-framework:coder, agent-framework:designer)
   - Agent
 ---
 
