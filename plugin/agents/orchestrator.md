@@ -81,7 +81,7 @@ Full PR-feedback selection detail: `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-r
 
 You own resolution of trunk, base, target, and working-branch values per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Resolution Order). Skills do not resolve these on their own. Pass them as explicit inputs:
 
-- `agent-framework:create-working-branch`: `base`, `working_branch`, `classification`.
+- `agent-framework:create-working-branch`: `base`, `working_branch`, `classification`, `trunk-freshness`.
 - `agent-framework:checkpoint-commit`: `trunk`.
 - `agent-framework:open-plan-pr`: `base` (PR target / resolved trunk), `head` (working branch), optional `push_remote`.
 - `agent-framework:review-loop-controller`: `base`, `working_branch`, `trunk`, `claude_mem`, `mode` (`iterate` | `continue`). Optional: `max_iterations` (integer) — track as a session variable starting at the default `10`; pass on every `mode: continue` invocation; update to the raised value when the user approves a continuation past `max-iterations-reached` (e.g., if 10 iterations ran, raise to `20`) and continue passing the raised value on all subsequent `mode: continue` calls until the loop exits. Optional: `fix_results` (list of `{finding_id, fix_sha, validated}`) — pass on `continue` invocations after fixes have been applied.

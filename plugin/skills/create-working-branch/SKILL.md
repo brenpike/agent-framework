@@ -38,6 +38,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 - `base`: base branch the working branch is created from (typically the resolved trunk; may differ for stacked work).
 - `working_branch`: requested working branch name (must follow branch taxonomy and naming rules).
 - `classification`: work classification (`feature|bugfix|hotfix|refactor|chore|docs|test|ci`).
+- `trunk-freshness`: resolved trunk freshness state from the Required Git Preflight check per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate). One of: `fresh`, `stale (N behind)`, `stale (diverged — local N ahead)`, `stale (diverged — local M ahead, N behind)`, or `skipped`. Absent = skill returns `Status: blocked`.
 
 ## Requirements
 
