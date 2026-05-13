@@ -34,17 +34,15 @@ From `plugin/governance/agent-system-policy.md` (Skill agent boundary):
 - Skills classify and return routing recommendations as structured data
 - Framework agent delegation is exclusively the orchestrator's responsibility
 
-From `plugin/agents/orchestrator.md` (tools list), the `tools:` key declares a typed allowlist:
+From `plugin/agents/orchestrator.md` (tools list), the `tools:` key now uses bare `Agent`:
 
 ```yaml
 tools:
-  - Agent(agent-framework:planner)
-  - Agent(agent-framework:coder)
-  - Agent(agent-framework:designer)
+  - Agent
   # ... other tools ...
 ```
 
-This allowlist is a **runtime-enforced constraint**. Only `Agent` calls of those specific named types are permitted; any other `Agent` variant is blocked by the Claude Code runtime.
+Bare `Agent` is a **runtime passthrough** — it permits any subagent invocation (helper agents, plugin-scoped agents) without a typed allowlist. Framework agent routing (planner, coder, designer) is enforced exclusively by policy in `plugin/governance/agent-system-policy.md`, not by runtime type restriction.
 
 ---
 
@@ -255,15 +253,12 @@ Accepting Option 1 produces the following outcomes:
 
 This ADR's scope is the framework's internal helper agent isolation problem. The recommended Option 1 (bare `Agent` in orchestrator `tools:`) resolves that problem. At the runtime level, bare `Agent` likely also removes the technical restriction on companion plugin agent invocation documented here — though runtime validation is recommended before treating this as confirmed. Governance authorization is a separate concern: Section 6 Implementation item 2 prohibits companion-agent delegation unless a separate policy explicitly authorizes that path, regardless of runtime capability.
 
-**The limitation:** When agent-framework's orchestrator is the active agent, companion plugin agents — agents defined by other installed plugins — cannot be invoked. The orchestrator's `tools:` allowlist uses typed `Agent(agent-framework:planner, ...)` entries that only cover agents in the `agent-framework` namespace. Agents from other namespaces (e.g., `caveman:cavecrew-builder`) require `Agent(caveman:cavecrew-builder)` calls, which are not in the allowlist and are blocked by the runtime.
+**Runtime restriction resolved:** The orchestrator now uses bare `Agent` in its `tools:` list. Bare `Agent` removes the typed allowlist entirely, so companion plugin agents — agents defined by other installed plugins (e.g., `caveman:cavecrew-builder`) — are no longer blocked at the runtime level. `Agent(plugin:name)` calls can succeed without enumerating each companion plugin's agents explicitly in `tools:`.
 
-**Why bare `Agent` likely resolves this:** Per Claude Code's subagent documentation, bare `Agent` in `tools:` removes the typed allowlist restriction entirely, permitting any subagent type — including plugin-scoped agents invoked via `Agent(plugin:name)` syntax (e.g., `Agent(caveman:cavecrew-builder)`). Under the current typed-allowlist configuration, companion plugin agents are blocked because the orchestrator only permits named `agent-framework:*` agents. Adding bare `Agent` would likely remove that restriction, enabling cross-plugin agent invocation without enumerating each companion plugin's agents explicitly. Runtime validation is recommended before treating this as confirmed architectural fact, since the ADR's stated scope is the helper isolation problem.
+**Companion plugin agents are now a policy boundary, not a runtime type restriction.** Authorization is governed by `plugin/governance/agent-system-policy.md`. Section 6 Implementation item 2 prohibits companion-agent delegation unless a separate policy explicitly authorizes that path. The absence of a typed allowlist means the runtime will not prevent the call — but the governance policy is the enforcement layer. Any companion plugin agent invocation must be explicitly authorized in `agent-system-policy.md` before the orchestrator may invoke it.
 
-**Relationship to existing companion plugin precedent:** The repo documents optional companion plugins (`claude-mem`, `codex@openai-codex`) in `CLAUDE.md`. Those companions provide skills and MCP tools, which work because `Skill` is already in the orchestrator's `tools:` list and MCP tools are resolved independently. Companion plugin **agents** are the gap — there is no equivalent mechanism for cross-plugin agent invocation under a restrictive `tools:` allowlist.
+**Relationship to existing companion plugin precedent:** The repo documents optional companion plugins (`claude-mem`, `codex@openai-codex`) in `CLAUDE.md`. Those companions provide skills and MCP tools, which work because `Skill` is already in the orchestrator's `tools:` list and MCP tools are resolved independently. Companion plugin **agents** now have an equivalent path: bare `Agent` in the orchestrator's `tools:` list makes the runtime permissive; policy in `agent-system-policy.md` is the authorization gate.
 
 **Possible future approaches** (not evaluated in this ADR):
-- Wildcard or pattern-based `Agent` entries in `tools:` (e.g., `Agent(*)` or `Agent(caveman:*)`) — depends on Claude Code runtime support
-- Explicit enumeration of known companion plugin agents in `tools:` — requires per-installation customization
-- A plugin-level capability declaration allowing plugins to declare agent dependencies — requires Claude Code platform changes
-
-If runtime validation confirms that bare `Agent` permits companion plugin agent invocation, Option 1 resolves both the helper isolation problem and the companion agent runtime restriction simultaneously. If runtime behavior differs from documentation, the approaches above remain valid future directions.
+- Explicit per-policy authorization blocks in `agent-system-policy.md` for specific companion plugin agents (e.g., `caveman:cavecrew-builder`) — the now-recommended pattern given bare `Agent` is in place
+- A plugin-level capability declaration allowing plugins to declare agent dependencies — a Claude Code platform enhancement, not currently required
