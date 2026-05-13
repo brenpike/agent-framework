@@ -21,9 +21,9 @@ The agent-framework plugin defines the following runtime components:
 
 The design intent: skills invoke these helpers by reading their `.md` instruction file and spawning a general-purpose subagent via the bare `Agent` tool. The `Agent` tool spawns a **fresh context window** with its own tool scope, providing isolation so that injected content in review comments cannot access the orchestrator's governance context or system prompt.
 
-**Companion plugin agents** — agents defined by other Claude Code plugins installed alongside agent-framework (e.g., `caveman:cavecrew-builder`, `caveman:cavecrew-investigator`, `caveman:cavecrew-reviewer`). These agents are invoked via `Agent(plugin:name)` calls. When agent-framework's orchestrator is the active agent, companion plugin agents are subject to the same `tools:` allowlist restriction as helper agents: the orchestrator's `tools:` list does not include them, so the runtime blocks their invocation. This is the same mechanism described in Section 3 — the orchestrator's typed `Agent(agent-framework:planner, ...)` entries do not cover agents from other plugin namespaces.
+**Companion plugin agents** — agents defined by other Claude Code plugins installed alongside agent-framework (e.g., `caveman:cavecrew-builder`, `caveman:cavecrew-investigator`, `caveman:cavecrew-reviewer`). These agents are invoked via `Agent(plugin:name)` calls. Prior to v1.4.1, companion plugin agents were subject to the same `tools:` allowlist restriction as helper agents: the orchestrator's typed `Agent(agent-framework:planner, ...)` entries did not cover agents from other plugin namespaces, so the runtime blocked their invocation — the same mechanism described in Section 3. v1.4.1 resolved this runtime restriction by replacing named `Agent` entries with bare `Agent` in the orchestrator's `tools:` list; companion plugin agents are no longer blocked at the runtime level. See Section 8 for current ecosystem status and the governance authorization boundary that now applies.
 
-The repo already recognizes optional companion plugins for skills and tooling — `claude-mem` (planner memory) and `codex@openai-codex` (pre-PR and post-PR review) are documented in `CLAUDE.md` as optional companions whose absence is handled gracefully. Those companions provide **skills and MCP tools**, which run inline via the `Skill` tool already present in the orchestrator's allowlist. Companion plugin **agents** are the missing equivalent: there is no current mechanism for the orchestrator to invoke agents from other plugin namespaces without adding them explicitly to `tools:`.
+The repo already recognizes optional companion plugins for skills and tooling — `claude-mem` (planner memory) and `codex@openai-codex` (pre-PR and post-PR review) are documented in `CLAUDE.md` as optional companions whose absence is handled gracefully. Those companions provide **skills and MCP tools**, which run inline via the `Skill` tool already present in the orchestrator's allowlist. Companion plugin **agents** now have an equivalent path: bare `Agent` in the orchestrator's `tools:` list (v1.4.1) removes the runtime type restriction, with policy in `agent-system-policy.md` serving as the authorization gate. See Section 8 for details.
 
 ---
 
@@ -46,7 +46,7 @@ Bare `Agent` is a **runtime passthrough** — it permits any subagent invocation
 
 ---
 
-## Section 3: The Problem
+## Section 3: The Problem (Pre-v1.4.1)
 
 **Helper agents lose their isolation boundary at runtime.**
 
