@@ -118,7 +118,9 @@ The fetch command (`git fetch origin <trunk>:refs/remotes/origin/<trunk>`) is a 
 
 **Blocking behavior:** when stale, the orchestrator must NOT invoke `agent-framework:create-working-branch`. Instead, surface the behind-count and present the user with two choices:
 
-1. **Pull and continue** — orchestrator runs `git fetch origin <trunk>:<trunk>` to fast-forward the local trunk ref without switching branches, then re-checks divergence to confirm `0`, then proceeds to branch creation. (Works whether currently on trunk or a working branch — no checkout required. If the local trunk cannot be fast-forwarded, git returns a non-zero exit; treat that as a blocker and report to user.)
+1. **Pull and continue** — update the local trunk ref using the checkout-safe approach for the current branch state, then re-check divergence to confirm `0`:
+   - When currently on trunk: `git pull --ff-only origin <trunk>` (safe while trunk is checked out).
+   - When currently on a working branch: `git fetch origin <trunk>:<trunk>` (updates the local trunk ref directly without switching). If the local trunk cannot be fast-forwarded, git returns a non-zero exit; treat that as a blocker and report to user.
 2. **Proceed anyway (your risk)** — orchestrator records `trunk-freshness: stale (N behind)` in Session facts and proceeds to branch creation without updating local trunk.
 
 **When fresh:** record `trunk-freshness: fresh` in Session facts (optional but recommended).
