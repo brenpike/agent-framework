@@ -121,7 +121,7 @@ The fetch command (`git fetch origin <trunk>:refs/remotes/origin/<trunk>`) is a 
 1. **Fix and continue** — update the local trunk ref using the checkout-safe approach for the current branch state, then re-check divergence to confirm `0\t0`:
    - When currently on trunk: `git pull --ff-only origin <trunk>` (safe while trunk is checked out).
    - When currently on a working branch: `git fetch origin <trunk>:<trunk>` (updates the local trunk ref directly without switching). If the local trunk cannot be fast-forwarded, git returns a non-zero exit; treat that as a blocker and report to user.
-   - When LEFT>0 (local trunk has unpushed commits): the local trunk has diverged from origin. Present user with additional sub-choice: push the local commits (`git push origin <trunk>`) or reset local trunk to match origin (`git fetch origin <trunk>:<trunk>` — only safe when not on trunk; otherwise `git reset --hard origin/<trunk>`). Confirm `0\t0` after the chosen action before proceeding.
+   - When LEFT>0 (local trunk has unpushed commits): the local trunk has diverged from origin. Present user with additional sub-choice: push the local commits (`git push origin <trunk>`) or reset local trunk to match origin — when not on trunk: `git branch -f <trunk> origin/<trunk>` (force-sets the local branch pointer without checkout, works regardless of fast-forward status); when on trunk: `git reset --hard origin/<trunk>`. Confirm `0\t0` after the chosen action before proceeding.
 2. **Proceed anyway (your risk)** — orchestrator records the appropriate state in Session facts and proceeds to branch creation without updating local trunk:
    - RIGHT>0 only: `trunk-freshness: stale (N behind)`
    - LEFT>0 only: `trunk-freshness: stale (diverged — local N ahead)`
