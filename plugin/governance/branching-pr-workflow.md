@@ -138,7 +138,7 @@ When any skip condition applies, record `trunk-freshness: skipped` in Session fa
 
 **When local trunk branch does not exist:** skip the divergence check and warn the user. The fetch will still update `origin/<trunk>`, but without a local tracking branch the rev-list comparison has no left side. The orchestrator should note this in the report and proceed — branch creation from `origin/<trunk>` is still valid. Record `trunk-freshness: skipped` in Session facts before invoking `agent-framework:create-working-branch`.
 
-**When `git fetch origin <trunk>:refs/remotes/origin/<trunk>` fails despite remote being reachable:** treat the trunk as stale, surface the fetch error, and present the same two choices (pull and continue, or proceed anyway).
+**When `git fetch origin <trunk>:refs/remotes/origin/<trunk>` fails despite remote being reachable:** treat as a terminal blocker. Surface the fetch error to the user and stop — do not invoke `agent-framework:create-working-branch`. A failed fetch produces no LEFT/RIGHT counts, so no valid trunk-freshness state can be recorded. The user must resolve the fetch issue (e.g., network, authentication, remote permissions) before retrying preflight.
 
 ### Safe Git State Check
 
