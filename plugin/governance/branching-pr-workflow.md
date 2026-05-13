@@ -99,7 +99,7 @@ Each item below includes the resolution command and expected output shape. Run t
 |---|---|---|
 | Work classification | (determined from plan or user input) | One of: `feature\|bugfix\|hotfix\|refactor\|chore\|docs\|test\|ci` |
 | Base branch | Try `git symbolic-ref refs/remotes/origin/HEAD --short \| sed 's\|^origin/\|\|'` first (exits 0 + non-empty = done). Fall back to `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` when 3a fails. | Branch name string — resolved via local `origin/HEAD` first, then GitHub API fallback, unless overridden by user or `CLAUDE.md` |
-| Trunk freshness | `git fetch origin <trunk>:refs/remotes/origin/<trunk> && git rev-list <local-trunk>..origin/<trunk> --count` | `0` = fresh (proceed); `≥1` = stale (N commits behind) — block branch creation, present user choice |
+| Trunk freshness | `git fetch origin <trunk>:refs/remotes/origin/<trunk> && git rev-list --left-right --count <local-trunk>...origin/<trunk>` | Two tab-separated integers (LEFT RIGHT): `0\t0` = fresh (proceed); LEFT>0 = local trunk has unpushed commits (diverged); RIGHT>0 = stale (N commits behind origin); any non-zero = block branch creation, present user choice |
 | Working branch name | (constructed from classification + topic per Branch Taxonomy) | `<prefix>/<topic>` matching naming constraints |
 | Branch exists vs create | `git branch --list <name>` (local); `git ls-remote --heads origin <name>` (remote — required only when the workflow will push or open a PR; skip when using a no-PR opt-out or when no remote is configured) | Empty = create; non-empty = exists. Local check alone is sufficient for no-PR/offline scenarios |
 | Worktree decision | (determined from plan parallelism requirements per Worktrees section) | `yes` or `no` |
@@ -112,16 +112,20 @@ Purpose: detect a stale local trunk before branching. A stale trunk leads to reb
 
 The fetch command (`git fetch origin <trunk>:refs/remotes/origin/<trunk>`) is a single-ref, read-only fetch — it updates only `origin/<trunk>` and has no side effects on the working tree or local branches.
 
-**Divergence check:** compare `<local-trunk>..origin/<trunk>` (not `HEAD..origin/<trunk>`). When the orchestrator is already on a working branch at preflight time, `HEAD` points at the working branch, not trunk. Always use the resolved local trunk branch name for the left side of the range.
+**Divergence check:** use `--left-right --count` with a three-dot range (`<local-trunk>...origin/<trunk>`, not `HEAD...origin/<trunk>`). The three-dot range computes the symmetric difference — commits reachable from either side but not both. Output is two tab-separated integers: LEFT = commits in `<local-trunk>` not in `origin/<trunk>` (local-only commits); RIGHT = commits in `origin/<trunk>` not in `<local-trunk>` (origin-only commits). Both must be zero for fresh. When the orchestrator is already on a working branch at preflight time, `HEAD` points at the working branch, not trunk. Always use the resolved local trunk branch name for the left side of the range.
 
-**Threshold:** one or more commits behind (`≥1`) = stale.
+**Threshold:** any non-zero LEFT or RIGHT count = not fresh.
 
-**Blocking behavior:** when stale, the orchestrator must NOT invoke `agent-framework:create-working-branch`. Instead, surface the behind-count and present the user with two choices:
+**Blocking behavior:** when any count is non-zero, the orchestrator must NOT invoke `agent-framework:create-working-branch`. Instead, surface the counts and present the user with two choices:
 
-1. **Pull and continue** — update the local trunk ref using the checkout-safe approach for the current branch state, then re-check divergence to confirm `0`:
+1. **Fix and continue** — update the local trunk ref using the checkout-safe approach for the current branch state, then re-check divergence to confirm `0\t0`:
    - When currently on trunk: `git pull --ff-only origin <trunk>` (safe while trunk is checked out).
    - When currently on a working branch: `git fetch origin <trunk>:<trunk>` (updates the local trunk ref directly without switching). If the local trunk cannot be fast-forwarded, git returns a non-zero exit; treat that as a blocker and report to user.
-2. **Proceed anyway (your risk)** — orchestrator records `trunk-freshness: stale (N behind)` in Session facts and proceeds to branch creation without updating local trunk.
+   - When LEFT>0 (local trunk has unpushed commits): the local trunk has diverged from origin. Present user with additional sub-choice: push the local commits (`git push origin <trunk>`) or reset local trunk to match origin (`git fetch origin <trunk>:<trunk>` — only safe when not on trunk; otherwise `git reset --hard origin/<trunk>`). Confirm `0\t0` after the chosen action before proceeding.
+2. **Proceed anyway (your risk)** — orchestrator records the appropriate state in Session facts and proceeds to branch creation without updating local trunk:
+   - RIGHT>0 only: `trunk-freshness: stale (N behind)`
+   - LEFT>0 only: `trunk-freshness: stale (diverged — local N ahead)`
+   - Both>0: `trunk-freshness: stale (diverged — local M ahead, N behind)`
 
 **When fresh:** record `trunk-freshness: fresh` in Session facts.
 
