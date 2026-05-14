@@ -4,6 +4,7 @@ description: Watch a specific GitHub pull request for new unresolved review comm
 allowed-tools:
   - Read
   - Bash(gh pr view *)
+  - Bash(gh repo view *)
   - Bash(gh api *)
   - Bash(export SELF_LOGIN=$(gh api user --jq .login))
   - Bash(git status *)
