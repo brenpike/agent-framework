@@ -4,7 +4,7 @@ Guidance for Claude Code instances working **on this repo** (not consuming the p
 
 ## What this repo is
 
-Source for the `agent-framework` Claude Code plugin + a single-plugin marketplace pointing at it. Plugin defines four agents (orchestrator, planner, coder, designer) and nine skills; governance docs are plugin **runtime data** loaded by agents, not just human reference.
+Source for the `agent-framework` Claude Code plugin + a single-plugin marketplace pointing at it. Plugin defines four agents (orchestrator, planner, coder, designer) and ten skills; governance docs are plugin **runtime data** loaded by agents, not just human reference.
 
 ## Repository layout
 
