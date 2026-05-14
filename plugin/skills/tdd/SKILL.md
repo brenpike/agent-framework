@@ -26,7 +26,7 @@ Before writing any code, do these in parallel:
 2. **Read existing code** in the affected area — understand the domain language, existing interfaces, and conventions.
 
 Record:
-- `TEST_CMD` — the command to run tests (e.g., `pytest tests/`, `npm test`, `go test ./...`)
+- `TEST_CMD` — the command to run tests (e.g., `dotnet test`, `npm test`, `go test ./...`)
 - `SRC_FILE` — file where implementation will live
 - `TEST_FILE` — file where tests will live
 
@@ -76,7 +76,7 @@ Then **run the tests** using `TEST_CMD`. The test must fail. If it passes, the t
 
 ```
 $ <TEST_CMD>
-FAILED tests/test_cart.py::test_checkout_fails_when_cart_is_empty
+Failed  CartTests.CheckoutFailsWhenCartIsEmpty [< 1 ms]
 ```
 
 If the test passes when it should fail: stop, diagnose why, rewrite the test.
@@ -94,7 +94,7 @@ Run the tests again. All previously passing tests must still pass.
 
 ```
 $ <TEST_CMD>
-PASSED tests/test_cart.py::test_checkout_fails_when_cart_is_empty
+Passed  CartTests.CheckoutFailsWhenCartIsEmpty [< 1 ms]
 ```
 
 If any previously-passing test now fails: fix it before moving on. Never proceed with a broken test suite.
@@ -140,6 +140,7 @@ If CLAUDE.md doesn't specify a test command, detect from project structure:
 
 | Indicator | Command |
 |---|---|
+| `*.csproj` with `Microsoft.NET.Test.Sdk` | `dotnet test` |
 | `pyproject.toml` / `setup.py` / `*.py` tests | `pytest` |
 | `package.json` with `jest` | `npm test` or `npx jest` |
 | `package.json` with `vitest` | `npx vitest run` |
@@ -147,23 +148,6 @@ If CLAUDE.md doesn't specify a test command, detect from project structure:
 | `Cargo.toml` | `cargo test` |
 | `mix.exs` | `mix test` |
 | `rspec` / `spec/` dir | `bundle exec rspec` |
-| `*.csproj` with `Microsoft.NET.Test.Sdk` | `dotnet test` |
-
-**Example .NET 10 xUnit test project (`.csproj`):**
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
-    <PackageReference Include="xunit" Version="2.*" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
-  </ItemGroup>
-</Project>
-```
 
 If detection is ambiguous, ask the user before running anything.
 
@@ -181,4 +165,4 @@ If detection is ambiguous, ask the user before running anything.
 
 **Skipping refactor** — green tests with messy code is not the goal. The refactor phase is required.
 
-**Too-minimal-to-fail trap** — if your cycle 1 GREEN passes cycle 2's test without new code, your first implementation was too complete. The point of minimal code is to force the next test to fail. When in doubt, write something deliberately wrong: return a hardcoded value, ignore parameters, raise NotImplementedError for branches not yet tested. The next test will expose the gap and you'll add exactly what's needed. Example: `def get_total(self): return 1.50` for a single-item test — obviously wrong, but it makes the next test genuinely RED.
+**Too-minimal-to-fail trap** — if your cycle 1 GREEN passes cycle 2's test without new code, your first implementation was too complete. The point of minimal code is to force the next test to fail. When in doubt, write something deliberately wrong: return a hardcoded value, ignore parameters, throw new NotImplementedException() for branches not yet tested. The next test will expose the gap and you'll add exactly what's needed. Example: `public decimal GetTotal() => 1.50m;` for a single-item test — obviously wrong, but it makes the next test genuinely RED.
