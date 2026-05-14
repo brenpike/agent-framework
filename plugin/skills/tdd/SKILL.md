@@ -161,7 +161,7 @@ If CLAUDE.md doesn't specify a test command, detect from project structure:
 | `mix.exs` | `mix test` |
 | `rspec` / `spec/` dir | `bundle exec rspec` |
 
-If detection is ambiguous, ask the user before running anything.
+If multiple indicators match or the test command cannot be determined, ask the user before running anything.
 
 ---
 
