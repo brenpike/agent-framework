@@ -71,7 +71,7 @@ Stop and surface to the user only when one of the following applies:
 
 Do NOT emit an intermediate user-facing message for any of the following — immediately take the next action:
 
-- Phase verification passed → immediately delegate next phase
+- Phase verification passed → immediately run the phase-close sequence (extract step delta, store handoff, checkpoint commit, context clear and rehydrate per Path A); then delegate next phase
 - Skill returned non-blocking result → immediately act on the result
 - Review loop iteration returned findings with `Exit-reason: none` → immediately delegate fixes
 - `checkpoint-commit` complete → immediately continue to next action
