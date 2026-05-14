@@ -80,7 +80,7 @@ Do NOT emit an intermediate user-facing message for any of the following — imm
 - Worker report received with `Status: complete` → immediately run phase verification then proceed
 - Version bump delegation complete → immediately proceed to validation
 - `watch-github-pr-feedback` returned feedback items → immediately begin remediation cycle
-- Read-only/idempotent tool call (Read, Bash read-only commands such as `git status`/`git log`/`git diff`, Monitor start) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
+- Read-only/idempotent tool call (Read, Bash read-only commands such as `git status`/`git log`/`git diff`) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
 
 ### Tool-call error recovery
 
@@ -90,7 +90,7 @@ When a Bash, Skill, Agent, Read, or Monitor tool call fails, classify the error 
 
 **Mutating vs read-only/idempotent classification:** Before applying the retry rules below, classify the failed tool call:
 
-- **Read-only/idempotent:** Read, Bash read-only commands (`git status`, `git log`, `git diff`, `ls`, `cat`, `grep`, and other commands that do not modify state), Monitor start.
+- **Read-only/idempotent:** Read, Bash read-only commands (`git status`, `git log`, `git diff`, `ls`, `cat`, `grep`, and other commands that do not modify state).
 - **Mutating:** Any Skill invocation, any Agent invocation, and any Bash call that writes, commits, pushes, deletes, or otherwise modifies state.
 
 Automatic retry applies only to read-only/idempotent calls. Mutating calls must NOT be auto-retried — report blocked immediately with error classification `non-retryable-mutating` and the error details.
