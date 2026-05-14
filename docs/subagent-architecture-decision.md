@@ -227,10 +227,10 @@ This trade-off is acceptable for the following reasons:
 
 ### Implementation
 
-Implementation is not in scope for this ADR and is tracked separately. The required changes are:
+Implementation is complete and shipped in v1.4.1 (commit 679ff86). The changes made were:
 
-1. Add bare `Agent` to the orchestrator's `tools:` allowlist in `plugin/agents/orchestrator.md`
-2. Add an exception clause to the prohibition in `plugin/governance/agent-system-policy.md` ("No other agent type may be called") — permitting bare `Agent` in the orchestrator exclusively for skill-transitive helper invocations (narrow classifier tasks only); never for product planning, implementation, design, review remediation, fallback routing, or companion-agent delegation unless a separate policy explicitly authorizes that path. Direct orchestrator-level bare `Agent` use remains prohibited.
+1. All named `Agent(agent-framework:planner)`, `Agent(agent-framework:coder)`, and `Agent(agent-framework:designer)` entries were removed from the orchestrator's `tools:` list in `plugin/agents/orchestrator.md`; bare `Agent` was retained as the sole Agent entry.
+2. An exception clause was added to the prohibition in `plugin/governance/agent-system-policy.md` ("No other agent type may be called") — permitting bare `Agent` in the orchestrator exclusively for skill-transitive helper invocations (narrow classifier tasks only); never for product planning, implementation, design, review remediation, fallback routing, or companion-agent delegation unless a separate policy explicitly authorizes that path. Direct orchestrator-level bare `Agent` use remains prohibited.
 
 No file moves. No migration of helper `.md` files. No skill procedure changes.
 
