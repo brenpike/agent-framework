@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.4.3] - 2026-05-13
+
+### Fixed
+
+- **`watch-github-pr-feedback`: replace invalid `gh pr view --json baseRepository` with `gh repo view --json owner,name` to fix Exit code 1 on OWNER/REPO resolution**
+
 ## [1.4.2] - 2026-05-13
 
 ### Fixed
