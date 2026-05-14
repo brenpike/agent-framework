@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.4.2] - 2026-05-13
+
+### Fixed
+
+- **`local-codex-review`: replace python3 heredoc + shell variable assignment invocation with direct node call to eliminate orchestrator-context permission prompts**
+- **`settings`: add allowlist entries for node (codex cache path) and grep -n/-rn/-rE flag combinations**
+- **`local-codex-review`: correct Bash tool timeout from 660000 to 600000 ms (Claude Code enforces 600000 ms maximum)**
+
 ## [1.4.1] - 2026-05-13
 
 ### Fixed

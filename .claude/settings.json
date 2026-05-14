@@ -11,8 +11,23 @@
       "Bash(git -C * fetch *)",
       "Bash(git -C * rev-list *)",
       "Bash(git -C * show-ref *)",
+      "Bash(git diff *)",
+      "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git fetch *)",
+      "Bash(git rev-parse *)",
+      "Bash(git stash list)",
+      "Bash(git stash show *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(sed -n *)",
       "Bash(gh api user *)",
-      "Bash(gh api graphql *)"
+      "Bash(gh api graphql *)",
+      "Bash(grep -n *)",
+      "Bash(grep -rn *)",
+      "Bash(grep -rE *)"
     ]
   },
   "enabledPlugins": {
