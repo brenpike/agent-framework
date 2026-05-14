@@ -51,7 +51,7 @@ The output is the absolute path to the script. If the output is empty, `codex-pl
 
 **Base ref validation** — before constructing the invocation, confirm the caller-supplied `base` value matches `^[a-zA-Z0-9/_.\-]+$`. If it contains any character outside that set (including `'`, `"`, `` ` ``, `$`, `@`, `\`, space, or newline), return blocked with `Blocker: base ref contains characters unsafe for shell invocation`.
 
-**Review invocation** — Run with the Bash tool's `timeout` parameter set to `660000` (11 minutes) to prevent hanging on unresponsive Codex processes:
+**Review invocation** — Run with the Bash tool's `timeout` parameter set to `600000` (10 minutes) to prevent hanging on unresponsive Codex processes:
 
 ```bash
 node "<codexScript>" review --base "<base>" --wait
@@ -68,7 +68,7 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
 1. Resolve `base` and `iteration`. If `base` was not supplied, resolve from git remote or default to `main`. If `iteration` was not supplied, default to `1`. Return blocked if `base` cannot be resolved.
 2. Confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
 3. Run the path-discovery command from **Review Invocation**. Capture the output (the script path). If the output is empty, return blocked with `Blocker: codex-plugin-cc not available`.
-4. Validate `base` against `^[a-zA-Z0-9/_.\-]+$`; return blocked with `Blocker: base ref contains characters unsafe for shell invocation` if it fails. Run the review invocation command from **Review Invocation**, substituting the discovered script path and validated base ref. Set the Bash tool's `timeout` parameter to `660000`. Capture stdout and exit code.
+4. Validate `base` against `^[a-zA-Z0-9/_.\-]+$`; return blocked with `Blocker: base ref contains characters unsafe for shell invocation` if it fails. Run the review invocation command from **Review Invocation**, substituting the discovered script path and validated base ref. Set the Bash tool's `timeout` parameter to `600000`. Capture stdout and exit code.
 5. Check exit code first:
    - If the Bash tool returns a timeout error: return blocked with `Blocker: review timed out`.
    - Any other non-zero: return blocked with `Blocker: review CLI failed`; include exit code and stderr in `Issues:`.
