@@ -25,8 +25,8 @@ shell: bash
 
 TDD produces better designs because writing the test first forces you to think about the interface before the implementation. The test is the first caller — if it's awkward to test, the interface is awkward to use.
 
-See [${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/tests.md](${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/tests.md) for good/bad test examples.
-See [${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/mocking.md](${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/mocking.md) for when (and when not) to mock.
+See `${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/tests.md` for good/bad test examples.
+See `${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/mocking.md` for when (and when not) to mock.
 
 ---
 
@@ -171,7 +171,7 @@ If detection is ambiguous, ask the user before running anything.
 
 **Testing implementation details** — if your test would break when you rename an internal function (without changing behavior), the test is wrong.
 
-**Over-mocking** — mocking your own classes creates tests that verify mocks, not code. See [${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/mocking.md](${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/mocking.md).
+**Over-mocking** — mocking your own classes creates tests that verify mocks, not code. See `${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/mocking.md`.
 
 **Speculative implementation** — writing code for the next test while the current one is red. Stay in the current cycle.
 
