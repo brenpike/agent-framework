@@ -80,13 +80,22 @@ Do NOT emit an intermediate user-facing message for any of the following — imm
 - Worker report received with `Status: complete` → immediately run phase verification then proceed
 - Version bump delegation complete → immediately proceed to validation
 - `watch-github-pr-feedback` returned feedback items → immediately begin remediation cycle
-- Tool call (Bash, Skill, Agent, Read, or Monitor) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
+- Read-only/idempotent tool call (Read, Bash read-only commands such as `git status`/`git log`/`git diff`, Monitor start) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
 
 ### Tool-call error recovery
 
 When a Bash, Skill, Agent, Read, or Monitor tool call fails, classify the error and act per the rules below. The transient/non-transient boundary is defined in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure).
 
-**Transient failures** (error matches the transient failure definition):
+**Monitor exception:** Monitor tool call failures — startup failures, first-poll errors, and non-zero exits — are excluded from the transient/non-transient retry rules below. Monitor failures are handled by the Monitor Use rule (## Monitor Use): run exactly one manual check using the same read-only command, then report `Monitoring: not active`. Do not apply the generic retry path to Monitor failures.
+
+**Mutating vs read-only/idempotent classification:** Before applying the retry rules below, classify the failed tool call:
+
+- **Read-only/idempotent:** Read, Bash read-only commands (`git status`, `git log`, `git diff`, `ls`, `cat`, `grep`, and other commands that do not modify state), Monitor start.
+- **Mutating:** Any Skill invocation, any Agent invocation, and any Bash call that writes, commits, pushes, deletes, or otherwise modifies state.
+
+Automatic retry applies only to read-only/idempotent calls. Mutating calls must NOT be auto-retried — report blocked immediately with error classification `non-retryable-mutating` and the error details.
+
+**Transient failures** (error matches the transient failure definition; read-only/idempotent calls only):
 
 1. Retry the identical tool call once immediately. Do not emit a user-facing message before the retry.
 2. If the retry also fails, report blocked with error classification `transient-exhausted` and the error details from both attempts.
@@ -95,12 +104,12 @@ When a Bash, Skill, Agent, Read, or Monitor tool call fails, classify the error 
 
 1. Do not retry. Report blocked immediately with error classification `non-transient` and the error details.
 
-**Ambiguous errors** (no clear HTTP status, exit code, or error type to classify):
+**Ambiguous errors** (no clear HTTP status, exit code, or error type to classify; read-only/idempotent calls only):
 
 1. Default to transient — retry once immediately. The cost of one unnecessary retry is lower than stalling the workflow.
 2. If the retry also fails, report blocked with error classification `ambiguous-exhausted` and the error details from both attempts.
 
-**Prohibition:** Claiming "retrying" or "will retry" without immediately invoking the tool call is forbidden. If retry is not possible (e.g., the tool is unavailable or the error is non-transient), report blocked. Never claim future action without executing it.
+**Prohibition:** Claiming "retrying" or "will retry" without immediately invoking the tool call is forbidden. If retry is not possible (e.g., the tool is unavailable, the error is non-transient, or the call is mutating), report blocked. Never claim future action without executing it.
 
 ## Skill Routing
 
