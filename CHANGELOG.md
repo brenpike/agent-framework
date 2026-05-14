@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.5.3] - 2026-05-14
+
+### Fixed
+- **orchestrator: replace stale python3 validation examples with jq** — two Session facts example blocks and one eval simulation prompt updated to use `jq . <path> > /dev/null`, matching the project's current validation convention established in PR #74
+
 ## [1.5.2] - 2026-05-14
 
 ### Fixed
