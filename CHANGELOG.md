@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.5.0] - 2026-05-14
+
+### Added
+
+- **`tdd` skill: red-green-refactor TDD cycle guidance with C# .NET 10 / xUnit examples, mocking guidance, and good/bad test pattern reference**
+
 ## [1.4.6] - 2026-05-14
 
 ### Fixed
