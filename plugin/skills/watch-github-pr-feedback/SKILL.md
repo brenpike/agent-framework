@@ -189,7 +189,7 @@ Do not start a second Monitor with a different parser strategy unless the user e
 Read `${CLAUDE_PLUGIN_ROOT}/skills/watch-github-pr-feedback/references/monitor-command-template.sh` for the full Monitor detection command. Do not modify it to use `python3`, `python`, `node`, standalone `jq`, PowerShell parsing, or any external parser. If this template does not produce usable output after pre-flight validation, report `Monitoring: not active` — do not improvise an alternative parser.
 
 Before using the template, resolve:
-- `OWNER` and `REPO` from `gh pr view PR_NUMBER --json baseRepository --jq '.baseRepository.owner.login + " " + .baseRepository.name'` (split on space; `Bash(gh pr view *)` is already in the skill's allowed tools)
+- `OWNER` and `REPO` from `gh repo view --json owner,name --jq '.owner.login + " " + .name'` (split on space; `Bash(gh *)` is already in the skill's allowed tools)
 - `PR_NUMBER`: the integer PR number from the PR resolution step
 - `STOP_FILE`: `/tmp/af_watch_stop_<OWNER>_<REPO>_pr<PR_NUMBER>` — substitute the resolved OWNER, REPO, and integer PR number. Record this path; it is used in step 7 to signal the Monitor to stop on injection-suspect detection.
 - `MAX_WATCH_DEFAULT`: resolved `max watch duration` optional input (default: `14400`). Substitute the integer seconds value for the `MAX_WATCH_DEFAULT` placeholder token in the template (RHS of the `MAX_WATCH_SECONDS=` assignment). Do NOT replace the shell variable name `MAX_WATCH_SECONDS`.
