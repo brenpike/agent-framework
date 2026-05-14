@@ -80,6 +80,7 @@ Do NOT emit an intermediate user-facing message for any of the following — imm
 - Worker report received with `Status: complete` → immediately run phase verification then proceed
 - Version bump delegation complete → immediately proceed to validation
 - `watch-github-pr-feedback` returned feedback items → immediately begin remediation cycle
+- `watch-github-pr-feedback` Monitor poll returned no new actionable items (all detected items already in session ledger as seen non-actionable, or skill returned `Feedback: - None`) → do not emit any user-facing message; silently continue monitoring
 - Read-only/idempotent tool call (Read, Bash read-only commands such as `git status`/`git log`/`git diff`) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
 
 ### Tool-call error recovery
