@@ -66,6 +66,7 @@ Stop and surface to the user only when one of the following applies:
 8. High-severity rejected feedback requires explicit user approval
 9. Final report — all work complete, partial, or blocked (terminal output)
 10. Trunk freshness check returned stale or diverged — surface counts and wait for user choice (update trunk or proceed at risk) before branch creation
+11. Tool call failed after retry exhaustion (transient error retried once, retry also failed) or with a non-transient error — report blocked with error classification (transient-exhausted or non-transient) and error details
 
 ### Proceed without stopping
 
@@ -79,6 +80,33 @@ Do NOT emit an intermediate user-facing message for any of the following — imm
 - Worker report received with `Status: complete` → immediately run phase verification then proceed
 - Version bump delegation complete → immediately proceed to validation
 - `watch-github-pr-feedback` returned feedback items → immediately begin remediation cycle
+- Read-only/idempotent tool call (Read, Bash read-only commands such as `git status`/`git log`/`git diff`) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
+
+### Tool-call error recovery
+
+When a Bash, Skill, Agent, Read, or Monitor tool call fails, classify the error and act per the rules below. The transient/non-transient boundary is defined in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure).
+
+**Monitor exception:** Monitor tool call failures — startup failures, first-poll errors, and non-zero exits — are excluded from the transient/non-transient retry rules below. Monitor failures are handled by the Monitor Use rule (## Monitor Use): run exactly one manual check using the same read-only command, then report `Monitoring: not active`. Do not apply the generic retry path to Monitor failures.
+
+**Mutating vs read-only/idempotent classification:** Before applying the retry rules below, classify the failed tool call:
+
+- **Read-only/idempotent:** Read, Bash read-only commands (`git status`, `git log`, `git diff`, `ls`, `cat`, `grep`, and other commands that do not modify state). `agent-framework:planner` Agent calls — planner has no file-write tools; although planner may invoke Bash(git fetch *) and Skills, these sub-tool calls are treated as acceptable retry risk since planner never modifies the working tree or commits.
+- **Mutating:** `agent-framework:coder` Agent calls, `agent-framework:designer` Agent calls, any other Agent invocation not listed above, any Skill invocation, and any Bash call that writes, commits, pushes, deletes, or otherwise modifies state.
+
+Automatic retry applies only to read-only/idempotent calls. Mutating calls must NOT be auto-retried — report blocked immediately with error classification `non-retryable-mutating` and the error details.
+
+**Transient failures** (read-only/idempotent calls only):
+
+A tool-call error is retryable when the error matches the transient failure definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure). A failure is also retryable when its error output contains none of: an HTTP status code, a recognized exit code, or an error-type string matching any pattern in the transient or non-transient lists in that definition (unclassifiable failure) — the cost of one unnecessary retry on a read-only call is lower than stalling the workflow.
+
+1. Retry the identical tool call once immediately. Do not emit a user-facing message before the retry.
+2. If the retry also fails, report blocked with error classification `transient-exhausted` (when the original error matched a known transient pattern) or `unclassifiable-exhausted` (when the error was unclassifiable) and the error details from both attempts.
+
+**Non-transient failures** (error has a clear indicator of non-transience, such as an explicit HTTP 4xx response, auth failure, or configuration error):
+
+1. Do not retry. Report blocked immediately with error classification `non-transient` and the error details.
+
+**Prohibition:** Claiming "retrying" or "will retry" without immediately invoking the tool call is forbidden. If retry is not possible (e.g., the tool is unavailable, the error is non-transient, or the call is mutating), report blocked. Never claim future action without executing it.
 
 ## Skill Routing
 
@@ -192,7 +220,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
    - **claude-mem detection.** Detect and record per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection). Record `claude-mem: present|absent` in Session facts.
    - **Pre-planning memory lookup.** When `claude-mem: present`, run pre-planning lookup per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Pre-Planning Memory Lookup). Pass results per that section.
 1. Call `agent-framework:planner` via the Agent tool unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
-2. If planner fails, follow policy retry/fallback/blocked handling immediately.
+2. If planner fails, follow `### Tool-call error recovery` (under Continuous Execution Rule) immediately.
 3. If planner returns open questions, surface them and stop.
 4. Determine delivery shape and branch classification.
 5. Establish mandatory git preflight.

@@ -103,7 +103,7 @@ If neither mode provides relevant results, continue without memory. Memory is an
 - Use Bash only for read-only inspection.
 - Use WebFetch/WebSearch when the task references a specific external library, framework, or API by name AND the answer is not present in the repo's existing imports/dependencies, OR the user has asked about a specific version's behavior.
 - Do not use Web tools for purposes other than the prior bullet. If repo inspection returns no result for a question that does not match the prior bullet's conditions, output the question under `Open questions` instead of fetching.
-- Retry tool failures once if the failure matches the "Transient failure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`. Otherwise return blocked.
+- Retry tool failures once if the failure matches the "Transient failure" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`. A failure whose error output contains no classifiable signal (no HTTP status code, no recognized exit code, no error-type string matching a known pattern) is also retryable once. Otherwise return blocked.
 
 ## Bounded Discovery
 
