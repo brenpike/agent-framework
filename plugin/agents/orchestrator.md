@@ -66,6 +66,7 @@ Stop and surface to the user only when one of the following applies:
 8. High-severity rejected feedback requires explicit user approval
 9. Final report — all work complete, partial, or blocked (terminal output)
 10. Trunk freshness check returned stale or diverged — surface counts and wait for user choice (update trunk or proceed at risk) before branch creation
+11. Tool call failed after retry exhaustion (transient error retried once, retry also failed) or with a non-transient error — report blocked with error classification (transient-exhausted or non-transient) and error details
 
 ### Proceed without stopping
 
@@ -79,6 +80,27 @@ Do NOT emit an intermediate user-facing message for any of the following — imm
 - Worker report received with `Status: complete` → immediately run phase verification then proceed
 - Version bump delegation complete → immediately proceed to validation
 - `watch-github-pr-feedback` returned feedback items → immediately begin remediation cycle
+- Tool call (Bash, Skill, Agent, Read, or Monitor) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
+
+### Tool-call error recovery
+
+When a Bash, Skill, Agent, Read, or Monitor tool call fails, classify the error and act per the rules below. The transient/non-transient boundary is defined in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure).
+
+**Transient failures** (error matches the transient failure definition):
+
+1. Retry the identical tool call once immediately. Do not emit a user-facing message before the retry.
+2. If the retry also fails, report blocked with error classification `transient-exhausted` and the error details from both attempts.
+
+**Non-transient failures** (error does not match the transient failure definition):
+
+1. Do not retry. Report blocked immediately with error classification `non-transient` and the error details.
+
+**Ambiguous errors** (no clear HTTP status, exit code, or error type to classify):
+
+1. Default to transient — retry once immediately. The cost of one unnecessary retry is lower than stalling the workflow.
+2. If the retry also fails, report blocked with error classification `ambiguous-exhausted` and the error details from both attempts.
+
+**Prohibition:** Claiming "retrying" or "will retry" without immediately invoking the tool call is forbidden. If retry is not possible (e.g., the tool is unavailable or the error is non-transient), report blocked. Never claim future action without executing it.
 
 ## Skill Routing
 
@@ -192,7 +214,7 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
    - **claude-mem detection.** Detect and record per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection). Record `claude-mem: present|absent` in Session facts.
    - **Pre-planning memory lookup.** When `claude-mem: present`, run pre-planning lookup per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Pre-Planning Memory Lookup). Pass results per that section.
 1. Call `agent-framework:planner` via the Agent tool unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
-2. If planner fails, follow policy retry/fallback/blocked handling immediately.
+2. If planner fails, follow `### Tool-call error recovery` (under Continuous Execution Rule) immediately.
 3. If planner returns open questions, surface them and stop.
 4. Determine delivery shape and branch classification.
 5. Establish mandatory git preflight.
