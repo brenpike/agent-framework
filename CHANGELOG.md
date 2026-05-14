@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.5.1] - 2026-05-14
+
+### Fixed
+- Orchestrator no longer emits user-facing messages when a `watch-github-pr-feedback` Monitor poll returns only already-seen non-actionable items; silent continuation reduces token waste during long-running watches.
+
 ## [1.5.0] - 2026-05-14
 
 ### Added
