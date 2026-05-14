@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.4.5] - 2026-05-13
+
+### Fixed
+
+- **`address-github-pr-feedback`: fixed thread-resolver "invalid parameters" error by rewriting post-fix step 3 spawning to embed all inputs in the `prompt` field and moving the post-reply re-fetch to the caller**
+
 ## [1.4.4] - 2026-05-13
 
 ### Fixed
