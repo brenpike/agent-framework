@@ -199,8 +199,22 @@ Steps:
    - `thread_fetch_result`: use the value fetched in step 2 (the pre-reply baseline).
    - `fix_committed_pushed_validated`: set to `yes` when `validated` input is `yes` or `not applicable` (both mean the fix is committed, pushed, and either passed validation or no validation commands are defined); set to `no` only when `validated` is `no`.
    - `user_approval_for_high_severity_rejection`: use the optional post-fix input value if provided; otherwise default to `no`.
+   - `post_reply_fetch_result`: perform the post-reply re-fetch using the Fetch Thread Comments (Paginated) query from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` to re-fetch the thread's current comment list. Capture the result as `post_reply_fetch_result`.
 
-   Pass to subagent: `thread_id`, `SELF_LOGIN`, `fix_sha_reply_posted: yes`, `fix_committed_pushed_validated`, `classification`, `severity_category`, `user_approval_for_high_severity_rejection`, `thread_fetch_result`, `target_comment_id`.
+   Compose the `prompt` parameter as follows: start with the full text of thread-resolver.md (read above), then append a `## Inputs` section with these key-value pairs, each on its own line:
+   - `thread_id: <resolved value>`
+   - `SELF_LOGIN: <resolved value>`
+   - `fix_sha_reply_posted: yes`
+   - `fix_committed_pushed_validated: <resolved value>`
+   - `classification: <resolved value>`
+   - `severity_category: <resolved value>`
+   - `user_approval_for_high_severity_rejection: <resolved value>`
+   - `thread_fetch_result: <baseline fetch result from step 2, JSON-serialized as a string>`
+   - `post_reply_fetch_result: <the re-fetch result, JSON-serialized as a string>`
+   - `target_comment_id: <resolved value>`
+
+   Pass ONLY `description` and `prompt` to the Agent tool — do not add any other parameters.
+
    If thread-resolver returns `Decision: resolve`, execute the `resolveReviewThread` GraphQL mutation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` using the thread ID. If it returns `Decision: skip`, log the reason and set `Thread-resolved: skipped`.
 
    On `resolveReviewThread` failure, log the reason in `Thread-resolved:` — resolution is non-blocking; the fix-SHA reply is the primary re-review gate.
