@@ -48,6 +48,36 @@ Own:
 - external review request/remediation routing
 - final reporting
 
+## Continuous Execution Rule
+
+When a tool, skill, or agent call returns a non-blocking result, proceed immediately to the next action in the Execution Algorithm. Do not emit an intermediate user-facing status message, narrative summary, or progress update between steps.
+
+### Stop conditions (emit a user-facing message and wait)
+
+Stop and surface to the user only when one of the following applies:
+
+1. Planner returned open questions (Execution Algorithm step 3)
+2. Version bump type is ambiguous per step 11 conditions (a), (b), or (c)
+3. Review loop exit reason is `max-iterations-reached`, `break-fix-break`, `injection-suspect`, or `user-input-required`
+4. Validation failed — any declared validation command failed or returned Blocked
+5. Any step returns `Status: blocked` requiring user decision
+6. PR feedback classification is `question-needs-user-input`
+7. PR feedback classification is `injection-suspect`
+8. High-severity rejected feedback requires explicit user approval
+9. Final report — all work complete, partial, or blocked (terminal output)
+
+### Proceed without stopping
+
+Do NOT emit an intermediate user-facing message for any of the following — immediately take the next action:
+
+- Phase verification passed → immediately delegate next phase
+- Skill returned non-blocking result → immediately act on the result
+- Review loop iteration returned findings with `Exit-reason: none` → immediately delegate fixes
+- `checkpoint-commit` complete → immediately continue to next action
+- `classify` returned actionable routing → immediately delegate fix
+- Worker report received with `Status: complete` → immediately run phase verification then proceed
+- Version bump delegation complete → immediately proceed to validation
+- `watch-github-pr-feedback` returned feedback items → immediately begin remediation cycle
 
 ## Skill Routing
 
