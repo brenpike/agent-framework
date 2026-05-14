@@ -13,7 +13,6 @@
       "Bash(git -C * show-ref *)",
       "Bash(gh api user *)",
       "Bash(gh api graphql *)",
-      "Bash(node /home/brenp/.claude/plugins/cache/openai-codex/codex/*)",
       "Bash(grep -n *)",
       "Bash(grep -rn *)",
       "Bash(grep -rE *)"

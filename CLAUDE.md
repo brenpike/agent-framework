@@ -79,3 +79,19 @@ When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runt
 `claude-mem:mem-search` is optional — planner uses it when present, skips when absent. Do not hard-require it from any agent or skill.
 
 `codex@openai-codex` is optional — the orchestrator uses `codex-plugin-cc` for pre-PR local review (`agent-framework:review-loop-controller`, `agent-framework:local-codex-review`) and post-PR review (`agent-framework:request-github-codex-review`). If not installed, the orchestrator skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
+
+## Local developer setup
+
+To eliminate permission prompts for the local Codex review flow (`agent-framework:local-codex-review`), add your Codex cache path to `.claude/settings.local.json` (gitignored):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)"
+    ]
+  }
+}
+```
+
+Replace `/path/to/` with your actual home directory path. This file is gitignored and must be created locally by each contributor.
