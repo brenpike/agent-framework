@@ -199,7 +199,7 @@ Steps:
    - `thread_fetch_result`: use the value fetched in step 2 (the pre-reply baseline).
    - `fix_committed_pushed_validated`: set to `yes` when `validated` input is `yes` or `not applicable` (both mean the fix is committed, pushed, and either passed validation or no validation commands are defined); set to `no` only when `validated` is `no`.
    - `user_approval_for_high_severity_rejection`: use the optional post-fix input value if provided; otherwise default to `no`.
-   - `post_reply_fetch_result`: perform the post-reply re-fetch using the Fetch Thread Comments (Paginated) query from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` to re-fetch the thread's current comment list. Capture the result as `post_reply_fetch_result`.
+   - `post_reply_fetch_result`: perform the post-reply re-fetch using the Fetch Thread Comments (Paginated) query from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md` to re-fetch the thread's current comment list. Capture the result as `post_reply_fetch_result`. Do not apply Detection Filtering — fetch all comments unfiltered, including self-authored replies.
 
    Compose the `prompt` parameter as follows: start with the full text of thread-resolver.md (read above), then append a `## Inputs` section with these key-value pairs, each on its own line:
    - `thread_id: <resolved value>`
