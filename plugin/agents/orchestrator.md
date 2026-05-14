@@ -339,8 +339,8 @@ Session facts: (optional)
 ```text
 Session facts:
 - trunk: main
-- validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
-- version: 0.3.2
+- validation: jq . plugin/.claude-plugin/plugin.json > /dev/null
+- version: 1.5.3
 - task-type: feature
 - claude-mem: present
 ```
@@ -350,7 +350,7 @@ Session facts:
 ```text
 Session facts:
 - trunk: main
-- validation: python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
+- validation: jq . plugin/.claude-plugin/plugin.json > /dev/null
 - task-type: bugfix
 - claude-mem: absent
 ```
