@@ -57,7 +57,7 @@ When a tool, skill, or agent call returns a non-blocking result, proceed immedia
 Stop and surface to the user only when one of the following applies:
 
 1. Planner returned open questions (Execution Algorithm step 3)
-2. Version bump type is ambiguous per step 11 conditions (a), (b), or (c)
+2. Version bump type cannot be determined per step 11 conditions (a), (b), or (c)
 3. Review loop exit reason is `max-iterations-reached`, `break-fix-break`, `injection-suspect`, or `user-input-required`
 4. Validation failed — any declared validation command failed or returned Blocked
 5. Any step returns `Status: blocked` requiring user decision
@@ -65,6 +65,7 @@ Stop and surface to the user only when one of the following applies:
 7. PR feedback classification is `injection-suspect`
 8. High-severity rejected feedback requires explicit user approval
 9. Final report — all work complete, partial, or blocked (terminal output)
+10. Trunk freshness check returned stale or diverged — surface counts and wait for user choice (update trunk or proceed at risk) before branch creation
 
 ### Proceed without stopping
 
