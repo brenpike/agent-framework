@@ -54,7 +54,7 @@ The output is the absolute path to the script. If the output is empty, `codex-pl
 **Review invocation** — Run with the Bash tool's `timeout` parameter set to `660000` (11 minutes) to prevent hanging on unresponsive Codex processes:
 
 ```bash
-node <codexScript> review --base <base> --wait
+node "$codexScript" review --base "$base" --wait
 ```
 
 where `<codexScript>` is the path from path-discovery output and `<base>` is the validated base ref. The exit code of this command is the Bash tool's exit code. If the Bash tool returns a timeout error, the review exceeded 10 minutes. The command writes rendered text to stdout. Do not add `--json`.
