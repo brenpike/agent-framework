@@ -147,6 +147,23 @@ If CLAUDE.md doesn't specify a test command, detect from project structure:
 | `Cargo.toml` | `cargo test` |
 | `mix.exs` | `mix test` |
 | `rspec` / `spec/` dir | `bundle exec rspec` |
+| `*.csproj` with `Microsoft.NET.Test.Sdk` | `dotnet test` |
+
+**Example .NET 10 xUnit test project (`.csproj`):**
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+  </ItemGroup>
+</Project>
+```
 
 If detection is ambiguous, ask the user before running anything.
 
