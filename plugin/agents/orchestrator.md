@@ -95,15 +95,15 @@ When a Bash, Skill, Agent, Read, or Monitor tool call fails, classify the error 
 
 Automatic retry applies only to read-only/idempotent calls. Mutating calls must NOT be auto-retried — report blocked immediately with error classification `non-retryable-mutating` and the error details.
 
-**Transient failures** (error matches the transient failure definition; read-only/idempotent calls only):
+**Transient failures** (read-only/idempotent calls only):
+
+A tool-call error is retryable when either condition holds:
+
+- The error matches the transient failure definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure).
+- The error output contains none of: an HTTP status code, a recognized exit code, or an error-type string matching any pattern in the transient or non-transient lists. When no classifiable signal is present, treat the error as transient — the cost of one unnecessary retry is lower than stalling the workflow.
 
 1. Retry the identical tool call once immediately. Do not emit a user-facing message before the retry.
-2. If the retry also fails, report blocked with error classification `transient-exhausted` and the error details from both attempts.
-
-**Ambiguous errors** (no clear HTTP status, exit code, or error type to classify; read-only/idempotent calls only):
-
-1. Default to transient — retry once immediately. The cost of one unnecessary retry is lower than stalling the workflow.
-2. If the retry also fails, report blocked with error classification `ambiguous-exhausted` and the error details from both attempts.
+2. If the retry also fails, report blocked with error classification `transient-exhausted` (when the original error matched a transient pattern) or `unclassifiable-exhausted` (when no classifiable signal was present) and the error details from both attempts.
 
 **Non-transient failures** (error has a clear indicator of non-transience, such as an explicit HTTP 4xx response, auth failure, or configuration error):
 
