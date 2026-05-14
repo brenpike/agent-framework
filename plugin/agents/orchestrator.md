@@ -90,8 +90,8 @@ When a Bash, Skill, Agent, Read, or Monitor tool call fails, classify the error 
 
 **Mutating vs read-only/idempotent classification:** Before applying the retry rules below, classify the failed tool call:
 
-- **Read-only/idempotent:** Read, Bash read-only commands (`git status`, `git log`, `git diff`, `ls`, `cat`, `grep`, and other commands that do not modify state), and `agent-framework:planner` Agent calls (planner has no write tools and produces no side effects).
-- **Mutating:** Any Skill invocation, any `agent-framework:coder` or `agent-framework:designer` Agent call (they write files and commit), and any Bash call that writes, commits, pushes, deletes, or otherwise modifies state.
+- **Read-only/idempotent:** Read, Bash read-only commands (`git status`, `git log`, `git diff`, `ls`, `cat`, `grep`, and other commands that do not modify state).
+- **Mutating:** Any Skill invocation, any Agent invocation, and any Bash call that writes, commits, pushes, deletes, or otherwise modifies state.
 
 Automatic retry applies only to read-only/idempotent calls. Mutating calls must NOT be auto-retried — report blocked immediately with error classification `non-retryable-mutating` and the error details.
 
