@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.4.6] - 2026-05-14
+
+### Fixed
+
+- **Orchestrator: add Tool-call error recovery rule to Continuous Execution Rule — transient errors retry once immediately, non-transient errors report blocked immediately, ambiguous errors default to transient; prohibit false retry claims**
+
 ## [1.4.5] - 2026-05-13
 
 ### Fixed
