@@ -90,8 +90,8 @@ When a Bash, Skill, Agent, Read, or Monitor tool call fails, classify the error 
 
 **Mutating vs read-only/idempotent classification:** Before applying the retry rules below, classify the failed tool call:
 
-- **Read-only/idempotent:** Read, Bash read-only commands (`git status`, `git log`, `git diff`, `ls`, `cat`, `grep`, and other commands that do not modify state).
-- **Mutating:** Any Skill invocation, any Agent invocation, and any Bash call that writes, commits, pushes, deletes, or otherwise modifies state.
+- **Read-only/idempotent:** Read, Bash read-only commands (`git status`, `git log`, `git diff`, `ls`, `cat`, `grep`, and other commands that do not modify state). `agent-framework:planner` Agent calls — planner has no file-write tools; although planner may invoke Bash(git fetch *) and Skills, these sub-tool calls are treated as acceptable retry risk since planner never modifies the working tree or commits.
+- **Mutating:** `agent-framework:coder` Agent calls, `agent-framework:designer` Agent calls, any other Agent invocation not listed above, any Skill invocation, and any Bash call that writes, commits, pushes, deletes, or otherwise modifies state.
 
 Automatic retry applies only to read-only/idempotent calls. Mutating calls must NOT be auto-retried — report blocked immediately with error classification `non-retryable-mutating` and the error details.
 
@@ -100,14 +100,14 @@ Automatic retry applies only to read-only/idempotent calls. Mutating calls must 
 1. Retry the identical tool call once immediately. Do not emit a user-facing message before the retry.
 2. If the retry also fails, report blocked with error classification `transient-exhausted` and the error details from both attempts.
 
-**Non-transient failures** (error does not match the transient failure definition):
-
-1. Do not retry. Report blocked immediately with error classification `non-transient` and the error details.
-
 **Ambiguous errors** (no clear HTTP status, exit code, or error type to classify; read-only/idempotent calls only):
 
 1. Default to transient — retry once immediately. The cost of one unnecessary retry is lower than stalling the workflow.
 2. If the retry also fails, report blocked with error classification `ambiguous-exhausted` and the error details from both attempts.
+
+**Non-transient failures** (error has a clear indicator of non-transience, such as an explicit HTTP 4xx response, auth failure, or configuration error):
+
+1. Do not retry. Report blocked immediately with error classification `non-transient` and the error details.
 
 **Prohibition:** Claiming "retrying" or "will retry" without immediately invoking the tool call is forbidden. If retry is not possible (e.g., the tool is unavailable, the error is non-transient, or the call is mutating), report blocked. Never claim future action without executing it.
 
