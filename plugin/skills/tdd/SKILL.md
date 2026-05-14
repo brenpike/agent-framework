@@ -6,6 +6,19 @@ description: >-
   red-green-refactor, or test-first. Requires Write and Edit tool access — invoke from
   `agent-framework:coder` context only. Orchestrators receiving TDD requests must delegate
   to `agent-framework:coder`, which then invokes this skill.
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash(dotnet *)
+  - Bash(pytest *)
+  - Bash(npm *)
+  - Bash(npx *)
+  - Bash(go test *)
+  - Bash(cargo test *)
+  - Bash(mix test *)
+  - Bash(bundle exec rspec *)
+shell: bash
 ---
 
 # Test-Driven Development (Red-Green-Refactor)
