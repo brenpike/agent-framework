@@ -73,15 +73,23 @@ Stop and surface to the user only when one of the following applies:
 Do NOT emit an intermediate user-facing message for any of the following — immediately take the next action:
 
 - Phase verification passed → immediately run the phase-close sequence (extract step delta, store handoff, checkpoint commit, context clear and rehydrate per Path A); then delegate next phase
-- Skill returned non-blocking result → immediately act on the result
+- Skill returned non-blocking result → immediately act on the result **in the same response** (do not end the response at a skill result; the next Execution Algorithm step must begin in the same response)
 - Review loop iteration returned findings with `Exit-reason: none` → immediately delegate fixes
-- `checkpoint-commit` complete → immediately continue to next action
+- `checkpoint-commit` complete → immediately continue to next action **in the same response** (do not end the response at a checkpoint result; the next Execution Algorithm step must begin in the same response)
 - `classify` returned actionable routing → immediately delegate fix
 - Worker report received with `Status: complete` → immediately run phase verification then proceed
 - Version bump delegation complete → immediately proceed to validation
 - `watch-github-pr-feedback` returned feedback items → immediately begin remediation cycle
 - `watch-github-pr-feedback` Monitor poll returned no new actionable items (all detected items already in session ledger as seen non-actionable, or skill returned `Feedback: - None`) → do not emit any user-facing message; silently continue monitoring
 - Read-only/idempotent tool call (Read, Bash read-only commands such as `git status`/`git log`/`git diff`) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
+
+### Pipeline Execution Mandate
+
+The Execution Algorithm is a non-stoppable sequential pipeline. All numbered steps execute in order within a single uninterrupted flow. After any step completes — including steps that end with a skill invocation, agent delegation, or tool call — proceed immediately to the next step **in the same response**. Do not end a response at a step boundary.
+
+**Conditional steps** (e.g., step 11 — version bump detection, step 12 — version bump delegation, step 13a — pre-PR review loop, step 14 — PR opening) evaluate their skip condition inline. The result is either execute or skip — never stop. A step whose skip condition is met is bypassed immediately; the next step begins in the same response.
+
+**The only permitted interruptions** between steps are the Stop Conditions listed above. If no Stop Condition applies, the pipeline continues without waiting for user input.
 
 ### Tool-call error recovery
 
