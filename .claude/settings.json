@@ -27,7 +27,8 @@
       "Bash(gh api graphql *)",
       "Bash(grep -n *)",
       "Bash(grep -rn *)",
-      "Bash(grep -rE *)"
+      "Bash(grep -rE *)",
+      "Bash(cat > .agent-framework/*)"
     ]
   },
   "enabledPlugins": {
