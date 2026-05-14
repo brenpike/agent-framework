@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.4.4] - 2026-05-13
+
+### Fixed
+
+- **Orchestrator: added Continuous Execution Rule to suppress intermediate user-facing messages between non-blocking workflow steps.** The orchestrator now proceeds through sequential non-blocking steps (e.g., branch creation → implementation → checkpoint commit) without surfacing intermediate status messages to the user, reducing noise during uninterrupted execution flows.
+
 ## [1.4.3] - 2026-05-13
 
 ### Fixed
