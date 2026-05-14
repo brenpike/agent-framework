@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.5.2] - 2026-05-14
+
+### Fixed
+- fix(orchestrator): add Pipeline Execution Mandate — all Execution Algorithm steps now form a non-stoppable sequential pipeline; steps proceed in the same response after any skill invocation, agent delegation, or tool call; conditional steps (11, 12, 13a, 14) evaluate inline and either execute or skip without stopping
+
 ## [1.5.1] - 2026-05-14
 
 ### Fixed
