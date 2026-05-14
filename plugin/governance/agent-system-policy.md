@@ -25,7 +25,9 @@ A failure is transient if and only if its root cause matches one of:
 - network unreachable / no route to host
 - Git transient failure: `Connection timed out`, `RPC failed`, `early EOF`, `index-pack failed`
 
-Every other failure is non-transient and must not be retried. This includes: HTTP 4xx (except 429), JSON/parser errors, missing-tool errors, permission denials, file-not-found, command exit codes 1–123 (other than the listed timeouts), and any failure whose stderr matches the auth/protected-branch patterns enumerated in `${CLAUDE_PLUGIN_ROOT}/skills/open-plan-pr/SKILL.md`.
+A failure is unclassifiable when its error output contains none of: an HTTP status code, a recognized exit code, or an error-type string matching any pattern in the transient or non-transient lists above. When no classifiable signal is present, treat the failure as transient and retry once. The cost of one unnecessary retry is lower than stalling the workflow.
+
+Every other failure whose error output contains a classifiable signal that does not match the transient list is non-transient and must not be retried. This includes: HTTP 4xx (except 429), JSON/parser errors, missing-tool errors, permission denials, file-not-found, command exit codes 1–123 (other than the listed timeouts), and any failure whose stderr matches the auth/protected-branch patterns enumerated in `${CLAUDE_PLUGIN_ROOT}/skills/open-plan-pr/SKILL.md`.
 
 ### Unsafe git state
 
