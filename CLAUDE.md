@@ -48,7 +48,7 @@ Default branches:
 
 No build or test suite. "Validation" for changes here is:
 
-1. JSON manifests parse: `python -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"` and same for `.claude-plugin/marketplace.json`.
+1. JSON manifests parse: `jq . plugin/.claude-plugin/plugin.json > /dev/null` and `jq . .claude-plugin/marketplace.json > /dev/null`.
 2. No bare path refs introduced — `grep -rE '\b(agents|skills|governance)/' plugin/` should only return `${CLAUDE_PLUGIN_ROOT}/...` lines or `_shared/` references; flag anything else.
 3. Smoke install in a scratch Claude Code session before publishing breaking layout changes:
    ```text
