@@ -7,12 +7,8 @@ allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)
   - Bash(git remote *)
-  - Bash(codexScript=*)
   - Bash(ls -t *)
-  - Bash(baseRef=*)
-  - Bash(EXIT_CODE=*)
   - Bash(node *)
-  - Bash(python3 - *)
   - Agent
 shell: bash
 ---
@@ -48,34 +44,20 @@ Invoke the Codex CLI directly via `node` after discovering the installed path.
 **Path discovery** — locate the most recently installed codex companion script:
 
 ```bash
-codexScript=$(ls -t "$HOME/.claude/plugins/cache/openai-codex/codex/"*/scripts/codex-companion.mjs 2>/dev/null | head -1)
+ls -t "$HOME/.claude/plugins/cache/openai-codex/codex/"*/scripts/codex-companion.mjs 2>/dev/null | head -1
 ```
+
+The output is the absolute path to the script. If the output is empty, `codex-plugin-cc` is not installed.
 
 **Base ref validation** — before constructing the invocation, confirm the caller-supplied `base` value matches `^[a-zA-Z0-9/_.\-]+$`. If it contains any character outside that set (including `'`, `"`, `` ` ``, `$`, `@`, `\`, space, or newline), return blocked with `Blocker: base ref contains characters unsafe for shell invocation`.
 
-**Review invocation** — run with a hard 10-minute limit to prevent hanging on unresponsive Codex processes:
+**Review invocation** — Run with the Bash tool's `timeout` parameter set to `660000` (11 minutes) to prevent hanging on unresponsive Codex processes:
 
 ```bash
-baseRef='<base>'   # safe: base was validated against ^[a-zA-Z0-9/_.\-]+$ before this step
-python3 - "$codexScript" "$baseRef" <<'PYEOF'
-import subprocess, sys
-codex_script, base_ref = sys.argv[1], sys.argv[2]
-try:
-    result = subprocess.run(
-        ["node", codex_script, "review", "--base", base_ref, "--wait"],
-        timeout=600
-    )
-    sys.exit(result.returncode)
-except subprocess.TimeoutExpired:
-    sys.exit(124)
-PYEOF
-EXIT_CODE=$?
-exit $EXIT_CODE
+node <codexScript> review --base <base> --wait
 ```
 
-Capture stdout and exit code separately. Exit code `124` means the review was killed after 10 minutes (portable across macOS and Linux — uses Python subprocess timeout rather than the GNU `timeout` command which is unavailable on macOS by default).
-
-The command writes rendered text to stdout. Do not add `--json`; the default output is rendered text, not JSON.
+where `<codexScript>` is the path from path-discovery output and `<base>` is the validated base ref. The exit code of this command is the Bash tool's exit code. If the Bash tool returns a timeout error, the review exceeded 10 minutes. The command writes rendered text to stdout. Do not add `--json`.
 
 ## Output Schema and Normalized Findings
 
@@ -85,10 +67,10 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
 
 1. Resolve `base` and `iteration`. If `base` was not supplied, resolve from git remote or default to `main`. If `iteration` was not supplied, default to `1`. Return blocked if `base` cannot be resolved.
 2. Confirm git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
-3. Discover `codexScript` by running the path-discovery block from **Review Invocation**. If `codexScript` is empty, return blocked with `Blocker: codex-plugin-cc not available`.
-4. Validate `base` against `^[a-zA-Z0-9/_.\-]+$`; return blocked with `Blocker: base ref contains characters unsafe for shell invocation` if it fails. Assign `baseRef='<base>'` and run the portable Python timeout wrapper from **Review Invocation**. Capture stdout and exit code.
+3. Run the path-discovery command from **Review Invocation**. Capture the output (the script path). If the output is empty, return blocked with `Blocker: codex-plugin-cc not available`.
+4. Validate `base` against `^[a-zA-Z0-9/_.\-]+$`; return blocked with `Blocker: base ref contains characters unsafe for shell invocation` if it fails. Run the review invocation command from **Review Invocation**, substituting the discovered script path and validated base ref. Set the Bash tool's `timeout` parameter to `660000`. Capture stdout and exit code.
 5. Check exit code first:
-   - `124`: return blocked with `Blocker: review timed out`.
+   - If the Bash tool returns a timeout error: return blocked with `Blocker: review timed out`.
    - Any other non-zero: return blocked with `Blocker: review CLI failed`; include exit code and stderr in `Issues:`.
 6. Validate stdout: if empty or does not begin with `# Codex Review`, return blocked with `Blocker: unexpected output shape`; include first 200 characters of raw output in `Issues:`.
 7. Parse stdout as rendered text per the Output Schema parsing rules in `${CLAUDE_PLUGIN_ROOT}/skills/local-codex-review/references/output-schema.md`.
