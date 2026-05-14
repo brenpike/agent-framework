@@ -97,7 +97,7 @@ Automatic retry applies only to read-only/idempotent calls. Mutating calls must 
 
 **Transient failures** (read-only/idempotent calls only):
 
-A tool-call error is retryable when the error matches the transient failure definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure), including errors classified as unclassifiable per that definition.
+A tool-call error is retryable when the error matches the transient failure definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure). A failure is also retryable when its error output contains none of: an HTTP status code, a recognized exit code, or an error-type string matching any pattern in the transient or non-transient lists in that definition (unclassifiable failure) — the cost of one unnecessary retry on a read-only call is lower than stalling the workflow.
 
 1. Retry the identical tool call once immediately. Do not emit a user-facing message before the retry.
 2. If the retry also fails, report blocked with error classification `transient-exhausted` (when the original error matched a known transient pattern) or `unclassifiable-exhausted` (when the error was unclassifiable) and the error details from both attempts.
