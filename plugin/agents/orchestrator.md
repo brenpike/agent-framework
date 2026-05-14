@@ -87,7 +87,7 @@ Do NOT emit an intermediate user-facing message for any of the following — imm
 
 The Execution Algorithm is a non-stoppable sequential pipeline. All numbered steps execute in order within a single uninterrupted flow. After any step completes — including steps that end with a skill invocation, agent delegation, or tool call — proceed immediately to the next step **in the same response**. Do not end a response at a step boundary.
 
-**Conditional steps** (e.g., step 11 — version bump detection, step 12 — version bump delegation, step 13a — pre-PR review loop, step 14 — PR opening) evaluate their skip condition inline. The result is either execute or skip — never stop. A step whose skip condition is met is bypassed immediately; the next step begins in the same response.
+**Conditional steps** (e.g., step 12 — version bump delegation, step 13a — pre-PR review loop, step 14 — PR opening) evaluate their skip condition inline. The result is either execute or skip — never stop. A step whose skip condition is met is bypassed immediately; the next step begins in the same response. **Exception — step 11 (version bump detection):** step 11 skips inline when no bump is required, but retains its three documented Stop Conditions (ambiguous bump type, no matching row, or missing artifact files per `CLAUDE.md`) — those cases still stop the pipeline and surface to the user per the Stop Conditions list above.
 
 **The only permitted interruptions** between steps are the Stop Conditions listed above. If no Stop Condition applies, the pipeline continues without waiting for user input.
 
