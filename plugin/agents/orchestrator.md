@@ -70,7 +70,7 @@ Stop and surface to the user only when one of the following applies:
 
 ### State Transition Table
 
-After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 58.
+After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 59.
 
 | # | after= | Condition | GOTO |
 |---|---|---|---|
@@ -117,21 +117,22 @@ After every step-completion milestone (any event that produces an after= token f
 | 41 | review-loop-fix-complete | — | validation (within review loop) |
 | 42 | open-plan-pr-complete | review requested | step 15: external review |
 | 43 | open-plan-pr-complete | no review requested | Final Report |
-| 44 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
-| 45 | classify-pr-feedback-returned | non-actionable or rejected | mark complete or post rejection reply |
-| 46 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
-| 47 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
-| 48 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
-| 49 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
-| 50 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
-| 51 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
-| 52 | watch-pr-feedback-returned | PR merged/closed | Final Report |
-| 53 | address-pr-feedback-complete | more items remain | next item |
-| 54 | address-pr-feedback-complete | no more items | continue monitoring or Final Report |
-| 55 | tool-error | non-transient | STOP: report blocked |
-| 56 | tool-error | transient, first attempt | retry immediately |
-| 57 | tool-error | transient, retry failed | STOP: report blocked |
-| 58 | (no match) | — | STOP:unmatched — surface to user |
+| 44 | pr-skipped | user opted out of PR | Final Report |
+| 45 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
+| 46 | classify-pr-feedback-returned | non-actionable or rejected | mark complete or post rejection reply |
+| 47 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
+| 48 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
+| 49 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
+| 50 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
+| 51 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
+| 52 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
+| 53 | watch-pr-feedback-returned | PR merged/closed | Final Report |
+| 54 | address-pr-feedback-complete | more items remain | next item |
+| 55 | address-pr-feedback-complete | no more items | continue monitoring or Final Report |
+| 56 | tool-error | non-transient | STOP: report blocked |
+| 57 | tool-error | transient, first attempt | retry immediately |
+| 58 | tool-error | transient, retry failed | STOP: report blocked |
+| 59 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Continuation Protocol
 
@@ -154,8 +155,8 @@ Procedure:
 
 If no table row matches after + current condition: set goto=STOP:unmatched and surface to user. Do not improvise a transition.
 
-Constrained vocabulary for after= field (18 tokens):
-intake-complete, planner-returned, git-preflight-complete, create-working-branch-complete, worker-complete, phase-verification-passed, phase-verification-failed, checkpoint-commit-complete, version-bump-check, version-bump-coder-complete, validation, review-loop-controller-returned, review-loop-fix-complete, open-plan-pr-complete, classify-pr-feedback-returned, watch-pr-feedback-returned, address-pr-feedback-complete, tool-error
+Constrained vocabulary for after= field (19 tokens):
+intake-complete, planner-returned, git-preflight-complete, create-working-branch-complete, worker-complete, phase-verification-passed, phase-verification-failed, checkpoint-commit-complete, version-bump-check, version-bump-coder-complete, validation, review-loop-controller-returned, review-loop-fix-complete, open-plan-pr-complete, pr-skipped, classify-pr-feedback-returned, watch-pr-feedback-returned, address-pr-feedback-complete, tool-error
 
 ### Tool-call error recovery
 
