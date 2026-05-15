@@ -70,7 +70,7 @@ Stop and surface to the user only when one of the following applies:
 
 ### State Transition Table
 
-After every tool call, skill result, or agent return, find the matching row and execute its GOTO. If no row matches, execute row 45.
+After every skill result or agent return, find the matching row and execute its GOTO. If no row matches, execute row 49.
 
 | # | after= | Condition | GOTO |
 |---|---|---|---|
@@ -108,21 +108,25 @@ After every tool call, skill result, or agent return, find the matching row and 
 | 32 | review-loop-fix-complete | — | validation (within review loop) |
 | 33 | open-plan-pr-complete | review requested | step 15: external review |
 | 34 | open-plan-pr-complete | no review requested | Final Report |
-| 35 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
-| 36 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
-| 37 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
-| 38 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
-| 39 | watch-pr-feedback-returned | PR merged/closed | Final Report |
-| 40 | address-pr-feedback-complete | more items remain | next item |
-| 41 | address-pr-feedback-complete | no more items | continue monitoring or Final Report |
-| 42 | tool-error | non-transient | STOP: report blocked |
-| 43 | tool-error | transient, first attempt | retry immediately |
-| 44 | tool-error | transient, retry failed | STOP: report blocked |
-| 45 | (no match) | — | STOP:unmatched — surface to user |
+| 35 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
+| 36 | classify-pr-feedback-returned | non-actionable or rejected | mark complete or post rejection reply |
+| 37 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
+| 38 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
+| 39 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
+| 40 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
+| 41 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
+| 42 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
+| 43 | watch-pr-feedback-returned | PR merged/closed | Final Report |
+| 44 | address-pr-feedback-complete | more items remain | next item |
+| 45 | address-pr-feedback-complete | no more items | continue monitoring or Final Report |
+| 46 | tool-error | non-transient | STOP: report blocked |
+| 47 | tool-error | transient, first attempt | retry immediately |
+| 48 | tool-error | transient, retry failed | STOP: report blocked |
+| 49 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Continuation Protocol
 
-After every tool call, skill result, or agent return — before any other output — emit:
+After every skill result or agent return — before any other output — emit:
 
 → PIPELINE: after=<token> | step=<N> | phase=<M/T> | stop=<yes:reason|no> | goto=<action>
 
@@ -141,8 +145,8 @@ Procedure:
 
 If no table row matches after + current condition: set goto=STOP:unmatched and surface to user. Do not improvise a transition.
 
-Constrained vocabulary for after= field (17 tokens):
-intake-complete, planner-returned, git-preflight-complete, create-working-branch-complete, worker-complete, phase-verification-passed, phase-verification-failed, checkpoint-commit-complete, version-bump-check, version-bump-coder-complete, validation, review-loop-controller-returned, review-loop-fix-complete, open-plan-pr-complete, watch-pr-feedback-returned, address-pr-feedback-complete, tool-error
+Constrained vocabulary for after= field (18 tokens):
+intake-complete, planner-returned, git-preflight-complete, create-working-branch-complete, worker-complete, phase-verification-passed, phase-verification-failed, checkpoint-commit-complete, version-bump-check, version-bump-coder-complete, validation, review-loop-controller-returned, review-loop-fix-complete, open-plan-pr-complete, classify-pr-feedback-returned, watch-pr-feedback-returned, address-pr-feedback-complete, tool-error
 
 ### Tool-call error recovery
 
