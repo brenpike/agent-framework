@@ -28,7 +28,9 @@
       "Bash(grep -n *)",
       "Bash(grep -rn *)",
       "Bash(grep -rE *)",
-      "Bash(cat > .agent-framework/*)"
+      "Bash(cat > .agent-framework/*)",
+      "Write(.agent-framework/review-loop/*)",
+      "Bash(mkdir -p .agent-framework/review-loop)"
     ]
   },
   "enabledPlugins": {
