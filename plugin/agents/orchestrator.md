@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: Coordinate planner, coder, and designer. Own execution schedule, file-conflict prevention, branch/worktree decisions, checkpoint commits, PR submission, versioning decisions, and external review-feedback routing.
-model: claude-sonnet-4-6
+model: claude-opus-4-6
 tools:
   - Read
   - Bash
