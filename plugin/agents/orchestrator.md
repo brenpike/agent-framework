@@ -70,7 +70,7 @@ Stop and surface to the user only when one of the following applies:
 
 ### State Transition Table
 
-After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 65.
+After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 69.
 
 Every row's Condition column must be mutually exclusive within its after= group; do not rely on row ordering for precedence.
 
@@ -120,27 +120,31 @@ Every row's Condition column must be mutually exclusive within its after= group;
 | 42 | review-loop-controller-returned | exit: break-fix/inject/user-input | STOP: surface |
 | 43 | review-loop-controller-returned | blocked: codex unavailable | step 14: open PR |
 | 44 | review-loop-controller-returned | blocked: non-codex | STOP: surface to user |
-| 45 | review-loop-fix-complete | — | validation (within review loop) |
-| 46 | open-plan-pr-complete | review requested | step 15: external review |
-| 47 | open-plan-pr-complete | no review requested | Final Report |
-| 48 | pr-skipped | user opted out of PR | Final Report |
-| 49 | classify-pr-feedback-returned | blocked | STOP: surface to user |
-| 50 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
-| 51 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply |
-| 52 | classify-pr-feedback-returned | incorrect-or-rejected, high-severity | STOP: awaiting user approval |
-| 53 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
-| 54 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
-| 55 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
-| 56 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
-| 57 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
-| 58 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
-| 59 | watch-pr-feedback-returned | PR merged/closed | Final Report |
-| 60 | address-pr-feedback-complete | more items remain | next item |
-| 61 | address-pr-feedback-complete | no more items | continue monitoring or Final Report |
-| 62 | tool-error | non-transient | STOP: report blocked |
-| 63 | tool-error | transient, first attempt | retry immediately |
-| 64 | tool-error | transient, retry failed | STOP: report blocked |
-| 65 | (no match) | — | STOP:unmatched — surface to user |
+| 45 | review-loop-fix-complete | Status: complete | validation (within review loop) |
+| 46 | review-loop-fix-complete | Status: blocked | STOP: surface blocker |
+| 47 | open-plan-pr-complete | Status: complete, review requested | step 15: external review |
+| 48 | open-plan-pr-complete | Status: complete, no review requested | Final Report |
+| 49 | open-plan-pr-complete | Status: blocked | STOP: surface blocker |
+| 50 | pr-skipped | user opted out of PR | Final Report |
+| 51 | classify-pr-feedback-returned | blocked | STOP: surface to user |
+| 52 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
+| 53 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply |
+| 54 | classify-pr-feedback-returned | incorrect-or-rejected, high-severity | STOP: awaiting user approval |
+| 55 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
+| 56 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
+| 57 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
+| 58 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
+| 59 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
+| 60 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
+| 61 | watch-pr-feedback-returned | PR merged/closed | Final Report |
+| 62 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
+| 63 | address-pr-feedback-complete | Status: complete, more items remain | next item |
+| 64 | address-pr-feedback-complete | Status: complete, no more items | continue monitoring or Final Report |
+| 65 | address-pr-feedback-complete | Status: blocked | STOP: surface blocker |
+| 66 | tool-error | non-transient | STOP: report blocked |
+| 67 | tool-error | transient, first attempt | retry immediately |
+| 68 | tool-error | transient, retry failed | STOP: report blocked |
+| 69 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Continuation Protocol
 
