@@ -16,6 +16,7 @@ allowed-tools:
   - Bash(grep *)
   - Bash(ls *)
   - Bash(cat *)
+  - Bash(mkdir -p *)
 shell: bash
 ---
 
