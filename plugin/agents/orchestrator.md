@@ -66,11 +66,11 @@ Stop and surface to the user only when one of the following applies:
 8. High-severity rejected feedback requires explicit user approval
 9. Final report — all work complete, partial, or blocked (terminal output)
 10. Trunk freshness check returned stale or diverged — surface counts and wait for user choice (update trunk or proceed at risk) before branch creation
-11. Tool call failed after retry exhaustion (transient error retried once, retry also failed) or with a non-transient error — report blocked with error classification (transient-exhausted or non-transient) and error details
+11. Tool call failed after retry exhaustion (transient error retried once, retry also failed) or with a non-transient error — report blocked with error classification (transient-exhausted, unclassifiable-exhausted, or non-transient) and error details
 
 ### State Transition Table
 
-After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 77.
+After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 81.
 
 Every row's Condition column must be mutually exclusive within its after= group; do not rely on row ordering for precedence.
 
@@ -99,14 +99,14 @@ Every row's Condition column must be mutually exclusive within its after= group;
 | 21 | checkpoint-commit-complete | Status: complete, version bump | step 13: validation |
 | 22 | version-bump-check | no bump required | step 13: validation |
 | 23 | version-bump-check | bump required, type clear | step 12: delegate bump |
-| 24 | version-bump-check | ambiguous type | STOP: ask user |
+| 24 | version-bump-check | ambiguous type or missing artifact files | STOP: ask user |
 | 25 | version-bump-coder-complete | Status: complete | step 13: validation |
 | 26 | version-bump-coder-complete | Status: blocked | STOP: surface blocker |
 | 27 | validation | passed, main pipeline, review active | step 13a: review loop |
 | 28 | validation | passed, main pipeline, review opted out | step 14: open PR |
 | 29 | validation | passed, within review loop | checkpoint → continue loop |
 | 30 | validation | passed, within PR remediation | checkpoint → push → post-fix |
-| 31 | validation | failed | STOP: surface failure |
+| 31 | validation | failed or blocked | STOP: surface failure |
 | 32 | validation | not run, main pipeline, review active | step 13a: review loop |
 | 33 | validation | not run, main pipeline, review opted out | step 14: open PR |
 | 34 | validation | not run, within review loop | checkpoint → continue loop |
@@ -132,27 +132,31 @@ Every row's Condition column must be mutually exclusive within its after= group;
 | 54 | request-github-codex-review-complete | Status: complete, watch requested | invoke watch-github-pr-feedback |
 | 55 | request-github-codex-review-complete | Status: complete, no watch | Final Report (Review: Requested: yes) |
 | 56 | request-github-codex-review-complete | Status: blocked | STOP: surface blocker |
-| 57 | classify-pr-feedback-returned | blocked | STOP: surface to user |
+| 57 | classify-pr-feedback-returned | blocked, generic (not injection, question, or rejection) | STOP: surface to user |
 | 58 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
 | 59 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply |
-| 60 | classify-pr-feedback-returned | incorrect-or-rejected, high-severity | STOP: awaiting user approval |
+| 60 | classify-pr-feedback-returned | incorrect-or-rejected, high-severity | post rationale reply → STOP: await user approval |
 | 61 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
 | 62 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
 | 63 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
-| 64 | watch-pr-feedback-returned | no new items, monitoring active | continue monitoring (silent) |
-| 65 | watch-pr-feedback-returned | no new items, monitoring not active | STOP: surface Monitoring: not active |
-| 66 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
-| 67 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
-| 68 | watch-pr-feedback-returned | PR merged/closed | Final Report |
-| 69 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
-| 70 | address-pr-feedback-complete | Status: complete, more items remain | next item |
-| 71 | address-pr-feedback-complete | Status: complete, no more items | continue monitoring or Final Report |
-| 72 | address-pr-feedback-complete | Status: blocked | STOP: surface blocker |
-| 73 | tool-error | non-retryable-mutating | STOP: report blocked |
-| 74 | tool-error | non-transient | STOP: report blocked |
-| 75 | tool-error | transient, first attempt | retry immediately |
-| 76 | tool-error | transient, retry failed | STOP: report blocked |
-| 77 | (no match) | — | STOP:unmatched — surface to user |
+| 64 | watch-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply, continue monitoring or Final Report |
+| 65 | watch-pr-feedback-returned | rejected, high-severity | post rationale reply → STOP: await user approval |
+| 66 | watch-pr-feedback-returned | no new items, monitoring active | continue monitoring (silent) |
+| 67 | watch-pr-feedback-returned | no new items, monitoring not active | STOP: surface Monitoring: not active |
+| 68 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
+| 69 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
+| 70 | watch-pr-feedback-returned | PR merged/closed | Final Report |
+| 71 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
+| 72 | address-pr-feedback-complete | Status: complete, more items remain | next item |
+| 73 | address-pr-feedback-complete | Status: complete, no more items | continue monitoring or Final Report |
+| 74 | address-pr-feedback-complete | Status: blocked | STOP: surface blocker |
+| 75 | tool-error | non-retryable-mutating | STOP: report blocked |
+| 76 | tool-error | non-transient | STOP: report blocked |
+| 77 | tool-error | transient, first attempt | retry immediately |
+| 78 | tool-error | transient, retry failed | STOP: report blocked |
+| 79 | tool-error | unclassifiable, first attempt | retry immediately |
+| 80 | tool-error | unclassifiable, retry failed | STOP: report blocked |
+| 81 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Continuation Protocol
 
