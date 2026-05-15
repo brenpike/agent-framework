@@ -72,6 +72,8 @@ Stop and surface to the user only when one of the following applies:
 
 After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 60.
 
+Every row's Condition column must be mutually exclusive within its after= group; do not rely on row ordering for precedence.
+
 | # | after= | Condition | GOTO |
 |---|---|---|---|
 | 1 | intake-complete | — | step 1: planner |
@@ -97,12 +99,12 @@ After every step-completion milestone (any event that produces an after= token f
 | 21 | version-bump-check | bump required, type clear | step 12: delegate bump |
 | 22 | version-bump-check | ambiguous type | STOP: ask user |
 | 23 | version-bump-coder-complete | — | step 13: validation |
-| 24 | validation | passed, main pipeline | step 13a: review loop |
+| 24 | validation | passed, main pipeline, review active | step 13a: review loop |
 | 25 | validation | passed, main pipeline, review opted out | step 14: open PR |
 | 26 | validation | passed, within review loop | checkpoint → continue loop |
 | 27 | validation | passed, within PR remediation | checkpoint → push → post-fix |
 | 28 | validation | failed | STOP: surface failure |
-| 29 | validation | not run, main pipeline | step 13a: review loop |
+| 29 | validation | not run, main pipeline, review active | step 13a: review loop |
 | 30 | validation | not run, main pipeline, review opted out | step 14: open PR |
 | 31 | validation | not run, within review loop | checkpoint → continue loop |
 | 32 | validation | not run, within PR remediation | checkpoint → push → post-fix |
