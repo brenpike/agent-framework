@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.6.1] - 2026-05-15
+
+### Fixed
+
+- **review-loop-controller**: self-detect claude-mem availability from settings files instead of relying on caller-provided `claude_mem` input — skill now reads `~/.claude/settings.json` and project-local `.claude/settings.json`; `claude_mem` input is now an optional override hint
+
 ## [1.6.0] - 2026-05-14
 
 ### Added
