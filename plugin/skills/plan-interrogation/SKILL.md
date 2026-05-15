@@ -29,11 +29,11 @@ Interview relentlessly about every aspect of the plan until shared understanding
 
 On invocation, discover project context in this priority order:
 
-1. **Read `CLAUDE.md` and `AGENT.md`** at the repo root if they exist — find pointers to other docs.
+1. **Read `CLAUDE.md`, `AGENTS.md`, and `AGENT.md`** at the repo root if they exist — find pointers to other docs.
 2. **Read `CONTEXT.md` or `CONTEXT-MAP.md`** at the repo root if they exist.
 3. **If `CONTEXT-MAP.md` exists** — multi-context repo; read the map to find the relevant context for the current topic.
 4. **Read existing ADRs** from `docs/adr/` if the directory exists.
-5. **Any paths explicitly referenced** in CLAUDE.md/AGENT.md.
+5. **Any paths explicitly referenced** in CLAUDE.md/AGENTS.md/AGENT.md.
 
 ---
 
