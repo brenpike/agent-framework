@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.6.0] - 2026-05-14
+
+### Added
+
+- **`plan-interrogation` skill: interactive plan interview against the project domain model.** User-invoked skill that intensely interviews the user about their plan — one question at a time — challenging it against the project's existing domain model (CONTEXT.md, ADRs), sharpening terminology, and updating or creating documentation as decisions crystallise.
+
 ## [1.5.3] - 2026-05-14
 
 ### Fixed
