@@ -70,7 +70,7 @@ Stop and surface to the user only when one of the following applies:
 
 ### State Transition Table
 
-After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 76.
+After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 77.
 
 Every row's Condition column must be mutually exclusive within its after= group; do not rely on row ordering for precedence.
 
@@ -148,10 +148,11 @@ Every row's Condition column must be mutually exclusive within its after= group;
 | 70 | address-pr-feedback-complete | Status: complete, more items remain | next item |
 | 71 | address-pr-feedback-complete | Status: complete, no more items | continue monitoring or Final Report |
 | 72 | address-pr-feedback-complete | Status: blocked | STOP: surface blocker |
-| 73 | tool-error | non-transient | STOP: report blocked |
-| 74 | tool-error | transient, first attempt | retry immediately |
-| 75 | tool-error | transient, retry failed | STOP: report blocked |
-| 76 | (no match) | — | STOP:unmatched — surface to user |
+| 73 | tool-error | non-retryable-mutating | STOP: report blocked |
+| 74 | tool-error | non-transient | STOP: report blocked |
+| 75 | tool-error | transient, first attempt | retry immediately |
+| 76 | tool-error | transient, retry failed | STOP: report blocked |
+| 77 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Continuation Protocol
 
