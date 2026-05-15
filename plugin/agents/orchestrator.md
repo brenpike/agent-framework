@@ -144,6 +144,8 @@ Note: `agent-framework:local-codex-review` is not in the orchestrator selection 
 
 Note: `agent-framework:tdd` is not in the orchestrator selection order — TDD implementation requests must be delegated to `agent-framework:coder` via the Agent tool. The coder invokes `agent-framework:tdd` directly.
 
+Note: `agent-framework:plan-interrogation` is not in the orchestrator selection order — it is an interactive interview skill invoked directly by users, not a workflow step the orchestrator dispatches.
+
 Full PR-feedback selection detail: `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
 
 ## Skill Inputs

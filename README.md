@@ -124,6 +124,7 @@ All skills are invoked using the namespaced form:
 | `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `agent-framework:review-loop-controller` |
 | `agent-framework:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
+| `agent-framework:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
 | `agent-framework:request-github-codex-review` | Request Codex review on an existing pushed PR |
 | `agent-framework:review-loop-controller` | Drive the pre-PR local Codex review loop (up to 10 iterations) with break-fix-break detection |
 | `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.agent-framework/` to `.gitignore` |
