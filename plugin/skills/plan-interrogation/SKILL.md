@@ -52,7 +52,12 @@ Most repos have a single context:
 
 If `CONTEXT-MAP.md` exists at the repo root, the repo has multiple contexts. Read the map to find where each lives and how they relate.
 
-Create files lazily — only when there is something to write. If no `CONTEXT.md` exists, create it when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
+Create files lazily — only when there is something to write. When the first term is resolved:
+
+- **If `CONTEXT-MAP.md` does NOT exist** — create `CONTEXT.md` at the repo root.
+- **If `CONTEXT-MAP.md` EXISTS** — do NOT create a root `CONTEXT.md`; instead read the map to identify the correct context for the current topic (or ask the user if ambiguous), then create or update that context's `CONTEXT.md` at the path the map specifies.
+
+If no `docs/adr/` exists, create it when the first ADR is needed.
 
 ---
 
