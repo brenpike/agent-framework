@@ -70,7 +70,7 @@ Stop and surface to the user only when one of the following applies:
 
 ### State Transition Table
 
-After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 74.
+After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 75.
 
 Every row's Condition column must be mutually exclusive within its after= group; do not rely on row ordering for precedence.
 
@@ -138,18 +138,19 @@ Every row's Condition column must be mutually exclusive within its after= group;
 | 60 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
 | 61 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
 | 62 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
-| 63 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
-| 64 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
-| 65 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
-| 66 | watch-pr-feedback-returned | PR merged/closed | Final Report |
-| 67 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
-| 68 | address-pr-feedback-complete | Status: complete, more items remain | next item |
-| 69 | address-pr-feedback-complete | Status: complete, no more items | continue monitoring or Final Report |
-| 70 | address-pr-feedback-complete | Status: blocked | STOP: surface blocker |
-| 71 | tool-error | non-transient | STOP: report blocked |
-| 72 | tool-error | transient, first attempt | retry immediately |
-| 73 | tool-error | transient, retry failed | STOP: report blocked |
-| 74 | (no match) | — | STOP:unmatched — surface to user |
+| 63 | watch-pr-feedback-returned | no new items, monitoring active | continue monitoring (silent) |
+| 64 | watch-pr-feedback-returned | no new items, monitoring not active | STOP: surface Monitoring: not active |
+| 65 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
+| 66 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
+| 67 | watch-pr-feedback-returned | PR merged/closed | Final Report |
+| 68 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
+| 69 | address-pr-feedback-complete | Status: complete, more items remain | next item |
+| 70 | address-pr-feedback-complete | Status: complete, no more items | continue monitoring or Final Report |
+| 71 | address-pr-feedback-complete | Status: blocked | STOP: surface blocker |
+| 72 | tool-error | non-transient | STOP: report blocked |
+| 73 | tool-error | transient, first attempt | retry immediately |
+| 74 | tool-error | transient, retry failed | STOP: report blocked |
+| 75 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Continuation Protocol
 
