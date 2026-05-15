@@ -102,12 +102,12 @@ Every row's Condition column must be mutually exclusive within its after= group;
 | 24 | version-bump-check | ambiguous type or missing artifact files | STOP: ask user |
 | 25 | version-bump-coder-complete | Status: complete | step 13: validation |
 | 26 | version-bump-coder-complete | Status: blocked | STOP: surface blocker |
-| 27 | validation | passed, main pipeline, review active | step 13a: review loop |
+| 27 | validation | passed, main pipeline (pre-review), review active | step 13a: review loop |
 | 28 | validation | passed, main pipeline, review opted out | step 14: open PR |
 | 29 | validation | passed, within review loop | checkpoint → continue loop |
 | 30 | validation | passed, within PR remediation | checkpoint → push → post-fix |
 | 31 | validation | failed or blocked | STOP: surface failure |
-| 32 | validation | not run, main pipeline, review active | step 13a: review loop |
+| 32 | validation | not run, main pipeline (pre-review), review active | step 13a: review loop |
 | 33 | validation | not run, main pipeline, review opted out | step 14: open PR |
 | 34 | validation | not run, within review loop | checkpoint → continue loop |
 | 35 | validation | not run, within PR remediation | checkpoint → push → post-fix |
