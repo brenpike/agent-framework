@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(git branch *)
   - Bash(git diff *)
   - Bash(git log *)
+  - Bash(git rev-parse *)
   - Agent
   - Skill
 shell: bash
@@ -76,7 +77,7 @@ For fix ledger schema, read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller
 
 ## Procedure
 
-1. **Detect claude-mem availability.** If `claude_mem` input was provided, use it and skip detection. Otherwise, self-detect: use `Read` to read `~/.claude/settings.json` and `.claude/settings.json` (project root = current working directory). If either file contains `"claude-mem@thedotmack": true` under `enabledPlugins`, resolve to `present`; otherwise resolve to `absent`. If a file is missing or unreadable, treat it as absent for that file. If the two files disagree, `present` wins (either having the key is sufficient).
+1. **Detect claude-mem availability.** If `claude_mem` input was provided, use it and skip detection. Otherwise, self-detect: run `git rev-parse --show-toplevel` via Bash to get the repo root; if the command fails (not in a git repo), fall back to the current working directory. Use `Read` to read `~/.claude/settings.json` and `<repo-root>/.claude/settings.json`. If either file contains `"claude-mem@thedotmack": true` under `enabledPlugins`, resolve to `present`; otherwise resolve to `absent`. If a file is missing or unreadable, treat it as absent for that file. If the two files disagree, `present` wins (either having the key is sufficient).
 
 2. **Validate inputs.** Confirm `base`, `working_branch`, `trunk` are provided. Return blocked with `Stage: skill selection` if any missing.
 
