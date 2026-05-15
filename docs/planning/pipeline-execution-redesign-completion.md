@@ -1,7 +1,7 @@
 # Pipeline Execution Redesign — Completion Handoff
 
 ## Status
-PR #87 opened to main. Branch: `refactor/orchestrator-pipeline-transition-table`. Version: 1.6.2 (PATCH bump from 1.6.1).
+PR #87 opened to main. Branch: `refactor/orchestrator-pipeline-transition-table`. Version: 1.6.3 (PATCH bump from 1.6.2, after rebase onto main where PR #86 claimed 1.6.2).
 
 ## Problem
 73% pipeline stop-failure rate in orchestrator. Prose-based continuation rules ("Proceed without stopping", "Pipeline Execution Mandate") compete against model's response-boundary behavioral prior. Prose cannot override structural tendencies — model stops between steps despite instructions not to.
@@ -27,7 +27,7 @@ Replace prose rules with three structural mechanisms:
 | D6 | Extract verbose procedures to separate doc | Reduces per-turn token load; orchestrator.md is re-injected every turn |
 | D7 | Keep tool-call error recovery as prose | Error recovery is branching logic poorly suited to flat table rows |
 | D8 | Skeleton references via `Per execution-algorithm-detail.md (Step N)` | Consistent pattern, easy to grep, loads only when needed |
-| D9 | Patch version bump (1.6.1 → 1.6.2) | Runtime behavior change; no new capability, no breaking change |
+| D9 | Patch version bump (1.6.2 → 1.6.3, rebased) | Runtime behavior change; original 1.6.2 claimed by PR #86 on main |
 | D10 | No changes to delegation templates | Templates are output format, not pipeline control flow |
 | D11 | No changes to Phase Verification | Verification is a checklist, not a pipeline transition |
 | D12 | No changes to Context Management | Context policy is independent of pipeline continuation |
@@ -41,7 +41,7 @@ Replace prose rules with three structural mechanisms:
 |---|---|---|---|
 | `plugin/governance/execution-algorithm-detail.md` | New | +40 | Extracted verbose procedures for Steps 0, 11, 13a, 15 |
 | `plugin/agents/orchestrator.md` | Modified | +140/-55 | State transition table, continuation protocol, skeleton algorithm |
-| `plugin/.claude-plugin/plugin.json` | Modified | +1/-1 | Version 1.6.1 → 1.6.2 |
+| `plugin/.claude-plugin/plugin.json` | Modified | +1/-1 | Version 1.6.2 → 1.6.3 |
 
 ## Commits (6 total)
 
@@ -108,4 +108,4 @@ Replace prose rules with three structural mechanisms:
 
 2. **Table maintenance**: Adding new skills or pipeline steps requires adding corresponding table rows. Missing rows hit row 55 (STOP:unmatched) — safe but requires manual intervention. Consider adding a table-completeness check to CI if table grows beyond ~70 rows.
 
-3. **Bugfix branch abandoned**: `bugfix/orchestrator-pipeline-continuation-reinforcement` branch (v1.6.2 on that branch) was never merged and is now superseded by this structural approach. That branch added prose reinforcement — the exact pattern this refactor replaces. Can be safely deleted.
+3. **Bugfix branch abandoned**: `bugfix/orchestrator-pipeline-continuation-reinforcement` branch (v1.6.2 on that branch) merged as PR #86 (v1.6.2) before this PR. Superseded by structural approach. That branch added prose reinforcement — the exact pattern this refactor replaces. Branch deleted after merge; prose additions overwritten by this refactor.
