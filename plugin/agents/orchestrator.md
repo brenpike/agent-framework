@@ -70,7 +70,7 @@ Stop and surface to the user only when one of the following applies:
 
 ### State Transition Table
 
-After every skill result or agent return, find the matching row and execute its GOTO. If no row matches, execute row 53.
+After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 55.
 
 | # | after= | Condition | GOTO |
 |---|---|---|---|
@@ -103,34 +103,36 @@ After every skill result or agent return, find the matching row and execute its 
 | 27 | validation | not run, main pipeline | step 13a: review loop |
 | 28 | validation | not run, within review loop | checkpoint → continue loop |
 | 29 | validation | not run, within PR remediation | checkpoint → push → post-fix |
-| 30 | review-loop-controller-returned | exit: clean, no fix commits | step 14: open PR |
-| 31 | review-loop-controller-returned | exit: clean, fix commits exist | step 11 (re-run) |
-| 32 | review-loop-controller-returned | exit: none (findings) | delegate fixes per routing |
-| 33 | review-loop-controller-returned | exit: max-iterations | STOP: surface choices |
-| 34 | review-loop-controller-returned | exit: break-fix/inject/user-input | STOP: surface |
-| 35 | review-loop-controller-returned | blocked: codex unavailable | step 14: open PR |
-| 36 | review-loop-fix-complete | — | validation (within review loop) |
-| 37 | open-plan-pr-complete | review requested | step 15: external review |
-| 38 | open-plan-pr-complete | no review requested | Final Report |
-| 39 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
-| 40 | classify-pr-feedback-returned | non-actionable or rejected | mark complete or post rejection reply |
-| 41 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
-| 42 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
-| 43 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
-| 44 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
-| 45 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
-| 46 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
-| 47 | watch-pr-feedback-returned | PR merged/closed | Final Report |
-| 48 | address-pr-feedback-complete | more items remain | next item |
-| 49 | address-pr-feedback-complete | no more items | continue monitoring or Final Report |
-| 50 | tool-error | non-transient | STOP: report blocked |
-| 51 | tool-error | transient, first attempt | retry immediately |
-| 52 | tool-error | transient, retry failed | STOP: report blocked |
-| 53 | (no match) | — | STOP:unmatched — surface to user |
+| 30 | validation | passed, post-review revalidation | step 14: open PR |
+| 31 | validation | not run, post-review revalidation | step 14: open PR |
+| 32 | review-loop-controller-returned | exit: clean, no fix commits | step 14: open PR |
+| 33 | review-loop-controller-returned | exit: clean, fix commits exist | step 11 (re-run) |
+| 34 | review-loop-controller-returned | exit: none (findings) | delegate fixes per routing |
+| 35 | review-loop-controller-returned | exit: max-iterations | STOP: surface choices |
+| 36 | review-loop-controller-returned | exit: break-fix/inject/user-input | STOP: surface |
+| 37 | review-loop-controller-returned | blocked: codex unavailable | step 14: open PR |
+| 38 | review-loop-fix-complete | — | validation (within review loop) |
+| 39 | open-plan-pr-complete | review requested | step 15: external review |
+| 40 | open-plan-pr-complete | no review requested | Final Report |
+| 41 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
+| 42 | classify-pr-feedback-returned | non-actionable or rejected | mark complete or post rejection reply |
+| 43 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
+| 44 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
+| 45 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
+| 46 | watch-pr-feedback-returned | no new items | continue monitoring (silent) |
+| 47 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
+| 48 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
+| 49 | watch-pr-feedback-returned | PR merged/closed | Final Report |
+| 50 | address-pr-feedback-complete | more items remain | next item |
+| 51 | address-pr-feedback-complete | no more items | continue monitoring or Final Report |
+| 52 | tool-error | non-transient | STOP: report blocked |
+| 53 | tool-error | transient, first attempt | retry immediately |
+| 54 | tool-error | transient, retry failed | STOP: report blocked |
+| 55 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Continuation Protocol
 
-After every skill result or agent return — before any other output — emit:
+After every step-completion milestone (any event that produces an after= token) — before any other output — emit:
 
 → PIPELINE: after=<token> | step=<N> | phase=<M/T> | stop=<yes:reason|no> | goto=<action>
 
