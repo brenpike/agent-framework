@@ -137,7 +137,7 @@ Optional:
    - `candidate_url`
    - `source_kind`
    - `classification`
-   - `severity`
+   - `severity_category`
    - `routing`
    - `rationale`
    - `thread_id`
