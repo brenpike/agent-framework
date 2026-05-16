@@ -8,7 +8,7 @@ This runbook is a load-bearing governance artifact referenced by hard enforcemen
 
 ## Trigger Condition
 
-Fires when: the reconstruction test at a major phase transition returns a binary fail -- the agent cannot reconstruct sufficient context to continue the task from the handoff artifact (`Step delta:` fields) and anchor references alone.
+Fires when: the reconstruction test at a major phase transition returns a binary fail -- the agent cannot reconstruct sufficient context to continue the task from the handoff artifact (report fields) and anchor references alone.
 
 ---
 
@@ -17,7 +17,7 @@ Fires when: the reconstruction test at a major phase transition returns a binary
 When the reconstruction test fails, the agent must:
 
 1. Pause delegation of the next phase. Do not proceed with a degraded context. **Do not store the candidate handoff** — the durable handoff file (`.agent-framework/handoffs/STEP-NNN.md` or claude-mem observation) is written only after the reconstruction test passes (per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Auto-Clear Procedure → Path A)), so the failed candidate must remain in memory.
-2. Identify which required handoff fields or anchor references are missing. Compare the held candidate handoff (Step delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) against the required observation fields defined in `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields).
+2. Identify which required handoff fields or anchor references are missing. Compare the held candidate report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Complete) against the required fields defined there.
 3. Request targeted rehydration of only the missing fields from the four rehydration sources below, in this priority order. These are retrieval-only sources — none of them re-invokes a worker:
    1. **Held candidate handoff and current worker report** — re-read the in-memory candidate handoff plus the worker's full phase-closing report; many "missing" fields are present in the worker output but were dropped during candidate-handoff extraction.
    2. **Externalized evidence by anchor** — for missing `EVD-NNN`, `DEC-NNN`, `RISK-NNN`, or `ASM-NNN` references, read the corresponding file from `.agent-framework/evidence/<ANCHOR-ID>.md` (per Progressive Evidence Loading) when the anchor body was externalized.
@@ -35,10 +35,10 @@ The agent must stop and surface the failure to the user when any of the followin
 
 - The four rehydration sources (Fallback Mode step 3 above) are exhausted in priority order AND a single re-delegation attempt (Fallback Mode step 4 — Recovery Action) also fails to produce the missing fields.
 - The missing field is a required scope or objective field (`Objective:`, `Scope in:`, `Scope out:`), not a minor evidence anchor (`Evidence refs:`, `Artifacts:`).
-- The handoff artifact is entirely absent (no step-delta was stored for the prior phase).
+- The handoff artifact is entirely absent (no report was stored for the prior phase).
 - The reconstruction test fails on a field that was explicitly marked as resolved in a prior phase's `Decisions:` list.
 
-When escalating, emit the Blocked Report Contract defined in `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Blocked Report Contract) with:
+When escalating, emit Worker Report — Blocked per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Blocked) with:
 
 ```text
 Status: blocked
@@ -60,7 +60,7 @@ Once the missing fields are supplied (by the user) or rehydrated (via mem-search
 1. Re-run the reconstruction test against the updated handoff artifact.
 2. If the reconstruction test passes, proceed to delegate the next phase with the repaired handoff.
 3. If the reconstruction test still fails after escalation and user input:
-   - Document the failure in the step-delta as an unresolved assumption: `ASM-NNN -- reconstruction failed for [field name]; proceeding with user-supplied context`.
+   - Document the failure in the report as an unresolved assumption: `ASM-NNN -- reconstruction failed for [field name]; proceeding with user-supplied context`.
    - Surface the unresolved assumption to the user before proceeding.
    - Proceed to the next phase only after the user acknowledges the gap.
 
@@ -68,4 +68,4 @@ Once the missing fields are supplied (by the user) or rehydrated (via mem-search
 
 ## Cross-References
 
-`${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields, Step Delta, Blocked Report Contract) | `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Phase Transition Requirements, claude-mem Detection)
+`${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Complete, Worker Report — Blocked) | `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Phase Transition Requirements, claude-mem Detection)

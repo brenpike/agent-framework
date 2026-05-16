@@ -117,7 +117,7 @@ When changes may affect versioned artifacts: identify artifacts named in `CLAUDE
 
 ## Plan Step IDs
 
-Every step gets `STEP-NNN` (zero-padded, restarts at 001 per plan). IDs appear in step headings, the orchestrator's delegation `Step:` field, and the worker's `Step delta:` section. Bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix).
+Every step gets `STEP-NNN` (zero-padded, restarts at 001 per plan). IDs appear in step headings, the orchestrator's delegation `step:` field, and the worker's report. Bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix).
 
 ## Retrieval Anchor Discipline
 
