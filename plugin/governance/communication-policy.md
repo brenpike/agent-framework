@@ -43,7 +43,7 @@ Use when any stage cannot proceed.
 
 ```yaml
 status: blocked
-stage: [planning|implementation|validation|git|versioning|review|monitoring]
+stage: [planning|implementation|validation|git|versioning|review|review remediation|monitoring|fetch|skill selection|post-fix|route|destructive-fix-gate]
 blocker: [one-line reason]
 retry: [not attempted|retried once|exhausted]
 impact: [what cannot proceed]

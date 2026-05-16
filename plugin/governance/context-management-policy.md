@@ -39,7 +39,7 @@ This table is the **single source of truth** for how each bypass code interacts 
 | Code | `step:` omitted? | Report type | `TASK-NNN` assigned? | Session fact key | `evidence:` key required? |
 |---|---|---|---|---|---|
 | `TRIVIAL_CHANGE` | yes | trivial | yes | `active-task` | optional (include when externalization triggered) |
-| `SINGLE_STEP_TASK` | yes | trivial | yes | `active-task` | optional (include when externalization triggered) |
+| `SINGLE_STEP_TASK` | yes | complete | yes | `active-task` | yes |
 | `NO_PRIOR_PHASE` | **no** — keeps `step: STEP-NNN` | complete | **no** | `active-step` | yes |
 | `USER_OVERRIDE` | only when user override omits `step:` | trivial when step omitted, complete otherwise | only when `step:` omitted | `active-task` when step omitted, otherwise `active-step` | yes when complete report required |
 
