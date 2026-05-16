@@ -15,8 +15,7 @@ Allowed specialist agents: `agent-framework:planner`, `agent-framework:coder`, `
 These 10 governance modules are always loaded for every workflow. No activation condition, user override, or workflow classification can suppress them:
 
 - `agent-system-policy.md`
-- `branching-pr-workflow.md`
-- `git-policy.md`
+- `branching-pr-workflow.md` — branching, commits, PRs, merge path, validation, trunk-based delivery, git workflow enforcement
 - `scope-policy.md`
 - `communication-policy.md`
 - `escalation-policy.md`
@@ -27,12 +26,11 @@ These 10 governance modules are always loaded for every workflow. No activation 
 
 ## Conditional Modules
 
-These 4 governance modules activate only when their condition is met. Fail-open: when uncertain, include.
+These 3 governance modules activate only when their condition is met. Fail-open: when uncertain, include.
 
 | Module | Activation Condition |
 |---|---|
 | `versioning.md` | Planner's file scope includes files matching the Bump Trigger list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (and not exclusively matching the "No bump is required by default" list), OR `CLAUDE.md` defines versioned artifacts |
-| `validation-policy.md` | Workflow includes a validation phase |
 | `pr-review-remediation-loop.md` | Workflow includes PR feedback or review remediation |
 | `monitoring-policy.md` | User request contains `watch`, `monitor`, `wait`, `poll`, or `loop` |
 

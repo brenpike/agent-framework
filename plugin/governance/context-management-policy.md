@@ -158,34 +158,23 @@ Non-trivial step completion (any step that does not qualify as `TRIVIAL_CHANGE` 
 
 ### Two-Tier Distinction
 
-**Durable memory** — survives phase boundaries; must be preserved across context resets:
-- Accepted requirements, constraints, and decisions (tagged `DEC-NNN` per Retrieval Anchors)
-- Handoff/report artifacts
-- Session Fact Cache entries (see `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache))
-- Step-delta observations stored via claude-mem or `.agent-framework/handoffs/`
+**Durable memory** — survives phase boundaries; preserved across context resets:
+- Accepted decisions (`DEC-NNN`), handoff/report artifacts, Session Fact Cache entries, step-delta observations (claude-mem or `.agent-framework/handoffs/`)
 
-**Ephemeral memory** — transient; discarded at phase boundary:
-- Scratch analysis and discarded option evaluations
-- Transient tool output not promoted to artifacts
-- Current-phase working notes not included in the handoff artifact
+**Ephemeral memory** — discarded at phase boundary:
+- Scratch analysis, discarded evaluations, transient tool output not promoted, working notes not in the handoff
 
-### Promotion Rules
+### Promotion and Purge
 
-Ephemeral content may be promoted to durable only when it carries:
-- An evidence link (commit SHA, file path, test output reference), OR
-- A decision ID (`DEC-NNN` per Retrieval Anchors)
+Ephemeral content promotes to durable only when it carries an evidence link (SHA, path, test output ref) or a decision ID (`DEC-NNN`).
 
-### Purge Semantics
-
-"Purge ephemeral memory" in Claude Code means: full context clear followed by selective rehydration of durable artifacts only. It is not selective removal within a running session (Claude Code context is append-only within a session).
-
-Ephemeral purge is tightly coupled to the auto-clear trigger (see Budget Policy — Auto-Clear Procedure). The Memory Policy defines *what* to keep; the Budget Policy defines *when* the purge executes.
+"Purge ephemeral memory" = full context clear + selective rehydration of durable artifacts only. Claude Code context is append-only within a session; purge executes at auto-clear (see Budget Policy — Auto-Clear Procedure).
 
 ### claude-mem-Absent Fallback
 
-- Durable = handoff/report artifacts + Session Fact Cache extensions
-- Ephemeral = current-phase scratch sections + transient tool output not promoted
-- Purge = clear ephemeral sections at phase boundary; retain durable artifacts
+- Durable = handoff/report artifacts + Session Fact Cache
+- Ephemeral = current-phase scratch + unpromoted tool output
+- Purge = clear ephemeral at phase boundary; retain durable
 
 ---
 
