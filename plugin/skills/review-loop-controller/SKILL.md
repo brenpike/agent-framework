@@ -171,6 +171,22 @@ This is a pipeline skill. Per `${CLAUDE_PLUGIN_ROOT}/governance/communication-po
 - Delegate to `agent-framework:planner`, `agent-framework:coder`, or `agent-framework:designer`. Return routing recommendations in the iteration result; the orchestrator owns fix delegation.
 - Apply fixes to code. The controller is review-only per iteration; fix application is the orchestrator's responsibility.
 
+## Per-Iteration Result Contract
+
+The step 17 stdout YAML includes the following fields per finding:
+
+```yaml
+findings:
+  - id: <finding_id>
+    classification: <classification>
+    routing: <coder | designer | planner | none>
+    severity: <severity_category>
+    file: <file_path>
+    title: <finding_title>
+```
+
+Full finding details (`body`, `recommendation`, `line_start`, `line_end`) are available in the fix ledger. The orchestrator reads the ledger by finding `id` before delegating fixes.
+
 ## Routing Rules
 
 Set `routing` per classification:
