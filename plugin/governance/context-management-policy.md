@@ -159,7 +159,7 @@ Non-trivial step completion (any step that does not qualify as `TRIVIAL_CHANGE` 
 ### Two-Tier Distinction
 
 **Durable memory** — survives phase boundaries; preserved across context resets:
-- Accepted decisions (`DEC-NNN`), handoff/report artifacts, Session Fact Cache entries, step-delta observations (claude-mem or `.agent-framework/handoffs/`)
+- Accepted requirements, constraints, and decisions (`DEC-NNN`), handoff/report artifacts, Session Fact Cache entries, step-delta observations (claude-mem or `.agent-framework/handoffs/`)
 
 **Ephemeral memory** — discarded at phase boundary:
 - Scratch analysis, discarded evaluations, transient tool output not promoted, working notes not in the handoff
