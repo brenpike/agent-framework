@@ -7,7 +7,7 @@
   "consumers": [
     {
       "file": "plugin/agents/orchestrator.md",
-      "pattern": "Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions"
+      "pattern": "Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Validation procedure)"
     },
     {
       "file": "plugin/agents/coder.md",

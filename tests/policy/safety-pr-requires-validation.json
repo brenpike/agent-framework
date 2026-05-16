@@ -7,7 +7,7 @@
   "consumers": [
     {
       "file": "plugin/agents/orchestrator.md",
-      "pattern": "open a PR only after completion, validation, and versioning gates pass"
+      "pattern": "open a PR after completion, validation, and versioning gates pass"
     },
     {
       "file": "plugin/skills/open-plan-pr/SKILL.md",

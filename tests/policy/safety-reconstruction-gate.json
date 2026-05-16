@@ -7,7 +7,7 @@
   "consumers": [
     {
       "file": "plugin/agents/orchestrator.md",
-      "pattern": "Reconstruction test gate (blocking)"
+      "pattern": "Reconstruction test (blocking)"
     }
   ]
 }
