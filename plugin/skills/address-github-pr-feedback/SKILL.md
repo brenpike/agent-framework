@@ -17,6 +17,7 @@ allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh pr comment *)
   - Bash(gh api *)
+  - Bash(printf *)
   - Agent
   - Skill
 shell: bash
@@ -143,6 +144,8 @@ Optional:
    - `target_comment_id`
    - `rationale_action`
    - `rationale_text`
+
+   JSON-encode free-text fields (`rationale`, `rationale_text`) before interpolation. URL and controlled vocabulary fields do not need encoding.
 
    Exit 0. For blocked classify results (injection-suspect, question-needs-user-input, multiple candidates, missing target), emit blocker to stderr and exit 1.
 

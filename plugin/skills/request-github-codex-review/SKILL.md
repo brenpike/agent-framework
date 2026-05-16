@@ -4,6 +4,7 @@ description: Request Codex review on the current GitHub pull request.
 allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh pr comment *)
+  - Bash(printf *)
 shell: bash
 ---
 

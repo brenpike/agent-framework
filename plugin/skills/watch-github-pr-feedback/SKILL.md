@@ -9,6 +9,7 @@ allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)
   - Bash(touch /tmp/af_watch_stop_*)
+  - Bash(printf *)
   - Monitor
   - Agent
   - Skill
@@ -133,7 +134,7 @@ Optional:
 
    Do NOT invoke `agent-framework:address-github-pr-feedback`. The orchestrator receives this skill's output and drives the full two-mode remediation workflow: delegates fix to the recommended framework agent, checkpoints, pushes, then invokes `agent-framework:address-github-pr-feedback` with `mode: post-fix`.
 
-   **Final Bash tool call** (when feedback items are ready to return): emit classified items as YAML to stdout via printf. Include per-item: `candidate_url`, `source_kind`, `classification`, `severity`, `routing`, `thread_id`, `target_comment_id`. Exit 0.
+   **Final Bash tool call** (when feedback items are ready to return): emit classified items as YAML to stdout via printf. Include per-item: `candidate_url`, `source_kind`, `classification`, `severity`, `routing`, `thread_id`, `target_comment_id`. JSON-encode any free-text fields (`rationale`) before interpolation. URL and controlled vocabulary fields do not need encoding. Exit 0.
 9. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, the Monitor self-exits (the script calls `exit 0` on `STATE=MERGED` or `STATE=CLOSED`, terminating the background process). Final Bash tool call for terminal states: `printf 'stopped_because: %s\npr_state: %s' "$reason" "$state"; exit 0`. Do not continue polling a terminal resource.
 
 ## Silence Discipline

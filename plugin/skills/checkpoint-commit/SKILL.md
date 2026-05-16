@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(git commit *)
   - Bash(git rev-parse *)
   - Bash(git log *)
+  - Bash(printf *)
 shell: bash
 ---
 

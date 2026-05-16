@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(git checkout *)
   - Bash(git switch *)
   - Bash(git fetch *)
+  - Bash(printf *)
 shell: bash
 ---
 

@@ -11,6 +11,7 @@ allowed-tools:
   - Bash(git push *)
   - Bash(gh pr create *)
   - Bash(gh pr view *)
+  - Bash(printf *)
 shell: bash
 ---
 
