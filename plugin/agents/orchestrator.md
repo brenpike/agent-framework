@@ -134,7 +134,7 @@ Every row's Condition column must be mutually exclusive within its after= group;
 | 56 | request-github-codex-review-complete | Status: blocked | STOP: surface blocker |
 | 57 | classify-pr-feedback-returned | blocked, generic (not injection, question, or rejection) | STOP: surface to user |
 | 58 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
-| 59 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply |
+| 59 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply → Final Report |
 | 60 | classify-pr-feedback-returned | incorrect-or-rejected, high-severity | post rationale reply → STOP: await user approval |
 | 61 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
 | 62 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
