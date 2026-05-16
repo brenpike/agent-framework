@@ -154,10 +154,11 @@ Optional:
    printf 'items: []\nmonitoring: %s\n' "$monitoring_state"
    ```
 
-   Where `$monitoring_state` is `active` (Monitor running, no new items this poll) or `not_active` (Monitor pre-flight failed or startup error — include `reason` field). For pre-flight failure, append a reason field:
+   Where `$monitoring_state` is `active` (Monitor running, no new items this poll) or `not_active` (Monitor pre-flight failed or startup error — include `reason` field). For pre-flight failure, JSON-encode `failure_reason` before interpolation and append a reason field:
 
    ```bash
-   printf 'items: []\nmonitoring: not_active\nreason: %s\n' "$failure_reason"
+   failure_reason_json=$(printf '%s' "$failure_reason" | jq -Rs .)
+   printf 'items: []\nmonitoring: not_active\nreason: %s\n' "$failure_reason_json"
    ```
 
    Exit 0. The orchestrator matches STT rows 70/71 based on the `monitoring` value.
