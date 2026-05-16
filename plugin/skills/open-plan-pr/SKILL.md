@@ -63,7 +63,13 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
      - on **auth / read-only / protected branch / hook-policy** failure: record warning and continue. `gh pr create` may route to a fork or alternate remote. Treat as auth/read-only/protected/hook-policy when stderr contains any of: `Permission denied`, `remote: Permission`, `protected branch`, `403`, `401`, `[remote rejected]`, `remote rejected`, `pre-receive hook`, `update hook`, `push declined`. Treat as non-fast-forward only when stderr contains `non-fast-forward` OR `(fetch first)`. Bare `rejected` is not a non-fast-forward marker on its own (`[remote rejected]` is server-side and is not resolved by force-with-lease).
    - else (no upstream, no `push_remote`): defer to `gh pr create` in step 7. It prompts for push target and can fork the base repo.
 7. Run `gh pr create --base <base> ...` with title, summary, validation notes, version/release notes, and unresolved issues. Do not pass `--head` — `--head` makes `gh` skip its push/fork fallback, which defeats step 6's fork-based and unpushed-branch handling. `gh pr create` uses the current branch as head by default; confirm step 1 already verified current branch matches the intended `head`.
-8. Final Bash tool call: `gh pr view <pr> --json url,headRefOid`. Verify headRefOid matches local HEAD from step 5. If mismatch, emit `printf 'blocker: PR head SHA mismatch — expected %s got %s' "$local_sha" "$pr_sha" >&2; exit 1`. On success, the JSON output (url + headRefOid) is the routing data.
+8. **Final Bash tool call.** Verify PR head SHA matches local HEAD in a single compound command:
+
+   ```bash
+   pr_json=$(gh pr view <pr> --json url,headRefOid) && pr_sha=$(echo "$pr_json" | jq -r .headRefOid) && if [ "$local_sha" != "$pr_sha" ]; then printf 'blocker: PR head SHA mismatch — expected %s got %s' "$local_sha" "$pr_sha" >&2; exit 1; fi && echo "$pr_json"
+   ```
+
+   Where `$local_sha` is the value captured in step 5. On success (SHA matches), the JSON output (`url` + `headRefOid`) is the routing data. On mismatch, exits 1 with blocker in stderr.
 
 ## Silence Discipline
 

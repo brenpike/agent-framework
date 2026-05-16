@@ -131,7 +131,7 @@ For fix ledger schema, read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller
 
     Include per-finding: `id`, `classification`, `routing`, `severity`, `file`, `title`. Omit `body` and `recommendation` from stdout (orchestrator reads ledger for full detail if needed). JSON-encode all dynamic values from Codex findings (`title`) before interpolation. Controlled vocabulary fields (`exit_reason`, `classification`, `routing`, `severity`) do not need encoding.
 
-    Exit 0 when `exit_reason` is `none` or `clean`. Exit 1 for all other exit reasons (max-iterations-reached, break-fix-break, user-input-required, injection-suspect, blocked).
+    Exit 0 for all recognized exit_reasons (`none`, `clean`, `max-iterations-reached`, `break-fix-break`, `user-input-required`, `injection-suspect`) — include `exit_reason` in stdout YAML so the orchestrator can match the correct STT row. Exit 1 only for unrecoverable blockers (codex-plugin-cc not available, missing required inputs, unsafe git state) — emit blocker to stderr.
 
 ## Exit Conditions
 
