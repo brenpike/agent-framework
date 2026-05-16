@@ -178,8 +178,9 @@ Field rules:
 Procedure:
 1. Identify what just returned → set after
 2. Find matching row in State Transition Table
-3. If GOTO is "STOP: ...": set stop=yes, emit line, execute stop action
-4. If GOTO is a step/action: set stop=no, emit line, execute GOTO immediately
+3. If the matched row's GOTO contains `(silent)` and does not begin with `STOP`: execute the GOTO action immediately without emitting the `→ PIPELINE:` line. The transition is still governed by the table — only the user-facing emission is suppressed.
+4. If GOTO is "STOP: ...": set stop=yes, emit line, execute stop action
+5. If GOTO is a step/action: set stop=no, emit line, execute GOTO immediately
 
 If no table row matches after + current condition: set goto=STOP:unmatched and surface to user. Do not improvise a transition.
 
