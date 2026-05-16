@@ -309,11 +309,11 @@ Field rules:
 - `step`/`bypass`: per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix) — step required unless delegation carries a Step-omitting code; NO_PRIOR_PHASE is non-Step-omitting.
 - `anchor_reservation`: required for parallel phases and first sequential phase of multi-phase plan; omit for subsequent sequential phases.
 - `memory_context`: include when claude-mem searched; `none` when search returned no results; omit when absent or not searched.
-- `session_facts`: optional first delegation, mandatory after trunk/validation resolved; `task_type` always mandatory; `active_task` mandatory when step omitted.
+- `session_facts`: optional first delegation, mandatory after trunk/validation resolved; `task-type` always mandatory; `active-task` mandatory when step omitted.
 
 ### Session Facts Protocol
 
-Accumulate across phases. Include only fields the subagent needs. Full values only — never sentinels or placeholders. `task_type` always included once classified. `claude_mem` included once resolved at intake.
+Accumulate across phases. Include only fields the subagent needs. Full values only — never sentinels or placeholders. `task-type` always included once classified. `claude-mem` included once resolved at intake.
 
 For **version bump** and **review remediation** delegations: add variant fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Delegation Template — Variant fields).
 

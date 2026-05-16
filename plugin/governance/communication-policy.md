@@ -22,7 +22,7 @@ scope_out: ["*"]
 decisions:
   DEC-001: [decision and rationale]
 risks:
-  RISK-001: [description]:[low|medium|high]
+  RISK-001: "[description] (low|medium|high)"
 assumptions:
   ASM-001: [assumption]
 evidence:
@@ -89,9 +89,9 @@ memory_context: [results | none]
 session_facts:
   trunk: main
   validation: "jq . plugin/.claude-plugin/plugin.json > /dev/null"
-  task_type: refactor
-  claude_mem: present
-  active_step: STEP-001
+  task-type: refactor
+  claude-mem: present
+  active-step: STEP-001
 ```
 
 Variant fields — include inline when the delegation type requires them:

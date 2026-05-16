@@ -58,7 +58,7 @@
         "Blocker message indicates no open PR found on the branch",
         "Does NOT proceed to fetch review comments",
         "Does NOT route to any worker",
-        "Output uses the Blocked Report Contract format"
+        "Output uses the Worker Report — Blocked format"
       ]
     },
     {
