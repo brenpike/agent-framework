@@ -50,26 +50,9 @@ Own:
 
 ## Continuous Execution Rule
 
-**DEFAULT BEHAVIOR: After every tool call, skill result, or agent return — immediately execute the next Execution Algorithm step in the same response. Stopping requires an explicit Stop Condition match.**
-
 When a tool, skill, or agent call returns a non-blocking result, proceed immediately to the next action in the Execution Algorithm. Do not emit an intermediate user-facing status message, narrative summary, or progress update between steps.
 
-### Proceed without stopping
-
-Do NOT emit an intermediate user-facing message for any of the following — immediately take the next action:
-
-- Phase verification passed → immediately run the phase-close sequence (extract step delta, store handoff, checkpoint commit, context clear and rehydrate per Path A); then delegate next phase
-- Skill returned non-blocking result → immediately act on the result **in the same response** (do not end the response at a skill result; the next Execution Algorithm step must begin in the same response)
-- Review loop iteration returned findings with `Exit-reason: none` → immediately delegate fixes
-- `checkpoint-commit` complete → immediately continue to next action **in the same response** (do not end the response at a checkpoint result; the next Execution Algorithm step must begin in the same response)
-- `classify` returned actionable routing → immediately delegate fix
-- Worker report received with `Status: complete` → immediately run phase verification then proceed
-- Version bump delegation complete → immediately proceed to validation
-- `watch-github-pr-feedback` returned feedback items → immediately begin remediation cycle
-- `watch-github-pr-feedback` Monitor poll returned no new actionable items (all detected items already in session ledger as seen non-actionable, or skill returned `Feedback: - None`) → do not emit any user-facing message; silently continue monitoring
-- Read-only/idempotent tool call (Read, Bash read-only commands such as `git status`/`git log`/`git diff`) failed with a transient error per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure) → retry once immediately (no user-facing message before retry)
-
-### Exceptions — Stop conditions (the ONLY reasons to stop)
+### Stop conditions (emit a user-facing message and wait)
 
 Stop and surface to the user only when one of the following applies:
 
@@ -83,31 +66,126 @@ Stop and surface to the user only when one of the following applies:
 8. High-severity rejected feedback requires explicit user approval
 9. Final report — all work complete, partial, or blocked (terminal output)
 10. Trunk freshness check returned stale or diverged — surface counts and wait for user choice (update trunk or proceed at risk) before branch creation
-11. Tool call failed after retry exhaustion (transient error retried once, retry also failed) or with a non-transient error — report blocked with error classification (transient-exhausted or non-transient) and error details
+11. Tool call failed after retry exhaustion (transient error retried once, retry also failed) or with a non-transient error — report blocked with error classification (transient-exhausted, unclassifiable-exhausted, or non-transient) and error details
 
-### Pipeline Execution Mandate
+### State Transition Table
 
-The Execution Algorithm is a non-stoppable sequential pipeline. All numbered steps execute in order within a single uninterrupted flow. After any step completes — including steps that end with a skill invocation, agent delegation, or tool call — proceed immediately to the next step **in the same response**. Do not end a response at a step boundary.
+After every step-completion milestone (any event that produces an after= token from the constrained vocabulary below), find the matching row and execute its GOTO. If no row matches, execute row 85.
 
-**Conditional steps** (e.g., step 12 — version bump delegation, step 13a — pre-PR review loop, step 14 — PR opening) evaluate their skip condition inline. The result is either execute or skip — never stop. A step whose skip condition is met is bypassed immediately; the next step begins in the same response. **Exception — step 11 (version bump detection):** step 11 skips inline when no bump is required, but retains its three documented Exceptions — Stop conditions (bump type matching multiple rows or no row, or missing artifact files per `CLAUDE.md`) — those cases still stop the pipeline and surface to the user per the Exceptions — Stop conditions list above.
+Every row's Condition column must be mutually exclusive within its after= group; do not rely on row ordering for precedence.
 
-**The only permitted interruptions** between steps are the Exceptions — Stop conditions listed above. If no Stop Condition applies, the pipeline continues without waiting for user input.
+| # | after= | Condition | GOTO |
+|---|---|---|---|
+| 1 | intake-complete | TFP does not apply | step 1: planner |
+| 2 | intake-complete | TFP applies | step 4: delivery shape |
+| 3 | planner-returned | no open questions | step 4: delivery shape |
+| 4 | planner-returned | open questions | STOP: surface questions |
+| 5 | planner-returned | error/truncated | error recovery |
+| 6 | git-preflight-complete | trunk fresh | step 6: create branch |
+| 7 | git-preflight-complete | trunk stale/diverged | STOP: surface to user |
+| 8 | git-preflight-complete | trunk freshness skipped | step 6: create branch |
+| 9 | create-working-branch-complete | Status: complete | step 7: convert plan to phases |
+| 10 | create-working-branch-complete | Status: blocked | STOP: surface blocker |
+| 11 | worker-complete | Status: complete | phase verification |
+| 12 | worker-complete | Status: blocked | STOP: surface blocker |
+| 13 | phase-verification-passed | more phases remain | Path A (checkpoint-commit → clear → rehydrate → next phase) |
+| 14 | phase-verification-passed | last phase | Path A (checkpoint-commit → clear → rehydrate → step 11) |
+| 15 | phase-verification-failed | recoverable, first attempt | re-delegate phase |
+| 16 | phase-verification-failed | unrecoverable or repeated | STOP: escalate to user |
+| 17 | checkpoint-commit-complete | Status: blocked | STOP: surface blocker |
+| 18 | checkpoint-commit-complete | Status: complete, more phases remain | Path A resume: clear → rehydrate → next phase delegation |
+| 19 | checkpoint-commit-complete | Status: complete, last phase done | Path A resume: clear → rehydrate → step 11: version bump check |
+| 20 | checkpoint-commit-complete | Status: complete, within review loop | re-invoke review-loop-controller |
+| 21 | checkpoint-commit-complete | Status: complete, within PR remediation | push → post-fix |
+| 22 | checkpoint-commit-complete | Status: complete, version bump, review active | step 13a: review loop |
+| 23 | checkpoint-commit-complete | Status: complete, version bump, review opted out | step 14: open PR |
+| 24 | version-bump-check | no bump required | step 13: validation |
+| 25 | version-bump-check | bump required, type clear | step 12: delegate bump |
+| 26 | version-bump-check | ambiguous type or missing artifact files | STOP: ask user |
+| 27 | version-bump-coder-complete | Status: complete | step 13: validation |
+| 28 | version-bump-coder-complete | Status: blocked | STOP: surface blocker |
+| 29 | validation | passed, version bump | checkpoint-commit |
+| 30 | validation | not run, version bump | checkpoint-commit |
+| 31 | validation | passed, main pipeline (pre-review), review active | step 13a: review loop |
+| 32 | validation | passed, main pipeline, review opted out | step 14: open PR |
+| 33 | validation | passed, within review loop | checkpoint → continue loop |
+| 34 | validation | passed, within PR remediation | checkpoint → push → post-fix |
+| 35 | validation | failed or blocked | STOP: surface failure |
+| 36 | validation | not run, main pipeline (pre-review), review active | step 13a: review loop |
+| 37 | validation | not run, main pipeline, review opted out | step 14: open PR |
+| 38 | validation | not run, within review loop | checkpoint → continue loop |
+| 39 | validation | not run, within PR remediation | checkpoint → push → post-fix |
+| 40 | validation | passed, post-review revalidation | step 14: open PR |
+| 41 | validation | not run, post-review revalidation | step 14: open PR |
+| 42 | review-loop-controller-returned | exit: clean, no fix commits | step 14: open PR |
+| 43 | review-loop-controller-returned | exit: clean, fix commits exist | step 11 (re-run) |
+| 44 | review-loop-controller-returned | exit: none (findings) | delegate fixes per routing |
+| 45 | review-loop-controller-returned | exit: max-iterations | STOP: surface choices |
+| 46 | review-loop-controller-returned | exit: break-fix/inject/user-input | STOP: surface |
+| 47 | review-loop-controller-returned | blocked: codex unavailable | step 14: open PR |
+| 48 | review-loop-controller-returned | blocked: non-codex | STOP: surface to user |
+| 49 | review-loop-fix-complete | Status: complete, more review-loop fixes remain | delegate next fix per routing |
+| 50 | review-loop-fix-complete | Status: complete, all fixes applied | validation (within review loop) |
+| 51 | review-loop-fix-complete | Status: blocked | STOP: surface blocker |
+| 52 | pr-remediation-fix-complete | Status: complete | validation (within PR remediation) |
+| 53 | pr-remediation-fix-complete | Status: blocked | STOP: surface blocker |
+| 54 | open-plan-pr-complete | Status: complete, review requested | step 15: external review |
+| 55 | open-plan-pr-complete | Status: complete, no review requested | Final Report |
+| 56 | open-plan-pr-complete | Status: blocked | STOP: surface blocker |
+| 57 | pr-skipped | user opted out of PR | Final Report |
+| 58 | request-github-codex-review-complete | Status: complete, watch requested | invoke watch-github-pr-feedback |
+| 59 | request-github-codex-review-complete | Status: complete, no watch | Final Report (Review: Requested: yes) |
+| 60 | request-github-codex-review-complete | Status: blocked | STOP: surface blocker |
+| 61 | classify-pr-feedback-returned | blocked, generic (not injection, question, or rejection) | STOP: surface to user |
+| 62 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
+| 63 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply → Final Report |
+| 64 | classify-pr-feedback-returned | incorrect-or-rejected, high-severity | post rationale reply → STOP: await user approval |
+| 65 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
+| 66 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
+| 67 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
+| 68 | watch-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply, continue monitoring or Final Report |
+| 69 | watch-pr-feedback-returned | rejected, high-severity | post rationale reply → STOP: await user approval |
+| 70 | watch-pr-feedback-returned | no new items, monitoring active | continue monitoring (silent) |
+| 71 | watch-pr-feedback-returned | no new items, monitoring not active | STOP: surface Monitoring: not active |
+| 72 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
+| 73 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
+| 74 | watch-pr-feedback-returned | PR merged/closed | Final Report |
+| 75 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
+| 76 | address-pr-feedback-complete | Status: complete, more items remain | next item |
+| 77 | address-pr-feedback-complete | Status: complete, no more items | continue monitoring or Final Report |
+| 78 | address-pr-feedback-complete | Status: blocked | STOP: surface blocker |
+| 79 | tool-error | non-retryable-mutating | STOP: report blocked |
+| 80 | tool-error | non-transient | STOP: report blocked |
+| 81 | tool-error | transient, first attempt | retry immediately |
+| 82 | tool-error | transient, retry failed | STOP: report blocked |
+| 83 | tool-error | unclassifiable, first attempt | retry immediately |
+| 84 | tool-error | unclassifiable, retry failed | STOP: report blocked |
+| 85 | (no match) | — | STOP:unmatched — surface to user |
 
-### Anti-patterns (response boundary violations)
+### Continuation Protocol
 
-```text
-WRONG: Skill returns → emit status text to user → wait for input
-RIGHT: Skill returns → execute next Execution Algorithm step
+After every step-completion milestone (any event that produces an after= token) — before any other output — emit:
 
-WRONG: checkpoint-commit completes → end response
-RIGHT: checkpoint-commit completes → proceed to next phase/step in same response
+→ PIPELINE: after=<token> | step=<N> | phase=<M/T> | stop=<yes:reason|no> | goto=<action>
 
-WRONG: Worker returns Status: complete → emit summary → wait
-RIGHT: Worker returns Status: complete → run phase verification → proceed
+Field rules:
+- after: use constrained vocabulary from State Transition Table "after=" column
+- step: current Execution Algorithm step number (e.g., 10, 13a)
+- phase: current phase / total phases (e.g., 1/2). Use 0/0 for pre-phase steps (0-6) and post-phase steps (11+)
+- stop: "no" if no Stop Condition matches; "yes:<condition #>" if one matches
+- goto: the GOTO value from the matching State Transition Table row
 
-WRONG: create-working-branch returns → report branch name to user → wait
-RIGHT: create-working-branch returns → proceed to step 7 (convert plan to phases)
-```
+Procedure:
+1. Identify what just returned → set after
+2. Find matching row in State Transition Table
+3. If the matched row's GOTO contains `(silent)` and does not begin with `STOP`: execute the GOTO action immediately without emitting the `→ PIPELINE:` line. The transition is still governed by the table — only the user-facing emission is suppressed.
+4. If GOTO is "STOP: ...": set stop=yes, emit line, execute stop action
+5. If GOTO is a step/action: set stop=no, emit line, execute GOTO immediately
+
+If no table row matches after + current condition: set goto=STOP:unmatched and surface to user. Do not improvise a transition.
+
+Constrained vocabulary for after= field (21 tokens):
+intake-complete, planner-returned, git-preflight-complete, create-working-branch-complete, worker-complete, phase-verification-passed, phase-verification-failed, checkpoint-commit-complete, version-bump-check, version-bump-coder-complete, validation, review-loop-controller-returned, review-loop-fix-complete, pr-remediation-fix-complete, open-plan-pr-complete, pr-skipped, request-github-codex-review-complete, classify-pr-feedback-returned, watch-pr-feedback-returned, address-pr-feedback-complete, tool-error
 
 ### Tool-call error recovery
 
@@ -138,8 +216,6 @@ A tool-call error is retryable when the error matches the transient failure defi
 ## Skill Routing
 
 Invoke skills on demand. Use the narrowest matching skill.
-
-**Every skill invocation is a pipeline-internal step. After a skill returns a non-blocking result, immediately execute the next action in the same response — do not emit a user-facing message or end the response.**
 
 - `agent-framework:create-working-branch`: before implementation, create/confirm the compliant working branch.
 - `agent-framework:checkpoint-commit`: commit a completed phase, milestone, version bump, or review-remediation fix.
@@ -248,46 +324,23 @@ If Monitor returns a non-zero exit, errors during startup, or returns a parser f
 
 ## Execution Algorithm
 
-0. **Intake (task-type classification and claude-mem detection).** Before planner delegation or trivial fast path routing, perform the following intake sub-steps:
-   - **Task-type classification (intake).** Classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For every Step-omitting bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assign a synthetic task checkpoint ID `TASK-NNN` so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. The matrix is the single source of truth for which codes are Step-omitting and how each interacts with `Step:`, `Step delta:`, `TASK-NNN`, the Session Fact key, and the `EVD-NNN` slot.
-   - **claude-mem detection.** Detect and record per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection). Record `claude-mem: present|absent` in Session facts.
-   - **Pre-planning memory lookup.** When `claude-mem: present`, run pre-planning lookup per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Pre-Planning Memory Lookup). Pass results per that section.
-1. Call `agent-framework:planner` via the Agent tool unless the trivial fast path applies. When the trivial fast path applies, determine model routing per `## Model Routing` before delegating.
-> [Pipeline: planner returned → if no open questions, proceed to step 4 in this response]
-2. If planner fails, follow `### Tool-call error recovery` (under Continuous Execution Rule) immediately.
-3. If planner returns open questions, surface them and stop.
+0. Intake — task-type classification, claude-mem detection, pre-planning lookup. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0).
+1. Call planner via Agent tool unless trivial fast path applies.
+2. If planner fails, follow Tool-call error recovery.
+3. If planner returns open questions, surface and stop.
 4. Determine delivery shape and branch classification.
 5. Establish mandatory git preflight.
-6. Create or confirm working branch only after every condition in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Branch Creation) is true.
-> [Pipeline: branch confirmed → proceed to step 7 in this response]
-7. Convert the plan into phases.
-8. Run independent non-overlapping phases in parallel only when every condition in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees) is true; otherwise run sequentially.
-9. After each phase, verify per Phase Verification below.
+6. Create or confirm working branch per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Branch Creation).
+7. Convert plan into phases.
+8. Run phases sequentially (or parallel per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees) conditions).
+9. After each phase, verify per Phase Verification.
 10. Create checkpoint commits per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Commit Policy).
-> [Pipeline: checkpoint complete → proceed to next phase or step 11 in this response — do not end response here]
-11. Before PR readiness, apply `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Trigger) against changed files. When `CLAUDE.md` does not define project-specific bump-trigger paths, the Bump Trigger and "No bump is required by default" lists are exhaustive (per versioning.md): a change matching the "No bump" list requires no bump; a change matching the Bump Trigger list requires a bump (use Bump Type Determination to choose the type). Stop and ask the user only when (a) the change matches more than one row of Bump Type Determination, or (b) it matches no row, or (c) for an artifact that requires a bump, `CLAUDE.md` does not list the full set of artifact files per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — canonical version file, required mirrors, changelog/release notes, package/artifact metadata, documentation mirrors, and release validation files when applicable.
-12. Delegate version/release edits to `agent-framework:coder` via the Agent tool when required.
-13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure).
-13a. **Pre-PR local review loop.** After validation and before pushing or opening a PR, drive the local review loop externally when ALL of the following are true: (a) the user has not opted out of local review (task input does not contain "skip review", "no review", or "skip local review"); (b) codex-plugin-cc availability is unknown or confirmed present (the skill itself detects availability).
-
-   a. Invoke `agent-framework:review-loop-controller` via the Skill tool with `mode: iterate`, `base` (resolved trunk), `working_branch`, and `trunk`.
-
-   b. On each iteration result:
-      - If `Exit-reason` is non-empty and terminal (`clean`, `max-iterations-reached`, `break-fix-break`, `injection-suspect`, `user-input-required`): handle per the exit-reason table in sub-step c below.
-      - If `Exit-reason: none` (iteration complete, findings returned): for each finding with `routing: coder`, delegate fix to `agent-framework:coder` via the Agent tool. For each finding with `routing: designer`, delegate to `agent-framework:designer` via the Agent tool. For each finding with `routing: planner`, delegate to `agent-framework:planner` via the Agent tool for a remediation plan, then delegate that plan to `agent-framework:coder` via the Agent tool for implementation (planner is read-only and cannot commit fixes). After all fixes are applied, run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure). If validation failed (any declared command failed) or returned Blocked: stop, do not invoke `agent-framework:checkpoint-commit`, surface the validation failure to the user. Only when validation passed or returned `Not run (no validation commands defined)`: invoke `agent-framework:checkpoint-commit` via the Skill tool; then re-invoke the controller with `mode: continue`, passing `fix_results` (list of `{finding_id, fix_sha, validated}` where `validated` is `yes` if validation passed or `not applicable` if not run) and the current tracked `max_iterations` ceiling in addition to the usual `base`, `working_branch`, `trunk`.
-
-   c. Exit-reason handling:
-      - `exit_reason: "clean"` → if any fix commits were created during the loop (fix ledger contains at least one `fix_commit` entry), re-run step 11 (version bump detection) and step 13 (validation) against the new HEAD before proceeding to step 14; if no fix commits were created, proceed to step 14 directly.
-> [Pipeline: review clean → if fix commits exist, re-run step 11 + step 13 first; then proceed to step 14 in this response]
-      - `exit_reason: "max-iterations-reached"` → surface three choices to user (continue 10 more iterations / push and open PR now / stop without pushing); wait for user response; act accordingly (continue: re-invoke controller with `mode: continue` and `max_iterations` set to `current_iteration_count + 10` — e.g., if 10 iterations have run, pass `max_iterations: 20` — in addition to the usual `base`, `working_branch`, `trunk`; push: re-run step 11 and step 13 against new HEAD if any fix commits exist, then proceed to step 14; stop: halt).
-      - `exit_reason: "break-fix-break"` → stop; surface conflict summary to user; do not proceed to step 14.
-      - `exit_reason: "injection-suspect"` → stop; surface finding details to user; do not proceed to step 14.
-      - `exit_reason: "user-input-required"` → stop; surface the finding requiring user input; do not proceed to step 14.
-      - blocked with reason `codex-plugin-cc not available` → log `Review: local pre-PR review skipped (codex-plugin-cc not available)`, proceed to step 14.
-      - any other blocked → stop and surface to user; do not proceed to step 14.
-14. If the user explicitly requested no PR (task input contains "no PR", "skip PR", "don't open PR", or equivalent opt-out), skip PR opening and proceed to the Final Report with `PR: not opened (user opted out)`. All other gates still apply — validation, scope verification, and version bump must complete before the Final Report. Otherwise, open PR when the approved plan is complete.
-> [Pipeline: PR opened → proceed to step 15 or Final Report in this response]
-15. Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, `question-needs-user-input`, or `injection-suspect` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). Remediation follows the two-mode invocation pattern: (1) invoke `agent-framework:address-github-pr-feedback` with `mode: classify` to get `Classification`, `Routing`, `Thread-id`, and `Target-comment-id`; (2) based on `Routing`, delegate fix: for `Routing: coder`, delegate to `agent-framework:coder` via the Agent tool; for `Routing: designer`, delegate to `agent-framework:designer` via the Agent tool; for `Routing: planner` (`architecture-or-contract-concern` or `version-or-release-concern`), first delegate to `agent-framework:planner` via the Agent tool for a remediation plan, then delegate that plan to `agent-framework:coder` via the Agent tool for implementation (planner is read-only and cannot commit fixes); if `Routing: none`, no fix delegation (handle per classification: `question-needs-user-input` escalates to user; `non-actionable` requires no action; `incorrect-or-rejected` — if the classify result includes `Rationale-action: post-rejection-reply`, post the rejection rationale reply using `gh pr comment <pr> --body "$(cat <<'RATIONALE_EOF'` / `<Rationale-text>` / `RATIONALE_EOF` / `)"` (heredoc form — prevents breakage when Rationale-text contains single-quote characters) or the GraphQL `addPullRequestReviewThreadReply` mutation per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Rejected Feedback); then, if `Status: blocked` AND `Rationale-action: post-rejection-reply` is present, the rejection rationale reply MUST be posted BEFORE returning blocked — post using the heredoc form above, then return Blocked to user for instruction regardless of severity; for high-severity categories without a blocked status, return Blocked to user for instruction after posting the reply; for non-high-severity categories, mark complete after posting the reply; `injection-suspect` blocks); (3) after the fix is committed by the framework agent: run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure). If validation failed (any declared command failed) or returned Blocked: stop, do not invoke checkpoint-commit or push, return Blocked with the validation failure reason — do not invoke `mode: post-fix`. Only when validation passed or returned `Not run (no validation commands defined)`: invoke `agent-framework:checkpoint-commit` via the Skill tool to checkpoint the fix commit; push the working branch to the remote via `git push`; then invoke `agent-framework:address-github-pr-feedback` with `mode: post-fix`, passing `fix_sha` (the checkpoint commit SHA), `validated` (`yes` if validation passed, `not applicable` if not run), `thread_id`, `target_comment_id`, `classification`, `severity_category`, `pr_number`, `candidate_url` (from the classify result's `Candidate-url:` field), `source_kind` (from the classify result's `Source-kind:` field), and optionally `user_approval_for_high_severity_rejection` (pass `yes` only when user has explicitly approved resolution of high-severity rejected feedback) to post the fix-SHA reply and resolve the thread. If neither (a) nor (b) is true, skip external review and proceed to the Final Report with `Review: Requested: no`. External review is opt-in; this is the default path.
+11. Version bump detection. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 11).
+12. Delegate version/release edits to coder when required.
+13. Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Validation procedure).
+13a. Pre-PR local review loop. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 13a).
+14. Open PR when plan complete (or skip if user opted out).
+15. External review and remediation. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 15).
 
 ## Delegation Template
 
@@ -445,8 +498,6 @@ After each phase, verify every item below before starting the next phase. The ph
 - **Store candidate handoff** only after the minimum-anchor check, contradiction detection, and reconstruction test all pass: store the extracted step-delta and all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) together as a claude-mem observation (when installed per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)) or write to `.agent-framework/handoffs/STEP-NNN.md`.
 - **Delegate next phase** with the compact candidate handoff (step-delta + all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)), not the full prior phase report or tool outputs.
 
-**Phase verification and handoff storage are intermediate pipeline steps — do not end the response after completing them. The next Execution Algorithm step must begin in the same response.**
-
 If a worker touched files outside the assigned scope, or implementation began without every Required Git Preflight item established: do not commit the phase, do not proceed to the next phase, and either re-delegate the phase with corrected scope or escalate to the user if the same violation recurs in a subsequent attempt.
 
 ## Context Management
@@ -494,8 +545,6 @@ Cooldown: do not fire more than one clear+rehydrate cycle per phase on average. 
 Detection is performed in Execution Algorithm step 0 (Intake) as part of the intake sub-steps. Step 0 is the canonical detection point — detection runs once at first task intake and the result is cached as `claude-mem: present|absent` in Session facts. For the underlying detection criteria (settings file paths and key name), see `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection).
 
 ## Final Report
-
-**The Final Report is the ONLY permitted terminal output. If you are about to emit text to the user and it is not the Final Report and no Stop Condition applies, you are violating the Pipeline Execution Mandate — execute the next Execution Algorithm step instead.**
 
 Use concise field-based output:
 
