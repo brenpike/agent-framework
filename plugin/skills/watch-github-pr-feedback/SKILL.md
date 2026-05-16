@@ -147,6 +147,21 @@ Optional:
    ```
 
    JSON-encode any free-text fields (`rationale_text`) before interpolation. URL and controlled vocabulary fields do not need encoding. Exit 0.
+
+   **Final Bash tool call** (when no new feedback items are detected): emit an empty items list with monitoring state:
+
+   ```bash
+   printf 'items: []\nmonitoring: %s\n' "$monitoring_state"
+   ```
+
+   Where `$monitoring_state` is `active` (Monitor running, no new items this poll) or `not_active` (Monitor pre-flight failed or startup error — include `reason` field). For pre-flight failure, append a reason field:
+
+   ```bash
+   printf 'items: []\nmonitoring: not_active\nreason: %s\n' "$failure_reason"
+   ```
+
+   Exit 0. The orchestrator matches STT rows 70/71 based on the `monitoring` value.
+
 9. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, the Monitor self-exits (the script calls `exit 0` on `STATE=MERGED` or `STATE=CLOSED`, terminating the background process). Final Bash tool call for terminal states: `printf 'stopped_because: %s\npr_state: %s' "$reason" "$state"; exit 0`. Do not continue polling a terminal resource.
 
 ## Silence Discipline
