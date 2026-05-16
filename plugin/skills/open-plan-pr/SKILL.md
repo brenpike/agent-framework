@@ -63,7 +63,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
      - on **auth / read-only / protected branch / hook-policy** failure: record warning and continue. `gh pr create` may route to a fork or alternate remote. Treat as auth/read-only/protected/hook-policy when stderr contains any of: `Permission denied`, `remote: Permission`, `protected branch`, `403`, `401`, `[remote rejected]`, `remote rejected`, `pre-receive hook`, `update hook`, `push declined`. Treat as non-fast-forward only when stderr contains `non-fast-forward` OR `(fetch first)`. Bare `rejected` is not a non-fast-forward marker on its own (`[remote rejected]` is server-side and is not resolved by force-with-lease).
    - else (no upstream, no `push_remote`): defer to `gh pr create` in step 7. It prompts for push target and can fork the base repo.
 7. Run `gh pr create --base <base> ...` with title, summary, validation notes, version/release notes, and unresolved issues. Do not pass `--head` — `--head` makes `gh` skip its push/fork fallback, which defeats step 6's fork-based and unpushed-branch handling. `gh pr create` uses the current branch as head by default; confirm step 1 already verified current branch matches the intended `head`.
-8. **Final Bash tool call.** Verify PR head SHA matches local HEAD using allowed command patterns:
+8. **Final Bash tool call.** Verify PR head SHA matches local HEAD using allowed command patterns. Each Bash call is independent — substitute literal captured values from prior steps (not shell variables).
 
    First, capture the remote PR head SHA:
 
@@ -71,16 +71,16 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
    gh pr view <pr> --json headRefOid --jq '.headRefOid'
    ```
 
-   Compare the output with `$local_sha` from step 5. If they differ, exit with blocker:
+   Where `<pr>` is the PR number or URL from step 7. The output is the remote head SHA. Compare it with the local SHA captured in step 5. If they differ, exit with blocker (substitute the literal SHA values):
 
    ```bash
-   printf 'blocker: PR head SHA mismatch — expected %s got %s' "$local_sha" "$pr_sha" >&2; exit 1
+   printf 'blocker: PR head SHA mismatch — expected %s got %s' "<local_sha>" "<pr_sha>" >&2; exit 1
    ```
 
-   If they match, emit YAML routing data as the final Bash tool call:
+   If they match, emit YAML routing data as the final Bash tool call (substitute the literal SHA):
 
    ```bash
-   printf 'url: %s\nhead_ref_oid: %s\n' "$(gh pr view <pr> --json url --jq '.url')" "$pr_sha"
+   printf 'url: %s\nhead_ref_oid: %s\n' "$(gh pr view <pr> --json url --jq '.url')" "<pr_sha>"
    ```
 
    On success (SHA matches), the YAML output (`url` + `head_ref_oid`) is the routing data. On mismatch, exits 1 with blocker in stderr.
