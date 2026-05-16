@@ -34,7 +34,7 @@ When the reconstruction test fails, the agent must:
 The agent must stop and surface the failure to the user when any of the following is true:
 
 - The four rehydration sources (Fallback Mode step 3 above) are exhausted in priority order AND a single re-delegation attempt (Fallback Mode step 4 — Recovery Action) also fails to produce the missing fields.
-- The missing field is a required scope or objective field (`Objective:`, `Scope in:`, `Scope out:`), not a minor evidence anchor (`Evidence refs:`, `Artifacts:`).
+- The missing field is a required scope or objective field (`outcome`, `changed`, `scope_out`), not a minor evidence anchor (`evidence`).
 - The handoff artifact is entirely absent (no report was stored for the prior phase).
 - The reconstruction test fails on a field that was explicitly marked as resolved in a prior phase's `Decisions:` list.
 

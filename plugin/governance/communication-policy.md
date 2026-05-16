@@ -59,7 +59,11 @@ status: complete
 changed: [file]
 validated:
   check: pass
+evidence:
+  EVD-001: [synopsis]
 ```
+
+The `evidence` field is optional in trivial reports — include only when mandatory externalization was triggered (test output, build logs, diffs >50 lines, command output >50 lines).
 
 ## Delegation Template
 

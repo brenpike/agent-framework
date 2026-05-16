@@ -327,7 +327,7 @@ After each phase, verify every item below. Phase fails if any check fails.
 - Report is valid YAML with `status: complete` per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`
 - Validation was run, or report names what was skipped and why
 - Git state is not unsafe per "Unsafe git state" definition
-- If changed files match bump-trigger paths, report includes `version: required|none`
+- If changed files match bump-trigger paths, report includes `version: required|none|unknown`
 - No `status: blocked` fields
 - If delegation included `step:` and report lacks handoff fields (`decisions`, `risks`, `assumptions`, `evidence`, `next`): **fail** — phase requires durable handoff
 - **Minimum-anchor check (blocking):** non-trivial phases must have ≥1 anchor. Fail → re-delegate or escalate. Per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Minimum Anchor Requirements).
