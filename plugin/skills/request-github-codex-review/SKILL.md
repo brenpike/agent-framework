@@ -55,12 +55,12 @@ If neither is available, return the Worker Report — Blocked with `stage: fetch
 ## Output
 
 ```text
-Status: complete | blocked
+status: complete | blocked
 PR number:
 PR URL:
-Branch:
-Review request posted: yes | no
-Warnings:
+branch:
+review request posted: yes | no
+warnings:
 - [warning]
 - None
 ```

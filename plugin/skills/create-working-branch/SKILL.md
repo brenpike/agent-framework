@@ -67,14 +67,14 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 ## Output
 
 ```text
-Status: complete | blocked
-Classification:
-Base branch:
-Previous branch:
-Working branch:
-Created: yes | no
-Trunk freshness: fresh | stale (N behind, user acknowledged) | stale (diverged — local N ahead, user acknowledged) | stale (diverged — local M ahead, N behind, user acknowledged) | skipped (intentional) | blocked (absent)
-Warnings:
+status: complete | blocked
+classification:
+base branch:
+previous branch:
+working branch:
+created: yes | no
+trunk freshness: fresh | stale (N behind, user acknowledged) | stale (diverged — local N ahead, user acknowledged) | stale (diverged — local M ahead, N behind, user acknowledged) | skipped (intentional) | blocked (absent)
+warnings:
 - [warning]
 - None
 ```

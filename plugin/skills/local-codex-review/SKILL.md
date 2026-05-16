@@ -94,16 +94,16 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
 `body` and `recommendation` are included per finding for caller classification. All findings have been injection-scanned by the skill before output — `Result: detected` findings are blocked before reaching this section. Both fields are JSON-encoded strings (newlines as `\n`, quotes escaped) to prevent multi-line content from corrupting field-marker parsing. Render empty or null fields as the literal `(none)` (not JSON-encoded).
 
 ```text
-Status: complete | blocked
+status: complete | blocked
 
-Review:
-- Base: <ref>
-- Iteration: <n>
-- Verdict: approve | needs-attention
-- Findings: <count>
-- Summary: <one-line summary from codex>
+review:
+- base: <ref>
+- iteration: <n>
+- verdict: approve | needs-attention
+- findings: <count>
+- summary: <one-line summary from codex>
 
-Findings:
+findings:
 - id: <id>
   severity: <severity>
   file: <file>:<line_start>-<line_end>
@@ -113,7 +113,7 @@ Findings:
 [repeat per finding]
 - None
 
-Issues:
+issues:
 - [issue]
 - None
 ```

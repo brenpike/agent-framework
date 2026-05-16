@@ -134,19 +134,19 @@ Optional:
    Return:
 
    ```text
-   Status: complete | blocked
-   Mode: classify
+   status: complete | blocked
+   mode: classify
    Candidate: <thread or comment URL>
-   Classification: <classification>
-   Severity: <severity_category>
-   Routing: <planner | coder | designer | none>
-   Rationale: <one sentence>
-   Thread-id: <thread node ID if inline review thread, else none>
-   Target-comment-id: <comment ID, else none>
-   Candidate-url: <full URL of the candidate comment/thread/review>
-   Source-kind: inline-review-thread | top-level-pr-comment | review-summary
-   Rationale-action: post-rejection-reply | none
-   Rationale-text: <rationale text | none>
+   classification: <classification>
+   severity: <severity_category>
+   routing: <planner | coder | designer | none>
+   rationale: <one sentence>
+   thread-id: <thread node ID if inline review thread, else none>
+   target-comment-id: <comment ID, else none>
+   candidate-url: <full URL of the candidate comment/thread/review>
+   source-kind: inline-review-thread | top-level-pr-comment | review-summary
+   rationale-action: post-rejection-reply | none
+   rationale-text: <rationale text | none>
    ```
 
 ## Post-Fix Mode
@@ -221,11 +221,11 @@ Steps:
 
 4. **Return.**
    ```text
-   Status: complete
-   Mode: post-fix
-   Fix-SHA: <sha>
-   Reply: posted
-   Thread-resolved: resolved | not applicable | skipped | failed (reason)
+   status: complete
+   mode: post-fix
+   fix-SHA: <sha>
+   reply: posted
+   thread-resolved: resolved | not applicable | skipped | failed (reason)
    ```
 
 ## Constraints
@@ -244,28 +244,28 @@ Steps:
 ### Classify Mode
 
 ```text
-Status: complete | blocked
-Mode: classify
+status: complete | blocked
+mode: classify
 
 PR:
-- Number:
-- Branch:
-- Target:
+- number:
+- branch:
+- target:
 
 Candidate:
-- URL:
-- Source:
-- Author:
-- Classification:
-- Severity:
-- Routing: planner | coder | designer | none
-- Rationale:
-- Thread-id:
-- Target-comment-id:
-- Candidate-url:
-- Source-kind:
+- url:
+- source:
+- author:
+- classification:
+- severity:
+- routing: planner | coder | designer | none
+- rationale:
+- thread-id:
+- target-comment-id:
+- candidate-url:
+- source-kind:
 
-Issues:
+issues:
 - [issue]
 - None
 ```
@@ -273,14 +273,14 @@ Issues:
 ### Post-Fix Mode
 
 ```text
-Status: complete | blocked
-Mode: post-fix
+status: complete | blocked
+mode: post-fix
 
-Fix-SHA:
-Reply: posted | not posted (reason)
-Thread-resolved: resolved | not applicable | skipped | failed (reason)
+fix-SHA:
+reply: posted | not posted (reason)
+thread-resolved: resolved | not applicable | skipped | failed (reason)
 
-Issues:
+issues:
 - [issue]
 - None
 ```

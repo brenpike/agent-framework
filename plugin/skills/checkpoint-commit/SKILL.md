@@ -57,13 +57,13 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 ## Output
 
 ```text
-Status: complete | blocked
-Branch:
-Commit:
-Message:
-Files included:
+status: complete | blocked
+branch:
+commit:
+message:
+files included:
 - [file]
-Warnings:
+warnings:
 - [warning]
 - None
 ```

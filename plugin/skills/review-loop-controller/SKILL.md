@@ -152,12 +152,12 @@ Do not push. Do not open a PR. Return control to orchestrator.
 ## Per-Iteration Result Contract
 
 ```text
-Status: complete | blocked
-Mode: iterate | continue
-Iteration: <N>
-Exit-reason: none | clean | max-iterations-reached | break-fix-break | user-input-required | injection-suspect | blocked
+status: complete | blocked
+mode: iterate | continue
+iteration: <N>
+exit-reason: none | clean | max-iterations-reached | break-fix-break | user-input-required | injection-suspect | blocked
 
-Findings:
+findings:
 - id: <finding_id>
   classification: <classification>
   routing: <coder | designer | planner | none>
@@ -169,10 +169,10 @@ Findings:
   body: <full body>
   recommendation: <recommendation>
 
-Open-count: <N>
-Resolved-count: <N>
+open-count: <N>
+resolved-count: <N>
 
-Fix ledger:
+fix ledger:
 - Location: .agent-framework/review-loop/loop-state-<branch-with-slashes-as-dashes>.json | claude-mem
 ```
 

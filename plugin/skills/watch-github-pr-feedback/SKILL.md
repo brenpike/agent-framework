@@ -233,54 +233,54 @@ Do not reprocess the same item unless new activity appears or the user explicitl
 ## Output
 
 ```text
-Status: complete | partial | blocked
+status: complete | partial | blocked
 
 PR:
-- Number:
-- State:
-- Branch:
-- Target:
+- number:
+- state:
+- branch:
+- target:
 
 Watch:
-- Mode: Monitor | scheduled | manual
-- Monitoring: active | not active
-- Parser: gh --jq | other-approved | unavailable
-- Cycles:
-- Seen comments:
-- New actionable comments:
+- mode: Monitor | scheduled | manual
+- monitoring: active | not active
+- parser: gh --jq | other-approved | unavailable
+- cycles:
+- seen comments:
+- new actionable comments:
 
 Feedback:
 # When multiple items are returned, repeat the block below for each item:
-- Candidate-url: <item URL>
-  Source-kind: inline-review-thread | top-level-pr-comment | review-summary
-  Classification: <classification>
-  Severity: <severity_category>
-  Routing: <planner | coder | designer | none>
-  Rationale: <one sentence>
-  Thread-id: <thread node ID | none>
-  Target-comment-id: <comment ID | none>
-  Rationale-action: <post-rejection-reply | none>
-  Rationale-text: <text | none>
-- Candidate-url: <item URL 2>
-  Source-kind: inline-review-thread | top-level-pr-comment | review-summary
-  Classification: <classification>
-  Severity: <severity_category>
-  Routing: <planner | coder | designer | none>
-  Rationale: <one sentence>
-  Thread-id: <thread node ID | none>
-  Target-comment-id: <comment ID | none>
-  Rationale-action: <post-rejection-reply | none>
-  Rationale-text: <text | none>
+- candidate-url: <item URL>
+  source-kind: inline-review-thread | top-level-pr-comment | review-summary
+  classification: <classification>
+  severity: <severity_category>
+  routing: <planner | coder | designer | none>
+  rationale: <one sentence>
+  thread-id: <thread node ID | none>
+  target-comment-id: <comment ID | none>
+  rationale-action: <post-rejection-reply | none>
+  rationale-text: <text | none>
+- candidate-url: <item URL 2>
+  source-kind: inline-review-thread | top-level-pr-comment | review-summary
+  classification: <classification>
+  severity: <severity_category>
+  routing: <planner | coder | designer | none>
+  rationale: <one sentence>
+  thread-id: <thread node ID | none>
+  target-comment-id: <comment ID | none>
+  rationale-action: <post-rejection-reply | none>
+  rationale-text: <text | none>
 - None
 
-Stopped because:
+stopped because:
 - [reason]
 
-Next action:
+next action:
 - [required next step]
 - None
 
-Issues:
+issues:
 - [issue]
 - None
 ```

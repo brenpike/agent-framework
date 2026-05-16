@@ -76,17 +76,17 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 ## Output
 
 ```text
-Status: complete | blocked
-Base:
-Head:
-Local HEAD:
-Pushed: yes (git push) | yes (via gh pr create) | no
-Push remote:
+status: complete | blocked
+base:
+head:
+local HEAD:
+pushed: yes (git push) | yes (via gh pr create) | no
+push remote:
 PR head SHA:
-Head verified: yes | no
+head verified: yes | no
 PR title:
 PR URL:
-Warnings:
+warnings:
 - [warning]
 - None
 ```
