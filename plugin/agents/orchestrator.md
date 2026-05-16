@@ -91,26 +91,26 @@ After every step-completion milestone (any event producing an after= token), fin
 | 6 | git-preflight-complete | trunk fresh | step 6: create branch |
 | 7 | git-preflight-complete | trunk stale/diverged | STOP: surface to user |
 | 8 | git-preflight-complete | trunk freshness skipped | step 6: create branch |
-| 9 | create-working-branch-complete | Status: complete | step 7: convert plan to phases |
-| 10 | create-working-branch-complete | Status: blocked | STOP: surface blocker |
-| 11 | worker-complete | Status: complete | phase verification |
-| 12 | worker-complete | Status: blocked | STOP: surface blocker |
+| 9 | create-working-branch-complete | status: complete | step 7: convert plan to phases |
+| 10 | create-working-branch-complete | status: blocked | STOP: surface blocker |
+| 11 | worker-complete | status: complete | phase verification |
+| 12 | worker-complete | status: blocked | STOP: surface blocker |
 | 13 | phase-verification-passed | more phases remain | Path A (checkpoint-commit → clear → rehydrate → next phase) |
 | 14 | phase-verification-passed | last phase | Path A (checkpoint-commit → clear → rehydrate → step 11) |
 | 15 | phase-verification-failed | recoverable, first attempt | re-delegate phase |
 | 16 | phase-verification-failed | unrecoverable or repeated | STOP: escalate to user |
-| 17 | checkpoint-commit-complete | Status: blocked | STOP: surface blocker |
-| 18 | checkpoint-commit-complete | Status: complete, more phases remain | Path A resume: clear → rehydrate → next phase delegation |
-| 19 | checkpoint-commit-complete | Status: complete, last phase done | Path A resume: clear → rehydrate → step 11: version bump check |
-| 20 | checkpoint-commit-complete | Status: complete, within review loop | re-invoke review-loop-controller |
-| 21 | checkpoint-commit-complete | Status: complete, within PR remediation | push → post-fix |
-| 22 | checkpoint-commit-complete | Status: complete, version bump, review active | step 13a: review loop |
-| 23 | checkpoint-commit-complete | Status: complete, version bump, review opted out | step 14: open PR |
+| 17 | checkpoint-commit-complete | status: blocked | STOP: surface blocker |
+| 18 | checkpoint-commit-complete | status: complete, more phases remain | Path A resume: clear → rehydrate → next phase delegation |
+| 19 | checkpoint-commit-complete | status: complete, last phase done | Path A resume: clear → rehydrate → step 11: version bump check |
+| 20 | checkpoint-commit-complete | status: complete, within review loop | re-invoke review-loop-controller |
+| 21 | checkpoint-commit-complete | status: complete, within PR remediation | push → post-fix |
+| 22 | checkpoint-commit-complete | status: complete, version bump, review active | step 13a: review loop |
+| 23 | checkpoint-commit-complete | status: complete, version bump, review opted out | step 14: open PR |
 | 24 | version-bump-check | no bump required | step 13: validation |
 | 25 | version-bump-check | bump required, type clear | step 12: delegate bump |
 | 26 | version-bump-check | ambiguous type or missing artifact files | STOP: ask user |
-| 27 | version-bump-coder-complete | Status: complete | step 13: validation |
-| 28 | version-bump-coder-complete | Status: blocked | STOP: surface blocker |
+| 27 | version-bump-coder-complete | status: complete | step 13: validation |
+| 28 | version-bump-coder-complete | status: blocked | STOP: surface blocker |
 | 29 | validation | passed, version bump | checkpoint-commit |
 | 30 | validation | not run, version bump | checkpoint-commit |
 | 31 | validation | passed, main pipeline (pre-review), review active | step 13a: review loop |
@@ -131,18 +131,18 @@ After every step-completion milestone (any event producing an after= token), fin
 | 46 | review-loop-controller-returned | exit: break-fix/inject/user-input | STOP: surface |
 | 47 | review-loop-controller-returned | blocked: codex unavailable | step 14: open PR |
 | 48 | review-loop-controller-returned | blocked: non-codex | STOP: surface to user |
-| 49 | review-loop-fix-complete | Status: complete, more review-loop fixes remain | delegate next fix per routing |
-| 50 | review-loop-fix-complete | Status: complete, all fixes applied | validation (within review loop) |
-| 51 | review-loop-fix-complete | Status: blocked | STOP: surface blocker |
-| 52 | pr-remediation-fix-complete | Status: complete | validation (within PR remediation) |
-| 53 | pr-remediation-fix-complete | Status: blocked | STOP: surface blocker |
-| 54 | open-plan-pr-complete | Status: complete, review requested | step 15: external review |
-| 55 | open-plan-pr-complete | Status: complete, no review requested | Final Report |
-| 56 | open-plan-pr-complete | Status: blocked | STOP: surface blocker |
+| 49 | review-loop-fix-complete | status: complete, more review-loop fixes remain | delegate next fix per routing |
+| 50 | review-loop-fix-complete | status: complete, all fixes applied | validation (within review loop) |
+| 51 | review-loop-fix-complete | status: blocked | STOP: surface blocker |
+| 52 | pr-remediation-fix-complete | status: complete | validation (within PR remediation) |
+| 53 | pr-remediation-fix-complete | status: blocked | STOP: surface blocker |
+| 54 | open-plan-pr-complete | status: complete, review requested | step 15: external review |
+| 55 | open-plan-pr-complete | status: complete, no review requested | Final Report |
+| 56 | open-plan-pr-complete | status: blocked | STOP: surface blocker |
 | 57 | pr-skipped | user opted out of PR | Final Report |
-| 58 | request-github-codex-review-complete | Status: complete, watch requested | invoke watch-github-pr-feedback |
-| 59 | request-github-codex-review-complete | Status: complete, no watch | Final Report (Review: Requested: yes) |
-| 60 | request-github-codex-review-complete | Status: blocked | STOP: surface blocker |
+| 58 | request-github-codex-review-complete | status: complete, watch requested | invoke watch-github-pr-feedback |
+| 59 | request-github-codex-review-complete | status: complete, no watch | Final Report (Review: Requested: yes) |
+| 60 | request-github-codex-review-complete | status: blocked | STOP: surface blocker |
 | 61 | classify-pr-feedback-returned | blocked, generic (not injection, question, or rejection) | STOP: surface to user |
 | 62 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
 | 63 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply → Final Report |
@@ -158,9 +158,9 @@ After every step-completion milestone (any event producing an after= token), fin
 | 73 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
 | 74 | watch-pr-feedback-returned | PR merged/closed | Final Report |
 | 75 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
-| 76 | address-pr-feedback-complete | Status: complete, more items remain | next item |
-| 77 | address-pr-feedback-complete | Status: complete, no more items | continue monitoring or Final Report |
-| 78 | address-pr-feedback-complete | Status: blocked | STOP: surface blocker |
+| 76 | address-pr-feedback-complete | status: complete, more items remain | next item |
+| 77 | address-pr-feedback-complete | status: complete, no more items | continue monitoring or Final Report |
+| 78 | address-pr-feedback-complete | status: blocked | STOP: surface blocker |
 | 79 | tool-error | non-retryable-mutating | STOP: report blocked |
 | 80 | tool-error | non-transient | STOP: report blocked |
 | 81 | tool-error | transient, first attempt | retry immediately |
