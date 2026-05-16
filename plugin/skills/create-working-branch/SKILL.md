@@ -38,7 +38,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 - `base`: base branch the working branch is created from (typically the resolved trunk; may differ for stacked work).
 - `working_branch`: requested working branch name (must follow branch taxonomy and naming rules).
 - `classification`: work classification (`feature|bugfix|hotfix|refactor|chore|docs|test|ci`).
-- `trunk-freshness`: resolved trunk freshness state from the Required Git Preflight check per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate). One of: `fresh`, `stale (N behind)`, `stale (diverged — local N ahead)`, `stale (diverged — local M ahead, N behind)`, or `skipped`. Absent = skill returns `Status: blocked`.
+- `trunk-freshness`: resolved trunk freshness state from the Required Git Preflight check per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate). One of: `fresh`, `stale (N behind)`, `stale (diverged — local N ahead)`, `stale (diverged — local M ahead, N behind)`, or `skipped`. Absent = skill returns `status: blocked`.
 
 ## Requirements
 
@@ -50,7 +50,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
    - `trunk-freshness: stale (diverged — local N ahead)` — emit a warning that local trunk has unpushed commits but proceed (user already acknowledged at preflight).
    - `trunk-freshness: stale (diverged — local M ahead, N behind)` — emit a warning that local trunk has diverged from origin but proceed (user already acknowledged at preflight).
    - `trunk-freshness: skipped` — proceed with a note that freshness was intentionally skipped per documented skip conditions in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate).
-   - Absent — return `Status: blocked`, `Blocker: trunk-freshness session fact not provided by orchestrator`.
+   - Absent — return `status: blocked`, `blocker: trunk-freshness session fact not provided by orchestrator`.
 4. Confirm `working_branch` follows the branch taxonomy and naming rules.
 5. Confirm there are no unexpected unstaged/uncommitted changes that make switching unsafe.
 6. Create or switch to `working_branch` from `base`.

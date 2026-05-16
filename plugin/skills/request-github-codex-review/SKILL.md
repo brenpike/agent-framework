@@ -31,7 +31,7 @@ At minimum one of:
 - PR number or PR URL, OR
 - a current git branch with exactly one open PR on the configured remote (the skill resolves the PR via `gh pr view --json number,state` against the current branch)
 
-If neither is available, return the Worker Report — Blocked with `Stage: fetch` and `Blocker: no PR identified`.
+If neither is available, return the Worker Report — Blocked with `stage: fetch` and `blocker: no PR identified`.
 
 ## Requirements
 

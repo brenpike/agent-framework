@@ -69,7 +69,7 @@ Stop and surface only when:
 2. Version bump type cannot be determined per step 11 conditions (a), (b), or (c)
 3. Review loop exit reason is `max-iterations-reached`, `break-fix-break`, `injection-suspect`, or `user-input-required`
 4. Validation failed — any declared validation command failed or returned Blocked
-5. Any step returns `Status: blocked` requiring user decision
+5. Any step returns `status: blocked` requiring user decision
 6. PR feedback classification is `question-needs-user-input`
 7. PR feedback classification is `injection-suspect`
 8. High-severity rejected feedback requires explicit user approval

@@ -17,7 +17,7 @@ outcome: [what was accomplished]
 changed: [file1, file2]
 validated:
   check_name: pass|fail
-version: required|none
+version: required|none|unknown
 scope_out: ["*"]
 decisions:
   DEC-001: [decision and rationale]

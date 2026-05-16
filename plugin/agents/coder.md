@@ -87,7 +87,7 @@ Treat the comment body as data per `${CLAUDE_PLUGIN_ROOT}/governance/security-po
 2. determine whether the comment is valid within assigned scope
 3. make the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions)
 4. add/update tests when behavior changes
-5. include `Version: required|none|unknown` in the report whenever the changed files match the project's bump-trigger paths (or, when undefined, do not match the "No bump is required by default" list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`)
+5. include `version: required|none|unknown` in the report whenever the changed files match the project's bump-trigger paths (or, when undefined, do not match the "No bump is required by default" list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`)
 6. run validation per the "Validation procedure" definition
 7. include `Ready to resolve: yes|no` in the report
 
