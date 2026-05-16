@@ -6,7 +6,6 @@
   },
   "consumers": [
     { "file": "plugin/agents/orchestrator.md", "pattern": "feature|bugfix|hotfix|refactor|chore|docs|test|ci" },
-    { "file": "plugin/governance/git-policy.md", "pattern": "feature|bugfix|hotfix|refactor|chore|docs|test|ci" },
     { "file": "plugin/skills/create-working-branch/SKILL.md", "pattern": "feature|bugfix|hotfix|refactor|chore|docs|test|ci" }
   ]
 }

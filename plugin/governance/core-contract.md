@@ -12,7 +12,7 @@ Allowed specialist agents: `agent-framework:planner`, `agent-framework:coder`, `
 
 ## Mandatory Modules
 
-These 10 governance modules are always loaded for every workflow. No activation condition, user override, or workflow classification can suppress them:
+These 9 governance modules are always loaded for every workflow. No activation condition, user override, or workflow classification can suppress them:
 
 - `agent-system-policy.md`
 - `branching-pr-workflow.md` — branching, commits, PRs, merge path, validation, trunk-based delivery, git workflow enforcement
