@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.6.4] - 2026-05-16
+
+### Added
+
+- **Pipeline skill definition** in agent-system-policy.md (Definitions section)
+- **REPORT-01 scope clarification**: blocked report contract applies to workers and user-facing skills only, not pipeline skills
+
+### Changed
+
+- **YAML communication protocol**: all worker reports and delegations now use valid YAML with lowercase snake_case field names across the entire framework
+- **Pipeline skill silent execution**: pipeline skills (checkpoint-commit, create-working-branch, open-plan-pr, request-github-codex-review, review-loop-controller, local-codex-review, watch-github-pr-feedback, address-github-pr-feedback) now produce zero text output — final action is always a Bash tool call with exit code signaling outcome
+- **STT vocabulary**: skill-originated State Transition Table rows use `succeeded`/`blocked` instead of `status: complete`/`status: blocked` to prevent pipeline halting
+- **Skill Output Convention**: new section in communication-policy.md codifying the 7 rules for pipeline skill behavior
+- **Pipeline Skill Execution**: new orchestrator subsection clarifying skills are not phases and how to read skill results from Bash tool_result
+- **local-codex-review**: no longer user-invocable — invoked only by review-loop-controller
+- **setup-project**: output fields normalized to lowercase snake_case
+
+### Fixed
+
+- **Governance YAML compliance**: inline field references across framework governance docs normalized to lowercase
+- **TASK-NNN schema support**: complete blocked schema with expanded stage enum
+- **Reconstruction/bypass runbook fixes**: field names corrected, trivial evidence slot fixed
+
 ## [1.6.1] - 2026-05-15
 
 ### Fixed
