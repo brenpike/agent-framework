@@ -219,7 +219,13 @@ Steps:
 
    On `resolveReviewThread` failure, log the reason in `Thread-resolved:` — resolution is non-blocking; the fix-SHA reply is the primary re-review gate.
 
-4. **Final Bash tool call** (post-fix mode). The last GraphQL mutation or `gh pr comment` command from steps 2-3 serves as the final Bash tool call. If thread resolution was performed, the `resolveReviewThread` mutation is the final call. Emit a summary line to stdout: `printf 'mode: post-fix\nfix_sha: %s\nreply: posted\nthread_resolved: %s\n' "$fix_sha" "$resolution_status"`. Exit 0 on success. If any required input is missing or validation failed, emit blocker to stderr and exit 1.
+4. **Final Bash tool call** (post-fix mode). After all GitHub operations (fix-SHA reply and optional thread resolution) complete, emit YAML routing data as the final Bash tool call:
+
+   ```bash
+   printf 'mode: post-fix\nfix_sha: %s\nreply: posted\nthread_resolved: %s\n' "<fix_sha>" "<resolution_status>"
+   ```
+
+   Where `<fix_sha>` is the literal commit SHA from the orchestrator's input and `<resolution_status>` is `resolved`, `skipped`, or `failed` from step 3. Exit 0 on success. If any required input is missing or a GitHub operation failed critically, emit blocker to stderr and exit 1.
 
 ## Silence Discipline
 

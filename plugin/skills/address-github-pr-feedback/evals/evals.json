@@ -4,17 +4,17 @@
     {
       "id": 1,
       "prompt": "Fix the review feedback on PR #42 in the agent-framework repo. For this simulation: PR #42 is OPEN on branch feature/foo targeting main. One unresolved review thread: thread ID PRRT_abc123, from reviewer 'alice', body: 'The function name processData is misleading — it modifies state in place. Rename to mutateData or return a new value.', on file src/utils.md line 45. SELF_LOGIN is 'test-bot'. No other candidates. Validation: jq . ${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json > /dev/null. Do NOT make real GitHub API calls — simulate the full skill procedure and report what you would do at each step. Save your procedure report to outputs/procedure_report.md.",
-      "expected_output": "Skill classifies the comment as actionable-code-change, routes to agent-framework:coder, scopes fix to src/utils.md, runs validation, commits and pushes, posts fix-SHA reply to PRRT_abc123, resolves thread. Status: complete.",
+      "expected_output": "Skill classifies the comment as actionable-code-change, returns classify-mode YAML with routing recommendation to coder, candidate URL, source kind, and thread ID. Does not fix, commit, push, or resolve threads directly — exits 0 with YAML routing data in stdout.",
       "files": [],
       "expectations": [
         "Classifies the review comment as actionable-code-change",
-        "Routes fix to agent-framework:coder (not designer or planner)",
-        "Scopes fix to the file mentioned in the thread (src/utils.md)",
-        "Plans to post a fix-SHA reply on thread PRRT_abc123",
-        "Plans to attempt thread resolution via resolveReviewThread after fix is committed",
-        "Does not request Codex re-review",
-        "Output Status is complete or partial (not blocked)",
-        "Output includes a Feedback.Classification field"
+        "Returns routing recommendation to coder",
+        "Includes candidate_url in YAML output",
+        "Includes thread_id in YAML output",
+        "Includes source_kind in YAML output",
+        "Does NOT commit, push, or resolve threads in classify mode",
+        "Does NOT invoke agent-framework:coder directly",
+        "Exits 0 with YAML routing data in stdout"
       ]
     },
     {
