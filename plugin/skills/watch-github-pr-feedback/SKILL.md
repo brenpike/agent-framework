@@ -154,11 +154,10 @@ Optional:
    printf 'items: []\nmonitoring: %s\n' "$monitoring_state"
    ```
 
-   Where `$monitoring_state` is `active` (Monitor running, no new items this poll) or `not_active` (Monitor pre-flight failed or startup error — include `reason` field). For pre-flight failure, sanitize `failure_reason` with POSIX `tr` (replace newlines with spaces) and wrap in quotes before interpolation, then append a reason field:
+   Where `$monitoring_state` is `active` (Monitor running, no new items this poll) or `not_active` (Monitor pre-flight failed or startup error — include `reason` field). For pre-flight failure, sanitize `failure_reason` inline within the printf using command substitution (POSIX `tr` strips newlines; the entire command starts with `printf` matching `Bash(printf *)`):
 
    ```bash
-   failure_reason_safe=$(printf '%s' "$failure_reason" | tr '\n' ' ')
-   printf 'items: []\nmonitoring: not_active\nreason: "%s"\n' "$failure_reason_safe"
+   printf 'items: []\nmonitoring: not_active\nreason: "%s"\n' "$(printf '%s' "$failure_reason" | tr '\n' ' ')"
    ```
 
    Exit 0. The orchestrator matches STT rows 70/71 based on the `monitoring` value.
