@@ -1,109 +1,103 @@
 # Communication Policy
 
-## Purpose
-
-Defines agent-to-agent communication standards and shared report contracts.
-
 ## Communication Standard
 
-Agent-to-agent communication must be field-based.
+Agents communicate via structured YAML documents. Every report and delegation must parse as valid YAML. Include only fields relevant to the report type; omit optional fields when empty.
 
-Rules:
+Evidence handling: always externalize test output, build logs, diffs >50 lines, and command output >50 lines to `.agent-framework/evidence/<EVD-NNN>.md`. All other evidence: max 50 lines inline — exceeding this threshold requires externalization. Reference externalized evidence by anchor ID only. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.
 
-- every line of the report must be either a heading, a labeled field of the form `Field: value`, a list item under such a field, or blank — no standalone sentences outside a field
-- include every required section in the contract being used (Shared Worker Report Contract or Blocked Report Contract)
-- include an optional section only when at least one item exists for it; otherwise omit the section heading entirely
-- report facts, blockers, scope needs, validation, versioning, review state, and git state directly
-- do not restate policy or workflow rules inside routine reports
+## Worker Report — Complete (Non-Trivial)
 
-## Shared Worker Report Contract
+Use for any phase-closing report when the delegation included `step: STEP-NNN`.
 
-Use this by default for planner-delegated worker output:
-
-```text
-Status: complete | partial | blocked
-
-Changed:
-- path/to/file
-- None
-
-Validated:
-- [check]
-- Not run
-
-Need scope change:
-- path/to/file: reason
-- None
-
-Issues:
-- [issue]
-- None
+```yaml
+status: complete
+step: STEP-001
+outcome: [what was accomplished]
+changed: [file1, file2]
+validated:
+  check_name: pass|fail
+version: required|none
+scope_out: ["*"]
+decisions:
+  DEC-001: [decision and rationale]
+risks:
+  RISK-001: [description]:[low|medium|high]
+assumptions:
+  ASM-001: [assumption]
+evidence:
+  EVD-001: [one-line synopsis]
+next: [what next phase must do]
+risk_level: low|medium|high
 ```
 
-Optional lines. Include each line below only when its trigger fires; otherwise omit the line entirely.
+Field notes:
+- `decisions`, `risks`, `assumptions`, `evidence` — anchor IDs per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
+- `risks` — list `None` when no concrete risks were identified
+- `evidence` — one-line synopsis only; full content externalized per evidence handling rules above
+- `scope_out` — files/areas explicitly excluded; use `["*"]` for none
 
-- `Refs: ...` — when the worker consulted external docs, prior commits, or memory; list them
-- `States handled: ...` — when the assignment had a `States:` or `Edge cases:` field; list each state addressed
-- `Commit: ...` — when the worker is delegated to commit (per Authority Matrix); include the SHA
-- `Version: required|none|unknown` — when the changed files match the project's bump-trigger paths or, when undefined, do not match the "No bump is required by default" list
-- `Review item: ...` — when the work was review-remediation; include the comment ID or thread ID
-- `Git issue: ...` — when git state matches the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` or any preflight item is undefined
-- `Ready to resolve: yes|no` — when the work was review-remediation
-- `Evidence refs: EVD-NNN — synopsis` — when the task externalized any evidence per Progressive Evidence Rule and the delegation carries a Step-omitting Bypass Allowlist code per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix). Multi-phase delegations that include `Step: STEP-NNN` (including first phases that carry `Bypass: NO_PRIOR_PHASE` alongside the present `Step:`) record `EVD-NNN` anchors in the `Evidence:` field of the `Step delta:` section instead. Each externalized `EVD-NNN` anchor is recorded in exactly one slot per the matrix; list one entry per anchor.
+## Worker Report — Blocked
 
-## Context Management Fields (Handoff Schema)
+Use when any stage cannot proceed.
 
-At phase close, workers must capture the following fields in addition to the standard report contract fields above. These fields form the handoff artifact — stored as claude-mem observations when available, or as an in-session artifact under `.agent-framework/handoffs/` when claude-mem is absent.
-
-Required observation fields:
-- `Objective:` — the phase's stated goal
-- `Scope in:` — files/areas included
-- `Scope out:` — files/areas explicitly excluded
-- `Decisions:` — each entry must carry an anchor ID in `DEC-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
-- `Risks:` — each entry must carry an anchor ID in `RISK-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors); list `None` when no concrete risks were identified during the phase
-- `Assumptions:` — each entry must carry an anchor ID in `ASM-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
-- `Open questions:` — unresolved items requiring future attention
-- `Artifacts:` — files created or modified with paths
-- `Evidence refs:` — each entry must carry an anchor ID in `EVD-NNN` format per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors); evidence in the always-externalize categories (test output, build logs, large diffs, command output >50 lines) must be externalized to `.agent-framework/evidence/` regardless of size, and any other evidence exceeding 50 lines must also be externalized — referenced by anchor ID only (see Progressive Evidence Rule below)
-- `Next actions:` — what the next phase must do
-- `Risk level:` — low | medium | high
-
-All context management fields above are mandatory for non-trivial phase-closing reports. Existing required report fields (`Status`, `Changed`, `Validated`, `Need scope change`, `Issues`) remain required alongside these fields.
-
-## Step Delta
-
-Workers must append a `Step delta:` section to every phase-closing report when a `Step: STEP-NNN` field was included in the delegation. This section enables compact phase-to-phase state transfer.
-
-```text
-Step delta:
-  Step: STEP-NNN
-  Outcome: [what was accomplished]
-  Decisions: DEC-NNN — [decision and rationale] (anchor ID required)
-  Risks: RISK-NNN — [risk description and impact] (anchor ID required; list `None` when no concrete risks were identified)
-  Assumptions unresolved: ASM-NNN — [assumption and impact] (anchor ID required)
-  Evidence: EVD-NNN — [one-line synopsis only] (anchor ID required; ≤50 lines inline only when type permits — test output, build logs, large diffs, and command output >50 lines must always be externalized per Progressive Evidence Rule)
+```yaml
+status: blocked
+stage: [planning|implementation|validation|git|versioning|review|monitoring]
+blocker: [one-line reason]
+retry: [not attempted|retried once|exhausted]
+impact: [what cannot proceed]
+next: [specific next step]
 ```
 
-The orchestrator extracts the `Step delta:` section and all mandatory Context Management Fields after phase verification, stores the full candidate handoff (as a claude-mem observation or under `.agent-framework/handoffs/STEP-NNN.md`), and delegates the next phase with the compact candidate handoff — not the full prior phase report or tool outputs.
+## Worker Report — Trivial
 
-## Progressive Evidence Rule
+Use when the delegation carried no `step:` field and the change is trivial.
 
-Evidence fields in step-delta and context management fields reference anchors only — inline the anchor ID and a one-line synopsis. Full evidence content must not be inlined beyond 50 lines in any delegation, report, or handoff artifact. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list, externalization procedure, and lazy-load triggers.
-
-## Blocked Report Contract
-
-Use this for blocked planning, execution, validation, git, versioning, review, monitoring, or skill states:
-
-```text
-Status: blocked
-Stage: [planning | implementation | validation | git workflow | versioning | review remediation | monitoring | skill selection | fetch | parse | route]
-Blocker: [one-line reason]
-Retry status: [not attempted | retried once | exhausted]
-Fallback used: [none | description]
-Impact: [what cannot proceed]
-Next action:
-- [specific next step]
+```yaml
+status: complete
+changed: [file]
+validated:
+  check: pass
 ```
+
+## Delegation Template
+
+```yaml
+task: [required outcome]
+step: STEP-001
+bypass: TRIVIAL_CHANGE
+files: [exact file list]
+done_when: [observable completion condition]
+depends_on: [prior phase output | none]
+edge_cases: [case list]
+git:
+  class: refactor
+  base: main
+  work: refactor/governance-dedup-compression
+  worktree: no
+  commit: checkpoint expected
+  pr: main
+  model: sonnet
+constraints: [list]
+anchor_reservation:
+  DEC: "001-003"
+  RISK: "001-002"
+  ASM: "001-002"
+  EVD: "001-003"
+memory_context: [results | none]
+session_facts:
+  trunk: main
+  validation: "jq . plugin/.claude-plugin/plugin.json > /dev/null"
+  task_type: refactor
+  claude_mem: present
+  active_step: STEP-001
+```
+
+Variant fields — include inline when the delegation type requires them:
+
+- **Version bump:** add `version: {from: X.Y.Z, to: A.B.C}`. Model: sonnet.
+- **Review remediation:** add `review: {pr: N, source: Codex|human, thread: id, classification: type, severity: P0|P1|P2}`. Constraint: do not resolve threads.
 
 ## Session Fact Cache
 
