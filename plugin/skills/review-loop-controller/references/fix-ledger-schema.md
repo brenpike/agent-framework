@@ -15,6 +15,8 @@ Read this file when initializing or updating the fix ledger in Procedure step 3.
           "id": "string",
           "severity": "string",
           "title": "string",
+          "body": "string",
+          "recommendation": "string|null",
           "file": "string",
           "line_start": 0,
           "line_end": 0,
