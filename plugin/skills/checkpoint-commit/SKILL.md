@@ -46,7 +46,13 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
    - `<subject>` is 72 characters or fewer
    - include a body only when one of: (a) the change reverts a prior commit, (b) the change includes a `BREAKING CHANGE:` footer, (c) the planner's delegation contains a `Why:` field, OR (d) the orchestrator passes `commit_body` explicitly. Otherwise omit the body.
    - the message must not contain any of the strings forbidden by `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Pull Requests) generated-content list
-5. The `git commit` command in step 4 is the final Bash tool call. Its natural stdout (commit SHA and message) is the routing data. If any step fails, emit blocker to stderr and exit 1.
+5. **Final Bash tool call.** Commit and emit YAML routing data in a single compound command:
+
+   ```bash
+   git commit -m "<message>" > /dev/null && printf 'branch: %s\ncommit: %s\n' "$(git branch --show-current)" "$(git rev-parse --short HEAD)"
+   ```
+
+   If the commit fails, emit blocker to stderr and exit 1: `printf 'blocker: commit failed' >&2; exit 1`.
 
 ## Silence Discipline
 

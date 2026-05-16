@@ -66,10 +66,10 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 8. **Final Bash tool call.** Verify PR head SHA matches local HEAD in a single compound command:
 
    ```bash
-   pr_json=$(gh pr view <pr> --json url,headRefOid) && pr_sha=$(echo "$pr_json" | jq -r .headRefOid) && if [ "$local_sha" != "$pr_sha" ]; then printf 'blocker: PR head SHA mismatch — expected %s got %s' "$local_sha" "$pr_sha" >&2; exit 1; fi && echo "$pr_json"
+   pr_sha=$(gh pr view <pr> --json headRefOid --jq '.headRefOid') && if [ "$local_sha" != "$pr_sha" ]; then printf 'blocker: PR head SHA mismatch — expected %s got %s' "$local_sha" "$pr_sha" >&2; exit 1; fi && printf 'url: %s\nhead_ref_oid: %s\n' "$(gh pr view <pr> --json url --jq '.url')" "$pr_sha"
    ```
 
-   Where `$local_sha` is the value captured in step 5. On success (SHA matches), the JSON output (`url` + `headRefOid`) is the routing data. On mismatch, exits 1 with blocker in stderr.
+   Where `$local_sha` is the value captured in step 5. On success (SHA matches), the YAML output (`url` + `head_ref_oid`) is the routing data. On mismatch, exits 1 with blocker in stderr.
 
 ## Silence Discipline
 

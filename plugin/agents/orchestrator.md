@@ -203,7 +203,7 @@ Invoke skills on demand. Use the narrowest matching skill.
 - `agent-framework:address-github-pr-feedback`: one-time PR feedback (request lacks watch/monitor/wait/poll/loop). Mode `classify`: fetch, scan, classify, return routing. Mode `post-fix`: post fix-SHA reply, resolve thread. See step 15.
 - `agent-framework:watch-github-pr-feedback`: when request contains watch/monitor/wait/poll/loop. PR identification is the skill's responsibility. Orchestrator drives step-15 remediation on returned items (severity-ordered, re-classify after each fix).
 - `agent-framework:review-loop-controller`: pre-PR local Codex review. Orchestrator drives loop: `mode: iterate` then `mode: continue` with `fix_results`.
-- `agent-framework:local-codex-review`: invoked by `review-loop-controller`; users may invoke directly.
+- `agent-framework:local-codex-review`: invoked by `review-loop-controller`; not user-invocable.
 
 Selection order (most specific first):
 
