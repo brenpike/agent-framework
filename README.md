@@ -142,14 +142,12 @@ Reference documentation in `plugin/governance/`:
 | `branching-pr-workflow.md` | Branch taxonomy, naming rules, commit and PR policy |
 | `communication-policy.md` | Phase-closing reports, step deltas, handoff formats |
 | `context-management-policy.md` | Retrieval anchors, bypass codes, compaction rules |
-| `git-policy.md` | Git operation constraints and safety rules |
 | `scope-policy.md` | File-scope enforcement and scope-change escalation |
 | `pr-review-remediation-loop.md` | External PR review feedback handling, classification, and remediation routing |
 | `versioning.md` | SemVer rules, bump triggers, changelog and tag policy |
 | `security-policy.md` | Security constraints and secret-handling rules |
 | `escalation-policy.md` | Escalation triggers and routing rules |
 | `monitoring-policy.md` | Runtime monitoring and health-check policy |
-| `validation-policy.md` | Validation gates and verification requirements |
 | `auto-clear-thrash-runbook.md` | Runbook for auto-clear thrashing incidents |
 | `reconstruction-failure-runbook.md` | Runbook for context reconstruction failures |
 | `unresolved-contradiction-runbook.md` | Runbook for unresolved governance contradictions |
