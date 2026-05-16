@@ -45,15 +45,13 @@ The agent must stop and surface the contradiction to the user immediately (bypas
 
 When escalating, emit Worker Report — Blocked per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Blocked) with:
 
-```text
-Status: blocked
-Stage: implementation
-Blocker: unresolved contradiction — [DEC-NNN vs DEC-NNN | field-level conflict description]
-Retry status: not attempted | retried once (prior resolution failed)
-Fallback used: none — auto-resolution not permitted
-Impact: phase finalization blocked; next phase cannot proceed
-Next action:
-- User selects which value wins: [current phase value] or [prior phase value]
+```yaml
+status: blocked
+stage: implementation
+blocker: "unresolved contradiction — [DEC-NNN vs DEC-NNN | field-level conflict description]"
+retry: not attempted | retried once
+impact: "phase finalization blocked; next phase cannot proceed"
+next: "user selects which value wins: [current phase value] or [prior phase value]"
 ```
 
 ---

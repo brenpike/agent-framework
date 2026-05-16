@@ -40,15 +40,13 @@ The agent must stop and surface the failure to the user when any of the followin
 
 When escalating, emit Worker Report — Blocked per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Blocked) with:
 
-```text
-Status: blocked
-Stage: implementation
-Blocker: reconstruction test failed — missing fields: [list missing field names]
-Retry status: retried once | exhausted
-Fallback used: targeted rehydration via mem-search | file read | none
-Impact: next phase cannot be delegated without [missing field names]
-Next action:
-- User supplies missing context for: [list missing field names]
+```yaml
+status: blocked
+stage: implementation
+blocker: "reconstruction test failed — missing fields: [list missing field names]"
+retry: retried once | exhausted
+impact: "next phase cannot be delegated without [missing field names]"
+next: "user supplies missing context for: [list missing field names]"
 ```
 
 ---

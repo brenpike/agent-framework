@@ -40,16 +40,13 @@ The agent must stop and surface the thrash condition to the user when any of the
 
 When escalating, emit Worker Report — Blocked per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Blocked) with:
 
-```text
-Status: blocked
-Stage: implementation
-Blocker: auto-clear thrash — [cycle count] cycles in [phase ID]; threshold miscalibrated
-Retry status: not attempted
-Fallback used: auto-clear suspended for current phase
-Impact: context management degraded; phase completing without auto-clear
-Next action:
-- Review trigger thresholds for task type [task class if known]
-- Adjust N-tool-call threshold or clarify phase boundary definition
+```yaml
+status: blocked
+stage: implementation
+blocker: "auto-clear thrash — [cycle count] cycles in [phase ID]; threshold miscalibrated"
+retry: not attempted
+impact: "context management degraded; phase completing without auto-clear"
+next: "review trigger thresholds for task type [task class if known]; adjust N-tool-call threshold or clarify phase boundary definition"
 ```
 
 ---

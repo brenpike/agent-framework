@@ -70,7 +70,7 @@ The `evidence` field is optional in trivial reports — include only when mandat
 ```yaml
 task: [required outcome]
 step: STEP-001
-bypass: TRIVIAL_CHANGE
+bypass: NO_PRIOR_PHASE
 files: [exact file list]
 done_when: [observable completion condition]
 depends_on: [prior phase output | none]
