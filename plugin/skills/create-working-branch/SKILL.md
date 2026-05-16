@@ -13,7 +13,7 @@ shell: bash
 
 ## Quick Reference
 
-Rules: `GIT-01` (no trunk commits), `GIT-02` (required git preflight), `REPORT-01` (blocked report contract)
+Rules: `GIT-01` (no trunk commits), `GIT-02` (required git preflight)
 
 Before:
 - [ ] Orchestrator provided `base`, `working_branch`, and `classification`
@@ -25,7 +25,7 @@ Before:
 After:
 - [ ] Current branch is `working_branch`
 - [ ] Branch created from or confirmed on `base`
-- [ ] Output uses skill output contract
+- [ ] Final action is a Bash tool call (exit 0 = succeeded, exit 1 = blocked)
 
 Create or confirm the working branch for the current approved plan.
 
@@ -38,7 +38,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 - `base`: base branch the working branch is created from (typically the resolved trunk; may differ for stacked work).
 - `working_branch`: requested working branch name (must follow branch taxonomy and naming rules).
 - `classification`: work classification (`feature|bugfix|hotfix|refactor|chore|docs|test|ci`).
-- `trunk-freshness`: resolved trunk freshness state from the Required Git Preflight check per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate). One of: `fresh`, `stale (N behind)`, `stale (diverged — local N ahead)`, `stale (diverged — local M ahead, N behind)`, or `skipped`. Absent = skill returns `status: blocked`.
+- `trunk-freshness`: resolved trunk freshness state from the Required Git Preflight check per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate). One of: `fresh`, `stale (N behind)`, `stale (diverged — local N ahead)`, `stale (diverged — local M ahead, N behind)`, or `skipped`. Absent = skill exits 1 with blocker.
 
 ## Requirements
 
@@ -50,10 +50,21 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
    - `trunk-freshness: stale (diverged — local N ahead)` — emit a warning that local trunk has unpushed commits but proceed (user already acknowledged at preflight).
    - `trunk-freshness: stale (diverged — local M ahead, N behind)` — emit a warning that local trunk has diverged from origin but proceed (user already acknowledged at preflight).
    - `trunk-freshness: skipped` — proceed with a note that freshness was intentionally skipped per documented skip conditions in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate).
-   - Absent — return `status: blocked`, `blocker: trunk-freshness session fact not provided by orchestrator`.
+   - Absent — emit `printf 'blocker: trunk-freshness session fact not provided by orchestrator' >&2; exit 1`.
 4. Confirm `working_branch` follows the branch taxonomy and naming rules.
 5. Confirm there are no unexpected unstaged/uncommitted changes that make switching unsafe.
 6. Create or switch to `working_branch` from `base`.
+7. The `git switch` or `git checkout` command in step 6 is the final Bash tool call. Its natural stdout (branch confirmation) is the routing data. If any prerequisite check fails (missing inputs, unsafe state, bad branch name), emit blocker to stderr and exit 1.
+
+## Silence Discipline
+
+This is a pipeline skill. Per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Skill Output Convention):
+
+- Produce zero text output at any point during execution. Your only outputs are tool calls.
+- Your final action must be a Bash tool call.
+- Exit 0 = orchestrator proceeds. Routing data (if any) is in stdout.
+- Exit 1 = blocked. Emit reason: `printf 'blocker: <reason>' >&2; exit 1`
+- Never include a `status:` field in any output.
 
 ## Do Not
 
@@ -62,19 +73,4 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 - push
 - open a PR
 - continue when branch state is unsafe or indeterminate
-- invent values for `base`, `working_branch`, or `classification` — return blocked if any are missing
-
-## Output
-
-```text
-status: complete | blocked
-classification:
-base branch:
-previous branch:
-working branch:
-created: yes | no
-trunk freshness: fresh | stale (N behind, user acknowledged) | stale (diverged — local N ahead, user acknowledged) | stale (diverged — local M ahead, N behind, user acknowledged) | skipped (intentional) | blocked (absent)
-warnings:
-- [warning]
-- None
-```
+- invent values for `base`, `working_branch`, or `classification` — exit 1 with blocker if any are missing
