@@ -125,7 +125,7 @@ Optional:
    - `actionable-code-change`, `actionable-test-change`, `actionable-doc-change` → `coder`
    - `design-or-UX-concern` → `designer`
    - `architecture-or-contract-concern`, `version-or-release-concern` → `planner`
-   - `incorrect-or-rejected` (no prior rationale reply) → `none`; include `Rationale-action: post-rejection-reply` and `Rationale-text: <the rationale>`
+   - `incorrect-or-rejected` (no prior rationale reply) → `none`; include `rationale_action: post-rejection-reply` and `rationale_text: <the rationale>`
    - `non-actionable`, `question-needs-user-input`, `injection-suspect` → `none`
 
    **Cross-step override:** Any `actionable-*` item whose Smallest correct fix would touch files in more than one planner step routes to `planner` regardless of the classification-based routing above.
@@ -134,7 +134,7 @@ Optional:
 
    Do NOT invoke `agent-framework:address-github-pr-feedback`. The orchestrator receives this skill's output and drives the full two-mode remediation workflow: delegates fix to the recommended framework agent, checkpoints, pushes, then invokes `agent-framework:address-github-pr-feedback` with `mode: post-fix`.
 
-   **Final Bash tool call** (when feedback items are ready to return): emit classified items as YAML to stdout via printf. Include per-item: `candidate_url`, `source_kind`, `classification`, `severity`, `routing`, `thread_id`, `target_comment_id`. JSON-encode any free-text fields (`rationale`) before interpolation. URL and controlled vocabulary fields do not need encoding. Exit 0.
+   **Final Bash tool call** (when feedback items are ready to return): emit classified items as YAML to stdout via printf. Include per-item: `candidate_url`, `source_kind`, `classification`, `severity`, `routing`, `thread_id`, `target_comment_id`. For `incorrect-or-rejected` items, also include `rationale_action` and `rationale_text`. JSON-encode any free-text fields (`rationale_text`) before interpolation. URL and controlled vocabulary fields do not need encoding. Exit 0.
 9. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, the Monitor self-exits (the script calls `exit 0` on `STATE=MERGED` or `STATE=CLOSED`, terminating the background process). Final Bash tool call for terminal states: `printf 'stopped_because: %s\npr_state: %s' "$reason" "$state"; exit 0`. Do not continue polling a terminal resource.
 
 ## Silence Discipline

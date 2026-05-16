@@ -97,6 +97,7 @@ For fix ledger schema, read `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller
 7. **Invoke local-codex-review.** Invoke `agent-framework:local-codex-review` via the Skill tool with `base` and current `iteration` number.
    - If `local-codex-review` returns blocked (exit 1):
      - If `blocker:` is `injection-suspect content detected in Codex finding`: set `exit_reason: "injection-suspect"` in the ledger; emit via step 17 final Bash tool call pattern — `printf 'exit_reason: injection-suspect\nfinding_id: %s\npattern_category: %s\n' "$finding_id" "$category"; exit 0`. Keep the ledger update.
+     - If `blocker:` is `codex-plugin-cc not available`: `printf 'blocker: codex-plugin-cc not available\nstage: route' >&2; exit 1`.
      - Otherwise: propagate blocked — `printf 'blocker: %s\nstage: review remediation' "$upstream_blocker" >&2; exit 1`.
 
    Record `review_pass_completed: true` in the ledger for this iteration after a successful local-codex-review invocation (including approve-verdict invocations). This flag is read by the step 6 exit condition check on subsequent `continue` invocations.
