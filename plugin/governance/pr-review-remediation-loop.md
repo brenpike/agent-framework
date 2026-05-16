@@ -221,4 +221,4 @@ Maintain a durable fix ledger per branch (see `${CLAUDE_PLUGIN_ROOT}/skills/revi
 
 ### Push + PR Gate
 
-The orchestrator must not push or open a PR until the controller returns `Exit-reason: "clean"` or the user explicitly approves push after `max-iterations-reached`. See orchestrator Execution Algorithm step 13a.
+The orchestrator must not push or open a PR until the controller returns `exit_reason: "clean"` or the user explicitly approves push after `max-iterations-reached`. See orchestrator Execution Algorithm step 13a.

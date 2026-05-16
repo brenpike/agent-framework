@@ -43,17 +43,15 @@ The agent must stop and surface the contradiction to the user immediately (bypas
 - The contradiction cannot be resolved without changing already-committed artifacts (files that have been included in a checkpoint commit on the working branch).
 - The same contradiction recurs after a prior resolution attempt within the same task (same field name or same DEC-NNN/ASM-NNN pair flagged in a previous contradiction report).
 
-When escalating, emit the Blocked Report Contract defined in `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Blocked Report Contract) with:
+When escalating, emit Worker Report — Blocked per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Blocked) with:
 
-```text
-Status: blocked
-Stage: implementation
-Blocker: unresolved contradiction — [DEC-NNN vs DEC-NNN | field-level conflict description]
-Retry status: not attempted | retried once (prior resolution failed)
-Fallback used: none — auto-resolution not permitted
-Impact: phase finalization blocked; next phase cannot proceed
-Next action:
-- User selects which value wins: [current phase value] or [prior phase value]
+```yaml
+status: blocked
+stage: implementation
+blocker: "unresolved contradiction — [DEC-NNN vs DEC-NNN | field-level conflict description]"
+retry: not attempted | retried once
+impact: "phase finalization blocked; next phase cannot proceed"
+next: "user selects which value wins: [current phase value] or [prior phase value]"
 ```
 
 ---
@@ -63,8 +61,8 @@ Next action:
 Once the user selects a resolution:
 
 1. Record the resolution as a new decision: `DEC-NNN -- [winning value]; rationale: [user-stated reason or "user override"]`.
-2. Update the losing anchor to mark it superseded: `[SUPERSEDED by DEC-NNN]`. This annotation is appended to the original DEC-NNN or ASM-NNN entry in the step-delta where it was first recorded.
-3. If the superseded value exists in an already-stored handoff artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`), annotate the supersession in the current phase's step-delta. Do not retroactively edit prior handoff artifacts.
+2. Update the losing anchor to mark it superseded: `[SUPERSEDED by DEC-NNN]`. This annotation is appended to the original DEC-NNN or ASM-NNN entry in the report where it was first recorded.
+3. If the superseded value exists in an already-stored handoff artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`), annotate the supersession in the current phase's report. Do not retroactively edit prior handoff artifacts.
 4. Resume finalization of the current phase with the resolved value in place.
 5. Include the resolution in the current phase's `Decisions:` list in the handoff artifact so downstream phases inherit the correct state.
 
@@ -72,4 +70,4 @@ Once the user selects a resolution:
 
 ## Cross-References
 
-`${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Contradiction Detection, Invariant Categories) | `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields, Step Delta, Blocked Report Contract)
+`${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Contradiction Detection, Invariant Categories) | `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Complete, Worker Report — Blocked)

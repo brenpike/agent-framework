@@ -23,7 +23,7 @@ Before:
 After:
 - [ ] Required keys applied to `.claude/settings.json`
 - [ ] Existing keys preserved
-- [ ] Output uses skill output contract
+- [ ] Output uses lowercase snake_case field names
 - [ ] `.agent-framework/` entry ensured in `.gitignore`
 
 # Setup Project
@@ -90,30 +90,30 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Output
 
 ```text
-Status: complete | partial | blocked
+status: complete | partial | blocked
 
-Project root:
+project_root:
 - [absolute path]
 
-Target file:
+target_file:
 - .claude/settings.json: created | updated | unchanged
 
-Gitignore:
+gitignore:
 - .gitignore: created | updated | already present | skipped (dry_run)
 
-Keys applied:
+keys_applied:
 - enabledPlugins["agent-framework@brenpike"]: added | already present
 - agent: added | already present | unchanged
 - enabledPlugins["claude-mem@thedotmack"]: added | already present | not requested
 - enabledPlugins["codex@openai-codex"]: added | already present | not requested
 
-Dry run: yes | no
+dry_run: yes | no
 
-Conflicts:
+conflicts:
 - [key]: existing value vs required value
 - None
 
-Issues:
+issues:
 - [issue]
 - None
 ```

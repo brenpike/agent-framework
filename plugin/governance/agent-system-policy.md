@@ -83,9 +83,13 @@ To "run validation" means: execute every command listed under the project's `CLA
 Rules:
 
 - Run every declared command. There is no duration cap; long-running commands are not skipped. The Validation procedure does not silently exclude slow checks.
-- If a declared command cannot be run (missing dependency, sandbox restriction, environment misconfiguration, etc.), do not skip it silently. Return the Blocked Report Contract with `Stage: validation`, naming the specific command and the concrete reason it cannot run. Workflow gates that require validation must not pass on a Blocked validation result.
+- If a declared command cannot be run (missing dependency, sandbox restriction, environment misconfiguration, etc.), do not skip it silently. Return the Worker Report — Blocked with `stage: validation`, naming the specific command and the concrete reason it cannot run. Workflow gates that require validation must not pass on a Blocked validation result.
 - If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so explicitly. Do not invent validation commands.
 - A skill or agent may set its own time budget (for example to bound a single Monitor poll), but that budget belongs to the skill/agent, not to this Definition. The skill must not advertise validation as run when it skipped a declared command on a time budget; instead it must return Blocked with the budget as the reason.
+
+### Pipeline skill
+
+A pipeline skill is any skill invoked by the orchestrator via the Skill tool during execution (listed in `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Skill Output Convention — Scope)). Pipeline skills operate under silence discipline: zero text output, final action is a tool call, exit code signals outcome. The Worker Report contracts (complete, blocked, trivial) defined in `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` do not apply to pipeline skills — they apply exclusively to worker agent reports and user-facing skill output.
 
 ### Material visual decision
 
@@ -106,7 +110,7 @@ Two skills handle PR feedback. Choose by user-request keywords only — the comm
 - `agent-framework:watch-github-pr-feedback` — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`
 - `agent-framework:address-github-pr-feedback` — every other PR-feedback request, including one-time fixes for Codex, human, or bot comments
 
-PR identification is the skill's responsibility, not the router's. If the user request matches `watch-github-pr-feedback` but does not name a PR, the orchestrator still routes to `watch-github-pr-feedback` and passes the available context (current branch, current repo). The skill resolves the PR via `gh pr view --json number,state` against the current branch. If no open PR is associated with the current branch, the skill returns the Blocked Report Contract with `Stage: skill selection` or `Stage: fetch` and `Blocker: no PR identified`. The same applies to `address-github-pr-feedback`.
+PR identification is the skill's responsibility, not the router's. If the user request matches `watch-github-pr-feedback` but does not name a PR, the orchestrator still routes to `watch-github-pr-feedback` and passes the available context (current branch, current repo). The skill resolves the PR via `gh pr view --json number,state` against the current branch. If no open PR is associated with the current branch, the skill exits 1 with blocker reason in stderr (e.g., `blocker: no PR identified`). The same applies to `address-github-pr-feedback`.
 
 The author of the comment (Codex, human reviewer, bot, automated reviewer) affects classification per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), not skill selection.
 

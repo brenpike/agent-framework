@@ -18,7 +18,7 @@ When auto-clear thrash is detected, the agent must:
 
 1. Suspend the auto-clear trigger for the current phase. No further auto-clear cycles may fire until the next phase boundary.
 2. Complete the current phase without further auto-clear. The agent continues execution with the context accumulated since the last clear, accepting the larger context window for the remainder of the phase.
-3. Log the thrash event in the current phase's step-delta as an evidence entry:
+3. Log the thrash event in the current phase's report as an evidence entry:
 
 ```text
 Evidence: EVD-NNN — auto-clear thrash detected
@@ -38,18 +38,15 @@ The agent must stop and surface the thrash condition to the user when any of the
 - A single phase triggers more than three auto-clear cycles before the thrash detection suspends further clears.
 - The thrash condition persists after a threshold adjustment was applied in a prior phase within the same task.
 
-When escalating, emit the Blocked Report Contract defined in `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Blocked Report Contract) with:
+When escalating, emit Worker Report — Blocked per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Blocked) with:
 
-```text
-Status: blocked
-Stage: implementation
-Blocker: auto-clear thrash — [cycle count] cycles in [phase ID]; threshold miscalibrated
-Retry status: not attempted
-Fallback used: auto-clear suspended for current phase
-Impact: context management degraded; phase completing without auto-clear
-Next action:
-- Review trigger thresholds for task type [task class if known]
-- Adjust N-tool-call threshold or clarify phase boundary definition
+```yaml
+status: blocked
+stage: implementation
+blocker: "auto-clear thrash — [cycle count] cycles in [phase ID]; threshold miscalibrated"
+retry: not attempted
+impact: "context management degraded; phase completing without auto-clear"
+next: "review trigger thresholds for task type [task class if known]; adjust N-tool-call threshold or clarify phase boundary definition"
 ```
 
 ---
@@ -63,7 +60,7 @@ At phase close, the orchestrator performs the following recovery steps:
    - Compare the configured phase-boundary trigger against the actual phase boundaries encountered.
 
 2. **If the N-tool-call trigger fired:**
-   - Recommend raising the tool-call threshold for the current task type. The recommendation is logged in the step-delta as a decision: `DEC-NNN -- recommend raising N-tool-call threshold from [current] to [proposed] for [task type]`.
+   - Recommend raising the tool-call threshold for the current task type. The recommendation is logged in the report as a decision: `DEC-NNN -- recommend raising N-tool-call threshold from [current] to [proposed] for [task type]`.
    - The threshold adjustment takes effect at the next phase boundary.
 
 3. **If the phase-boundary trigger fired spuriously** (e.g., a sub-task was mistaken for a phase boundary):
@@ -78,4 +75,4 @@ At phase close, the orchestrator performs the following recovery steps:
 
 ## Cross-References
 
-`${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Auto-Clear Procedure, Budget Profiles) | `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta, Blocked Report Contract, Context Management Fields)
+`${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Auto-Clear Procedure, Budget Profiles) | `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Complete, Worker Report — Blocked)

@@ -74,7 +74,7 @@ After any tool error, timeout, failed delegation, unusable output, missing permi
 
 1. retry exactly once if the failure matches the "Transient failure" definition
 2. continue with a documented safe fallback (a fallback is "documented" when it appears in the agent's own file or in a referenced skill/governance file)
-3. return `blocked` per the Blocked Report Contract
+3. return `blocked` per the Worker Report — Blocked
 
 Rules:
 

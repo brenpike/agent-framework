@@ -8,12 +8,13 @@ allowed-tools:
   - Bash(git commit *)
   - Bash(git rev-parse *)
   - Bash(git log *)
+  - Bash(printf *)
 shell: bash
 ---
 
 ## Quick Reference
 
-Rules: `GIT-01` (no trunk commits), `VAL-01` (validation gate), `REPORT-01` (blocked report contract)
+Rules: `GIT-01` (no trunk commits), `VAL-01` (validation gate)
 
 Before:
 - [ ] Current branch is not trunk
@@ -23,7 +24,7 @@ Before:
 After:
 - [ ] Commit message uses `<type>(<scope>): <subject>` format
 - [ ] No unrelated files included
-- [ ] Output uses skill output contract
+- [ ] Final action is a Bash tool call (exit 0 = succeeded, exit 1 = blocked)
 
 Create a checkpoint commit for the current approved plan.
 
@@ -45,6 +46,23 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
    - `<subject>` is 72 characters or fewer
    - include a body only when one of: (a) the change reverts a prior commit, (b) the change includes a `BREAKING CHANGE:` footer, (c) the planner's delegation contains a `Why:` field, OR (d) the orchestrator passes `commit_body` explicitly. Otherwise omit the body.
    - the message must not contain any of the strings forbidden by `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Pull Requests) generated-content list
+5. **Final Bash tool call.** Commit and emit YAML routing data in a single compound command:
+
+   ```bash
+   git commit -m "<message>" > /dev/null && printf 'branch: %s\ncommit: %s\n' "$(git branch --show-current)" "$(git rev-parse --short HEAD)"
+   ```
+
+   If the commit fails, emit blocker to stderr and exit 1: `printf 'blocker: commit failed' >&2; exit 1`.
+
+## Silence Discipline
+
+This is a pipeline skill. Per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Skill Output Convention):
+
+- Produce zero text output at any point during execution. Your only outputs are tool calls.
+- Your final action must be a Bash tool call.
+- Exit 0 = orchestrator proceeds. Routing data (if any) is in stdout.
+- Exit 1 = blocked. Emit reason: `printf 'blocker: <reason>' >&2; exit 1`
+- Never include a `status:` field in any output.
 
 ## Do Not
 
@@ -53,17 +71,3 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 - open a PR
 - include unrelated files
 - commit on `trunk`
-
-## Output
-
-```text
-Status: complete | blocked
-Branch:
-Commit:
-Message:
-Files included:
-- [file]
-Warnings:
-- [warning]
-- None
-```
