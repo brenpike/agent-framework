@@ -88,22 +88,7 @@ The orchestrator extracts the `Step delta:` section and all mandatory Context Ma
 
 ## Progressive Evidence Rule
 
-Evidence fields in step-delta and context management fields reference anchors only — inline the anchor ID and a one-line synopsis. Full evidence content must not be inlined beyond 50 lines in any delegation, report, or handoff artifact.
-
-The following evidence types must always be externalized regardless of size (mirrors `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading)):
-
-- Test output (unit, integration, end-to-end)
-- Build logs
-- Large diffs (any diff exceeding 50 lines)
-- Command output exceeding 50 lines
-
-For all other evidence types, content exceeding 50 lines must be externalized:
-
-1. Write the full evidence body to `.agent-framework/evidence/<ANCHOR-ID>.md` (e.g., `EVD-001.md`).
-2. Reference the evidence in the report or step-delta by anchor ID only (e.g., `EVD-001 — [one-line synopsis]`).
-3. Do not inline any portion of the externalized evidence beyond the synopsis.
-
-See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.
+Evidence fields in step-delta and context management fields reference anchors only — inline the anchor ID and a one-line synopsis. Full evidence content must not be inlined beyond 50 lines in any delegation, report, or handoff artifact. See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list, externalization procedure, and lazy-load triggers.
 
 ## Blocked Report Contract
 

@@ -112,17 +112,6 @@ Before finalizing any phase, compare your current candidate (worker report + ste
 
 ## Progressive Evidence Loading
 
-The following evidence types must always be externalized regardless of size (mirrors `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading)):
-
-- Test output (unit, integration, end-to-end)
-- Build logs
-- Large diffs (any diff exceeding 50 lines)
-- Command output exceeding 50 lines
-
-For all other evidence types, content inlined in a step-delta report, delegation, or handoff must not exceed 50 lines. When such evidence exceeds 50 lines:
-
-1. Write the full evidence body to `.agent-framework/evidence/<ANCHOR-ID>.md` (e.g., `EVD-001.md`).
-2. Reference the evidence in the report by anchor ID only (e.g., `EVD-001 — see .agent-framework/evidence/EVD-001.md`).
-3. Do not inline any portion beyond the one-sentence synopsis.
-
-See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading) for the canonical always-externalize list and lazy-load triggers.
+Always externalize: test output, build logs, diffs >50 lines, command output >50 lines.
+All other evidence: max 50 lines inline. Exceeding → write to `.agent-framework/evidence/<ANCHOR-ID>.md`, reference by anchor ID only.
+See `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Progressive Evidence Loading).

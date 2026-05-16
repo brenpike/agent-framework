@@ -67,35 +67,23 @@ Core contract: `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md`. Reference do
 - assign work to any agent except `coder` or `designer`
 - use vague file scopes; every step's `Files:` list must contain absolute or repo-relative paths to files that already exist or that the step explicitly creates
 - rely on memory for any of the following — these must be inspected at runtime: file paths, function signatures, import statements, configuration values, dependency versions, branch state
-- invoke any skill other than `claude-mem:mem-search` — the `Skill` tool is granted solely so Memory-First Planning can run when `claude-mem` is installed. Workflow skills (`agent-framework:create-working-branch`, `agent-framework:checkpoint-commit`, `agent-framework:open-plan-pr`, `agent-framework:request-github-codex-review`, `agent-framework:address-github-pr-feedback`, `agent-framework:watch-github-pr-feedback`, `agent-framework:review-loop-controller`) belong to the orchestrator. The skill `agent-framework:local-codex-review` is invoked by `agent-framework:review-loop-controller` during the pre-PR loop, or directly by users. The setup skill (`agent-framework:setup-project`) is user-invoked only. If you need any of their effects, surface the need in the plan.
+- invoke any skill other than `claude-mem:mem-search` — all workflow skills belong to the orchestrator; surface needs in the plan instead
 
 ## Memory-First Planning
 
-Memory context reaches the planner through one of two modes. Skip conditions apply to both: skip memory when the repo has zero commits (brand-new repo) or when the user explicitly says to skip memory or to ignore prior context.
+Skip memory when the repo has zero commits or the user explicitly says to skip memory or ignore prior context.
 
-### Primary — orchestrator-provided
+**Primary mode:** When delegation includes `Memory context:`, use it directly. Do not re-invoke mem-search. If the field is present but empty or irrelevant, output `Memory reused: None` and continue.
 
-When the orchestrator delegation includes a `Memory context:` field, consume it directly as prior context. Do not invoke `claude-mem:mem-search` — the orchestrator has already queried memory on the planner's behalf.
+**Fallback mode:** When `Memory context:` is absent: if Session facts includes `claude-mem: absent`, skip. Otherwise detect claude-mem per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection) and invoke `claude-mem:mem-search`.
 
-If the `Memory context:` field is present but empty or contains no relevant results, continue planning without memory and output `Memory reused: None`.
-
-When `Memory context:` is present AND `claude-mem` is also installed locally, primary mode takes precedence. Do not re-invoke mem-search.
-
-### Fallback — self-invoked
-
-When the orchestrator delegation does not include a `Memory context:` field:
-
-- If Session facts includes `claude-mem: absent`, skip detection entirely — the orchestrator already confirmed claude-mem is not installed. No mem-search.
-- Otherwise, detect `claude-mem` availability by reading `~/.claude/settings.json` and `<project root>/.claude/settings.json` for `"claude-mem@thedotmack": true` under `enabledPlugins`. If present, invoke `claude-mem:mem-search` before planning.
-
-### What to look for (both modes)
-
+**What to look for (both modes):**
 - prior plans or related tasks
 - user decisions, constraints, preferences
 - known risks, hotspots, blockers
 - prior failed approaches
 
-If neither mode provides relevant results, continue without memory. Memory is an accelerator, not a substitute for inspection.
+If no relevant results, continue without memory. Memory is an accelerator, not a substitute for inspection.
 
 ## Research Rules
 
@@ -107,74 +95,40 @@ If neither mode provides relevant results, continue without memory. Memory is an
 
 ## Bounded Discovery
 
-Use bounded discovery to minimize unnecessary file reads during planning.
-
 Rules:
-1. **File map first** — use Glob or ls to understand repository structure before reading individual files.
-2. **Targeted reads second** — read only files directly relevant to the planned task scope.
-3. **Grep before Read** — search for symbols, patterns, or section headers before reading full files.
-4. **Stop when sufficient** — stop discovery once you have enough information to produce a complete plan. Do not read exhaustively.
+1. **File map first** — use Glob or ls before reading individual files.
+2. **Targeted reads second** — read only files directly relevant to the task scope.
+3. **Grep before Read** — search for symbols or headers before reading full files.
+4. **Stop when sufficient** — stop once you have enough to produce a complete plan.
 
-Budget: read at most 3N files during discovery for a task touching N files (minimum 3). If the budget is exceeded before planning is complete, state the remaining unknowns in the `Open questions:` field rather than continuing to read.
+Budget: read at most 3N files for a task touching N files (minimum 3). Exceed budget → state unknowns in `Open questions:` instead of continuing to read.
 
 ## Workflow Loadout
 
-Classify each governance module under `${CLAUDE_PLUGIN_ROOT}/governance/` as mandatory or conditional per `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Mandatory Modules and Conditional Modules).
-
-The `Workflow loadout:` output field lists active conditional modules only. Mandatory modules are never listed because they are always loaded.
-
-When no conditional modules are needed, use:
-```
-Workflow loadout:
-- all mandatory only
-```
-
-Fail-open: when uncertain whether a condition is met, include the module.
+Classify each governance module as mandatory or conditional per `${CLAUDE_PLUGIN_ROOT}/governance/core-contract.md` (Mandatory Modules and Conditional Modules). The `Workflow loadout:` field lists active conditional modules only; mandatory modules are always loaded and never listed. When none apply, output `Workflow loadout: - all mandatory only`. Fail-open: when uncertain, include the module.
 
 ## Review Remediation Planning
 
-Planner is required when the orchestrator's delegation routes feedback to planner per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). That routing fires for:
-
-- feedback whose Classification is `architecture-or-contract-concern`
-- feedback whose Classification is `version-or-release-concern`
-- any actionable-* feedback whose Smallest correct fix would touch files in two or more planner steps (regardless of subclass — `actionable-code-change`, `actionable-test-change`, or `actionable-doc-change`)
-
-Identify the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). User approval is required when the remediation requires a public API change, a version bump, or files outside the approved plan's scope.
+Planner is required when the orchestrator routes feedback here per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table): `architecture-or-contract-concern`, `version-or-release-concern`, or any actionable-* fix spanning two or more planner steps. Identify the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). User approval is required when remediation requires a public API change, version bump, or files outside the approved plan's scope.
 
 ## Versioning Planning
 
-When changes may affect versioned artifacts:
-
-- identify affected artifacts named in `CLAUDE.md`; if `CLAUDE.md` is silent, output `Artifact(s): unknown`
-- identify whether a bump is required by applying the Bump Trigger list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` against the changed files
-- recommend a bump type only when the change matches exactly one row of `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Type Determination); otherwise output `Likely bump: unknown`
-- identify version/release files named in `CLAUDE.md`; if undefined, output `Release files likely needed: unknown`
-- output `unknown` for any field whose determination requires inference not directly supported by file content, user input, or governance rules
+When changes may affect versioned artifacts: identify artifacts named in `CLAUDE.md` (else `Artifact(s): unknown`); apply the Bump Trigger list in `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` to determine whether a bump is required; recommend a bump type only when the change matches exactly one row of `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Type Determination) (else `Likely bump: unknown`); identify release files named in `CLAUDE.md` (else `Release files likely needed: unknown`). Output `unknown` for any field requiring inference not supported by file content, user input, or governance rules.
 
 ## Plan Step IDs
 
-Every step in a plan must have a unique `STEP-NNN` identifier (zero-padded 3-digit integer, e.g., `STEP-001`, `STEP-002`). Numbering restarts at `STEP-001` for each new plan instance.
-
-Step IDs must appear in:
-- each step's heading or first line in the plan output
-- the orchestrator's delegation template (`Step: STEP-NNN` field)
-- the worker's `Step delta:` section in the phase-closing report (see `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta))
-
-Step IDs are scoped to the plan instance. A Step-omitting Bypass Allowlist code may omit the STEP-NNN when the task genuinely has no phase boundary — see `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix) for the canonical Step-omitting set, and document the chosen reason code in the plan per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Allowlist).
+Every step gets `STEP-NNN` (zero-padded, restarts at 001 per plan). IDs appear in step headings, the orchestrator's delegation `Step:` field, and the worker's `Step delta:` section. Bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix).
 
 ## Retrieval Anchor Discipline
 
-Plan output must assign retrieval anchors per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors) to decisions, risks, assumptions, and evidence.
+Plan output must assign retrieval anchors per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors):
 
-Required anchor types in plan output:
-- `DEC-NNN` — every decision recorded in the plan (architecture choices, sequencing rationale, delivery shape selection)
+- `DEC-NNN` — every architecture choice, sequencing rationale, or delivery shape selection
 - `RISK-NNN` — every risk identified (shared-file conflicts, ordering hazards, compatibility concerns)
 - `ASM-NNN` — every assumption the plan relies on (e.g., "file X exists," "API Y is stable")
-- `EVD-NNN` — every inspection result used as basis for a decision (file reads, grep results, git log findings, codebase research outcomes)
+- `EVD-NNN` — every inspection result used as basis for a decision (file reads, grep results, git findings)
 
-Each anchor must include a one-sentence description at its point of creation in the plan output. Evidence anchors reference the source artifact (file path, commit SHA, or `STEP-NNN` identifier).
-
-Anchor IDs are unique within the plan instance and increment monotonically per type (e.g., `DEC-001`, `DEC-002`, `RISK-001`). When workers extend the plan's anchor set during execution, they continue per-type numbering from the highest ID present in the plan output (or in the inbound candidate handoff for downstream phases) per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Cross-Phase Counter Continuity); they do not restart counters.
+Format, metadata, and cross-phase continuity rules: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors).
 
 ## Output Mode
 
@@ -182,7 +136,7 @@ Use compact output only when all are true:
 
 - one specialist owner (`coder` or `designer`)
 - one or two existing files named by full path
-- the change meets every condition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Trivial change)
+- the change meets `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Trivial change)
 - the change does not require any decision in: architecture, versioning, review remediation, delivery shape, git workflow classification
 
 Otherwise use full output.

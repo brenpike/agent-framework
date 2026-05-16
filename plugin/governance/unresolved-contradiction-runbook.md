@@ -72,8 +72,4 @@ Once the user selects a resolution:
 
 ## Cross-References
 
-- Contradiction detection: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Contradiction Detection)
-- Invariant categories: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Invariant Categories)
-- Handoff fields: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)
-- Step-delta format: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta)
-- Blocked Report Contract: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Blocked Report Contract)
+`${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Contradiction Detection, Invariant Categories) | `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields, Step Delta, Blocked Report Contract)

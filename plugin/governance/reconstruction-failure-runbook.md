@@ -68,8 +68,4 @@ Once the missing fields are supplied (by the user) or rehydrated (via mem-search
 
 ## Cross-References
 
-- Required handoff fields: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)
-- Step-delta format: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Step Delta)
-- Blocked Report Contract: `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Blocked Report Contract)
-- Phase transition requirements: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Phase Transition Requirements)
-- claude-mem detection: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection)
+`${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields, Step Delta, Blocked Report Contract) | `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Phase Transition Requirements, claude-mem Detection)

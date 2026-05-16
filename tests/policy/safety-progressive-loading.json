@@ -7,7 +7,7 @@
   "consumers": [
     {
       "file": "plugin/agents/orchestrator.md",
-      "pattern": "synopsis mode by default"
+      "pattern": "evidence in synopsis mode"
     },
     {
       "file": "plugin/governance/communication-policy.md",
