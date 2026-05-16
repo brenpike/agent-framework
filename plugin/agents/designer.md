@@ -104,7 +104,7 @@ Before completion:
 ## Reporting
 
 Produce YAML report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`:
-- Non-trivial phases (delegation included `step:`): use Worker Report — Complete schema. All handoff fields (`decisions`, `risks`, `assumptions`, `evidence`, `next`, `risk_level`) are mandatory.
+- Non-trivial phases (delegation included `step:` OR the bypass code maps to report type `complete`): use Worker Report — Complete schema. All handoff fields (`decisions`, `risks`, `assumptions`, `evidence`, `next`, `risk_level`) are mandatory.
 - Trivial tasks (no `step:` in delegation): use Worker Report — Trivial schema.
 - Blocked: use Worker Report — Blocked schema.
 

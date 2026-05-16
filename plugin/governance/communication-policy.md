@@ -8,7 +8,7 @@ Evidence handling: always externalize test output, build logs, diffs >50 lines, 
 
 ## Worker Report — Complete (Non-Trivial)
 
-Use for any phase-closing report when the delegation included `step: STEP-NNN`.
+Use for any phase-closing report when the delegation included `step: STEP-NNN`, OR when a Step-omitting bypass code maps to report type `complete` (see `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix)).
 
 ```yaml
 status: complete
@@ -32,6 +32,8 @@ risk_level: low|medium|high
 ```
 
 Field notes:
+- `step` — use `STEP-NNN` when delegation includes a step ID; use `TASK-NNN` when a Step-omitting bypass code maps to report type `complete`
+- `next` — use `none` for `TASK-NNN` reports (no subsequent phase)
 - `decisions`, `risks`, `assumptions`, `evidence` — anchor IDs per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors)
 - `risks` — list `None` when no concrete risks were identified
 - `evidence` — one-line synopsis only; full content externalized per evidence handling rules above
