@@ -327,7 +327,7 @@ Memory context: [mem-search results | none]
 
 Session facts:
 - trunk: [branch]
-- trunk-freshness: [fresh|stale|skipped]
+- trunk-freshness: [fresh|stale (N behind)|stale (diverged — local N ahead)|stale (diverged — local M ahead, N behind)|skipped]
 - validation: [command]
 - version: [x.y.z]
 - task-type: [bugfix|refactor|feature|incident]
