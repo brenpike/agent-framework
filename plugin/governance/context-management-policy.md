@@ -16,17 +16,17 @@ This policy augments existing agent-framework governance. It does not replace ro
 
 - Non-trivial tasks require a plan artifact before execution begins ("No execution without plan artifact").
 - Every step is identified by a unique `STEP-NNN` identifier (zero-padded 3-digit integer, e.g., `STEP-001`). Numbering restarts at `STEP-001` for each new plan instance.
-- Every `do(step)` writes: expected outcome, completion evidence, and a step-delta summary.
+- Every `do(step)` writes: expected outcome, completion evidence, and a report.
 - One step in progress at a time per plan.
 
 ### Bypass Allowlist
 
-The plan artifact and step-delta requirements may be bypassed only with an explicit reason code from this list, included as audit metadata in the delegation preamble:
+The plan artifact and report requirements may be bypassed only with an explicit reason code from this list, included as audit metadata in the delegation preamble:
 
 | Code | Condition |
 |---|---|
 | `TRIVIAL_CHANGE` | Single-statement or mechanical edit meeting all Trivial Change conditions |
-| `NO_PRIOR_PHASE` | First step in a workflow with no prior phase to hand off from. Waives the requirement to consume a prior handoff artifact only — the step must still produce a `Step delta:` output for subsequent phases to rehydrate from. |
+| `NO_PRIOR_PHASE` | First step in a workflow with no prior phase to hand off from. Waives the requirement to consume a prior handoff artifact only — the step must still produce a report for subsequent phases to rehydrate from. |
 | `SINGLE_STEP_TASK` | Entire task fits in one step with no phase boundary |
 | `USER_OVERRIDE` | User explicitly directed bypass with a stated reason |
 
@@ -34,31 +34,31 @@ Each bypass must include: reason code + step/task ID in the delegation preamble.
 
 #### Bypass Code Matrix
 
-This table is the **single source of truth** for how each bypass code interacts with `Step:`, `Step delta:`, the synthetic `TASK-NNN`, the Session Fact Cache key, and the `EVD-NNN` recording slot. Every cross-reference elsewhere defers to this matrix; no other section may enumerate a partial subset.
+This table is the **single source of truth** for how each bypass code interacts with `step:`, report type, the synthetic `TASK-NNN`, the Session Fact Cache key, and the `evidence:` recording slot. Every cross-reference elsewhere defers to this matrix; no other section may enumerate a partial subset.
 
-| Code | `Step:` omitted? | `Step delta:` omitted? | `TASK-NNN` assigned? | Session fact key | `EVD-NNN` slot |
+| Code | `step:` omitted? | Report type | `TASK-NNN` assigned? | Session fact key | `evidence:` key required? |
 |---|---|---|---|---|---|
-| `TRIVIAL_CHANGE` | yes | yes | yes | `active-task` | `Evidence refs:` (worker contract) |
-| `SINGLE_STEP_TASK` | yes | yes | yes | `active-task` | `Evidence refs:` (worker contract) |
-| `NO_PRIOR_PHASE` | **no** — keeps `Step: STEP-NNN` | **no** | **no** | `active-step` | `Evidence:` (within `Step delta:`) |
-| `USER_OVERRIDE` | only when the user-stated override omits `Step:` | only when the user-stated override omits `Step:` | only when `Step:` is omitted | `active-task` when `Step:` omitted, otherwise `active-step` | `Evidence refs:` when `Step:` omitted, otherwise `Evidence:` (within `Step delta:`) |
+| `TRIVIAL_CHANGE` | yes | trivial | yes | `active-task` | no (trivial schema has no evidence) |
+| `SINGLE_STEP_TASK` | yes | trivial | yes | `active-task` | no (trivial schema has no evidence) |
+| `NO_PRIOR_PHASE` | **no** — keeps `step: STEP-NNN` | complete | **no** | `active-step` | yes |
+| `USER_OVERRIDE` | only when user override omits `step:` | trivial when step omitted, complete otherwise | only when `step:` omitted | `active-task` when step omitted, otherwise `active-step` | yes when complete report required |
 
-**Step-omitting set** (referenced from delegation templates, the worker EVD bullet, and the `active-task` Session Fact): `TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, and `USER_OVERRIDE` when the override omits `Step:`. `NO_PRIOR_PHASE` is **never** in the Step-omitting set — it is a "no prior handoff to consume" preamble annotation that sits alongside `Step: STEP-NNN`.
+**Step-omitting set** (referenced from delegation templates and the `active-task` Session Fact): `TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, and `USER_OVERRIDE` when the override omits `step:`. `NO_PRIOR_PHASE` is **never** in the Step-omitting set — it is a "no prior handoff to consume" preamble annotation that sits alongside `step: STEP-NNN`.
 
-For every Step-omitting bypass per the matrix above, assign a synthetic task checkpoint ID `TASK-NNN` (zero-padded 3-digit integer, e.g., `TASK-001`) at intake. Use this `TASK-NNN` wherever the auto-clear procedure or partial-checkpoint storage references `STEP-NNN`, so budget-enforced bypass work has a stable identifier for checkpoints, rehydration, and EVD references.
+For every Step-omitting bypass per the matrix above, assign a synthetic task checkpoint ID `TASK-NNN` (zero-padded 3-digit integer, e.g., `TASK-001`) at intake. Use this `TASK-NNN` wherever the auto-clear procedure or partial-checkpoint storage references `STEP-NNN`, so budget-enforced bypass work has a stable identifier for checkpoints, rehydration, and evidence references.
 
 ### Phase Transition Requirements
 
 - Handoff artifact required for non-trivial phase transitions.
-- Before delegating the next phase: emit checkpoint (if commit policy allows), store full candidate handoff as durable artifact (step-delta + mandatory Context Management Fields), clear ephemeral context, rehydrate from stored candidate handoffs.
-- The next phase receives the full candidate handoff (step-delta + mandatory Context Management Fields) — not the full prior phase report or tool outputs.
+- Before delegating the next phase: emit checkpoint (if commit policy allows), store the worker's report as the durable handoff artifact, clear ephemeral context, rehydrate from stored reports.
+- The next phase receives the stored report — not the full prior phase transcript or tool outputs.
 
 ### Runtime Artifact Storage
 
 Fallback storage paths (used when claude-mem is absent):
 
 - `.agent-framework/plans/` — active plan artifacts
-- `.agent-framework/handoffs/` — candidate handoff artifacts (step-delta + mandatory Context Management Fields, named `STEP-NNN.md`)
+- `.agent-framework/handoffs/` — candidate handoff artifacts (worker reports, named `STEP-NNN.md`)
 - `.agent-framework/checkpoints/` — optional checkpoint state, including Path B partial checkpoints (`STEP-NNN-partial-NNN.md` or `TASK-NNN-partial-NNN.md`)
 - `.agent-framework/evidence/` — externalized evidence bodies referenced by `EVD-NNN` anchors per Progressive Evidence Loading (Mandatory Externalization)
 
@@ -68,7 +68,7 @@ Retention defaults:
 - Keep only the active plan + latest handoff during normal execution.
 - Auto-archive superseded phase artifacts at phase close.
 - Keep a rolling window of the latest 3 handoffs/checkpoints for recovery.
-- Retain every evidence file in `.agent-framework/evidence/` whose `EVD-NNN` anchor is still referenced by a non-stale handoff or active step-delta. Evidence files become eligible for archival only when no active artifact references their anchor.
+- Retain every evidence file in `.agent-framework/evidence/` whose `EVD-NNN` anchor is still referenced by a non-stale handoff or active report. Evidence files become eligible for archival only when no active artifact references their anchor.
 - Promote only intentionally selected artifacts into durable docs (audit, postmortem, runbooks).
 
 ### claude-mem Detection
@@ -79,8 +79,8 @@ At task intake (Execution Algorithm step 0 in `${CLAUDE_PLUGIN_ROOT}/agents/orch
 
 If either file contains `"claude-mem@thedotmack": true`, treat claude-mem as **Present**. Downstream agents and auto-clear procedures consume the cached detection result; they do not re-run detection.
 
-- **Present:** store full candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as claude-mem observations; rehydrate via `mem-search`.
-- **Absent:** store full candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as files under `.agent-framework/handoffs/`; rehydrate by reading files.
+- **Present:** store worker reports as claude-mem observations; rehydrate via `mem-search`.
+- **Absent:** store worker reports as files under `.agent-framework/handoffs/`; rehydrate by reading files.
 
 ### Pre-Planning Memory Lookup
 
@@ -124,13 +124,13 @@ Each anchor must carry the following metadata at the point of creation:
 
 - Anchor IDs must be unique within a session. Do not reuse an ID after the anchored item is superseded or invalidated.
 - The `NNN` counter increments monotonically per type within the session (e.g., `DEC-001`, `DEC-002`, ...).
-- If two anchors share the same type and description, merge them under one ID and record the merge in the step-delta.
+- If two anchors share the same type and description, merge them under one ID and record the merge in the report.
 
 ### Cross-Phase Counter Continuity
 
 Anchor counters span the whole session, not just a single phase or worker invocation. To keep the per-type counter monotonic across boundaries:
 
-- **Sequential phases.** A worker that produces new anchors continues numbering from the highest `<TYPE>-NNN` already present in the inbound candidate handoff (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) for that type. The worker's own report extends, never restarts, the counter.
+- **Sequential phases.** A worker that produces new anchors continues numbering from the highest `<TYPE>-NNN` already present in the inbound candidate handoff (the prior phase's report per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Complete)) for that type. The worker's own report extends, never restarts, the counter.
 - **First sequential phase (no inbound handoff).** The first phase in a multi-phase plan has no candidate handoff to read from, but the planner is required to emit `DEC/RISK/ASM/EVD` anchors in the plan output per `${CLAUDE_PLUGIN_ROOT}/agents/planner.md` (Retrieval Anchor Discipline). The orchestrator passes the plan's per-type high-water marks (the highest `<TYPE>-NNN` for each anchor type used in the plan) into the first delegation as `Anchor reservation:` (e.g., `DEC: 005-`, meaning continue from `DEC-006`). When the orchestrator does not pre-allocate a block, the worker must seed counters from the plan output's per-type maxima — not restart at `001`.
 - **Parallel phases (worktrees per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Worktrees)).** When the orchestrator dispatches two or more phases concurrently, it pre-allocates a disjoint NNN block per type to each phase and communicates the assignment in the delegation preamble as `Anchor reservation:` (e.g., `DEC: 010-019`, `EVD: 020-039`). Workers must not allocate IDs outside their reserved block.
 - **Reservation merge at phase close.** When parallel phases complete, the orchestrator records the highest used ID per type in the merged candidate handoff so subsequent sequential phases continue from the correct value.
@@ -139,9 +139,9 @@ Anchor counters span the whole session, not just a single phase or worker invoca
 
 An anchor becomes stale when its source artifact is superseded, reverted, or deleted. When a stale anchor is detected:
 
-1. Mark the anchor `[STALE]` in the current step-delta and any report that references it.
+1. Mark the anchor `[STALE]` in the current report.
 2. Exclude stale anchors from rehydration — do not inject stale anchor content into future delegations.
-3. Log the stale anchor (ID, reason) in the step-delta. Do not block step completion on a stale anchor.
+3. Log the stale anchor (ID, reason) in the report. Do not block step completion on a stale anchor.
 
 ### Minimum Anchor Requirements
 
@@ -149,7 +149,7 @@ Non-trivial step completion (any step that does not qualify as `TRIVIAL_CHANGE` 
 
 ### Storage Substrate
 
-- **Baseline (claude-mem absent):** anchors are recorded in the in-session report artifacts (step-deltas, handoffs) stored under `.agent-framework/handoffs/`.
+- **Baseline (claude-mem absent):** anchors are recorded in the in-session report artifacts (reports stored under `.agent-framework/handoffs/`).
 - **When claude-mem is installed:** anchors are additionally stored as claude-mem observations, enabling cross-session retrieval via `mem-search`.
 
 ---
@@ -159,7 +159,7 @@ Non-trivial step completion (any step that does not qualify as `TRIVIAL_CHANGE` 
 ### Two-Tier Distinction
 
 **Durable memory** — survives phase boundaries; preserved across context resets:
-- Accepted requirements, constraints, and decisions (`DEC-NNN`), handoff/report artifacts, Session Fact Cache entries, step-delta observations (claude-mem or `.agent-framework/handoffs/`)
+- Accepted requirements, constraints, and decisions (`DEC-NNN`), handoff/report artifacts, Session Fact Cache entries, report observations (claude-mem or `.agent-framework/handoffs/`)
 
 **Ephemeral memory** — discarded at phase boundary:
 - Scratch analysis, discarded evaluations, transient tool output not promoted, working notes not in the handoff
@@ -203,14 +203,14 @@ Before executing a step, verify. If any check fails, block execution — do not 
 ### Post-Execution Assumption Validation
 
 After executing a step, verify. Unresolved assumptions without explicit carry-forward notation block phase acceptance — do not finalize the phase:
-- All stated assumptions from the step-delta are either resolved or explicitly carried forward with `[CARRY-FORWARD]` notation as open questions in the next step-delta
+- All stated assumptions from the report are either resolved or explicitly carried forward with `[CARRY-FORWARD]` notation as open questions in the next report
 - Completion evidence is referenced (commit SHA, test output, or artifact path)
 
 ### Contradiction Detection
 
 Before finalizing a phase:
-- Flag any output in the current phase's candidate handoff that contradicts **prior accepted durable state** — that is, state that has been finalized in earlier phases of the same task. The current phase's pending output is **not** the comparison target; comparing the candidate against itself does not exercise the gate. Compare the current phase's outputs (worker report + extracted step-delta + extracted Context Management Fields, held in memory pending this gate) against:
-  - **Prior stored handoff artifacts** for earlier phases of the same task — claude-mem observations (when installed) or `.agent-framework/handoffs/STEP-NNN.md` files, including all mandatory Context Management Fields recorded there per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields) — `Decisions:`, `Risks:`, `Scope in:`, `Scope out:`, `Assumptions:`, `Open questions:`, `Artifacts:`, `Evidence refs:`, and `Risk level:`.
+- Flag any output in the current phase's candidate handoff that contradicts **prior accepted durable state** — that is, state that has been finalized in earlier phases of the same task. The current phase's pending output is **not** the comparison target; comparing the candidate against itself does not exercise the gate. Compare the current phase's worker report (held in memory pending this gate) against:
+  - **Prior stored handoff artifacts** for earlier phases of the same task — claude-mem observations (when installed) or `.agent-framework/handoffs/STEP-NNN.md` files, containing the full worker report fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Worker Report — Complete).
   - **Session Fact Cache** entries per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache).
   - **All non-stale retrieval anchors from prior phases** of every type (`DEC`, `RISK`, `ASM`, `EVD` per Retrieval Anchors).
 - Log the contradiction with: field or anchor name, prior value (cite the source phase / handoff path / anchor ID), new value, and the current step or task ID.
@@ -228,17 +228,17 @@ Hard enforcement gate on major phase transitions. Before delegating the next pha
 
 At every major phase transition (before delegation of the next phase), run the following binary test:
 
-1. Assemble the candidate handoff: the `Step delta:` section from the completing phase, all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from the worker's phase-closing report, plus all non-stale retrieval anchors produced during the task so far.
+1. Assemble the candidate handoff: the worker's report from the completing phase, plus all non-stale retrieval anchors produced during the task so far.
 2. Evaluate: can the next phase's stated objective, scope, and completion criteria be determined from the candidate handoff alone?
 3. Result is binary:
-   - **Pass** — the handoff and anchors contain sufficient context. Proceed to delegate the next phase.
+   - **Pass** — the report and anchors contain sufficient context. Proceed to delegate the next phase.
    - **Fail** — one or more required fields or anchor references are missing or incomplete. Follow `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md`.
 
 ### Failure Handling
 
 On reconstruction test failure:
 
-1. Record the failure reason and each missing field in the step-delta as an unresolved assumption: `ASM-NNN — reconstruction failed for [field name]`.
+1. Record the failure reason and each missing field in the report as an unresolved assumption: `ASM-NNN — reconstruction failed for [field name]`.
 2. Follow the fallback mode defined in `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md` (Fallback Mode) — attempt targeted rehydration of missing fields before escalating.
 3. Surface the failure to the user before proceeding if the escalation trigger fires (per `${CLAUDE_PLUGIN_ROOT}/governance/reconstruction-failure-runbook.md` (Escalation Trigger)).
 4. Do not delegate the next phase until the reconstruction test passes or the user explicitly acknowledges the gap.
@@ -309,12 +309,12 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 #### Path A — Phase-completion trigger
 
 1. Phase verification passes.
-2. Extract the `Step delta:` section and all mandatory Context Management Fields (per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from the worker's report, forming the candidate handoff.
-3. Store the full candidate handoff (step-delta + all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) as a durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`) — only after the minimum-anchor check, contradiction detection, and reconstruction test all pass (see orchestrator Phase Verification). If any gate fails, discard the extracted handoff; do not store.
+2. Accept the worker's report as the candidate handoff.
+3. Store the report as a durable artifact (claude-mem observation or `.agent-framework/handoffs/STEP-NNN.md`) — only after the minimum-anchor check, contradiction detection, and reconstruction test all pass (see orchestrator Phase Verification). If any gate fails, discard the report; do not store.
 4. Emit checkpoint commit (if commit policy allows).
 5. Clear ephemeral context (prior phase transcript, tool outputs, raw diffs drop out of active context).
-6. Rehydrate: retrieve stored candidate handoffs for the current task via `mem-search` (or read from `.agent-framework/handoffs/`), respecting the replay depth limit from the active budget profile.
-7. Delegate next phase with the compact candidate handoff (step-delta + all mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)).
+6. Rehydrate: retrieve stored reports for the current task via `mem-search` (or read from `.agent-framework/handoffs/`), respecting the replay depth limit from the active budget profile.
+7. Delegate next phase with the stored report as context.
 
 #### Path B — Mid-phase threshold triggers (N-tool-call, scope-pivot, explicit user reset)
 
@@ -322,7 +322,7 @@ For cooldown and thrash handling when triggers fire too frequently, see `${CLAUD
 2. Emit mid-phase partial checkpoint: record current step ID (`STEP-NNN`, or the task-level `TASK-NNN` for `STEP-NNN`-bypass work per Bypass Allowlist), tool-call count at trigger, all retrieval anchors accumulated so far in the phase (DEC/RISK/ASM/EVD per Retrieval Anchors), a scope annotation if the trigger is a scope pivot, and the active delegation fields (task objective, file scope in/out, completion criteria, and constraints) so the phase can resume within its original contract after rehydration.
 3. Store partial checkpoint as `.agent-framework/checkpoints/STEP-NNN-partial-NNN.md` (or `.agent-framework/checkpoints/TASK-NNN-partial-NNN.md` for `STEP-NNN`-bypass work; or claude-mem observation tagged `partial-checkpoint` when claude-mem is installed).
 4. Clear ephemeral context (current phase transcript, tool outputs drop out of active context).
-5. Rehydrate: retrieve stored candidate handoffs (step-delta + mandatory Context Management Fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Context Management Fields)) from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
+5. Rehydrate: retrieve stored reports from prior completed phases plus the partial checkpoint, respecting the replay depth limit from the active budget profile.
 6. Continue current phase — do NOT delegate next phase; the current step is still in progress.
 
 **Cooldown:** Do not fire more than one clear+rehydrate cycle per phase on average. If a trigger fires a second clear before the next phase begins (Path A) or before the current step completes (Path B), log and skip the redundant clear. See `${CLAUDE_PLUGIN_ROOT}/governance/auto-clear-thrash-runbook.md` for escalation when cooldown is violated.
