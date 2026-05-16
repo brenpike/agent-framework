@@ -87,6 +87,10 @@ Rules:
 - If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so explicitly. Do not invent validation commands.
 - A skill or agent may set its own time budget (for example to bound a single Monitor poll), but that budget belongs to the skill/agent, not to this Definition. The skill must not advertise validation as run when it skipped a declared command on a time budget; instead it must return Blocked with the budget as the reason.
 
+### Pipeline skill
+
+A pipeline skill is any skill invoked by the orchestrator via the Skill tool during execution (listed in `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Skill Output Convention — Scope)). Pipeline skills operate under silence discipline: zero text output, final action is a tool call, exit code signals outcome. The Worker Report contracts (complete, blocked, trivial) defined in `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` do not apply to pipeline skills — they apply exclusively to worker agent reports and user-facing skill output.
+
 ### Material visual decision
 
 A visual decision is material when it requires one of:

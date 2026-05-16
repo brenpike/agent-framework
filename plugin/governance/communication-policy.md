@@ -140,3 +140,42 @@ Cache must be discarded when any of the following occurs:
 - Base branch advances (new commits on trunk since cache was set)
 - CLAUDE.md is modified during the task
 - Plan is re-sequenced or step is re-assigned by orchestrator (`active-step`)
+
+## Skill Output Convention
+
+Pipeline skills (those invoked by the orchestrator via the Skill tool during execution) operate under strict silence discipline. These rules prevent pipeline halting caused by text output ending the model's turn.
+
+### Rules
+
+1. **Zero text output** — produce no text at any point during execution. No narration, no structured output blocks, no status messages.
+2. **Final action is a tool call** — the skill's last action must be a Bash tool call. This ensures the model receives a tool_result and can continue generating.
+3. **Exit code signals outcome** — exit 0 = orchestrator proceeds (succeeded); exit 1 = blocked (needs user decision).
+4. **Blocked reason in stderr** — on exit 1, emit a one-line reason via stderr: `printf 'blocker: <reason>' >&2; exit 1`
+5. **Routing data in stdout** — on exit 0, emit only data the orchestrator needs for routing. Format: valid YAML, snake_case keys, no code fences.
+6. **No status field** — never include a `status:` key in skill output. The string triggers state-machine confusion regardless of context.
+7. **Minimal data** — emit only new information the orchestrator cannot derive from its own state. Do not echo back inputs (base, classification, working_branch, etc.).
+
+### Scope
+
+These rules apply to all skills invoked by the orchestrator during pipeline execution:
+- `agent-framework:create-working-branch`
+- `agent-framework:checkpoint-commit`
+- `agent-framework:open-plan-pr`
+- `agent-framework:request-github-codex-review`
+- `agent-framework:review-loop-controller`
+- `agent-framework:local-codex-review`
+- `agent-framework:watch-github-pr-feedback`
+- `agent-framework:address-github-pr-feedback`
+
+Excluded (user-facing, text output preserved):
+- `agent-framework:plan-interrogation`
+- `agent-framework:tdd`
+- `agent-framework:setup-project`
+
+### REPORT-01 Clarification
+
+The `REPORT-01` rule (blocked report contract from Worker Report — Blocked above) applies to:
+- Worker agent reports (via Agent tool)
+- User-facing skills that produce text output
+
+It does NOT apply to pipeline skills — they signal blocked state via exit code 1 + stderr reason, not via a YAML report block.
