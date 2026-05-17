@@ -174,8 +174,20 @@ Query PR status checks for failures:
 
 ```sh
 required_checks=$(gh pr checks <PR_NUMBER> --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
-gh pr checks <PR_NUMBER> --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | .name + "\t" + .state + "\t" + .bucket + "\t" + .link + "\t" + .description'
+check_output=$(gh pr checks <PR_NUMBER> --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | .name + "\t" + .state + "\t" + .bucket + "\t" + .link + "\t" + .description' 2>/dev/null)
+check_status=$?
+# Exit-status semantics for gh pr checks:
+#   0 = all checks passed (check_output is empty — no failed checks, no candidates)
+#   1 = one or more checks failed (normal operation — check_output has failed check data)
+#   8 = checks pending (benign — no failed check data available yet; skip check processing)
+#   other = genuine CLI/auth/permission failure; skip check processing for this run
+if [ "$check_status" -eq 0 ] || [ "$check_status" -eq 1 ]; then
+  # Proceed: emit check_output for candidate building below
+  printf '%s\n' "$check_output"
+fi
 ```
+
+If `check_status` is 8 (checks pending) or any value other than 0 or 1: skip the failed-check candidate-building block entirely for this run. Non-zero/non-one exits do not block the overall fix-mode flow — review feedback candidates continue processing normally.
 
 For each failed check:
 1. Build a candidate with fields: `check_name`, `state`, `link`, `description`, `required` (yes if name appears in `required_checks`, no otherwise).
