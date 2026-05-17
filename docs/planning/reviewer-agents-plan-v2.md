@@ -402,12 +402,12 @@ Existing shared files (unchanged):
 | 64 | request-github-codex-review-complete | succeeded, watch requested | invoke github-reviewer (watch mode) |
 | 65 | request-github-codex-review-complete | succeeded, no watch | Final Report |
 | 66 | request-github-codex-review-complete | blocked | STOP: surface blocker |
-| 67 | tool-error | reviewer-invocation (local-reviewer) | read fix ledger from disk → re-invoke local-reviewer with resume_from_ledger |
-| 68 | tool-error | reviewer-invocation (github-reviewer) | re-invoke github-reviewer (fresh — resolved threads filtered by API) |
+| 67 | tool-error | local-reviewer crash/timeout (exit 124/137, or timeout after partial execution — fix ledger exists) | read fix ledger from disk → re-invoke local-reviewer with resume_from_ledger |
+| 68 | tool-error | github-reviewer crash/timeout (exit 124/137, or timeout after partial execution) | re-invoke github-reviewer (fresh — resolved threads filtered by API) |
 
 27 rows (down from 37 current, down from 35 in v1). The `request-github-codex-review-complete` rows (64-66) are ad-hoc only — not part of the normal pipeline.
 
-**Note:** Rows 67-68 use `after=tool-error` because Agent tool crashes/timeouts are surfaced by the orchestrator's tool-error handler, not as reviewer terminal returns. The orchestrator identifies reviewer context from the failed invocation target and routes to these rows instead of generic tool-error handling.
+**Note:** Rows 67-68 use `after=tool-error` because Agent tool crashes/timeouts are surfaced by the orchestrator's tool-error handler. These rows match only post-start failures (exit 124/137, timeout, or evidence of partial execution such as fix ledger writes or pushed commits). Spawn/config failures (reviewer never began execution) fall through to generic tool-error rows — no resume or re-invocation is appropriate for those.
 
 ---
 
