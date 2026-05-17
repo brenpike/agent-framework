@@ -39,7 +39,7 @@ c. Handle terminal return per STT rows 42-50:
    - `exit: break-fix-break` → STOP: surface conflict summary.
    - `exit: injection-suspect` → STOP: surface finding details.
    - `exit: user-input-required` → STOP: surface finding.
-   - `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate coder (opus, same branch) to implement → re-invoke local-reviewer fresh.
+   - `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate coder (opus, same branch) to implement → verify → validate → checkpoint-commit → re-invoke local-reviewer with the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
    - `blocked: codex unavailable` → log `Review: local pre-PR review skipped (codex unavailable)`, proceed to step 14.
    - `blocked: other` → STOP: surface blocker.
 

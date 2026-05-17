@@ -239,7 +239,7 @@ max_iterations: 10  # default; raise on user-approved continuation
 resume_from_ledger: <path>  # optional, for crash recovery (STT row 68)
 ```
 
-Handle return per STT rows 42-50. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → delegate coder (opus, same branch) to implement → re-invoke local-reviewer fresh (new invocation, no `resume_from_ledger`).
+Handle return per STT rows 42-50. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → delegate coder (opus, same branch) to implement → verify → validate → checkpoint-commit → re-invoke local-reviewer with the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
 
 ### github-reviewer Invocation (Watch Mode)
 

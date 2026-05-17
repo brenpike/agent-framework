@@ -163,6 +163,8 @@ Fetch unresolved review threads, top-level PR comments, and review summaries usi
 
 **Fix-SHA skip rule (crash-recovery duplicate prevention):** For each unresolved inline review thread, fetch its full comment list using the "Fetch Thread Comments (Paginated)" operation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. If any comment in the list has `author.login == SELF_LOGIN` AND body matches `^Fixed in [0-9a-f]+`: skip the entire thread (already handled, resolution pending). Do not add it to the candidate set. This rule closes the gap where `resolveReviewThread` failed or the agent crashed after posting the fix-SHA reply — Rule 2 (self-author) suppresses the reply itself but the original non-self-authored comment would otherwise re-enter classification.
 
+**Fix-SHA skip rule (top-level comments and review summaries):** For each top-level PR comment or review summary candidate, fetch the PR's comment list using `gh pr view <pr> --json comments --jq '.comments[] | select(.author.login == env.SELF_LOGIN) | .body'`. If any self-authored comment body matches `Fixed in [0-9a-f]+` AND contains the candidate's URL (or node ID): skip the candidate (already handled). This closes the crash-recovery gap for non-threaded sources — `gh pr comment` posts a standalone comment that cannot be resolved or detected by the inline-thread skip rule above.
+
 If `target` is specified: filter to that single comment/thread. If `target` is specified but not found in the candidate set: return `exit_reason: blocked`, `blocker_reason: target not found in candidate set`.
 
 ### Step 3: Body Re-fetch
