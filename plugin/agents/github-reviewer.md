@@ -104,6 +104,7 @@ escalation_target: planner | user  # when exit_reason is planner-escalation or u
 candidate_url: <URL>  # when exit_reason involves a specific item
 pattern_category: <P1-P4>  # when exit_reason is injection-suspect
 blocker_reason: <text>  # when exit_reason is blocked
+blocked_candidates: [<URL>, ...]  # when exit_reason is blocked and blocker_reason is actionable delegation blocked
 rationale_text: <text>  # when exit_reason is high-severity-rejection
 ```
 
@@ -193,7 +194,7 @@ Derive `severity_category`: if classified `incorrect-or-rejected`, check whether
 
 ### Step 6: Route and Fix
 
-Initialize `fixes_applied_this_cycle = 0`.
+Initialize `fixes_applied_this_cycle = 0` and `delegations_blocked = 0`.
 
 Process candidates in severity order (P0 first, then P1, P2, P3). Apply routing per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` (Routing Table):
 
@@ -236,9 +237,11 @@ Use `model: "sonnet"` on Agent() calls. Pass the feedback body, affected file(s)
 After each delegation:
 1. Verify the fix was applied (coder/designer reports complete)
 2. If delegation returned complete with file changes: increment `fixes_applied_this_cycle`
-3. If delegation returned blocked: record and continue to next candidate
+3. If delegation returned blocked: increment `delegations_blocked`. Record and continue to next candidate.
 
-**Guard:** If `fixes_applied_this_cycle == 0` (no fixes applied — all items were non-actionable, rejected, blocked, or escalated): skip Steps 7–10. Go directly to Step 11 and return `exit_reason: clean` with `findings_resolved` / `findings_open` counts reflecting the classified-but-not-fixed items.
+**Guard:**
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0`: skip Steps 7–10. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` (genuinely no actionable items — all were non-actionable, rejected, or escalated): skip Steps 7–10. Go directly to Step 11 and return `exit_reason: clean` with `findings_resolved` / `findings_open` counts reflecting the classified-but-not-fixed items.
 
 ### Step 7: Validate
 
@@ -363,8 +366,10 @@ On each Monitor event:
 
 After classifying all new items from a single poll:
 
-1. Process all simple-fix items in severity order (delegate coder/designer at sonnet). Track `fixes_applied_this_cycle`: increment only when a coder/designer delegation returns `complete` with file changes.
-2. **Guard:** If `fixes_applied_this_cycle == 0` (no fixes applied — all items were non-actionable, rejected, blocked, or escalated): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Skip to the next poll cycle (continue watching) or return `exit_reason: clean` if no actionable items remain.
+1. Process all simple-fix items in severity order (delegate coder/designer at sonnet). Track `fixes_applied_this_cycle`: increment only when a coder/designer delegation returns `complete` with file changes. Track `delegations_blocked`: increment when a coder/designer delegation returns `blocked`.
+2. **Guard:**
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0`: do NOT mark blocked items as handled in the state ledger. Skip validation, checkpoint commit, push, and reply/resolve. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` (genuinely no actionable items — all were non-actionable, rejected, or escalated): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Skip to the next poll cycle (continue watching) or return `exit_reason: clean` if no actionable items remain.
 3. Validate (same as Fix Mode Step 7)
 4. Checkpoint commit (same as Fix Mode Step 8)
 5. Pre-push safety check and push (same as Fix Mode Step 9)
