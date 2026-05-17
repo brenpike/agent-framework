@@ -287,12 +287,13 @@ For each resolved candidate (in the order they were fixed):
 
    Reply body format: `Fixed in <SHA>. <one-line summary of fix>.`
 
-2. **Resolve thread** (inline review threads only). Execute `resolveReviewThread` GraphQL mutation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Resolution is non-blocking — if it fails, log the failure and continue.
+2. **Resolve thread** (inline review threads only). Before resolving, re-fetch the thread's full comment list using the "Fetch Thread Comments (Paginated)" operation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. For each non-self comment in the thread (where `author.login != SELF_LOGIN`), check whether it has been addressed: a comment is "addressed" if a self-authored reply exists in the thread with body matching `^Fixed in [0-9a-f]+` that was posted after the comment, OR if the comment was classified as `non-actionable` in the current session. Resolve the thread only when ALL non-self comments are addressed. Execute `resolveReviewThread` GraphQL mutation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Resolution is non-blocking — if it fails, log the failure and continue.
 
    Do not resolve:
-   - `question-needs-user-input` threads
-   - `incorrect-or-rejected` threads (leave open for human review)
+   - `question-needs-user-input` threads (any unaddressed comment classified as such blocks resolution)
+   - `incorrect-or-rejected` threads (any unaddressed comment classified as such blocks resolution — leave open for human review)
    - Threads where no fix-SHA reply was posted
+   - Threads where any non-self comment is unaddressed (no fix-SHA reply and not classified as `non-actionable`)
 
 ### Step 11: Return
 
