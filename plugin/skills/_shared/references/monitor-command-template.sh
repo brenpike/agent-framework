@@ -122,7 +122,10 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   # Poll PR status checks for failures
   required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
   check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name | gsub("[\\t\\n\\r]"; " "))\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\((.link // "") | gsub("[\\t\\n\\r]"; " "))\tDESC=\((.description // "") | gsub("[\\t\\n\\r]"; " "))"' 2>>"/tmp/af_poll_err_$$")
-  if [ -n "$check_output" ]; then
+  check_exit=$?
+  if [ "$check_exit" -ne 0 ]; then
+    echo "CHECK_POLL_ERROR: gh pr checks failed (exit $check_exit)"
+  elif [ -n "$check_output" ]; then
     printf '%s\n' "$check_output" | while IFS= read -r check_line; do
       check_first_field="${check_line%%	*}"
       check_name="${check_first_field#CHECK_FAIL=}"
