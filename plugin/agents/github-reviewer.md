@@ -204,7 +204,7 @@ For each failed check:
 
 ### Step 3: Body Re-fetch
 
-**CI check bypass:** Candidates with `item_source: ci-check-failure` skip GraphQL body re-fetch (they have no comment/review node ID). Their `description` field from the check metadata serves as the body for classification and delegation. Proceed directly to Step 4 for these candidates.
+**CI check bypass:** Candidates with `item_source: ci-check-failure` skip GraphQL body re-fetch (they have no comment/review node ID). Their `description` field from the check metadata serves as the body for classification and delegation. If `description` is empty, null, or whitespace-only, synthesize the body as: `"CI check '<check_name>' failed (state: <state>, link: <link>)"`. This ensures CI candidates always have a non-empty body and pass through the empty-body filter at the end of this step. Proceed directly to Step 4 for these candidates.
 
 For each candidate, fetch the full body via GraphQL `node(id:)` query:
 
