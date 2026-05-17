@@ -124,8 +124,9 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name)\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\(.link)\tDESC=\(.description)"' 2>>"/tmp/af_poll_err_$$")
   if [ -n "$check_output" ]; then
     while IFS= read -r check_line; do
-      check_name=$(echo "$check_line" | cut -f1 | sed 's/^CHECK_FAIL=//')
-      if echo "$required_checks" | grep -qxF "$check_name"; then
+      check_first_field="${check_line%%	*}"
+      check_name="${check_first_field#CHECK_FAIL=}"
+      if printf '%s' "$required_checks" | grep -qxF "$check_name"; then
         printf '%s\tREQUIRED=yes\n' "$check_line"
       else
         printf '%s\tREQUIRED=no\n' "$check_line"

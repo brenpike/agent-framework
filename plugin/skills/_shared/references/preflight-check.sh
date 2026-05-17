@@ -82,6 +82,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
    | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
 '
 
+graphql_status=$?
+if [ "$graphql_status" -ne 0 ]; then
+  exit "$graphql_status"
+fi
+
 # Check PR status checks for failures.
 # Uses gh pr checks (REST-backed). Failures are surfaced as data, not blockers.
 # REQUIRED field derived from --required flag; defaults to "no" if unavailable.
