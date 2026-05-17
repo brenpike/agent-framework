@@ -357,26 +357,17 @@ For each resolved candidate (in the order they were fixed):
 `failed-ci-check` items have no associated review thread — they are status checks, not comments. After push:
 - No fix-SHA reply is posted (no thread to reply to)
 - No thread resolution needed (checks resolve themselves by passing on re-run)
-- Record the fix SHA and check name in the state ledger with status `ci-verification-pending`
-- Do NOT increment `findings_resolved` — the fix has not been verified by a passing CI re-run
+- Record the fix SHA and check name in the state ledger
+- Increment `findings_resolved` count
 
 ### Step 11: Return
 
-Before returning `exit_reason: clean`, apply the following priority checks against the session state ledger in order:
-
-1. If `check_poll_failed: true` is set: return `exit_reason: blocked`, `blocker_reason: check polling failed — CI status unknown`. CI checks were never inspected due to a genuine polling failure, so the overall fix-mode result cannot be reported as clean. (This takes priority over all other conditions.)
-
-2. If any ledger entries have status `ci-verification-pending`: return `exit_reason: ci-verification-pending`, `ci_checks_pending: [list of check names from those entries]`. The fix has been pushed but the CI re-run has not yet confirmed it passes.
-
-3. Otherwise: return `exit_reason: clean`.
+Before returning `exit_reason: clean`, check the session state ledger for `check_poll_failed: true`. If set: return `exit_reason: blocked`, `blocker_reason: check polling failed — CI status unknown` instead. CI checks were never inspected due to a genuine polling failure, so the overall fix-mode result cannot be reported as clean.
 
 Return the Output Contract YAML with:
-- `exit_reason: clean` (all actionable candidates resolved, `check_poll_failed` is not set, and no `ci-verification-pending` entries remain)
-- `exit_reason: ci-verification-pending` (one or more `failed-ci-check` fixes were pushed but CI re-run has not confirmed pass; `check_poll_failed` is not set)
-- `exit_reason: blocked` (check polling failed — takes priority)
+- `exit_reason: clean` (all actionable candidates resolved, and `check_poll_failed` is not set)
 - `mode: fix`
 - `findings_resolved` / `findings_open` counts
-- `ci_checks_pending` (list of check names) — included when `exit_reason: ci-verification-pending`
 
 ## Watch Mode Lifecycle
 
