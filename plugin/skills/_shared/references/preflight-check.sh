@@ -1,4 +1,4 @@
-# Pre-flight validation query for watch-github-pr-feedback
+# Pre-flight validation query for github-reviewer agent
 #
 # This file is a reference template loaded via Read tool. It is NOT executed
 # directly as a script. The skill reads this file, substitutes OWNER, REPO,
