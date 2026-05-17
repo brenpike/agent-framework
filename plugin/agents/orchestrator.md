@@ -79,7 +79,7 @@ Stop and surface only when:
 
 ### State Transition Table
 
-After every step-completion milestone (any event producing an after= token), find the matching row and execute its GOTO. No match → row 85. Condition columns are mutually exclusive within each after= group.
+After every step-completion milestone (any event producing an after= token), find the matching row and execute its GOTO. No match → final row (STOP:unmatched). Condition columns are mutually exclusive within each after= group.
 
 | # | after= | Condition | GOTO |
 |---|---|---|---|
