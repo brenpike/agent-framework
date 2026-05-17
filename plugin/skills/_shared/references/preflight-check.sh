@@ -92,10 +92,7 @@ fi
 # REQUIRED field derived from --required flag; defaults to "no" if unavailable.
 required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
 check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name | gsub("[\\t\\n\\r]"; " "))\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\((.link // "") | gsub("[\\t\\n\\r]"; " "))\tDESC=\((.description // "") | gsub("[\\t\\n\\r]"; " "))"' 2>/dev/null)
-check_exit=$?
-if [ "$check_exit" -ne 0 ]; then
-  printf 'CHECK_POLL_ERROR: gh pr checks failed (exit %s)\n' "$check_exit" >&2
-elif [ -n "$check_output" ]; then
+if [ -n "$check_output" ]; then
   printf '%s\n' "$check_output" | while IFS= read -r check_line; do
     check_name=$(printf '%s' "$check_line" | cut -f1 | sed 's/^CHECK_FAIL=//')
     if printf '%s' "$required_checks" | grep -qxF "$check_name"; then
