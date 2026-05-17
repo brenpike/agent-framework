@@ -161,7 +161,7 @@ Store the resolved integer as `PR_NUMBER`, the owner login as `OWNER`, and the r
 
 Fetch unresolved review threads, top-level PR comments, and review summaries using queries from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Apply Detection Filtering (empty body, self-author) before building the candidate set.
 
-**Fix-SHA skip rule (crash-recovery duplicate prevention):** For each unresolved inline review thread, fetch its full comment list using the "Fetch Thread Comments (Paginated)" operation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. If any comment in the list has `author.login == SELF_LOGIN` AND body matches `^Fixed in [0-9a-f]+`: skip the entire thread (already handled, resolution pending). Do not add it to the candidate set. This rule closes the gap where `resolveReviewThread` failed or the agent crashed after posting the fix-SHA reply — Rule 2 (self-author) suppresses the reply itself but the original non-self-authored comment would otherwise re-enter classification.
+**Fix-SHA skip rule (crash-recovery duplicate prevention):** For each unresolved inline review thread, fetch its full comment list using the "Fetch Thread Comments (Paginated)" operation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. For each non-self comment in the thread: check whether a self-authored comment exists later in the thread (by `createdAt` timestamp) with body matching `^Fixed in [0-9a-f]+`. If yes: skip that individual comment (already handled). If no: add the comment to the candidate set as normal. This per-comment granularity ensures that newer follow-up comments or unaddressed sibling comments are not dropped by a fix-SHA reply that addressed an earlier comment. A thread is fully handled only when every non-self comment has a corresponding later fix-SHA reply — thread resolution (Step 10) enforces this separately.
 
 **Fix-SHA skip rule (top-level comments and review summaries):** For each top-level PR comment or review summary candidate, fetch the PR's comment list using `gh pr view <pr> --json comments --jq '.comments[] | select(.author.login == env.SELF_LOGIN) | .body'`. If any self-authored comment body matches `Fixed in [0-9a-f]+` AND contains the candidate's URL (or node ID): skip the candidate (already handled). This closes the crash-recovery gap for non-threaded sources — `gh pr comment` posts a standalone comment that cannot be resolved or detected by the inline-thread skip rule above.
 
@@ -285,7 +285,11 @@ For each resolved candidate (in the order they were fixed):
    - Top-level PR comment: `gh pr comment <pr> --body "..."` with candidate URL for traceability
    - Review summary: `gh pr comment <pr> --body "..."` with candidate URL for traceability
 
-   Reply body format: `Fixed in <SHA>. <one-line summary of fix>.`
+   Reply body format by source:
+   - Inline review thread: `Fixed in <SHA>. <one-line summary of fix>.`
+   - Top-level PR comment / review summary: `Fixed in <SHA>. <one-line summary of fix>. Addresses: <candidate_url>`
+
+   The `Addresses: <candidate_url>` suffix enables the top-level Fix-SHA skip rule (Step 2) to match this reply to its source candidate on crash recovery.
 
 2. **Resolve thread** (inline review threads only). Before resolving, re-fetch the thread's full comment list using the "Fetch Thread Comments (Paginated)" operation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. For each non-self comment in the thread (where `author.login != SELF_LOGIN`), check whether it has been addressed: a comment is "addressed" if a self-authored reply exists in the thread with body matching `^Fixed in [0-9a-f]+` that was posted after the comment, OR if the comment was classified as `non-actionable` in the current session. Resolve the thread only when ALL non-self comments are addressed. Execute `resolveReviewThread` GraphQL mutation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Resolution is non-blocking — if it fails, log the failure and continue.
 
