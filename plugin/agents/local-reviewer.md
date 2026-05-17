@@ -107,7 +107,7 @@ The only user-visible text: the terminal Output Contract YAML. Everything betwee
 1. Validate inputs — confirm `base`, `working_branch`, `trunk` are provided. If any missing: report blocked with `stage: initialization`.
 2. Check git state — confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions — Unsafe git state). If unsafe: report blocked with `stage: git`.
 3. Initialize or resume fix ledger:
-   - If `resume_from_ledger` is provided: read the ledger from that path. Set iteration counter to `exit_iteration + 1` from the ledger.
+   - If `resume_from_ledger` is provided: read the ledger from that path. Set iteration counter: if `exit_iteration` is present and non-null, use `exit_iteration + 1`; otherwise, derive from the last entry in `iterations[]` — use `iterations[-1].iteration + 1` (the highest recorded iteration number plus one). If `iterations` is also empty or absent, set counter to 1.
    - Otherwise: initialize empty ledger per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/fix-ledger-schema.md`. Set iteration counter to 1.
 4. Set `max_iterations` from input (default 10).
 
@@ -211,6 +211,7 @@ Use the Agent tool with `model: "sonnet"`. Pass:
 
 After each fix delegation returns:
 
+0. Check worker result status. If the worker reported `Status: blocked`: update the finding status to `"blocked"` in the ledger. Increment `delegations_blocked`. Skip validation for this finding — proceed to the next finding in the iteration. A blocked delegation is not a fix failure (the fix was never attempted or was gated), so it does not count toward break-fix detection. If all remaining findings in the iteration are blocked: persist ledger, return Output Contract with `exit_reason: blocked`, `blocker_reason: all remaining fix delegations blocked`.
 1. Run validation commands from CLAUDE.md (per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions — Validation procedure)).
 2. If validation passes: update the finding status to `"fixed"` in the ledger. Leave `fix_commit` empty — the actual SHA is recorded after checkpoint-commit (Step 14).
 3. If validation fails: update the finding status to `"regressed"` in the ledger. This counts toward break-fix detection on the next iteration.
