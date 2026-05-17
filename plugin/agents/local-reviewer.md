@@ -205,7 +205,7 @@ Use the Agent tool with `model: "sonnet"`. Pass:
 After each fix delegation returns:
 
 1. Run validation commands from CLAUDE.md (per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions — Validation procedure)).
-2. If validation passes: update the finding status to `"fixed"` in the ledger. Record the fix commit SHA (from the delegated agent's report) as `fix_commit`.
+2. If validation passes: update the finding status to `"fixed"` in the ledger. Leave `fix_commit` empty — the actual SHA is recorded after checkpoint-commit (Step 13).
 3. If validation fails: update the finding status to `"regressed"` in the ledger. This counts toward break-fix detection on the next iteration.
 
 #### Step 12: Post-Fix Break-Fix Check
@@ -221,6 +221,8 @@ After all findings in the current iteration have been addressed (fixed or record
 Invoke `agent-framework:checkpoint-commit` via the Skill tool.
 
 If checkpoint-commit returns blocked: return Output Contract with `exit_reason: blocked`, `stage: checkpoint`.
+
+After successful checkpoint: extract the commit SHA from checkpoint-commit output. Update `fix_commit` for every finding with status `"fixed"` and empty `fix_commit` in the current iteration.
 
 #### Step 14: Advance Iteration
 
