@@ -81,83 +81,85 @@ After every step-completion milestone (any event producing an after= token), fin
 
 | # | after= | Condition | GOTO |
 |---|---|---|---|
-| 1 | intake-complete | TFP does not apply | step 1: planner |
-| 2 | intake-complete | TFP applies | step 4: delivery shape |
-| 3 | planner-returned | no open questions | step 4: delivery shape |
-| 4 | planner-returned | open questions | STOP: surface questions |
-| 5 | planner-returned | error/truncated | error recovery |
-| 6 | git-preflight-complete | trunk fresh | step 6: create branch |
-| 7 | git-preflight-complete | trunk stale/diverged | STOP: surface to user |
-| 8 | git-preflight-complete | trunk freshness skipped | step 6: create branch |
-| 9 | create-working-branch-complete | succeeded | step 7: convert plan to phases |
-| 10 | create-working-branch-complete | blocked | STOP: surface blocker |
-| 11 | worker-complete | status: complete | phase verification |
-| 12 | worker-complete | status: blocked | STOP: surface blocker |
-| 13 | phase-verification-passed | more phases remain | Path A (checkpoint-commit → clear → rehydrate → next phase) |
-| 14 | phase-verification-passed | last phase | Path A (checkpoint-commit → clear → rehydrate → step 11) |
-| 15 | phase-verification-failed | recoverable, first attempt | re-delegate phase |
-| 16 | phase-verification-failed | unrecoverable or repeated | STOP: escalate to user |
-| 17 | checkpoint-commit-complete | blocked | STOP: surface blocker |
-| 18 | checkpoint-commit-complete | succeeded, more phases remain | Path A resume: clear → rehydrate → next phase delegation |
-| 19 | checkpoint-commit-complete | succeeded, last phase done | Path A resume: clear → rehydrate → step 11: version bump check |
-| 20 | checkpoint-commit-complete | succeeded, within local-reviewer | (handled internally by local-reviewer agent) |
-| 21 | checkpoint-commit-complete | succeeded, within github-reviewer | (handled internally by github-reviewer agent) |
-| 22 | checkpoint-commit-complete | succeeded, version bump, review active | step 13a: local review |
-| 23 | checkpoint-commit-complete | succeeded, version bump, review opted out | step 14: open PR |
-| 24 | version-bump-check | no bump required | step 13: validation |
-| 25 | version-bump-check | bump required, type clear | step 12: delegate bump |
-| 26 | version-bump-check | ambiguous type or missing artifact files | STOP: ask user |
-| 27 | version-bump-coder-complete | status: complete | step 13: validation |
-| 28 | version-bump-coder-complete | status: blocked | STOP: surface blocker |
-| 29 | validation | passed, version bump | checkpoint-commit |
-| 30 | validation | not run, version bump | checkpoint-commit |
-| 31 | validation | passed, main pipeline (pre-review), review active | step 13a: local review |
-| 32 | validation | passed, main pipeline, review opted out | step 14: open PR |
-| 33 | validation | passed, within local-reviewer | (handled internally by local-reviewer agent) |
-| 34 | validation | passed, within github-reviewer | (handled internally by github-reviewer agent) |
-| 35 | validation | failed or blocked | STOP: surface failure |
-| 36 | validation | not run, main pipeline (pre-review), review active | step 13a: local review |
-| 37 | validation | not run, main pipeline, review opted out | step 14: open PR |
-| 38 | validation | not run, within local-reviewer | (handled internally by local-reviewer agent) |
-| 39 | validation | not run, within github-reviewer | (handled internally by github-reviewer agent) |
-| 40 | validation | passed, post-review revalidation | step 14: open PR |
-| 41 | validation | not run, post-review revalidation | step 14: open PR |
-| 42 | local-reviewer-returned | exit: clean, no fix commits | step 14: open PR |
-| 43 | local-reviewer-returned | exit: clean, fix commits exist | step 11 (re-run version bump) |
-| 44 | local-reviewer-returned | exit: max-iterations-reached | STOP: surface choices (continue / push now / stop) |
-| 45 | local-reviewer-returned | exit: break-fix-break | STOP: surface conflict summary |
-| 46 | local-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
-| 47 | local-reviewer-returned | exit: user-input-required | STOP: surface finding |
-| 48 | local-reviewer-returned | exit: high-severity-rejection | STOP: await user approval (rationale in output) |
-| 49 | local-reviewer-returned | exit: planner-escalation | delegate planner → route per plan (coder or designer, opus) → verify → validate → checkpoint → re-invoke local-reviewer (with `resume_from_ledger`) |
-| 50 | local-reviewer-returned | blocked: codex unavailable | step 14: open PR |
-| 51 | local-reviewer-returned | blocked: other | STOP: surface blocker |
-| 52 | open-plan-pr-complete | succeeded, review opted-in, user request contains watch/monitor/wait/poll/loop | invoke github-reviewer (watch mode) |
-| 53 | open-plan-pr-complete | succeeded, review opted-in, no watch keywords | invoke github-reviewer (fix mode) |
-| 54 | open-plan-pr-complete | succeeded, review not requested | Final Report |
-| 55 | open-plan-pr-complete | blocked | STOP: surface blocker |
-| 56 | pr-skipped | user opted out of PR | Final Report |
-| 57 | github-reviewer-returned | exit: clean | Final Report |
-| 58 | github-reviewer-returned | exit: max-cycles-reached | STOP: surface summary |
-| 59 | github-reviewer-returned | exit: pr-merged | Final Report |
-| 60 | github-reviewer-returned | exit: pr-closed | Final Report |
-| 61 | github-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
-| 62 | github-reviewer-returned | exit: user-input-required | STOP: surface finding |
-| 63 | github-reviewer-returned | exit: planner-escalation | delegate planner → route per plan (coder or designer, opus) → verify → validate → checkpoint → push → re-invoke github-reviewer (fresh) |
-| 64 | github-reviewer-returned | exit: high-severity-rejection | STOP: await user approval (rationale already posted by reviewer) |
-| 65 | github-reviewer-returned | blocked | STOP: surface blocker |
-| 66 | request-github-codex-review-complete | succeeded, watch requested | invoke github-reviewer (watch mode) |
-| 67 | request-github-codex-review-complete | succeeded, no watch | Final Report |
-| 68 | request-github-codex-review-complete | blocked | STOP: surface blocker |
-| 69 | tool-error | local-reviewer crash/timeout (exit 124/137, or timeout after partial execution — fix ledger exists) | read fix ledger from disk → re-invoke local-reviewer with resume_from_ledger |
-| 70 | tool-error | github-reviewer crash/timeout (exit 124/137, or timeout after partial execution) | re-invoke github-reviewer (fresh — resolved threads filtered by API) |
-| 71 | tool-error | non-retryable-mutating | STOP: report blocked |
-| 72 | tool-error | non-transient | STOP: report blocked |
-| 73 | tool-error | transient, first attempt | retry immediately |
-| 74 | tool-error | transient, retry failed | STOP: report blocked |
-| 75 | tool-error | unclassifiable, first attempt | retry immediately |
-| 76 | tool-error | unclassifiable, retry failed | STOP: report blocked |
-| 77 | (no match) | — | STOP:unmatched — surface to user |
+| 1 | intake-complete | routing = pr-feedback-remediation, user request contains watch/monitor/wait/poll/loop | PR feedback fast path: resolve branch → github-reviewer (watch mode) |
+| 2 | intake-complete | routing = pr-feedback-remediation, no watch keywords | PR feedback fast path: resolve branch → github-reviewer (fix mode) |
+| 3 | intake-complete | TFP does not apply | step 1: planner |
+| 4 | intake-complete | TFP applies | step 4: delivery shape |
+| 5 | planner-returned | no open questions | step 4: delivery shape |
+| 6 | planner-returned | open questions | STOP: surface questions |
+| 7 | planner-returned | error/truncated | error recovery |
+| 8 | git-preflight-complete | trunk fresh | step 6: create branch |
+| 9 | git-preflight-complete | trunk stale/diverged | STOP: surface to user |
+| 10 | git-preflight-complete | trunk freshness skipped | step 6: create branch |
+| 11 | create-working-branch-complete | succeeded | step 7: convert plan to phases |
+| 12 | create-working-branch-complete | blocked | STOP: surface blocker |
+| 13 | worker-complete | status: complete | phase verification |
+| 14 | worker-complete | status: blocked | STOP: surface blocker |
+| 15 | phase-verification-passed | more phases remain | Path A (checkpoint-commit → clear → rehydrate → next phase) |
+| 16 | phase-verification-passed | last phase | Path A (checkpoint-commit → clear → rehydrate → step 11) |
+| 17 | phase-verification-failed | recoverable, first attempt | re-delegate phase |
+| 18 | phase-verification-failed | unrecoverable or repeated | STOP: escalate to user |
+| 19 | checkpoint-commit-complete | blocked | STOP: surface blocker |
+| 20 | checkpoint-commit-complete | succeeded, more phases remain | Path A resume: clear → rehydrate → next phase delegation |
+| 21 | checkpoint-commit-complete | succeeded, last phase done | Path A resume: clear → rehydrate → step 11: version bump check |
+| 22 | checkpoint-commit-complete | succeeded, within local-reviewer | (handled internally by local-reviewer agent) |
+| 23 | checkpoint-commit-complete | succeeded, within github-reviewer | (handled internally by github-reviewer agent) |
+| 24 | checkpoint-commit-complete | succeeded, version bump, review active | step 13a: local review |
+| 25 | checkpoint-commit-complete | succeeded, version bump, review opted out | step 14: open PR |
+| 26 | version-bump-check | no bump required | step 13: validation |
+| 27 | version-bump-check | bump required, type clear | step 12: delegate bump |
+| 28 | version-bump-check | ambiguous type or missing artifact files | STOP: ask user |
+| 29 | version-bump-coder-complete | status: complete | step 13: validation |
+| 30 | version-bump-coder-complete | status: blocked | STOP: surface blocker |
+| 31 | validation | passed, version bump | checkpoint-commit |
+| 32 | validation | not run, version bump | checkpoint-commit |
+| 33 | validation | passed, main pipeline (pre-review), review active | step 13a: local review |
+| 34 | validation | passed, main pipeline, review opted out | step 14: open PR |
+| 35 | validation | passed, within local-reviewer | (handled internally by local-reviewer agent) |
+| 36 | validation | passed, within github-reviewer | (handled internally by github-reviewer agent) |
+| 37 | validation | failed or blocked | STOP: surface failure |
+| 38 | validation | not run, main pipeline (pre-review), review active | step 13a: local review |
+| 39 | validation | not run, main pipeline, review opted out | step 14: open PR |
+| 40 | validation | not run, within local-reviewer | (handled internally by local-reviewer agent) |
+| 41 | validation | not run, within github-reviewer | (handled internally by github-reviewer agent) |
+| 42 | validation | passed, post-review revalidation | step 14: open PR |
+| 43 | validation | not run, post-review revalidation | step 14: open PR |
+| 44 | local-reviewer-returned | exit: clean, no fix commits | step 14: open PR |
+| 45 | local-reviewer-returned | exit: clean, fix commits exist | step 11 (re-run version bump) |
+| 46 | local-reviewer-returned | exit: max-iterations-reached | STOP: surface choices (continue / push now / stop) |
+| 47 | local-reviewer-returned | exit: break-fix-break | STOP: surface conflict summary |
+| 48 | local-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
+| 49 | local-reviewer-returned | exit: user-input-required | STOP: surface finding |
+| 50 | local-reviewer-returned | exit: high-severity-rejection | STOP: await user approval (rationale in output) |
+| 51 | local-reviewer-returned | exit: planner-escalation | delegate planner → route per plan (coder or designer, opus) → verify → validate → checkpoint → re-invoke local-reviewer (with `resume_from_ledger`) |
+| 52 | local-reviewer-returned | blocked: codex unavailable | step 14: open PR |
+| 53 | local-reviewer-returned | blocked: other | STOP: surface blocker |
+| 54 | open-plan-pr-complete | succeeded, review opted-in, user request contains watch/monitor/wait/poll/loop | invoke github-reviewer (watch mode) |
+| 55 | open-plan-pr-complete | succeeded, review opted-in, no watch keywords | invoke github-reviewer (fix mode) |
+| 56 | open-plan-pr-complete | succeeded, review not requested | Final Report |
+| 57 | open-plan-pr-complete | blocked | STOP: surface blocker |
+| 58 | pr-skipped | user opted out of PR | Final Report |
+| 59 | github-reviewer-returned | exit: clean | Final Report |
+| 60 | github-reviewer-returned | exit: max-cycles-reached | STOP: surface summary |
+| 61 | github-reviewer-returned | exit: pr-merged | Final Report |
+| 62 | github-reviewer-returned | exit: pr-closed | Final Report |
+| 63 | github-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
+| 64 | github-reviewer-returned | exit: user-input-required | STOP: surface finding |
+| 65 | github-reviewer-returned | exit: planner-escalation | delegate planner → route per plan (coder or designer, opus) → verify → validate → checkpoint → push → re-invoke github-reviewer (fresh) |
+| 66 | github-reviewer-returned | exit: high-severity-rejection | STOP: await user approval (rationale already posted by reviewer) |
+| 67 | github-reviewer-returned | blocked | STOP: surface blocker |
+| 68 | request-github-codex-review-complete | succeeded, watch requested | invoke github-reviewer (watch mode) |
+| 69 | request-github-codex-review-complete | succeeded, no watch | Final Report |
+| 70 | request-github-codex-review-complete | blocked | STOP: surface blocker |
+| 71 | tool-error | local-reviewer crash/timeout (exit 124/137, or timeout after partial execution — fix ledger exists) | read fix ledger from disk → re-invoke local-reviewer with resume_from_ledger |
+| 72 | tool-error | github-reviewer crash/timeout (exit 124/137, or timeout after partial execution) | re-invoke github-reviewer (fresh — resolved threads filtered by API) |
+| 73 | tool-error | non-retryable-mutating | STOP: report blocked |
+| 74 | tool-error | non-transient | STOP: report blocked |
+| 75 | tool-error | transient, first attempt | retry immediately |
+| 76 | tool-error | transient, retry failed | STOP: report blocked |
+| 77 | tool-error | unclassifiable, first attempt | retry immediately |
+| 78 | tool-error | unclassifiable, retry failed | STOP: report blocked |
+| 79 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Routing Discipline
 
@@ -237,10 +239,10 @@ working_branch: <current working branch>
 trunk: <resolved trunk>
 claude_mem: present | absent
 max_iterations: 10  # default; raise on user-approved continuation
-resume_from_ledger: <path>  # optional, for crash recovery (STT row 68)
+resume_from_ledger: <path>  # optional, for crash recovery (STT row 71)
 ```
 
-Handle return per STT rows 42-51. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → route per plan (coder or designer, opus) to implement → verify → validate → checkpoint-commit → re-invoke local-reviewer with the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
+Handle return per STT rows 44-53. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → route per plan (coder or designer, opus) to implement → verify → validate → checkpoint-commit → re-invoke local-reviewer with the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
 
 ### github-reviewer Invocation (Watch Mode)
 
@@ -255,7 +257,7 @@ max_watch_duration: 14400  # seconds, default 4h
 max_remediation_cycles: 3  # default
 ```
 
-Handle return per STT rows 57-65. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → route per plan (coder or designer, opus) to implement → verify → validate → checkpoint → push → re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API on fresh start).
+Handle return per STT rows 59-67. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → route per plan (coder or designer, opus) to implement → verify → validate → checkpoint → push → re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API on fresh start).
 
 ### github-reviewer Invocation (Fix Mode)
 
@@ -268,11 +270,46 @@ base: <resolved trunk>
 target: <comment URL or ID>  # optional; absent = all unresolved
 ```
 
-Handle return per STT rows 57-65 (same rows apply to both modes).
+Handle return per STT rows 59-67 (same rows apply to both modes).
 
 ### Tool-Error Recovery for Reviewer Agents
 
-STT rows 69-70 match only POST-START failures (exit code 124 or 137, or timeout after partial execution). Indicators of post-start execution: fix ledger exists on disk (local-reviewer), or pushed commits/posted replies visible in PR (github-reviewer). Spawn/config failures (immediate exit before any work) fall through to generic tool-error rows 71-76.
+STT rows 71-72 match only POST-START failures (exit code 124 or 137, or timeout after partial execution). Indicators of post-start execution: fix ledger exists on disk (local-reviewer), or pushed commits/posted replies visible in PR (github-reviewer). Spawn/config failures (immediate exit before any work) fall through to generic tool-error rows 73-78.
+
+## PR Feedback Remediation Fast Path
+
+When intake detects `routing: pr-feedback-remediation` (per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0)), the orchestrator skips the standard pipeline (planner, git preflight, branch creation, phases, version bump, validation, local review, PR opening) and routes directly to `agent-framework:github-reviewer`.
+
+### Branch Resolution
+
+Resolve the PR's head ref and ensure the working tree is on it:
+
+1. `gh pr view <PR_NUMBER> --json headRefName --jq .headRefName` — capture `<head_ref>`.
+2. `git fetch origin <head_ref>` — ensure local tracking is current.
+3. `git checkout <head_ref>` — switch to the PR's working branch.
+4. If checkout fails or git state is unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Unsafe git state): STOP with blocker.
+
+### github-reviewer Invocation
+
+Invoke per the existing contracts in Reviewer Delegation above. Pass:
+
+- **Fix mode** (STT row 2): `mode: fix`, `pr: <N>`, `working_branch: <head_ref>`, `base: <resolved trunk>`.
+- **Watch mode** (STT row 1): `mode: watch`, `pr: <N>`, `working_branch: <head_ref>`, `base: <resolved trunk>`, `reviewer_filter: all`, `max_watch_duration: 14400`, `max_remediation_cycles: 3`.
+
+### Return Handling
+
+Per existing STT rows for `github-reviewer-returned` (rows 59-67). All exit scenarios including `planner-escalation` are handled by the standard github-reviewer return routing.
+
+### Session Facts
+
+```text
+task-type: bugfix
+claude-mem: <resolved>
+routing: pr-feedback-remediation
+pr: <N>
+working-branch: <head_ref>
+trunk: <resolved trunk>
+```
 
 ## Planner-First Rule
 
@@ -322,7 +359,8 @@ Note: Monitor-based PR watching is owned by `agent-framework:github-reviewer` (w
 
 ## Execution Algorithm
 
-0. Intake — task-type classification, claude-mem detection, pre-planning lookup. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0).
+0. Intake — task-type classification, PR-feedback-remediation detection, claude-mem detection, pre-planning lookup. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0).
+0a. If `routing: pr-feedback-remediation`: resolve PR branch, invoke github-reviewer directly (skip steps 1-14). Per PR Feedback Remediation Fast Path.
 1. Call planner via Agent tool unless trivial fast path applies.
 2. If planner fails, follow Tool-call error recovery.
 3. If planner returns open questions, surface and stop.

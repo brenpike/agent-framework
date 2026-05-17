@@ -9,6 +9,7 @@ Source: `${CLAUDE_PLUGIN_ROOT}/agents/orchestrator.md` (Execution Algorithm).
 **Intake (task-type classification and claude-mem detection).** Before planner delegation or trivial fast path routing, perform the following intake sub-steps:
 
 - **Task-type classification (intake).** Classify the task as exactly one of `bugfix|refactor|feature|incident` per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Task-Type Classification). Use the tie-break rule from that section when the task fits multiple labels. Record the classification as `task-type:` in the Session facts block (canonical key per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Session Fact Cache)). Trivial fast path (TFP) tasks default to the most restrictive applicable budget profile (i.e., `bugfix` limits unless the task clearly fits a less restrictive label). For every Step-omitting bypass per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Bypass Code Matrix), assign a synthetic task checkpoint ID `TASK-NNN` so mid-phase budget breaches and Path B partial checkpoints have a stable identifier. The matrix is the single source of truth for which codes are Step-omitting and how each interacts with `step:`, report type, `TASK-NNN`, the Session Fact key, and the `evidence:` slot.
+- **PR-feedback-remediation detection (intake).** Before claude-mem detection, check the user's raw task input for a PR feedback remediation request. A match requires BOTH: (a) a reference to an existing PR — `PR <N>`, `#<N>`, or a GitHub PR URL; AND (b) an action-plus-target pair — an action verb (`address`, `fix`, `resolve`, `handle`, `remediate`) combined with a feedback-target noun (`comments`, `feedback`, `threads`, `review`, `findings`). When both signals are present: record `routing: pr-feedback-remediation` and `pr: <N>` in Session facts. Task-type classification still runs (defaults to `bugfix` per tie-break rule). The `routing` signal takes precedence over normal STT routing at `after=intake-complete`. When NOT detected: no-op; normal intake continues. Note: "fix PR 95" alone (action verb without feedback-target noun) does NOT match — it could mean "continue implementing PR 95." The heuristic requires both signals to avoid false positives.
 - **claude-mem detection.** Detect and record per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection). Record `claude-mem: present|absent` in Session facts.
 - **Pre-planning memory lookup.** When `claude-mem: present`, run pre-planning lookup per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Pre-Planning Memory Lookup). Pass results per that section.
 
@@ -32,7 +33,7 @@ max_iterations: 10  # default; raise on user-approved continuation
 
 b. The local-reviewer agent owns the entire loop lifecycle internally (review invocation, classification, break-fix detection, simple fix delegation at sonnet, validation, checkpoint commits, iteration advancement). The orchestrator does not drive individual iterations.
 
-c. Handle terminal return per STT rows 42-51:
+c. Handle terminal return per STT rows 44-53:
    - `exit: clean, no fix commits` → proceed to step 14 (open PR).
    - `exit: clean, fix commits exist` → re-run step 11 (version bump detection) against new HEAD.
    - `exit: max-iterations-reached` → STOP: surface three choices (continue with raised ceiling / push and open PR now / stop). On continue: re-invoke local-reviewer with `max_iterations` raised (e.g., 20) — pass the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
@@ -44,7 +45,7 @@ c. Handle terminal return per STT rows 42-51:
    - `blocked: codex unavailable` → log `Review: local pre-PR review skipped (codex unavailable)`, proceed to step 14.
    - `blocked: other` → STOP: surface blocker.
 
-d. Tool-error recovery (STT row 69): if the local-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (fix ledger exists at `.agent-framework/review-loop/fix-ledger.yaml`), read the ledger path and re-invoke with `resume_from_ledger`. If no ledger exists (spawn failure), fall through to generic tool-error rows.
+d. Tool-error recovery (STT row 71): if the local-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (fix ledger exists at `.agent-framework/review-loop/fix-ledger.yaml`), read the ledger path and re-invoke with `resume_from_ledger`. If no ledger exists (spawn failure), fall through to generic tool-error rows.
 
 ## Step 15: Post-PR Review
 
@@ -54,7 +55,7 @@ d. Tool-error recovery (STT row 69): if the local-reviewer agent crashes or time
 
 When review is opted-in after PR open, route by keyword presence in the original user request:
 
-- **STT row 52 — watch mode:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` → invoke `agent-framework:github-reviewer` in watch mode:
+- **STT row 54 — watch mode:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` → invoke `agent-framework:github-reviewer` in watch mode:
 
 ```yaml
 mode: watch
@@ -66,7 +67,7 @@ max_watch_duration: 14400
 max_remediation_cycles: 3
 ```
 
-- **STT row 53 — fix mode:** user request contains none of the watch keywords → invoke `agent-framework:github-reviewer` in fix mode (one-shot):
+- **STT row 55 — fix mode:** user request contains none of the watch keywords → invoke `agent-framework:github-reviewer` in fix mode (one-shot):
 
 ```yaml
 mode: fix
@@ -79,7 +80,7 @@ The github-reviewer agent owns the entire remediation lifecycle internally (Moni
 
 **PR status check remediation:** The github-reviewer detects failed PR status checks (`gh pr checks` with `bucket == "fail"`) alongside review comments. Failed checks are classified as `failed-ci-check`, routed to coder at sonnet for simple fixes (≤2 files, no architecture impact), or escalated to orchestrator for complex CI failures. Checks that require `.github/workflows/` changes or touch >2 files trigger `planner-escalation`. After fix and push, checks re-run automatically — no thread resolution needed (checks are stateless). No new STT rows are required; existing `github-reviewer-returned` exit reasons cover all check-related outcomes.
 
-Handle terminal return per STT rows 57-65:
+Handle terminal return per STT rows 59-67:
 - `exit: clean` → Final Report. Note: `clean` means both review feedback and PR status checks are resolved (or no actionable items existed).
 - `exit: max-cycles-reached` → STOP: surface summary of remaining open items.
 - `exit: pr-merged` → Final Report.
@@ -94,11 +95,11 @@ Handle terminal return per STT rows 57-65:
 
 When the user explicitly requests Codex review (outside the standard pipeline), use `agent-framework:request-github-codex-review` skill to submit the review request, then:
 
-- On `succeeded, watch requested` (STT row 66): invoke github-reviewer in watch mode (same as standard path above).
-- On `succeeded, no watch` (STT row 67): Final Report with `Review: Requested: yes`.
-- On `blocked` (STT row 68): STOP: surface blocker.
+- On `succeeded, watch requested` (STT row 68): invoke github-reviewer in watch mode (same as standard path above).
+- On `succeeded, no watch` (STT row 69): Final Report with `Review: Requested: yes`.
+- On `blocked` (STT row 70): STOP: surface blocker.
 
-### Tool-Error Recovery (STT row 70)
+### Tool-Error Recovery (STT row 72)
 
 If the github-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (evidence: pushed commits or posted replies visible in the PR), re-invoke github-reviewer fresh. The agent's crash recovery design (C3) ensures no duplicate work: resolved threads are excluded by API, self-authored replies are filtered at detection, and pushed commits persist.
 
