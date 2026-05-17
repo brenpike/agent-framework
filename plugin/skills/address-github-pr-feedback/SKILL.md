@@ -159,8 +159,8 @@ Invoked by the orchestrator after the fix has been applied, committed, and pushe
 - `classification`: the classification returned from classify mode
 - `severity_category`: the severity returned from classify mode
 - `pr_number`: the PR number (or resolve from current branch if not supplied)
-- `candidate_url`: the full URL of the candidate from classify mode's `Candidate-url:` field
-- `source_kind`: `inline-review-thread | top-level-pr-comment | review-summary` from classify mode's `Source-kind:` field
+- `candidate_url`: the full URL of the candidate from classify mode's `candidate_url` field
+- `source_kind`: `inline-review-thread | top-level-pr-comment | review-summary` from classify mode's `source_kind` field
 - `user_approval_for_high_severity_rejection` (optional, default `no`) — pass `yes` only when the user has explicitly approved resolution of high-severity rejected feedback.
 
 Steps:
