@@ -432,18 +432,26 @@ On each Monitor event:
 - Skip already-seen IDs (already remediated or in-progress)
 - Apply `reviewer_filter` if specified (codex-only, specific author, or all)
 
+**Awaiting-check confirmation (per-poll):**
+
+On every poll cycle, independently of whether any `CHECK_FAIL=` lines were emitted, iterate over all state ledger entries with status `fix-pushed-awaiting-rerun` where 2 or more polls have elapsed since the fix push. For each such entry:
+
+- **If the check name is present in this poll's `CHECK_FAIL=` lines:** reprocess as same-finding repeat (fix did not resolve the failure) — triggers the same-finding repeat detection path below. Do not run the confirmation query for this entry.
+- **If the check name is absent from this poll's `CHECK_FAIL=` lines:** absence alone is not sufficient because a re-running check (pending/running) is also absent. Run the confirmation query: `gh pr checks <PR> --repo <OWNER/REPO> --json name,bucket --jq '.[] | select(.name == "<check_name>") | .bucket'`. Then:
+  - If result is `pass` → transition to `confirmed-pass`, update ledger, and skip
+  - If result is `pending` or empty → remain in `fix-pushed-awaiting-rerun` (check still running); do not update ledger
+  - If result is `fail` → reprocess as same-finding repeat (re-appeared as failing) — triggers the same-finding repeat detection path below
+  - If result is `skipping` or `cancel` → transition to `confirmed-pass` (non-blocking terminal states), update ledger, and skip
+  - If the confirmation query itself fails (CLI error, auth failure, non-zero exit): remain in `fix-pushed-awaiting-rerun`; set `check_poll_failed: true` in the session state ledger; do not transition on error
+
+Each awaiting entry is evaluated independently. Confirm or reprocess them one at a time.
+
 **CHECK_FAIL= line handling:**
 
 When Monitor emits `CHECK_FAIL=` lines (from the `gh pr checks` polling block):
 1. Parse tab-separated fields: `CHECK_FAIL=<name>`, `STATE=<state>`, `BUCKET=fail`, `LINK=<url>`, `DESC=<description>`, `REQUIRED=<yes|no>`
 2. Compare check name against the state ledger:
-   - **Skip** if check status is `fix-pushed-awaiting-rerun` and fewer than 2 polls have elapsed since the fix push (allow time for CI to re-run)
-   - **Run confirmation query** if check status is `fix-pushed-awaiting-rerun`, 2 or more polls have elapsed since the fix push, and the check is absent from this poll's CHECK_FAIL lines — absence alone is not sufficient because a re-running check (pending/running) is also absent. Run: `gh pr checks <PR> --repo <OWNER/REPO> --json name,bucket --jq '.[] | select(.name == "<check_name>") | .bucket'`. Then:
-     - If result is `pass` → transition to `confirmed-pass`, update ledger, and skip
-     - If result is `pending` or empty → remain in `fix-pushed-awaiting-rerun` (check still running); do not update ledger
-     - If result is `fail` → reprocess as same-finding repeat (re-appeared as failing) — triggers the same-finding repeat detection path below
-     - If result is `skipping` or `cancel` → transition to `confirmed-pass` (non-blocking terminal states), update ledger, and skip
-   - **Reprocess as same-finding repeat** if check status is `fix-pushed-awaiting-rerun`, 2 or more polls have elapsed since the fix push, and the check is still present in CHECK_FAIL lines (fix did not resolve the failure) — triggers the same-finding repeat detection path below
+   - **Skip** if check status is `fix-pushed-awaiting-rerun` — all awaiting entries (both < 2 polls and ≥ 2 polls elapsed) are handled by the per-poll awaiting-check confirmation block above. Do not re-evaluate them here.
    - **Skip** if check status is `confirmed-pass` and check is absent from CHECK_FAIL lines (fully resolved)
    - **Reprocess as same-finding repeat** if check status is `confirmed-pass` but check reappears in CHECK_FAIL lines (regression after confirmed resolution) — triggers the same-finding repeat detection path below
    - **Add as new candidate** if check name has never been seen in the ledger
