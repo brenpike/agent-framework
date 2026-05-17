@@ -160,7 +160,7 @@ Optional:
    printf 'items: []\nmonitoring: not_active\nreason: "%s"\n' "$(printf '%s' "$failure_reason" | tr '\n' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g')"
    ```
 
-   Exit 0. The orchestrator matches STT rows 70/71 based on the `monitoring` value.
+   Exit 0. The orchestrator matches the `watch-pr-feedback-returned` + `no new items` STT condition based on the `monitoring` value.
 
 9. Stop on policy stop conditions, including PR state transition to `MERGED` or `CLOSED`. On terminal-state detection, the Monitor self-exits (the script calls `exit 0` on `STATE=MERGED` or `STATE=CLOSED`, terminating the background process). Final Bash tool call for terminal states: `printf 'stopped_because: %s\npr_state: %s' "$reason" "$state"; exit 0`. Do not continue polling a terminal resource.
 
