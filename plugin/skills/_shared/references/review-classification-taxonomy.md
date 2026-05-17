@@ -4,7 +4,7 @@ Shared reference for classifying review feedback across both pre-PR local review
 
 ## Classification Categories
 
-Classify every review item into exactly one of these 10 classes:
+Classify every review item into exactly one of these 11 classes:
 
 | Class | Description |
 |---|---|
@@ -16,6 +16,7 @@ Classify every review item into exactly one of these 10 classes:
 | `design-or-UX-concern` | Feedback raising concerns about visual design, user experience, accessibility, or interaction patterns. |
 | `version-or-release-concern` | Feedback about versioning, changelogs, release behavior, package metadata, or bump correctness. |
 | `question-needs-user-input` | Feedback posing a question or requesting a decision that cannot be resolved without human input. |
+| `failed-ci-check` | Feedback representing a failed GitHub PR status check (CI/CD failure). Detected via `gh pr checks` status API, not comment body text. Routed deterministically by check metadata — does not participate in text-based classification cascade. |
 | `non-actionable` | Informational comment, praise, acknowledgment, or observation that requires no code change. |
 | `incorrect-or-rejected` | Feedback that is factually incorrect, based on stale context, or intentionally not applied (requires rationale). |
 
@@ -30,6 +31,15 @@ Each actionable finding carries a severity used for prioritization and stop-cond
 | P2 — medium | Non-breaking behavior change, missing test coverage, doc gap | Undocumented side effect, untested error path, stale docstring |
 | P3 — low | Style, naming, minor readability, non-functional improvement | Variable rename suggestion, comment rewording, import order |
 
+### CI Check Severity Mapping
+
+For `failed-ci-check` items, severity is determined by check metadata rather than content analysis:
+
+| Condition | Severity |
+|---|---|
+| Required check (blocks merge) | P1 — high |
+| Optional check (does not block merge) | P2 — medium |
+
 ## Routing Table
 
 Routing depends on the classification and the complexity of the required fix. Simple fixes (single-file, no contract or architecture impact) are delegated directly by the reviewer agent at sonnet cost. Complex fixes (multi-file, cross-step, architecture, or contract-impacting) return to the orchestrator for planner-mediated delegation at opus cost.
@@ -40,7 +50,7 @@ The reviewer agent delegates directly to the appropriate framework agent at sonn
 - The fix touches at most 2 files
 - The fix does not cross planner step boundaries
 - The fix does not alter public API, contracts, or architecture
-- The classification is `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, or `design-or-UX-concern`
+- The classification is `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `design-or-UX-concern`, or `failed-ci-check`
 
 | Classification | Delegated to | Model |
 |---|---|---|
@@ -48,6 +58,7 @@ The reviewer agent delegates directly to the appropriate framework agent at sonn
 | `actionable-test-change` | `agent-framework:coder` | sonnet |
 | `actionable-doc-change` | `agent-framework:coder` | sonnet |
 | `design-or-UX-concern` | `agent-framework:designer` | sonnet |
+| `failed-ci-check` | `agent-framework:coder` | sonnet |
 
 ### Complex / Escalated Routing (return to orchestrator)
 
@@ -63,6 +74,7 @@ The reviewer agent returns findings to the orchestrator when ANY of:
 | `version-or-release-concern` | orchestrator | `agent-framework:planner` then `agent-framework:coder` | opus |
 | `actionable-*` (cross-step) | orchestrator | `agent-framework:planner` then `agent-framework:coder` | opus |
 | `design-or-UX-concern` (cross-step) | orchestrator | `agent-framework:planner` then `agent-framework:designer` | opus |
+| `failed-ci-check` (multi-file or architecture-impacting) | orchestrator | `agent-framework:planner` then `agent-framework:coder` | opus |
 
 ### Non-routed Classifications
 

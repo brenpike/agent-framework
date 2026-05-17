@@ -119,6 +119,23 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     exit 0
   fi
   echo "$output"
+  # Poll PR status checks for failures
+  required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
+  check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name | gsub("[\\t\\n\\r]"; " "))\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\((.link // "") | gsub("[\\t\\n\\r]"; " "))\tDESC=\((.description // "") | gsub("[\\t\\n\\r]"; " "))"' 2>>"/tmp/af_poll_err_$$")
+  check_exit=$?
+  if [ "$check_exit" -gt 1 ] && [ "$check_exit" -ne 8 ]; then
+    echo "CHECK_POLL_ERROR: gh pr checks failed (exit $check_exit)"
+  elif [ -n "$check_output" ]; then
+    printf '%s\n' "$check_output" | while IFS= read -r check_line; do
+      check_first_field="${check_line%%	*}"
+      check_name="${check_first_field#CHECK_FAIL=}"
+      if printf '%s' "$required_checks" | grep -qxF "$check_name"; then
+        printf '%s\tREQUIRED=yes\n' "$check_line"
+      else
+        printf '%s\tREQUIRED=no\n' "$check_line"
+      fi
+    done
+  fi
   sleep $POLL_INTERVAL_SECONDS
 done
 
@@ -159,7 +176,15 @@ done
 # - Emits COMMENT=... lines for top-level PR comments passing all filters
 # - Emits REVIEW=... lines for actionable review summaries passing all
 #   filters
+# - Emits CHECK_FAIL=... lines for failed PR status checks. Fields are
+#   tab-separated: CHECK_FAIL=<name>, STATE=<state>, BUCKET=fail,
+#   LINK=<url>, DESC=<description>, REQUIRED=<yes|no>. Only checks with
+#   bucket=="fail" are emitted. The REQUIRED field is derived from
+#   `gh pr checks --required`; if --required is unavailable (no branch
+#   protection), all checks default to REQUIRED=no.
 # - Uses only gh api graphql --jq — no external parser binaries required
 # - Uses last: N on all connections instead of first: N — new activity is
 #   always at the end of connections; last: ensures recent items are always
 #   in the fetched page without requiring pagination
+# - Uses gh pr checks (REST-backed) for status checks — separate rate-limit
+#   bucket from the GraphQL review query

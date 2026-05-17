@@ -75,10 +75,12 @@ working_branch: <current working branch>
 base: <resolved trunk>
 ```
 
-The github-reviewer agent owns the entire remediation lifecycle internally (Monitor setup for watch mode, feedback detection, classification, injection scanning, simple fix delegation at sonnet, validation, checkpoint commits, push, fix-SHA reply posting, thread resolution, cycle tracking). The orchestrator does not drive individual remediation items.
+The github-reviewer agent owns the entire remediation lifecycle internally (Monitor setup for watch mode, feedback detection, PR status check detection, classification, injection scanning, simple fix delegation at sonnet, validation, checkpoint commits, push, fix-SHA reply posting, thread resolution, cycle tracking). The orchestrator does not drive individual remediation items — this includes both review comment remediation and failed CI check remediation.
+
+**PR status check remediation:** The github-reviewer detects failed PR status checks (`gh pr checks` with `bucket == "fail"`) alongside review comments. Failed checks are classified as `failed-ci-check`, routed to coder at sonnet for simple fixes (≤2 files, no architecture impact), or escalated to orchestrator for complex CI failures. Checks that require `.github/workflows/` changes or touch >2 files trigger `planner-escalation`. After fix and push, checks re-run automatically — no thread resolution needed (checks are stateless). No new STT rows are required; existing `github-reviewer-returned` exit reasons cover all check-related outcomes.
 
 Handle terminal return per STT rows 57-65:
-- `exit: clean` → Final Report.
+- `exit: clean` → Final Report. Note: `clean` means both review feedback and PR status checks are resolved (or no actionable items existed).
 - `exit: max-cycles-reached` → STOP: surface summary of remaining open items.
 - `exit: pr-merged` → Final Report.
 - `exit: pr-closed` → Final Report.
