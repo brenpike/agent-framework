@@ -1,10 +1,10 @@
 {
   "workflow": "review-remediation",
-  "description": "External PR review feedback classification and remediation routing",
+  "description": "Post-PR review feedback classification and remediation via github-reviewer agent",
   "steps": [
-    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "External review and remediation" } },
-    { "state": "External Review", "source": { "file": "plugin/governance/pr-review-remediation-loop.md", "pattern": "## Remediation Decision Table" } },
-    { "state": "Remediation", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "## Appendix: Review Remediation Delegation" } },
+    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "## Reviewer Delegation" } },
+    { "state": "External Review", "source": { "file": "plugin/skills/_shared/references/review-classification-taxonomy.md", "pattern": "## Routing Table" } },
+    { "state": "Remediation", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "## Appendix: Reviewer Planner-Escalation Delegation" } },
     { "state": "Checkpoint Commit", "source": { "file": "plugin/governance/branching-pr-workflow.md", "pattern": "## Commit Policy" } },
     { "state": "Final Report", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Result: complete | partial | blocked" } }
   ]
