@@ -54,8 +54,8 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
    - Absent — emit `printf 'blocker: trunk-freshness session fact not provided by orchestrator' >&2; exit 1`.
 4. Confirm `working_branch` follows the branch taxonomy and naming rules.
 5. Confirm there are no unexpected unstaged/uncommitted changes that make switching unsafe.
-6. Create or switch to `working_branch` from `base`.
-7. The `git switch` or `git checkout` command in step 6 is the final Bash tool call. Its natural stdout (branch confirmation) is the routing data. If any prerequisite check fails (missing inputs, unsafe state, bad branch name), emit blocker to stderr and exit 1.
+6. Create or switch to `working_branch` from `base`. Suppress command output (`>/dev/null 2>&1`).
+7. After the `git switch` or `git checkout` command in step 6 succeeds, suppress its output (`>/dev/null 2>&1`) and emit explicit YAML as the final Bash tool call: `printf 'branch: %s\n' "$branch_name"`. This YAML line is the routing data. If any prerequisite check fails (missing inputs, unsafe state, bad branch name), emit blocker to stderr and exit 1.
 
 ## Silence Discipline
 

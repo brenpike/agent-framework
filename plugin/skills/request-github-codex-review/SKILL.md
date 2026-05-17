@@ -45,7 +45,7 @@ If neither is available, emit `printf 'blocker: no PR identified' >&2; exit 1`.
 @codex review for regressions, missing tests, public API compatibility issues, security issues, package/release behavior, versioning issues, and risky behavior changes.
 ```
 
-5. The `gh pr comment` command in step 4 is the final Bash tool call. Its natural stdout (comment confirmation) is the routing data. If any prerequisite check fails, emit blocker to stderr and exit 1.
+5. After the `gh pr comment` command in step 4 succeeds (suppress its output with `>/dev/null 2>&1`), emit explicit YAML as the final Bash tool call: `printf 'review_requested: true\npr: %s\n' "$pr_number"`. This YAML output is the routing data. If any prerequisite check fails, emit blocker to stderr and exit 1.
 
 ## Silence Discipline
 

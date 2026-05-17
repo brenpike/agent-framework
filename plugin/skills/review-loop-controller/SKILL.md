@@ -9,6 +9,7 @@ allowed-tools:
   - Bash(git diff *)
   - Bash(git log *)
   - Bash(git rev-parse *)
+  - Bash(mkdir -p *)
   - Agent
   - Skill
   - Bash(printf *)
