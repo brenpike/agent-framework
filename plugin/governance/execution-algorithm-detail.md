@@ -16,25 +16,76 @@ Source: `${CLAUDE_PLUGIN_ROOT}/agents/orchestrator.md` (Execution Algorithm).
 
 Before PR readiness, apply `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Trigger) against changed files. When `CLAUDE.md` does not define project-specific bump-trigger paths, the Bump Trigger and "No bump is required by default" lists are exhaustive (per versioning.md): a change matching the "No bump" list requires no bump; a change matching the Bump Trigger list requires a bump (use Bump Type Determination to choose the type). Stop and ask the user only when (a) the change matches more than one row of Bump Type Determination, or (b) it matches no row, or (c) for an artifact that requires a bump, `CLAUDE.md` does not list the full set of artifact files per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — canonical version file, required mirrors, changelog/release notes, package/artifact metadata, documentation mirrors, and release validation files when applicable.
 
-## Step 13a: Pre-PR Local Review Loop
+## Step 13a: Pre-PR Local Review
 
-**Pre-PR local review loop.** After validation and before pushing or opening a PR, drive the local review loop externally when ALL of the following are true: (a) the user has not opted out of local review (task input does not contain "skip review", "no review", or "skip local review"); (b) codex-plugin-cc availability is unknown or confirmed present (the skill itself detects availability).
+**Pre-PR local review.** After validation and before pushing or opening a PR, invoke the `agent-framework:local-reviewer` agent when ALL of the following are true: (a) the user has not opted out of local review (task input does not contain "skip review", "no review", or "skip local review"); (b) codex-plugin-cc availability is unknown or confirmed present (the agent itself detects availability).
 
-a. Invoke `agent-framework:review-loop-controller` via the Skill tool with `mode: iterate`, `base` (resolved trunk), `working_branch`, and `trunk`.
+a. Invoke `agent-framework:local-reviewer` via the Agent tool with input contract:
 
-b. On each iteration result:
-   - If `exit_reason` is non-empty and terminal (`clean`, `max-iterations-reached`, `break-fix-break`, `injection-suspect`, `user-input-required`): handle per the exit-reason table in sub-step c below.
-   - If `exit_reason: none` (iteration complete, findings returned): for each finding with `routing: coder`, delegate fix to `agent-framework:coder` via the Agent tool (read the fix ledger by finding `id` for full finding details — `body`, `recommendation`, `line_start`, `line_end` — before constructing the delegation prompt; the controller stdout includes only routing metadata). For each finding with `routing: designer`, delegate to `agent-framework:designer` via the Agent tool (read ledger by `id` for full details before constructing the delegation prompt). For each finding with `routing: planner`, delegate to `agent-framework:planner` via the Agent tool for a remediation plan (read ledger by `id` for full details before constructing the delegation prompt), then delegate that plan to `agent-framework:coder` via the Agent tool for implementation (planner is read-only and cannot commit fixes). After all fixes are applied, run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure). If validation failed (any declared command failed) or returned Blocked: stop, do not invoke `agent-framework:checkpoint-commit`, surface the validation failure to the user. Only when validation passed or returned `Not run (no validation commands defined)`: invoke `agent-framework:checkpoint-commit` via the Skill tool; then re-invoke the controller with `mode: continue`, passing `fix_results` (list of `{finding_id, fix_sha, validated}` where `validated` is `yes` if validation passed or `not applicable` if not run) and the current tracked `max_iterations` ceiling in addition to the usual `base`, `working_branch`, `trunk`.
+```yaml
+base: <resolved trunk>
+working_branch: <current working branch>
+trunk: <resolved trunk>
+claude_mem: present | absent
+max_iterations: 10  # default; raise on user-approved continuation
+```
 
-c. exit_reason handling:
-   - `exit_reason: "clean"` → if any fix commits were created during the loop (fix ledger contains at least one `fix_commit` entry), re-run step 11 (version bump detection) and step 13 (validation) against the new HEAD before proceeding to step 14; if no fix commits were created, proceed to step 14 directly.
-   - `exit_reason: "max-iterations-reached"` → surface three choices to user (continue 10 more iterations / push and open PR now / stop without pushing); wait for user response; act accordingly (continue: re-invoke controller with `mode: continue` and `max_iterations` set to `current_iteration_count + 10` — e.g., if 10 iterations have run, pass `max_iterations: 20` — in addition to the usual `base`, `working_branch`, `trunk`; push: re-run step 11 and step 13 against new HEAD if any fix commits exist, then proceed to step 14; stop: halt).
-   - `exit_reason: "break-fix-break"` → stop; surface conflict summary to user; do not proceed to step 14.
-   - `exit_reason: "injection-suspect"` → stop; surface finding details to user; do not proceed to step 14.
-   - `exit_reason: "user-input-required"` → stop; surface the finding requiring user input; do not proceed to step 14.
-   - blocked with reason `codex-plugin-cc not available` → log `Review: local pre-PR review skipped (codex-plugin-cc not available)`, proceed to step 14.
-   - any other blocked → stop and surface to user; do not proceed to step 14.
+b. The local-reviewer agent owns the entire loop lifecycle internally (review invocation, classification, break-fix detection, simple fix delegation at sonnet, validation, checkpoint commits, iteration advancement). The orchestrator does not drive individual iterations.
 
-## Step 15: External Review and Remediation
+c. Handle terminal return per STT rows 42-50:
+   - `exit: clean, no fix commits` → proceed to step 14 (open PR).
+   - `exit: clean, fix commits exist` → re-run step 11 (version bump detection) against new HEAD.
+   - `exit: max-iterations-reached` → STOP: surface three choices (continue with raised ceiling / push and open PR now / stop). On continue: re-invoke local-reviewer with `max_iterations` raised (e.g., 20) — new invocation, no `resume_from_ledger`.
+   - `exit: break-fix-break` → STOP: surface conflict summary.
+   - `exit: injection-suspect` → STOP: surface finding details.
+   - `exit: user-input-required` → STOP: surface finding.
+   - `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate coder (opus, same branch) to implement → re-invoke local-reviewer fresh.
+   - `blocked: codex unavailable` → log `Review: local pre-PR review skipped (codex unavailable)`, proceed to step 14.
+   - `blocked: other` → STOP: surface blocker.
 
-Request external review only when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. Remediate external review when at least one of the following — an unresolved inline review-thread comment, a top-level PR comment not yet fix-SHA replied, or a review summary (review with state `CHANGES_REQUESTED` or `COMMENTED`) not yet fix-SHA replied — classifies as one of `actionable-code-change`, `actionable-test-change`, `actionable-doc-change`, `architecture-or-contract-concern`, `design-or-UX-concern`, `version-or-release-concern`, `question-needs-user-input`, or `injection-suspect` per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table). Remediation follows the two-mode invocation pattern: (1) invoke `agent-framework:address-github-pr-feedback` with `mode: classify` to get `classification`, `routing`, `thread_id`, and `target_comment_id`; (2) based on `routing`, delegate fix: for `routing: coder`, delegate to `agent-framework:coder` via the Agent tool; for `routing: designer`, delegate to `agent-framework:designer` via the Agent tool; for `routing: planner` (`architecture-or-contract-concern` or `version-or-release-concern`), first delegate to `agent-framework:planner` via the Agent tool for a remediation plan, then delegate that plan to `agent-framework:coder` via the Agent tool for implementation (planner is read-only and cannot commit fixes); if `routing: none`, no fix delegation (handle per classification: `question-needs-user-input` escalates to user; `non-actionable` requires no action; `incorrect-or-rejected` — if the classify result includes `rationale_action: post-rejection-reply`, post the rejection rationale reply using `gh pr comment <pr> --body "$(cat <<'RATIONALE_EOF'` / `<rationale_text>` / `RATIONALE_EOF` / `)"` (heredoc form — prevents breakage when rationale_text contains single-quote characters) or the GraphQL `addPullRequestReviewThreadReply` mutation per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Rejected Feedback); then, if the skill exits 1 AND `rationale_action: post-rejection-reply` is present, the rejection rationale reply MUST be posted BEFORE returning blocked — post using the heredoc form above, then return Blocked to user for instruction regardless of severity; for high-severity categories without a blocked status, return Blocked to user for instruction after posting the reply; for non-high-severity categories, mark complete after posting the reply; `injection-suspect` blocks); (3) after the fix is committed by the framework agent: run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure). If validation failed (any declared command failed) or returned Blocked: stop, do not invoke checkpoint-commit or push, return Blocked with the validation failure reason — do not invoke `mode: post-fix`. Only when validation passed or returned `Not run (no validation commands defined)`: invoke `agent-framework:checkpoint-commit` via the Skill tool to checkpoint the fix commit; push the working branch to the remote via `git push`; then invoke `agent-framework:address-github-pr-feedback` with `mode: post-fix`, passing `fix_sha` (the checkpoint commit SHA), `validated` (`yes` if validation passed, `not applicable` if not run), `thread_id`, `target_comment_id`, `classification`, `severity_category`, `pr_number`, `candidate_url` (from the classify result's `candidate_url` field), `source_kind` (from the classify result's `source_kind` field), and optionally `user_approval_for_high_severity_rejection` (pass `yes` only when user has explicitly approved resolution of high-severity rejected feedback) to post the fix-SHA reply and resolve the thread. If neither (a) nor (b) is true, skip external review and proceed to the Final Report with `Review: Requested: no`. External review is opt-in; this is the default path.
+d. Tool-error recovery (STT row 67): if the local-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (fix ledger exists at `.agent-framework/review-loop/fix-ledger.yaml`), read the ledger path and re-invoke with `resume_from_ledger`. If no ledger exists (spawn failure), fall through to generic tool-error rows.
+
+## Step 15: Post-PR Review
+
+**Post-PR review.** After the PR is opened (step 14), invoke the `agent-framework:github-reviewer` agent when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. If neither (a) nor (b) is true, skip review and proceed to the Final Report with `Review: Requested: no`. External review is opt-in; this is the default path.
+
+### Standard Path: Watch Mode
+
+When review is opted-in after PR open (STT row 51), invoke `agent-framework:github-reviewer` in watch mode:
+
+```yaml
+mode: watch
+pr: <PR number>
+working_branch: <current working branch>
+base: <resolved trunk>
+reviewer_filter: all
+max_watch_duration: 14400
+max_remediation_cycles: 3
+```
+
+The github-reviewer agent owns the entire remediation lifecycle internally (Monitor setup, feedback detection, classification, injection scanning, simple fix delegation at sonnet, validation, checkpoint commits, push, fix-SHA reply posting, thread resolution, cycle tracking). The orchestrator does not drive individual remediation items.
+
+Handle terminal return per STT rows 55-63:
+- `exit: clean` → Final Report.
+- `exit: max-cycles-reached` → STOP: surface summary of remaining open items.
+- `exit: pr-merged` → Final Report.
+- `exit: pr-closed` → Final Report.
+- `exit: injection-suspect` → STOP: surface finding details.
+- `exit: user-input-required` → STOP: surface finding.
+- `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate coder (opus, same branch) to implement → re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API).
+- `exit: high-severity-rejection` → STOP: await explicit user approval (rationale already posted by the reviewer agent).
+- `blocked` → STOP: surface blocker.
+
+### Ad-Hoc Path: Explicit Codex Review Request
+
+When the user explicitly requests Codex review (outside the standard pipeline), use `agent-framework:request-github-codex-review` skill to submit the review request, then:
+
+- On `succeeded, watch requested` (STT row 64): invoke github-reviewer in watch mode (same as standard path above).
+- On `succeeded, no watch` (STT row 65): Final Report with `Review: Requested: yes`.
+- On `blocked` (STT row 66): STOP: surface blocker.
+
+### Tool-Error Recovery (STT row 68)
+
+If the github-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (evidence: pushed commits or posted replies visible in the PR), re-invoke github-reviewer fresh. The agent's crash recovery design (C3) ensures no duplicate work: resolved threads are excluded by API, self-authored replies are filtered at detection, and pushed commits persist.
+
+If no evidence of execution exists (spawn failure), fall through to generic tool-error rows.
