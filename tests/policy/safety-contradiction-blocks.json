@@ -11,7 +11,7 @@
     },
     {
       "file": "plugin/agents/coder.md",
-      "pattern": "## Contradiction Detection"
+      "pattern": "cross-handoff contradiction detection"
     }
   ]
 }

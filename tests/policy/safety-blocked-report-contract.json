@@ -2,7 +2,7 @@
   "rule": "Blocked report contract",
   "source": {
     "file": "plugin/governance/communication-policy.md",
-    "pattern": "Use this for blocked planning, execution, validation, git, versioning, review, monitoring, or skill states"
+    "pattern": "Use when any stage cannot proceed"
   },
   "consumers": [
     {

@@ -15,11 +15,11 @@
     },
     {
       "file": "plugin/agents/coder.md",
-      "pattern": "Bypass Code Matrix"
+      "pattern": "bypass code maps to report type"
     },
     {
       "file": "plugin/agents/designer.md",
-      "pattern": "Bypass Code Matrix"
+      "pattern": "bypass code maps to report type"
     },
     {
       "file": "plugin/agents/planner.md",

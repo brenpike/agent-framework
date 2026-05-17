@@ -19,7 +19,7 @@
     },
     {
       "file": "plugin/skills/create-working-branch/SKILL.md",
-      "pattern": "return blocked if any are missing"
+      "pattern": "exit 1 with blocker if any are missing"
     }
   ]
 }

@@ -11,7 +11,7 @@
     },
     {
       "file": "plugin/skills/open-plan-pr/SKILL.md",
-      "pattern": "Stop blocked if the procedure returned the Blocked Report Contract"
+      "pattern": "Exit 1 with blocker if the procedure returned the Worker Report"
     }
   ]
 }

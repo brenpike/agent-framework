@@ -11,7 +11,7 @@
     },
     {
       "file": "plugin/governance/communication-policy.md",
-      "pattern": "## Progressive Evidence Rule"
+      "pattern": "(Progressive Evidence Loading)"
     }
   ]
 }
