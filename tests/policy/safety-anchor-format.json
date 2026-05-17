@@ -7,7 +7,7 @@
   "consumers": [
     {
       "file": "plugin/governance/communication-policy.md",
-      "pattern": "anchor ID in `DEC-NNN` format"
+      "pattern": "anchor IDs per"
     },
     {
       "file": "plugin/agents/planner.md",

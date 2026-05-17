@@ -7,7 +7,7 @@
   "consumers": [
     {
       "file": "plugin/skills/open-plan-pr/SKILL.md",
-      "pattern": "open PR if the Validation procedure returned the Blocked Report Contract"
+      "pattern": "open PR if the Validation procedure returned the Worker Report"
     }
   ]
 }
