@@ -161,6 +161,8 @@ Store the resolved integer as `PR_NUMBER`, the owner login as `OWNER`, and the r
 
 Fetch unresolved review threads, top-level PR comments, and review summaries using queries from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Apply Detection Filtering (empty body, self-author) before building the candidate set.
 
+**Fix-SHA skip rule (crash-recovery duplicate prevention):** For each unresolved inline review thread, fetch its full comment list using the "Fetch Thread Comments (Paginated)" operation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. If any comment in the list has `author.login == SELF_LOGIN` AND body matches `^Fixed in [0-9a-f]+`: skip the entire thread (already handled, resolution pending). Do not add it to the candidate set. This rule closes the gap where `resolveReviewThread` failed or the agent crashed after posting the fix-SHA reply — Rule 2 (self-author) suppresses the reply itself but the original non-self-authored comment would otherwise re-enter classification.
+
 If `target` is specified: filter to that single comment/thread. If `target` is specified but not found in the candidate set: return `exit_reason: blocked`, `blocker_reason: target not found in candidate set`.
 
 ### Step 3: Body Re-fetch
@@ -506,7 +508,7 @@ On re-invocation after a crash or timeout:
 2. GitHub API returns only UNRESOLVED threads (already-resolved are filtered out by Detection Filtering).
 3. Previously pushed commits are visible to Codex on next auto-review.
 4. Fix-SHA replies posted before the crash are visible in thread comment lists — Detection Filtering excludes self-authored comments.
-5. No duplicate work occurs because: resolved threads are excluded, self-replies are excluded, and pushed commits persist.
+5. A crash after posting a fix-SHA reply but before resolving the thread leaves the thread unresolved. On re-invocation, Rule 2 (self-author) filters the fix reply itself but not the original Codex comment, so the original comment would re-enter classification. Mitigation: before classifying any unresolved thread, fetch its comment list and check for a self-authored comment matching `Fixed in <SHA>`. If found: skip the thread (already handled, resolution pending). This prevents duplicate fixes when `resolveReviewThread` failed or the agent crashed after posting. See Fix Mode Step 2 (Fix-SHA skip rule).
 
 ## Comment Filtering
 

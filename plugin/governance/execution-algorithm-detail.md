@@ -35,7 +35,7 @@ b. The local-reviewer agent owns the entire loop lifecycle internally (review in
 c. Handle terminal return per STT rows 42-50:
    - `exit: clean, no fix commits` → proceed to step 14 (open PR).
    - `exit: clean, fix commits exist` → re-run step 11 (version bump detection) against new HEAD.
-   - `exit: max-iterations-reached` → STOP: surface three choices (continue with raised ceiling / push and open PR now / stop). On continue: re-invoke local-reviewer with `max_iterations` raised (e.g., 20) — new invocation, no `resume_from_ledger`.
+   - `exit: max-iterations-reached` → STOP: surface three choices (continue with raised ceiling / push and open PR now / stop). On continue: re-invoke local-reviewer with `max_iterations` raised (e.g., 20) — pass the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
    - `exit: break-fix-break` → STOP: surface conflict summary.
    - `exit: injection-suspect` → STOP: surface finding details.
    - `exit: user-input-required` → STOP: surface finding.
