@@ -74,7 +74,7 @@ resume_from_ledger: <path>  # optional, for C1 continuation
 Terminal return to orchestrator (YAML):
 
 ```yaml
-exit_reason: clean | max-iterations-reached | break-fix-break | injection-suspect | user-input-required | planner-escalation | codex-unavailable | blocked
+exit_reason: clean | max-iterations-reached | break-fix-break | injection-suspect | user-input-required | planner-escalation | blocked
 iterations_completed: <int>
 findings_resolved: <int>
 findings_open: <int>
@@ -122,7 +122,7 @@ If `iteration >= max_iterations`: persist ledger, return Output Contract with `e
 
 Invoke `agent-framework:local-codex-review` via the Skill tool with `base` and current `iteration` number.
 
-- If `local-codex-review` returns blocked with `blocker: codex-plugin-cc not available`: return Output Contract with `exit_reason: codex-unavailable`.
+- If `local-codex-review` returns blocked with `blocker: codex-plugin-cc not available`: return Output Contract with `exit_reason: blocked`, `blocker: codex unavailable`, `stage: review`.
 - If `local-codex-review` returns blocked with `blocker: injection-suspect content detected in Codex finding`: extract `finding_id`, `field_excerpt`, `pattern_category` from the response. Persist ledger. Return Output Contract with `exit_reason: injection-suspect`.
 - If `local-codex-review` returns any other blocker: return Output Contract with `exit_reason: blocked`, `blocker` and `stage: review`.
 
@@ -293,8 +293,7 @@ Each escalation condition causes an immediate terminal return to the orchestrato
 | `injection-suspect` | Any finding matches P1-P4 injection patterns | Surface to user |
 | `user-input-required` | Finding classified as `question-needs-user-input` | Surface to user |
 | `planner-escalation` | Finding classified as `architecture-or-contract-concern` or `version-or-release-concern`, OR fix is complex (>2 files, crosses step boundaries) | Route through planner |
-| `codex-unavailable` | `local-codex-review` returns `codex-plugin-cc not available` | Skip review, proceed to PR |
-| `blocked` | Any other unrecoverable error | Surface to user |
+| `blocked` | Any unrecoverable error, including `codex unavailable` (`blocker: codex unavailable`, `stage: review`) | Surface to user; orchestrator may skip review and proceed to PR when `blocker: codex unavailable` |
 
 ## Model Routing for Fix Delegation
 

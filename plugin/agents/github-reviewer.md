@@ -136,17 +136,25 @@ Load these as needed during execution:
 
 ## Fix Mode Lifecycle
 
+### Step 0: Resolve PR Number, Owner, and Repo
+
+Before any preflight check or Monitor setup, resolve the integer PR_NUMBER, OWNER, and REPO from the `pr` input:
+
+- If `pr` is a URL: extract PR_NUMBER with `gh pr view <url> --json number --jq '.number'`. Extract OWNER and REPO from the URL path: `echo "<url>" | sed 's|https://github.com/||' | cut -d/ -f1` for OWNER and `cut -d/ -f2` for REPO.
+- If `pr` is an integer: resolve OWNER, REPO, and confirm PR_NUMBER using `gh pr view <number> --json number,url --jq '"PR=" + (.number | tostring) + " URL=" + .url'`. Parse OWNER and REPO from the returned URL (`ltrimstr("https://github.com/")`, split on `/`).
+- If `pr` is absent: run `gh pr view --json number,url --jq '"PR=" + (.number | tostring) + " URL=" + .url'` against the current branch to derive all three values.
+
+Store the resolved integer as `PR_NUMBER`, the owner login as `OWNER`, and the repo name as `REPO`. All subsequent steps use these resolved values. If resolution fails: return `exit_reason: blocked`, `blocker_reason: PR resolution failed`.
+
 ### Step 1: Preflight
 
-1. Resolve PR: if caller passed a PR number/URL, use it; otherwise run `gh pr view --json number,state --jq '.state + ":" + (.number | tostring)'` against the current branch. Confirm state is `OPEN`. If not `OPEN`: return `exit_reason: blocked`, `blocker_reason: PR state is <state>`.
+1. Confirm PR state is `OPEN`: run `gh pr view <PR_NUMBER> --json state --jq '.state'`. If not `OPEN`: return `exit_reason: blocked`, `blocker_reason: PR state is <state>`.
 
 2. Verify git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). If unsafe: return `exit_reason: blocked`.
 
 3. Verify `git branch --show-current` equals `working_branch`. If mismatch: return `exit_reason: blocked`, `blocker_reason: branch mismatch`.
 
-4. Resolve OWNER, REPO, PR_NUMBER from `gh pr view <pr> --json url --jq '.url | ltrimstr("https://github.com/") | split("/") | .[0] + " " + .[1]'`.
-
-5. Resolve self-identity: `export SELF_LOGIN=$(gh api user --jq .login)`.
+4. Resolve self-identity: `export SELF_LOGIN=$(gh api user --jq .login)`.
 
 ### Step 2: Fetch Candidates
 
@@ -283,7 +291,7 @@ Return the Output Contract YAML with:
 
 ### Step 1: Preflight
 
-Same as Fix Mode Step 1, plus:
+Same as Fix Mode Step 0 (PR number/owner/repo resolution) and Step 1 (git and branch checks), plus:
 
 1. Run pre-flight validation query from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/preflight-check.sh`. Substitute OWNER, REPO, PR_NUMBER with resolved values. Run once via Bash.
 
@@ -350,12 +358,13 @@ On each Monitor event:
 
 After classifying all new items from a single poll:
 
-1. Process all simple-fix items in severity order (delegate coder/designer at sonnet)
-2. Validate (same as Fix Mode Step 7)
-3. Checkpoint commit (same as Fix Mode Step 8)
-4. Pre-push safety check and push (same as Fix Mode Step 9)
-5. Post-fix reply and resolve (same as Fix Mode Step 10)
-6. Increment `cycles_completed`
+1. Process all simple-fix items in severity order (delegate coder/designer at sonnet). Track `fixes_applied_this_cycle`: increment only when a coder/designer delegation returns `complete` with file changes.
+2. **Guard:** If `fixes_applied_this_cycle == 0` (no fixes applied — all items were non-actionable, rejected, blocked, or escalated): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Skip to the next poll cycle (continue watching) or return `exit_reason: clean` if no actionable items remain.
+3. Validate (same as Fix Mode Step 7)
+4. Checkpoint commit (same as Fix Mode Step 8)
+5. Pre-push safety check and push (same as Fix Mode Step 9)
+6. Post-fix reply and resolve (same as Fix Mode Step 10)
+7. Increment `cycles_completed`
 
 **Cycle limit check:**
 
