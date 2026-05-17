@@ -57,7 +57,7 @@ The bypass route for single-file, low-risk changes (<=20 lines, no public API im
 _Avoid_: quick path, shortcut
 
 **Bypass Code**:
-A reason code (`TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, `NO_PRIOR_PHASE`, `USER_OVERRIDE`) that permits skipping plan artifact or report requirements.
+An audit reason code attached to a delegation preamble declaring why normal preconditions are waived; `TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, and `USER_OVERRIDE` (when step omitted) are step-omitting and use a synthetic `TASK-NNN`, while `NO_PRIOR_PHASE` is never step-omitting — it annotates that no prior handoff exists but retains `step: STEP-NNN` and requires a complete report.
 _Avoid_: exemption, override
 
 ### Governance
@@ -97,7 +97,7 @@ The single prefix (`feature/`, `bugfix/`, `hotfix/`, `refactor/`, `chore/`, `doc
 _Avoid_: branch type, category
 
 **Bump Trigger**:
-A change to files affecting a published artifact's runtime behavior, public API, or compatibility contract, requiring a version increment.
+A change to files affecting a published artifact's runtime behavior, public API, compatibility contract, generated output, packaged output, distribution metadata, or documented consumer expectation, requiring a version increment.
 _Avoid_: version trigger, release trigger
 
 **Git Preflight**:
