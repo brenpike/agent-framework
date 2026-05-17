@@ -166,7 +166,7 @@ _Avoid_: plugin path, root, base path
 
 - An **Orchestrator** delegates to exactly one **Planner**, **Coder**, **Designer**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
 - A **Plan Artifact** contains one or more steps (`STEP-NNN`), each assigned to exactly one **Coder** or **Designer**
-- A **Delegation** targets exactly one step (or one **Bypass Code** in lieu of a step)
+- A **Delegation** targets exactly one **Step** (`STEP-NNN`) or, for step-omitting **Bypass Codes** (`TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, `USER_OVERRIDE` when step omitted), a synthetic `TASK-NNN`; `NO_PRIOR_PHASE` is never step-omitting and always accompanies a `step: STEP-NNN`
 - A **Phase** produces exactly one **Handoff** on success
 - A **Handoff** enables **Rehydration** after **Auto-Clear**
 - A **Retrieval Anchor** survives **Auto-Clear** and is available for **Rehydration**
