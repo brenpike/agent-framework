@@ -91,7 +91,7 @@ fi
 # Uses gh pr checks (REST-backed). Failures are surfaced as data, not blockers.
 # REQUIRED field derived from --required flag; defaults to "no" if unavailable.
 required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
-gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name | gsub("[\\t\\n\\r]"; " "))\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\(.link | gsub("[\\t\\n\\r]"; " "))\tDESC=\(.description | gsub("[\\t\\n\\r]"; " "))"' 2>/dev/null | while IFS= read -r check_line; do
+gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name | gsub("[\\t\\n\\r]"; " "))\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\((.link // "") | gsub("[\\t\\n\\r]"; " "))\tDESC=\((.description // "") | gsub("[\\t\\n\\r]"; " "))"' 2>/dev/null | while IFS= read -r check_line; do
   check_name=$(printf '%s' "$check_line" | cut -f1 | sed 's/^CHECK_FAIL=//')
   if printf '%s' "$required_checks" | grep -qxF "$check_name"; then
     printf '%s\tREQUIRED=yes\n' "$check_line"
