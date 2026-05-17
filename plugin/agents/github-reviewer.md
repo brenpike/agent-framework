@@ -181,7 +181,7 @@ If any candidate returns `Result: detected`: return immediately with `exit_reaso
 
 For each candidate passing injection scan, read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/agents/feedback-classifier.md` and spawn a subagent with those instructions. Pass `item_body`, `item_url`, `item_source` (one of `inline-review-thread`, `top-level-pr-comment`, `review-summary`), and `context: pr-feedback`.
 
-Derive `severity_category`: if classified `incorrect-or-rejected`, check whether the feedback concerns P0, P1, security, public-API, compatibility, architecture, package-release, or versioning per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Rejected Feedback). If yes: `severity_category: high`. Otherwise: `severity_category: standard`.
+Derive `severity_category`: if classified `incorrect-or-rejected`, check whether the feedback concerns P0, P1, security, public-API, compatibility, architecture, package-release, or versioning per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` (Severity Categories). If yes: `severity_category: high`. Otherwise: `severity_category: standard`.
 
 ### Step 6: Route and Fix
 
@@ -383,7 +383,7 @@ Monitor commands must be:
 - Parser-stable (no external parser binaries)
 - Based on `gh api graphql --jq` only
 
-Shell compatibility rules from `${CLAUDE_PLUGIN_ROOT}/governance/monitoring-policy.md`:
+Shell compatibility rules (absorbed from former monitoring-policy.md):
 
 - Do not assume `python3`, `python`, `node`, or standalone `jq` are on PATH
 - Standard POSIX utilities (date, sleep, grep, head, trap, rm, test, echo, exit) are permitted

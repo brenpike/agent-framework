@@ -150,7 +150,7 @@ For each non-suspect finding: read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/agents/
 - `item_source`: `codex-finding`
 - `context`: `local-review`
 
-The classifier reads `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` and applies the Local Review Remediation Decision Table.
+The classifier reads `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` and applies the Routing Table.
 
 Record each finding with its classification in the ledger as `"open"`.
 
@@ -331,7 +331,7 @@ This agent operates as a pipeline unit. Per `${CLAUDE_PLUGIN_ROOT}/governance/co
 - `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` — unsafe git state, smallest correct fix, break-fix-break cycle, validation procedure definitions
 - `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md` — external content boundary, injection-suspect classification (P1-P4 patterns), destructive fix confirmation gate
 - `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` — silence discipline, report contracts
-- `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` — Local Review Remediation Decision Table (used by feedback-classifier subagent)
+- `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` — classification taxonomy and routing table (used by feedback-classifier subagent)
 
 ## Delegation Data-Boundary Constraint
 
