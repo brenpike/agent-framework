@@ -1,6 +1,6 @@
 # agent-framework
 
-Claude Code plugin providing a structured multi-agent framework with orchestrator, planner, coder, and designer agents plus workflow skills for git branching, commits, PRs, and code review remediation.
+Claude Code plugin providing a structured multi-agent framework with orchestrator, planner, coder, designer, local-reviewer, and github-reviewer agents plus workflow skills for git branching, commits, PRs, and code review remediation.
 
 ## Install
 
@@ -66,7 +66,7 @@ Once configured, the orchestrator is the session default agent. All skills are a
   /reload-plugins
   /codex:setup
   ```
-  When installed, enables local pre-PR Codex review via `agent-framework:review-loop-controller` and `agent-framework:local-codex-review`, and post-PR Codex review via `agent-framework:request-github-codex-review`. The framework works without it; if not installed, local review steps are skipped gracefully.
+  When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `agent-framework:local-codex-review`) and post-PR review automation via the `github-reviewer` agent (a self-owning agent that handles monitoring, feedback classification, fix delegation, and thread resolution). `agent-framework:request-github-codex-review` is available for ad-hoc Codex review requests outside the automated flow. The framework works without it; if not installed, local review steps are skipped gracefully.
 
 ## After cloning a project that uses this plugin
 
@@ -112,6 +112,8 @@ README.md
 | `agent-framework:planner` | Research and implementation planning. Read-only — no file writes. |
 | `agent-framework:coder` | Implementation within explicitly assigned file scope. |
 | `agent-framework:designer` | Presentational UI/UX work within explicitly assigned file scope. |
+| `agent-framework:local-reviewer` | Pre-PR iterative Codex review with self-owning fix delegation at sonnet tier. |
+| `agent-framework:github-reviewer` | Post-PR review monitoring, feedback classification, fix delegation, push, and thread resolution. |
 
 ## Skills
 
@@ -119,17 +121,14 @@ All skills are invoked using the namespaced form:
 
 | Skill | Purpose |
 |---|---|
-| `agent-framework:address-github-pr-feedback` | Fix a specific GitHub PR comment or reviewer comment on an existing pull request (one-time) |
 | `agent-framework:checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
-| `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `agent-framework:review-loop-controller` |
+| `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `agent-framework:local-reviewer` |
 | `agent-framework:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `agent-framework:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
 | `agent-framework:request-github-codex-review` | Request Codex review on an existing pushed PR |
-| `agent-framework:review-loop-controller` | Drive the pre-PR local Codex review loop (up to 10 iterations) with break-fix-break detection |
 | `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.agent-framework/` to `.gitignore` |
 | `agent-framework:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `agent-framework:coder` context only |
-| `agent-framework:watch-github-pr-feedback` | Monitor a PR for new review feedback and route to remediation skills |
 
 ## Governance
 
@@ -143,11 +142,9 @@ Reference documentation in `plugin/governance/`:
 | `communication-policy.md` | Phase-closing reports, step deltas, handoff formats |
 | `context-management-policy.md` | Retrieval anchors, bypass codes, compaction rules |
 | `scope-policy.md` | File-scope enforcement and scope-change escalation |
-| `pr-review-remediation-loop.md` | External PR review feedback handling, classification, and remediation routing |
 | `versioning.md` | SemVer rules, bump triggers, changelog and tag policy |
 | `security-policy.md` | Security constraints and secret-handling rules |
 | `escalation-policy.md` | Escalation triggers and routing rules |
-| `monitoring-policy.md` | Runtime monitoring and health-check policy |
 | `auto-clear-thrash-runbook.md` | Runbook for auto-clear thrashing incidents |
 | `reconstruction-failure-runbook.md` | Runbook for context reconstruction failures |
 | `unresolved-contradiction-runbook.md` | Runbook for unresolved governance contradictions |

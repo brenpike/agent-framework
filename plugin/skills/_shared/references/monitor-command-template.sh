@@ -1,4 +1,4 @@
-# Monitor Command Template for watch-github-pr-feedback
+# Monitor Command Template for github-reviewer agent
 #
 # This file is a reference template loaded via Read tool. It is NOT executed
 # directly. The skill reads this file, substitutes all placeholders with

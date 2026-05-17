@@ -244,7 +244,6 @@ REQUIRED_FILES=(
     'plugin/governance/agent-system-policy.md'
     'plugin/governance/branching-pr-workflow.md'
     'plugin/governance/versioning.md'
-    'plugin/governance/pr-review-remediation-loop.md'
     'plugin/governance/AGENTS.template.md'
     'plugin/agents/orchestrator.md'
     'plugin/agents/planner.md'
@@ -274,7 +273,7 @@ fi
 echo ''
 echo '=== CHECK 3: Skill names exist ==='
 
-AGENT_NAMES=('orchestrator' 'planner' 'coder' 'designer')
+AGENT_NAMES=('orchestrator' 'planner' 'coder' 'designer' 'local-reviewer' 'github-reviewer')
 
 # Collect scan sources
 declare -a SCAN_FILES=()

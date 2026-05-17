@@ -1,6 +1,6 @@
 ---
 name: local-codex-review
-description: Run a local pre-PR Codex code review via codex-plugin-cc, capture structured output, normalize findings, and return them to the caller. Review-only — does not fix findings. Invoked by review-loop-controller only.
+description: Run a local pre-PR Codex code review via codex-plugin-cc, capture structured output, normalize findings, and return them to the caller. Review-only — does not fix findings. Invoked by local-reviewer agent only.
 allowed-tools:
   - Read
   - Bash(git status *)
@@ -30,7 +30,7 @@ After:
 
 Run a local pre-PR Codex review on the current working branch using `codex-plugin-cc`. Return normalized findings to the caller. This skill does NOT fix findings — it is review-only.
 
-Invoked by `agent-framework:review-loop-controller` only.
+Invoked by the `local-reviewer` agent only.
 
 ## Required Inputs
 

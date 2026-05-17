@@ -109,7 +109,7 @@ Classify each governance module as mandatory or conditional per `${CLAUDE_PLUGIN
 
 ## Review Remediation Planning
 
-Planner is required when the orchestrator routes feedback here per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Remediation Decision Table): `architecture-or-contract-concern`, `version-or-release-concern`, or any actionable-* fix spanning two or more planner steps. Identify the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). User approval is required when remediation requires a public API change, version bump, or files outside the approved plan's scope.
+Planner is required when the orchestrator routes feedback here per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` (Routing Table): `architecture-or-contract-concern`, `version-or-release-concern`, or any actionable-* fix spanning two or more planner steps. Identify the "Smallest correct fix" per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions). User approval is required when remediation requires a public API change, version bump, or files outside the approved plan's scope.
 
 ## Versioning Planning
 

@@ -1,8 +1,8 @@
 {
   "rule": "Monitor truthfulness",
   "source": {
-    "file": "plugin/governance/monitoring-policy.md",
-    "pattern": "Do not say or imply active monitoring is running unless a real background mechanism started successfully"
+    "file": "plugin/agents/github-reviewer.md",
+    "pattern": "If Monitor returns a non-error response and the first poll completes without a parser error, monitoring is active"
   },
   "consumers": [
     {

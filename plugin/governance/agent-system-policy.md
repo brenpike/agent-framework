@@ -55,7 +55,7 @@ A review finding repeats when any of the following matches a finding seen in a p
 
 - same review-thread ID, OR
 - same comment ID, OR
-- the tuple (file path, line number, classification per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` Classification list), OR
+- the tuple (file path, line number, classification per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` Classification Categories), OR
 - comment body text after lower-casing, removing surrounding whitespace, and collapsing internal whitespace runs to a single space
 
 A finding "repeats after attempted remediation" when one of the above matches and at least one full remediation cycle (delegate → commit → push) has run on that finding since it first appeared.
@@ -105,14 +105,14 @@ Visual changes that reuse existing tokens, scales, and documented patterns are n
 
 ### One-time vs watch routing (PR feedback)
 
-Two skills handle PR feedback. Choose by user-request keywords only — the comment author never decides which skill is used, and missing PR identifiers do not exclude the skill at routing time.
+The `github-reviewer` agent handles PR feedback in two modes. Choose by user-request keywords only — the comment author never decides which mode is used, and missing PR identifiers do not exclude the agent at routing time.
 
-- `agent-framework:watch-github-pr-feedback` — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`
-- `agent-framework:address-github-pr-feedback` — every other PR-feedback request, including one-time fixes for Codex, human, or bot comments
+- **Watch mode** — when the user request contains at least one of: `watch`, `monitor`, `wait`, `poll`, `loop`
+- **Fix mode** — every other PR-feedback request, including one-time fixes for Codex, human, or bot comments
 
-PR identification is the skill's responsibility, not the router's. If the user request matches `watch-github-pr-feedback` but does not name a PR, the orchestrator still routes to `watch-github-pr-feedback` and passes the available context (current branch, current repo). The skill resolves the PR via `gh pr view --json number,state` against the current branch. If no open PR is associated with the current branch, the skill exits 1 with blocker reason in stderr (e.g., `blocker: no PR identified`). The same applies to `address-github-pr-feedback`.
+PR identification is the agent's responsibility, not the router's. If the user request matches watch mode but does not name a PR, the orchestrator still delegates to `github-reviewer` (mode: watch) and passes the available context (current branch, current repo). The agent resolves the PR via `gh pr view --json number,state` against the current branch. If no open PR is associated with the current branch, the agent returns `exit_reason: blocked` with `blocker_reason: no PR identified`. The same applies to fix mode.
 
-The author of the comment (Codex, human reviewer, bot, automated reviewer) affects classification per `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md` (Classification), not skill selection.
+The author of the comment (Codex, human reviewer, bot, automated reviewer) affects classification per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md`, not mode selection.
 
 Do not use the word "ambiguous" as a hedge anywhere in this framework. Where a rule must gate on missing context, enumerate the concrete missing inputs instead.
 
@@ -134,43 +134,51 @@ Allowed Claude Code agents:
 - `planner`
 - `coder`
 - `designer`
+- `local-reviewer`
+- `github-reviewer`
 
 No other agent type may be called, requested, invented, or used as a fallback by the orchestrator directly.
 
-Bare `Agent` (no `subagent_type`) is permitted in the orchestrator's `tools:` list exclusively so that skills can transitively invoke helper subagents. Scope is limited to narrow classification and analysis tasks. The following uses of bare `Agent` are explicitly prohibited: planning, implementation, design, review-remediation implementation or delegation, fallback routing, and companion-agent delegation — unless a separate policy explicitly authorizes that path. The orchestrator must not invoke bare `Agent` from its own body directly; bare `Agent` calls must only originate from within skills.
+Bare `Agent` (no `subagent_type`) is permitted in the orchestrator's `tools:` list exclusively so that skills and reviewer agents can transitively invoke helper subagents. Scope is limited to narrow classification and analysis tasks. The following uses of bare `Agent` are explicitly prohibited: planning, implementation, design, fallback routing, and companion-agent delegation — unless a separate policy explicitly authorizes that path. The orchestrator must not invoke bare `Agent` from its own body directly; bare `Agent` calls must only originate from within skills or reviewer agents. Reviewer agents (`local-reviewer`, `github-reviewer`) additionally use `Agent` to delegate simple fixes to `coder` and `designer` at sonnet tier — this is authorized by their agent definitions and the Authority Matrix.
 
 External reviewers, CI, GitHub, Codex, and other services are not Claude Code subagents.
 
-**Skill subagent pattern**: Skills may spawn general-purpose subagents (bare `Agent` tool call, no `subagent_type`) using custom instruction `.md` files for narrow classification and analysis tasks (e.g. injection-suspect checking, feedback classification, thread resolution decisions). These are NOT framework agents and must not be listed in the Allowed Agent Topology. Only the orchestrator may delegate to framework agents — skills must return classification results and routing recommendations to the orchestrator, which owns all framework agent delegation.
+**Skill subagent pattern**: Skills may spawn general-purpose subagents (bare `Agent` tool call, no `subagent_type`) using custom instruction `.md` files for narrow classification and analysis tasks (e.g. injection-suspect checking, feedback classification, thread resolution decisions). These are NOT framework agents and must not be listed in the Allowed Agent Topology. Only the orchestrator and reviewer agents may delegate to framework agents — skills must return classification results and routing recommendations to the orchestrator, which owns all framework agent delegation (reviewer agents may delegate simple fixes to coder/designer at sonnet tier without orchestrator mediation).
 
 ## Authority Matrix
 
-| Area | orchestrator | planner | coder | designer |
-|---|---|---|---|---|
-| Coordination | owns | no | no | no |
-| Planning | coordinates | owns | no | no |
-| Implementation | no | no | owns | presentational only |
-| Visual design | coordinates | plan only | no new design without guidance | owns |
-| Static accessibility | coordinates | plan only | no | owns |
-| Runtime accessibility | coordinates | plan only | owns | no |
-| Branch/worktree decision | owns | recommend only | no | no |
-| Branch creation | owns via skill | no | no | no |
-| Checkpoint commit | owns via skill | no | delegated only | no |
-| PR submission | owns via skill | no | no | no |
-| Version bump decision | owns | recommend only | no | no |
-| Version/release file edits | delegates | no | delegated only | no |
-| External review request | owns | no | no | no |
-| Feedback classification/routing | owns | recommend when delegated | no | no |
-| Framework agent delegation | owns exclusively | no | no | no |
-| Remediation planning | coordinates | owns when delegated | no | no |
-| Remediation implementation | no | no | owns | presentational only |
-| Review replies/resolution | owns | no | no | no |
+| Area | orchestrator | planner | coder | designer | local-reviewer | github-reviewer |
+|---|---|---|---|---|---|---|
+| Coordination | owns | no | no | no | no | no |
+| Planning | coordinates | owns | no | no | no | no |
+| Implementation | no | no | owns | presentational only | no | no |
+| Visual design | coordinates | plan only | no new design without guidance | owns | no | no |
+| Static accessibility | coordinates | plan only | no | owns | no | no |
+| Runtime accessibility | coordinates | plan only | owns | no | no | no |
+| Branch/worktree decision | owns | recommend only | no | no | no | no |
+| Branch creation | owns via skill | no | no | no | no | no |
+| Checkpoint commit | owns via skill | no | delegated only | no | owns via skill | owns via skill |
+| PR submission | owns via skill | no | no | no | no | no |
+| Version bump decision | owns | recommend only | no | no | no | no |
+| Version/release file edits | delegates | no | delegated only | no | no | no |
+| External review request | owns | no | no | no | no | no |
+| Feedback classification/routing | owns | recommend when delegated | no | no | owns (local review) | owns (PR review) |
+| Framework agent delegation | owns exclusively | no | no | no | simple fix only (coder/designer at sonnet) | simple fix only (coder/designer at sonnet) |
+| Remediation planning | coordinates | owns when delegated | no | no | no | no |
+| Remediation implementation | no | no | owns | presentational only | no | no |
+| Review replies/resolution | owns | no | no | no | no | owns (post-fix reply + thread resolve) |
+| Fix ledger management | no | no | no | no | owns | owns (session-local) |
+| Break-fix detection | no | no | no | no | owns | no |
+| Push | owns | no | no | no | no | owns (batch per cycle) |
+| Monitor lifecycle | no | no | no | no | no | owns (watch mode) |
 
 ## Role Boundaries
 
 Authority Matrix above is canonical. Per-agent files in `${CLAUDE_PLUGIN_ROOT}/agents/` define role-specific deltas.
 
-**Skill agent boundary**: A skill may spawn narrow general-purpose subagents (no `subagent_type`) for classification and analysis tasks using custom instruction files. A skill must NOT delegate to framework agents (`planner`, `coder`, `designer`, `orchestrator`). Skills that classify feedback or findings must return routing recommendations as data — the orchestrator acts on those recommendations and delegates to the appropriate framework agent.
+**Reviewer agents**: `local-reviewer` and `github-reviewer` are full framework agents (not skills) with Agent tool access and delegation authority for simple fixes. They are promoted from the former skill-based review pipeline and operate as orchestrator-delegated agents that own their respective review lifecycles. They may delegate simple fixes to `coder` or `designer` at sonnet model tier without returning to the orchestrator. Complex fixes (multi-file, cross-step, architecture/contract-impacting) must be escalated back to the orchestrator for planner-mediated resolution.
+
+**Skill agent boundary**: A skill may spawn narrow general-purpose subagents (no `subagent_type`) for classification and analysis tasks using custom instruction files. A skill must NOT delegate to framework agents (`planner`, `coder`, `designer`, `orchestrator`, `local-reviewer`, `github-reviewer`). Skills that classify feedback or findings must return routing recommendations as data — the orchestrator acts on those recommendations and delegates to the appropriate framework agent.
 
 ### orchestrator
 

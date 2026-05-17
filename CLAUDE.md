@@ -38,7 +38,7 @@ Single source of truth: `plugin/.claude-plugin/plugin.json` `"version"`. Bump tr
 
 ## Branching / PR workflow
 
-This repo dogfoods its own plugin's workflow. Authoritative rules: `plugin/governance/branching-pr-workflow.md`, `plugin/governance/agent-system-policy.md`, `plugin/governance/pr-review-remediation-loop.md`. When working here, follow them — orchestrator → working branch → checkpoint commits → PR → Codex review.
+This repo dogfoods its own plugin's workflow. Authoritative rules: `plugin/governance/branching-pr-workflow.md`, `plugin/governance/agent-system-policy.md`, `plugin/skills/_shared/references/review-classification-taxonomy.md`. When working here, follow them — orchestrator → working branch → checkpoint commits → PR → Codex review.
 
 Default branches:
 - Trunk / PR base: `main`
@@ -78,7 +78,7 @@ When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runt
 
 `claude-mem:mem-search` is optional — planner uses it when present, skips when absent. Do not hard-require it from any agent or skill.
 
-`codex@openai-codex` is optional — the orchestrator uses `codex-plugin-cc` for pre-PR local review (`agent-framework:review-loop-controller`, `agent-framework:local-codex-review`) and post-PR review (`agent-framework:request-github-codex-review`). If not installed, the orchestrator skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
+`codex@openai-codex` is optional — the orchestrator uses `codex-plugin-cc` for pre-PR local review via the `local-reviewer` agent (`agent-framework:local-codex-review`) and post-PR review via the `github-reviewer` agent (`agent-framework:request-github-codex-review`). If not installed, the orchestrator skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
 
 ## Local developer setup
 

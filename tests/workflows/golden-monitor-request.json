@@ -1,8 +1,8 @@
 {
   "workflow": "monitor-request",
-  "description": "User request with watch/monitor keywords routes to watch-github-pr-feedback skill",
+  "description": "User request with watch/monitor keywords routes to github-reviewer agent in watch mode",
   "steps": [
     { "state": "Intake", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "`watch`, `monitor`, `wait`, `poll`, or `loop`" } },
-    { "state": "Monitor Watch", "source": { "file": "plugin/governance/monitoring-policy.md", "pattern": "Monitoring must be:" } }
+    { "state": "Monitor Watch", "source": { "file": "plugin/agents/github-reviewer.md", "pattern": "Monitor commands must be:" } }
   ]
 }
