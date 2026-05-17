@@ -119,6 +119,19 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     exit 0
   fi
   echo "$output"
+  # Poll PR status checks for failures
+  required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
+  check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name)\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\(.link)\tDESC=\(.description)"' 2>>"/tmp/af_poll_err_$$")
+  if [ -n "$check_output" ]; then
+    while IFS= read -r check_line; do
+      check_name=$(echo "$check_line" | cut -f1 | sed 's/^CHECK_FAIL=//')
+      if echo "$required_checks" | grep -qxF "$check_name"; then
+        echo "${check_line}\tREQUIRED=yes"
+      else
+        echo "${check_line}\tREQUIRED=no"
+      fi
+    done <<< "$check_output"
+  fi
   sleep $POLL_INTERVAL_SECONDS
 done
 
@@ -159,7 +172,15 @@ done
 # - Emits COMMENT=... lines for top-level PR comments passing all filters
 # - Emits REVIEW=... lines for actionable review summaries passing all
 #   filters
+# - Emits CHECK_FAIL=... lines for failed PR status checks. Fields are
+#   tab-separated: CHECK_FAIL=<name>, STATE=<state>, BUCKET=fail,
+#   LINK=<url>, DESC=<description>, REQUIRED=<yes|no>. Only checks with
+#   bucket=="fail" are emitted. The REQUIRED field is derived from
+#   `gh pr checks --required`; if --required is unavailable (no branch
+#   protection), all checks default to REQUIRED=no.
 # - Uses only gh api graphql --jq — no external parser binaries required
 # - Uses last: N on all connections instead of first: N — new activity is
 #   always at the end of connections; last: ensures recent items are always
 #   in the fetched page without requiring pagination
+# - Uses gh pr checks (REST-backed) for status checks — separate rate-limit
+#   bucket from the GraphQL review query
