@@ -292,7 +292,7 @@ Each escalation condition causes an immediate terminal return to the orchestrato
 | Exit Reason | Trigger | Orchestrator Action |
 |---|---|---|
 | `clean` | Approve verdict with no actionable findings, OR all findings non-actionable/rejected | Proceed to open PR |
-| `max-iterations-reached` | Iteration counter >= `max_iterations` | Surface to user with open findings |
+| `max-iterations-reached` | Iteration counter > `max_iterations` | Surface to user with open findings |
 | `break-fix-break` | Break-fix-detector fires (2-of-3 signals) | Surface to user |
 | `injection-suspect` | Any finding matches P1-P4 injection patterns | Surface to user |
 | `user-input-required` | Finding classified as `question-needs-user-input` | Surface to user |
