@@ -104,8 +104,8 @@ After every step-completion milestone (any event producing an after= token), fin
 | 21 | checkpoint-commit-complete | succeeded, last phase done | Path A resume: clear → rehydrate → step 11: version bump check |
 | 22 | checkpoint-commit-complete | succeeded, within local-reviewer | (handled internally by local-reviewer agent) |
 | 23 | checkpoint-commit-complete | succeeded, within github-reviewer | (handled internally by github-reviewer agent) |
-| 24 | checkpoint-commit-complete | succeeded, version bump, review active | step 13a: local review |
-| 25 | checkpoint-commit-complete | succeeded, version bump, review opted out | step 14: open PR |
+| 24 | checkpoint-commit-complete | succeeded, version bump, local-review = active | step 13a: local review |
+| 25 | checkpoint-commit-complete | succeeded, version bump, local-review = opted-out | step 14: open PR |
 | 26 | version-bump-check | no bump required | step 13: validation |
 | 27 | version-bump-check | bump required, type clear | step 12: delegate bump |
 | 28 | version-bump-check | ambiguous type or missing artifact files | STOP: ask user |
@@ -113,13 +113,13 @@ After every step-completion milestone (any event producing an after= token), fin
 | 30 | version-bump-coder-complete | status: blocked | STOP: surface blocker |
 | 31 | validation | passed, version bump | checkpoint-commit |
 | 32 | validation | not run, version bump | checkpoint-commit |
-| 33 | validation | passed, main pipeline (pre-review), review active | step 13a: local review |
-| 34 | validation | passed, main pipeline, review opted out | step 14: open PR |
+| 33 | validation | passed, main pipeline (pre-review), local-review = active | step 13a: local review |
+| 34 | validation | passed, main pipeline, local-review = opted-out | step 14: open PR |
 | 35 | validation | passed, within local-reviewer | (handled internally by local-reviewer agent) |
 | 36 | validation | passed, within github-reviewer | (handled internally by github-reviewer agent) |
 | 37 | validation | failed or blocked | STOP: surface failure |
-| 38 | validation | not run, main pipeline (pre-review), review active | step 13a: local review |
-| 39 | validation | not run, main pipeline, review opted out | step 14: open PR |
+| 38 | validation | not run, main pipeline (pre-review), local-review = active | step 13a: local review |
+| 39 | validation | not run, main pipeline, local-review = opted-out | step 14: open PR |
 | 40 | validation | not run, within local-reviewer | (handled internally by local-reviewer agent) |
 | 41 | validation | not run, within github-reviewer | (handled internally by github-reviewer agent) |
 | 42 | validation | passed, post-review revalidation | step 14: open PR |
@@ -305,6 +305,7 @@ Per existing STT rows for `github-reviewer-returned` (rows 59-67). All exit scen
 ```text
 task-type: bugfix
 claude-mem: <resolved>
+local-review: <resolved>
 routing: pr-feedback-remediation
 pr: <N>
 working-branch: <head_ref>
@@ -359,7 +360,7 @@ Note: Monitor-based PR watching is owned by `agent-framework:github-reviewer` (w
 
 ## Execution Algorithm
 
-0. Intake — task-type classification, PR-feedback-remediation detection, claude-mem detection, pre-planning lookup. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0).
+0. Intake — task-type classification, PR-feedback-remediation detection, local-review opt-out detection, claude-mem detection, pre-planning lookup. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0).
 0a. If `routing: pr-feedback-remediation`: resolve PR branch, invoke github-reviewer directly (skip steps 1-14). Per PR Feedback Remediation Fast Path.
 1. Call planner via Agent tool unless trivial fast path applies.
 2. If planner fails, follow Tool-call error recovery.
@@ -396,7 +397,7 @@ Field rules:
 
 ### Session Facts Protocol
 
-Accumulate across phases. Include only fields the subagent needs. Full values only — never sentinels or placeholders. `task-type` always included once classified. `claude-mem` included once resolved at intake.
+Accumulate across phases. Include only fields the subagent needs. Full values only — never sentinels or placeholders. `task-type` always included once classified. `claude-mem` included once resolved at intake. `local-review` included once resolved at intake.
 
 For **version bump** and **review remediation** delegations: add variant fields per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Delegation Template — Variant fields).
 
@@ -448,6 +449,10 @@ Cooldown: max one clear+rehydrate per phase. Second trigger before phase close �
 
 Runs once at Execution Algorithm step 0 (Intake); result cached as `claude-mem: present|absent` in Session facts. Detection criteria: `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (claude-mem Detection).
 
+### local-review Detection
+
+Runs once at Execution Algorithm step 0 (Intake); result cached as `local-review: active|opted-out` in Session facts. Detection criteria: `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0 — Local-review opt-out detection).
+
 ## Final Report
 
 ```text
@@ -459,7 +464,7 @@ Git: Class=[type] Base=[branch] Work=[branch] Worktrees=[y/n] Checkpoints=[summa
 Versioning: Required=[y/n] Completed=[y/n/na]
 Review: Requested=[y/n] Remediated=[y/n/na] Monitoring=[active|not active|not requested]
 Issues: [issue list | None]
-Session facts: trunk=[branch] validation=[cmd] version=[x.y.z] task-type=[type] claude-mem=[p/a] active-step=STEP-NNN active-task=TASK-NNN
+Session facts: trunk=[branch] validation=[cmd] version=[x.y.z] task-type=[type] claude-mem=[p/a] local-review=[active/opted-out] active-step=STEP-NNN active-task=TASK-NNN
 ```
 
 If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
