@@ -74,7 +74,7 @@ resume_from_ledger: <path>  # optional, for C1 continuation
 Terminal return to orchestrator (YAML):
 
 ```yaml
-exit_reason: clean | max-iterations-reached | break-fix-break | injection-suspect | user-input-required | planner-escalation | blocked
+exit_reason: clean | max-iterations-reached | break-fix-break | injection-suspect | user-input-required | planner-escalation | high-severity-rejection | blocked
 iterations_completed: <int>
 findings_resolved: <int>
 findings_open: <int>
@@ -85,6 +85,7 @@ ledger_path: <path to fix ledger on disk>
 # injection-suspect: finding_id, pattern_category, field_excerpt
 # planner-escalation: finding_id, classification, file, title
 # user-input-required: finding_id, title
+# high-severity-rejection: finding_id, title, rationale_text
 # blocked: blocker, stage
 ```
 
@@ -164,7 +165,11 @@ If any finding classifies as `architecture-or-contract-concern` or `version-or-r
 
 #### Step 8: All-Non-Actionable Check
 
-If every finding classifies as `non-actionable` or `incorrect-or-rejected` (zero actionable findings): persist ledger. Return Output Contract with `exit_reason: clean`.
+If every finding classifies as `non-actionable` or `incorrect-or-rejected` (zero actionable findings):
+
+- For each `incorrect-or-rejected` finding, derive `severity_category`: check whether the finding concerns P0, P1, security, public-API, compatibility, architecture, package-release, or versioning per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` (Severity Categories). If yes: `severity_category: high`. Otherwise: `severity_category: standard`.
+- If any `incorrect-or-rejected` finding has `severity_category: high`: persist ledger. Return Output Contract with `exit_reason: high-severity-rejection`, including `finding_id`, `title`, and `rationale_text` for the first high-severity rejected finding.
+- Otherwise: persist ledger. Return Output Contract with `exit_reason: clean`.
 
 #### Step 9: Break-Fix Detection
 
@@ -291,7 +296,8 @@ Each escalation condition causes an immediate terminal return to the orchestrato
 
 | Exit Reason | Trigger | Orchestrator Action |
 |---|---|---|
-| `clean` | Approve verdict with no actionable findings, OR all findings non-actionable/rejected | Proceed to open PR |
+| `clean` | Approve verdict with no actionable findings, OR all findings non-actionable/rejected (standard severity only) | Proceed to open PR |
+| `high-severity-rejection` | All findings non-actionable/rejected, but at least one rejected finding concerns P0, P1, security, public-API, compatibility, architecture, package-release, or versioning | Surface to user for approval |
 | `max-iterations-reached` | Iteration counter > `max_iterations` | Surface to user with open findings |
 | `break-fix-break` | Break-fix-detector fires (2-of-3 signals) | Surface to user |
 | `injection-suspect` | Any finding matches P1-P4 injection patterns | Surface to user |
