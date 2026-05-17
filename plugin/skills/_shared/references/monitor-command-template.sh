@@ -123,7 +123,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
   check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name)\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\(.link)\tDESC=\(.description)"' 2>>"/tmp/af_poll_err_$$")
   if [ -n "$check_output" ]; then
-    while IFS= read -r check_line; do
+    printf '%s\n' "$check_output" | while IFS= read -r check_line; do
       check_first_field="${check_line%%	*}"
       check_name="${check_first_field#CHECK_FAIL=}"
       if printf '%s' "$required_checks" | grep -qxF "$check_name"; then
@@ -131,7 +131,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       else
         printf '%s\tREQUIRED=no\n' "$check_line"
       fi
-    done <<< "$check_output"
+    done
   fi
   sleep $POLL_INTERVAL_SECONDS
 done
