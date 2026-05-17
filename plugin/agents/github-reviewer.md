@@ -444,7 +444,7 @@ On each Monitor event:
 On every poll cycle, independently of whether any `CHECK_FAIL=` lines were emitted, iterate over all state ledger entries with status `fix-pushed-awaiting-rerun` where 2 or more polls have elapsed since the fix push. For each such entry:
 
 - **If the check name is present in this poll's `CHECK_FAIL=` lines:** reprocess as same-finding repeat (fix did not resolve the failure) — triggers the same-finding repeat detection path below. Do not run the confirmation query for this entry.
-- **If the check name is absent from this poll's `CHECK_FAIL=` lines:** absence alone is not sufficient because a re-running check (pending/running) is also absent. Run the confirmation query: `TARGET="<check_name>" gh pr checks <PR> --repo <OWNER/REPO> --json name,bucket --jq '.[] | select(.name == env.TARGET) | .bucket'`. Then:
+- **If the check name is absent from this poll's `CHECK_FAIL=` lines:** absence alone is not sufficient because a re-running check (pending/running) is also absent. Run the confirmation query (where `$check_name` is the ledger entry's stored check name): `TARGET="$check_name" gh pr checks <PR> --repo <OWNER/REPO> --json name,bucket --jq '.[] | select(.name == env.TARGET) | .bucket'`. Then:
   - If result is `pass` → transition to `confirmed-pass`, update ledger, and skip
   - If result is `pending` or empty → remain in `fix-pushed-awaiting-rerun` (check still running); do not update ledger
   - If result is `fail` → reprocess as same-finding repeat (re-appeared as failing) — triggers the same-finding repeat detection path below
