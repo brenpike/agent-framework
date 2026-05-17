@@ -126,9 +126,9 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     while IFS= read -r check_line; do
       check_name=$(echo "$check_line" | cut -f1 | sed 's/^CHECK_FAIL=//')
       if echo "$required_checks" | grep -qxF "$check_name"; then
-        echo "${check_line}\tREQUIRED=yes"
+        printf '%s\tREQUIRED=yes\n' "$check_line"
       else
-        echo "${check_line}\tREQUIRED=no"
+        printf '%s\tREQUIRED=no\n' "$check_line"
       fi
     done <<< "$check_output"
   fi
