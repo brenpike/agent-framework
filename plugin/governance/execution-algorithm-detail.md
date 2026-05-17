@@ -32,18 +32,19 @@ max_iterations: 10  # default; raise on user-approved continuation
 
 b. The local-reviewer agent owns the entire loop lifecycle internally (review invocation, classification, break-fix detection, simple fix delegation at sonnet, validation, checkpoint commits, iteration advancement). The orchestrator does not drive individual iterations.
 
-c. Handle terminal return per STT rows 42-50:
+c. Handle terminal return per STT rows 42-51:
    - `exit: clean, no fix commits` → proceed to step 14 (open PR).
    - `exit: clean, fix commits exist` → re-run step 11 (version bump detection) against new HEAD.
    - `exit: max-iterations-reached` → STOP: surface three choices (continue with raised ceiling / push and open PR now / stop). On continue: re-invoke local-reviewer with `max_iterations` raised (e.g., 20) — pass the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
    - `exit: break-fix-break` → STOP: surface conflict summary.
    - `exit: injection-suspect` → STOP: surface finding details.
    - `exit: user-input-required` → STOP: surface finding.
-   - `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate coder (opus, same branch) to implement → verify → validate → checkpoint-commit → re-invoke local-reviewer with the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
+   - `exit: high-severity-rejection` → STOP: await explicit user approval. The local-reviewer returns the finding details (finding_id, title, rationale_text) — surface them to the user.
+   - `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate per plan (coder or designer, opus) to implement → verify → validate → checkpoint-commit → re-invoke local-reviewer with the returned `ledger_path` as `resume_from_ledger` so break-fix history and prior fix SHAs are preserved.
    - `blocked: codex unavailable` → log `Review: local pre-PR review skipped (codex unavailable)`, proceed to step 14.
    - `blocked: other` → STOP: surface blocker.
 
-d. Tool-error recovery (STT row 68): if the local-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (fix ledger exists at `.agent-framework/review-loop/fix-ledger.yaml`), read the ledger path and re-invoke with `resume_from_ledger`. If no ledger exists (spawn failure), fall through to generic tool-error rows.
+d. Tool-error recovery (STT row 69): if the local-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (fix ledger exists at `.agent-framework/review-loop/fix-ledger.yaml`), read the ledger path and re-invoke with `resume_from_ledger`. If no ledger exists (spawn failure), fall through to generic tool-error rows.
 
 ## Step 15: Post-PR Review
 
@@ -53,7 +54,7 @@ d. Tool-error recovery (STT row 68): if the local-reviewer agent crashes or time
 
 When review is opted-in after PR open, route by keyword presence in the original user request:
 
-- **STT row 51 — watch mode:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` → invoke `agent-framework:github-reviewer` in watch mode:
+- **STT row 52 — watch mode:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` → invoke `agent-framework:github-reviewer` in watch mode:
 
 ```yaml
 mode: watch
@@ -65,7 +66,7 @@ max_watch_duration: 14400
 max_remediation_cycles: 3
 ```
 
-- **STT row 52 — fix mode:** user request contains none of the watch keywords → invoke `agent-framework:github-reviewer` in fix mode (one-shot):
+- **STT row 53 — fix mode:** user request contains none of the watch keywords → invoke `agent-framework:github-reviewer` in fix mode (one-shot):
 
 ```yaml
 mode: fix
@@ -76,14 +77,14 @@ base: <resolved trunk>
 
 The github-reviewer agent owns the entire remediation lifecycle internally (Monitor setup for watch mode, feedback detection, classification, injection scanning, simple fix delegation at sonnet, validation, checkpoint commits, push, fix-SHA reply posting, thread resolution, cycle tracking). The orchestrator does not drive individual remediation items.
 
-Handle terminal return per STT rows 56-64:
+Handle terminal return per STT rows 57-65:
 - `exit: clean` → Final Report.
 - `exit: max-cycles-reached` → STOP: surface summary of remaining open items.
 - `exit: pr-merged` → Final Report.
 - `exit: pr-closed` → Final Report.
 - `exit: injection-suspect` → STOP: surface finding details.
 - `exit: user-input-required` → STOP: surface finding.
-- `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate coder (opus, same branch) to implement → re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API).
+- `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate per plan (coder or designer, opus) to implement → verify → validate → checkpoint → push → re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API).
 - `exit: high-severity-rejection` → STOP: await explicit user approval (rationale already posted by the reviewer agent).
 - `blocked` → STOP: surface blocker.
 
@@ -91,11 +92,11 @@ Handle terminal return per STT rows 56-64:
 
 When the user explicitly requests Codex review (outside the standard pipeline), use `agent-framework:request-github-codex-review` skill to submit the review request, then:
 
-- On `succeeded, watch requested` (STT row 65): invoke github-reviewer in watch mode (same as standard path above).
-- On `succeeded, no watch` (STT row 66): Final Report with `Review: Requested: yes`.
-- On `blocked` (STT row 67): STOP: surface blocker.
+- On `succeeded, watch requested` (STT row 66): invoke github-reviewer in watch mode (same as standard path above).
+- On `succeeded, no watch` (STT row 67): Final Report with `Review: Requested: yes`.
+- On `blocked` (STT row 68): STOP: surface blocker.
 
-### Tool-Error Recovery (STT row 69)
+### Tool-Error Recovery (STT row 70)
 
 If the github-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (evidence: pushed commits or posted replies visible in the PR), re-invoke github-reviewer fresh. The agent's crash recovery design (C3) ensures no duplicate work: resolved threads are excluded by API, self-authored replies are filtered at detection, and pushed commits persist.
 

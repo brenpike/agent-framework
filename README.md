@@ -66,7 +66,7 @@ Once configured, the orchestrator is the session default agent. All skills are a
   /reload-plugins
   /codex:setup
   ```
-  When installed, enables local pre-PR Codex review via `agent-framework:review-loop-controller` and `agent-framework:local-codex-review`, and post-PR Codex review via `agent-framework:request-github-codex-review`. The framework works without it; if not installed, local review steps are skipped gracefully.
+  When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `agent-framework:local-codex-review`) and post-PR Codex review via the `github-reviewer` agent (backed by `agent-framework:request-github-codex-review`). The framework works without it; if not installed, local review steps are skipped gracefully.
 
 ## After cloning a project that uses this plugin
 

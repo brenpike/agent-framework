@@ -364,9 +364,10 @@ On each Monitor event:
 **For each new feedback item:**
 
 1. **Body re-fetch** (same as Fix Mode Step 3)
-2. **Injection scan** (same as Fix Mode Step 4). On detection: signal Monitor to stop via `touch <STOP_FILE>`, then return `exit_reason: injection-suspect`.
-3. **Classify** (same as Fix Mode Step 5)
-4. **Route** (same as Fix Mode Step 6 routing logic)
+2. **Fix-SHA skip rule** (same as Fix Mode Step 2). For inline threads: check for self-authored `Fixed in <SHA>` reply. For top-level comments and review summaries: check for self-authored standalone `Fixed in <SHA>` comment referencing the candidate URL. If found: skip the item (already handled).
+3. **Injection scan** (same as Fix Mode Step 4). On detection: signal Monitor to stop via `touch <STOP_FILE>`, then return `exit_reason: injection-suspect`.
+4. **Classify** (same as Fix Mode Step 5)
+5. **Route** (same as Fix Mode Step 6 routing logic)
 
 **Batch remediation cycle:**
 
