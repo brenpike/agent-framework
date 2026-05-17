@@ -406,6 +406,9 @@ On each Monitor event:
 - `WATCH_STOPPED`: return with current state (injection-suspect triggered stop file)
 - `POLL_ERROR`: return `exit_reason: blocked`, `blocker_reason: poll error`
 
+**Non-terminal signal handling:**
+- `CHECK_POLL_ERROR`: `gh pr checks` polling failed for this cycle (auth failure, CLI error, repo access error). Record in the state ledger as `check_poll_error: true` for this cycle. Skip all `CHECK_FAIL=` processing for this poll cycle. Continue with thread/comment/review processing normally. Do not stop the monitor.
+
 **New feedback detection:**
 - Compare emitted IDs against the session-local ledger
 - Skip already-seen IDs (already remediated or in-progress)

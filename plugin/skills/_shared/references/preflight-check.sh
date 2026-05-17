@@ -90,8 +90,22 @@ fi
 # Check PR status checks for failures.
 # Uses gh pr checks (REST-backed). Failures are surfaced as data, not blockers.
 # REQUIRED field derived from --required flag; defaults to "no" if unavailable.
+# Exit-status semantics for gh pr checks:
+#   0 = all checks passed
+#   1 = one or more checks failed (CHECK_FAIL lines already capture this)
+#   8 = checks pending (benign; no output needed)
+#   other = genuine CLI/auth/permission failure -> emit CHECK_POLL_ERROR
 required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
-check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name | gsub("[\\t\\n\\r]"; " "))\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\((.link // "") | gsub("[\\t\\n\\r]"; " "))\tDESC=\((.description // "") | gsub("[\\t\\n\\r]"; " "))"' 2>/dev/null)
+check_stderr_file=$(mktemp)
+check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name | gsub("[\\t\\n\\r]"; " "))\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\((.link // "") | gsub("[\\t\\n\\r]"; " "))\tDESC=\((.description // "") | gsub("[\\t\\n\\r]"; " "))"' 2>"$check_stderr_file")
+check_status=$?
+if [ "$check_status" -ne 0 ] && [ "$check_status" -ne 1 ] && [ "$check_status" -ne 8 ]; then
+  check_stderr_line=$(tr '\n' ' ' < "$check_stderr_file")
+  printf 'CHECK_POLL_ERROR=gh pr checks failed (exit %s)%s\n' \
+    "$check_status" \
+    "${check_stderr_line:+ STDERR=$check_stderr_line}"
+fi
+rm -f "$check_stderr_file"
 if [ -n "$check_output" ]; then
   printf '%s\n' "$check_output" | while IFS= read -r check_line; do
     check_name=$(printf '%s' "$check_line" | cut -f1 | sed 's/^CHECK_FAIL=//')
