@@ -181,7 +181,7 @@ Query PR status checks for failures:
 
 ```sh
 required_checks=$(gh pr checks <PR_NUMBER> --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
-check_output=$(gh pr checks <PR_NUMBER> --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | .name + "\t" + .state + "\t" + .bucket + "\t" + ((.link // "") | gsub("[\\t\\n\\r]"; " ")) + "\t" + ((.description // "") | gsub("[\\t\\n\\r]"; " "))' 2>/dev/null)
+check_output=$(gh pr checks <PR_NUMBER> --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | (.name | gsub("[\\t\\n\\r]"; " ")) + "\t" + .state + "\t" + .bucket + "\t" + ((.link // "") | gsub("[\\t\\n\\r]"; " ")) + "\t" + ((.description // "") | gsub("[\\t\\n\\r]"; " "))' 2>/dev/null)
 check_status=$?
 # Exit-status semantics for gh pr checks:
 #   0 = all checks passed (check_output is empty — no failed checks, no candidates)
@@ -444,7 +444,7 @@ On each Monitor event:
 On every poll cycle, independently of whether any `CHECK_FAIL=` lines were emitted, iterate over all state ledger entries with status `fix-pushed-awaiting-rerun` where 2 or more polls have elapsed since the fix push. For each such entry:
 
 - **If the check name is present in this poll's `CHECK_FAIL=` lines:** reprocess as same-finding repeat (fix did not resolve the failure) — triggers the same-finding repeat detection path below. Do not run the confirmation query for this entry.
-- **If the check name is absent from this poll's `CHECK_FAIL=` lines:** absence alone is not sufficient because a re-running check (pending/running) is also absent. Run the confirmation query: `gh pr checks <PR> --repo <OWNER/REPO> --json name,bucket | jq -r --arg target "<check_name>" '.[] | select(.name == $target) | .bucket'`. Then:
+- **If the check name is absent from this poll's `CHECK_FAIL=` lines:** absence alone is not sufficient because a re-running check (pending/running) is also absent. Run the confirmation query: `TARGET="<check_name>" gh pr checks <PR> --repo <OWNER/REPO> --json name,bucket --jq '.[] | select(.name == env.TARGET) | .bucket'`. Then:
   - If result is `pass` → transition to `confirmed-pass`, update ledger, and skip
   - If result is `pending` or empty → remain in `fix-pushed-awaiting-rerun` (check still running); do not update ledger
   - If result is `fail` → reprocess as same-finding repeat (re-appeared as failing) — triggers the same-finding repeat detection path below
