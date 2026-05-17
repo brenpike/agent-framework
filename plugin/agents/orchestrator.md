@@ -128,7 +128,7 @@ After every step-completion milestone (any event producing an after= token), fin
 | 45 | local-reviewer-returned | exit: break-fix-break | STOP: surface conflict summary |
 | 46 | local-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
 | 47 | local-reviewer-returned | exit: user-input-required | STOP: surface finding |
-| 48 | local-reviewer-returned | exit: planner-escalation | delegate planner → coder (opus, same branch) → re-invoke local-reviewer (fresh) |
+| 48 | local-reviewer-returned | exit: planner-escalation | delegate planner → coder (opus, same branch) → verify → validate → checkpoint → re-invoke local-reviewer (with `resume_from_ledger`) |
 | 49 | local-reviewer-returned | blocked: codex unavailable | step 14: open PR |
 | 50 | local-reviewer-returned | blocked: other | STOP: surface blocker |
 | 51 | open-plan-pr-complete | succeeded, review opted-in, user request contains watch/monitor/wait/poll/loop | invoke github-reviewer (watch mode) |
@@ -142,7 +142,7 @@ After every step-completion milestone (any event producing an after= token), fin
 | 59 | github-reviewer-returned | exit: pr-closed | Final Report |
 | 60 | github-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
 | 61 | github-reviewer-returned | exit: user-input-required | STOP: surface finding |
-| 62 | github-reviewer-returned | exit: planner-escalation | delegate planner → coder (opus, same branch) → re-invoke github-reviewer (fresh) |
+| 62 | github-reviewer-returned | exit: planner-escalation | delegate planner → coder (opus, same branch) → verify → validate → checkpoint → push → re-invoke github-reviewer (fresh) |
 | 63 | github-reviewer-returned | exit: high-severity-rejection | STOP: await user approval (rationale already posted by reviewer) |
 | 64 | github-reviewer-returned | blocked | STOP: surface blocker |
 | 65 | request-github-codex-review-complete | succeeded, watch requested | invoke github-reviewer (watch mode) |

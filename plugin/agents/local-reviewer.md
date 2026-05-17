@@ -163,15 +163,17 @@ If any finding classifies as `question-needs-user-input`: persist ledger. Return
 
 If any finding classifies as `architecture-or-contract-concern` or `version-or-release-concern`: persist ledger. Return Output Contract with `exit_reason: planner-escalation`, including the finding `id`, `classification`, `file`, and `title`.
 
-#### Step 8: All-Non-Actionable Check
+#### Step 8: High-Severity Rejection Gate
 
-If every finding classifies as `non-actionable` or `incorrect-or-rejected` (zero actionable findings):
+For each finding classified as `incorrect-or-rejected`, derive `severity_category`: check whether the finding concerns P0, P1, security, public-API, compatibility, architecture, package-release, or versioning per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` (Severity Categories). If yes: `severity_category: high`. Otherwise: `severity_category: standard`.
 
-- For each `incorrect-or-rejected` finding, derive `severity_category`: check whether the finding concerns P0, P1, security, public-API, compatibility, architecture, package-release, or versioning per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` (Severity Categories). If yes: `severity_category: high`. Otherwise: `severity_category: standard`.
-- If any `incorrect-or-rejected` finding has `severity_category: high`: persist ledger. Return Output Contract with `exit_reason: high-severity-rejection`, including `finding_id`, `title`, and `rationale_text` for the first high-severity rejected finding.
-- Otherwise: persist ledger. Return Output Contract with `exit_reason: clean`.
+If any `incorrect-or-rejected` finding has `severity_category: high`: persist ledger. Return Output Contract with `exit_reason: high-severity-rejection`, including `finding_id`, `title`, and `rationale_text` for the first high-severity rejected finding. This gate runs before actionable findings are processed — a high-severity rejection always requires explicit user approval regardless of whether other findings in the same iteration are actionable.
 
-#### Step 9: Break-Fix Detection
+#### Step 9: All-Non-Actionable Check
+
+If every finding classifies as `non-actionable` or `incorrect-or-rejected` (zero actionable findings): persist ledger. Return Output Contract with `exit_reason: clean`.
+
+#### Step 10: Break-Fix Detection
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/agents/break-fix-detector.md` and spawn a subagent (bare Agent, no `subagent_type`) with those instructions.
 
@@ -184,7 +186,7 @@ Before invoking, prepare inputs:
 
 If the agent returns `Escalate: true`: persist ledger. Return Output Contract with `exit_reason: break-fix-break`, including `signals_fired`, `conflicting_findings`, `prior_fix_commit`.
 
-#### Step 10: Delegate Fixes (Severity-Ordered)
+#### Step 11: Delegate Fixes (Severity-Ordered)
 
 Sort actionable findings by severity (P0 first, P3 last). For each finding:
 
@@ -205,21 +207,21 @@ Use the Agent tool with `model: "sonnet"`. Pass:
 - Instruction: apply the smallest correct fix per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions — Smallest correct fix)
 - File scope: the finding's `file` (and up to one additional file if the fix requires it)
 
-#### Step 11: Post-Fix Validation
+#### Step 12: Post-Fix Validation
 
 After each fix delegation returns:
 
 1. Run validation commands from CLAUDE.md (per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions — Validation procedure)).
-2. If validation passes: update the finding status to `"fixed"` in the ledger. Leave `fix_commit` empty — the actual SHA is recorded after checkpoint-commit (Step 13).
+2. If validation passes: update the finding status to `"fixed"` in the ledger. Leave `fix_commit` empty — the actual SHA is recorded after checkpoint-commit (Step 14).
 3. If validation fails: update the finding status to `"regressed"` in the ledger. This counts toward break-fix detection on the next iteration.
 
-#### Step 12: Post-Fix Break-Fix Check
+#### Step 13: Post-Fix Break-Fix Check
 
-After each fix, re-invoke the break-fix-detector subagent with updated state (same procedure as Step 9 but with the latest fix included).
+After each fix, re-invoke the break-fix-detector subagent with updated state (same procedure as Step 10 but with the latest fix included).
 
 If `Escalate: true`: persist ledger. Return Output Contract with `exit_reason: break-fix-break`.
 
-#### Step 13: Checkpoint Commit
+#### Step 14: Checkpoint Commit
 
 After all findings in the current iteration have been addressed (fixed or recorded as non-actionable):
 
@@ -231,7 +233,7 @@ If checkpoint-commit returns blocked: return Output Contract with `exit_reason: 
 
 After successful checkpoint: extract the commit SHA from checkpoint-commit output. Update `fix_commit` for every finding with status `"fixed"` and empty `fix_commit` in the current iteration.
 
-#### Step 14: Advance Iteration
+#### Step 15: Advance Iteration
 
 1. Increment iteration counter.
 2. Persist ledger with current iteration state.
@@ -297,7 +299,7 @@ Each escalation condition causes an immediate terminal return to the orchestrato
 | Exit Reason | Trigger | Orchestrator Action |
 |---|---|---|
 | `clean` | Approve verdict with no actionable findings, OR all findings non-actionable/rejected (standard severity only) | Proceed to open PR |
-| `high-severity-rejection` | All findings non-actionable/rejected, but at least one rejected finding concerns P0, P1, security, public-API, compatibility, architecture, package-release, or versioning | Surface to user for approval |
+| `high-severity-rejection` | Any `incorrect-or-rejected` finding concerns P0, P1, security, public-API, compatibility, architecture, package-release, or versioning — checked before actionable findings are processed (Step 8) | Surface to user for approval |
 | `max-iterations-reached` | Iteration counter > `max_iterations` | Surface to user with open findings |
 | `break-fix-break` | Break-fix-detector fires (2-of-3 signals) | Surface to user |
 | `injection-suspect` | Any finding matches P1-P4 injection patterns | Surface to user |
