@@ -61,6 +61,8 @@ Orchestrator:
 
 **Rationale:** Reviewers handling coder/designer fixes directly eliminates per-iteration round-trips. Complex findings (planner-routed) still get planning safety via orchestrator escalation. The current skill-based model already proved the pattern — promotion to agent just adds delegation authority.
 
+**Governance note:** Current `agent-system-policy.md` restricts framework agent delegation to orchestrator exclusively. Phase 3 updates this governance to authorize reviewer agents for coder/designer delegation. Implementation order ensures no runtime references stale rules: agents created (Phase 1b/1c) → orchestrator updated (Phase 2) → governance formalized (Phase 3) → old skills deleted (Phase 4). Reviewer agent definitions reference the target governance state, not current state.
+
 ### Decision 3: Model Routing for Reviewer-Delegated Fixes
 
 Reviewers always delegate coder/designer at **sonnet** tier. Not haiku (risk of lower-quality fix → new finding → more iterations → possible break-fix cycle). Not opus (simple targeted fixes don't need it).
@@ -108,10 +110,14 @@ Codex is configured to automatically review when commits are pushed to a PR. No 
 
 **Normal flow:** open PR → push triggers auto-review → github-reviewer in watch mode monitors for feedback.
 
+**Batch-push rule:** github-reviewer pushes once per remediation cycle (after all fixes for that cycle are committed), never per-fix. This prevents multiple Codex auto-reviews from triggering in rapid succession.
+
 ### Decision 8: Continuation After Max-Iterations
 
 - **local-reviewer (C1):** Fix ledger persists on disk (`.agent-framework/review-loop/`). On re-invocation with higher max_iterations, reviewer reads existing ledger and resumes. No state loss.
 - **github-reviewer (C3):** Fresh state on re-invocation. Acceptable since re-review produces fresh feedback. Remediation ledger is session-local.
+
+**Crash recovery (github-reviewer):** If github-reviewer crashes mid-cycle after pushing fixes and resolving threads, re-invocation with fresh state is safe. GitHub API returns only UNRESOLVED threads — already-resolved threads from prior fixes are filtered out. Pushed commits are visible to Codex on next auto-review. No duplicate work occurs.
 
 ### Decision 9: Break-Fix Detection — Shared Algorithm
 
@@ -177,6 +183,8 @@ blocker: <reason>
 ```yaml
 mode: fix
 pr: <number or URL>
+working_branch: <branch>  # NEW — reviewer verifies current branch matches before push
+base: <branch>             # NEW — for reference/safety checks
 target: <comment URL or ID>  # optional; absent = all unresolved on PR
 ```
 
@@ -185,6 +193,8 @@ target: <comment URL or ID>  # optional; absent = all unresolved on PR
 ```yaml
 mode: watch
 pr: <number or URL>
+working_branch: <branch>  # NEW
+base: <branch>             # NEW
 reviewer_filter: codex-only | all | <author>  # default: all
 max_watch_duration: 14400  # seconds, default 4h
 max_remediation_cycles: 3  # default
@@ -332,6 +342,8 @@ Does NOT need: Monitor, gh API, git push
 | `monitor-command-template.sh` | `skills/watch-github-pr-feedback/references/` | `skills/_shared/references/` |
 | `preflight-check.sh` | `skills/watch-github-pr-feedback/references/` | `skills/_shared/references/` |
 
+> **Note:** Phase 1a creates files at new `_shared/` locations. Original files remain in their current skill directories until Phase 4 deletes the retired skills. Both locations coexist during Phases 1-3 to avoid breaking existing skill references.
+
 New shared file:
 - `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` — extracted from `pr-review-remediation-loop.md`, contains: classification taxonomy (10 classes), routing table (updated for self-owning model), severity categories, common fix rules
 
@@ -390,8 +402,10 @@ Existing shared files (unchanged):
 | 64 | request-github-codex-review-complete | succeeded, watch requested | invoke github-reviewer (watch mode) |
 | 65 | request-github-codex-review-complete | succeeded, no watch | Final Report |
 | 66 | request-github-codex-review-complete | blocked | STOP: surface blocker |
+| 67 | local-reviewer-returned | tool-error (timeout/crash) | read fix ledger from disk → re-invoke with resume_from_ledger |
+| 68 | github-reviewer-returned | tool-error (timeout/crash) | re-invoke github-reviewer (fresh — resolved threads filtered by API) |
 
-25 rows (down from 37 current, down from 35 in v1). The `request-github-codex-review-complete` rows (64-66) are ad-hoc only — not part of the normal pipeline.
+27 rows (down from 37 current, down from 35 in v1). The `request-github-codex-review-complete` rows (64-66) are ad-hoc only — not part of the normal pipeline.
 
 ---
 
@@ -399,7 +413,7 @@ Existing shared files (unchanged):
 
 ### Phase 1a: Shared Helpers + Taxonomy Extraction
 
-**Files created/moved:**
+**Files created (copied to new location; originals remain until Phase 4 retirement):**
 - `${CLAUDE_PLUGIN_ROOT}/skills/_shared/agents/break-fix-detector.md` (moved from `skills/review-loop-controller/agents/`)
 - `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/fix-ledger-schema.md` (moved from `skills/review-loop-controller/references/`)
 - `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/monitor-command-template.sh` (moved from `skills/watch-github-pr-feedback/references/`)
@@ -448,6 +462,7 @@ Existing shared files (unchanged):
 - Rejection rationale handling (non-high-severity: handle directly; high-severity: post reply, return to orchestrator)
 - Escalation boundary definitions
 - Input/output contract (terminal-only)
+- Pre-push safety checks: verify current branch = working_branch, verify no unsafe git state per agent-system-policy.md definition, fail fast on mismatch
 - References to shared taxonomy, GraphQL ops, monitor-command-template, preflight-check
 - Governance references: agent-system-policy.md, security-policy.md, communication-policy.md
 
@@ -521,6 +536,7 @@ Existing shared files (unchanged):
 4. Orphan reference check: `grep -r "review-loop-controller\|watch-github-pr-feedback\|address-github-pr-feedback\|monitoring-policy\|pr-review-remediation-loop" plugin/` — should return zero results
 5. Agent count check: verify 6 `.md` files in `plugin/agents/`
 6. Retired skill directories removed: verify `skills/review-loop-controller/`, `skills/watch-github-pr-feedback/`, `skills/address-github-pr-feedback/` do not exist
+7. Smoke install: verify plugin loads without error in a scratch session (manual post-merge if sandbox unavailable)
 
 **Depends on:** Phase 4
 
@@ -557,6 +573,8 @@ Phase 1a (shared helpers)
 | R7 | Sonnet-tier coder produces lower quality fixes than opus | More review iterations needed, potential break-fix | Break-fix detection catches oscillation; planner-escalation catches complexity; acceptable trade-off given cost savings |
 | R8 | Planner escalation loses reviewer context | Fixes from prior iterations may be invalidated by planner fix | Fresh reviewer loop after planner fix is intentional — prior fixes are committed and will be re-reviewed |
 | R9 | `address-github-pr-feedback` full retirement misses edge case | Post-fix thread resolution breaks | github-reviewer absorbs all three modes (classify, fix, post-fix); validate thread resolution works end-to-end |
+| R10 | Reviewer agent crash/timeout mid-loop | Partial work lost or duplicated | local-reviewer: disk-backed ledger enables re-invocation with `resume_from_ledger`. github-reviewer: GitHub API state (resolved threads filtered) prevents re-processing. Both fall through to existing tool-error STT rows (79-84) for spawn failures. |
+| R11 | Reviewer agent fails to spawn (tool-error at invocation) | Review flow blocked | Falls through to existing orchestrator tool-error STT rows (79-84). No reviewer-specific handling needed — standard error classification applies. |
 
 ---
 
@@ -565,7 +583,7 @@ Phase 1a (shared helpers)
 - **Type:** Minor bump (new backward-compatible capability)
 - **Current:** 1.6.4
 - **Target:** 1.7.0
-- **Rationale:** Two new agents, three skills retired, two governance docs retired — significant capability addition that doesn't break existing consumer workflows
+- **Rationale:** Two new agents with internal skill consolidation (three skills retired, two governance docs absorbed). External orchestrator-mediated workflows unchanged; internal routing restructured. Minor bump appropriate per versioning policy for new capability.
 
 ---
 
@@ -591,7 +609,7 @@ Phase 1a (shared helpers)
 - `plugin/skills/_shared/references/preflight-check.sh` (moved)
 - `plugin/skills/_shared/references/review-classification-taxonomy.md` (new — extracted)
 
-### Modified Files (11)
+### Modified Files (12)
 - `plugin/agents/orchestrator.md`
 - `plugin/governance/execution-algorithm-detail.md`
 - `plugin/governance/agent-system-policy.md`
