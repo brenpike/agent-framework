@@ -193,6 +193,8 @@ Derive `severity_category`: if classified `incorrect-or-rejected`, check whether
 
 ### Step 6: Route and Fix
 
+Initialize `fixes_applied_this_cycle = 0`.
+
 Process candidates in severity order (P0 first, then P1, P2, P3). Apply routing per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` (Routing Table):
 
 **Escalation exits (return immediately):**
@@ -233,7 +235,10 @@ Use `model: "sonnet"` on Agent() calls. Pass the feedback body, affected file(s)
 
 After each delegation:
 1. Verify the fix was applied (coder/designer reports complete)
-2. If delegation returned blocked: record and continue to next candidate
+2. If delegation returned complete with file changes: increment `fixes_applied_this_cycle`
+3. If delegation returned blocked: record and continue to next candidate
+
+**Guard:** If `fixes_applied_this_cycle == 0` (no fixes applied — all items were non-actionable, rejected, blocked, or escalated): skip Steps 7–10. Go directly to Step 11 and return `exit_reason: clean` with `findings_resolved` / `findings_open` counts reflecting the classified-but-not-fixed items.
 
 ### Step 7: Validate
 

@@ -218,6 +218,8 @@ If `Escalate: true`: persist ledger. Return Output Contract with `exit_reason: b
 
 After all findings in the current iteration have been addressed (fixed or recorded as non-actionable):
 
+**Regression gate:** Before checkpointing, verify no finding in the current iteration has status `"regressed"`. If any finding is regressed: do not invoke checkpoint-commit. Return Output Contract with `exit_reason: blocked`, `blocker_reason: validation regression in current iteration`, and list the regressed finding IDs in `regressed_findings`.
+
 Invoke `agent-framework:checkpoint-commit` via the Skill tool.
 
 If checkpoint-commit returns blocked: return Output Contract with `exit_reason: blocked`, `stage: checkpoint`.
