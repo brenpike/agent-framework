@@ -21,10 +21,10 @@ You receive these parameters in your prompt:
 
 ### Step 1: Read the Classification Taxonomy
 
-Read `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md`.
 
-- If `context` is `pr-feedback`: use the Classification section and the Remediation Decision Table.
-- If `context` is `local-review`: use the Classification section and the Local Review Remediation Decision Table.
+- If `context` is `pr-feedback`: use the Classification Categories section and the Routing Table.
+- If `context` is `local-review`: use the Classification Categories section and the Routing Table.
 
 ### Step 2: Apply the Classification Cascade
 

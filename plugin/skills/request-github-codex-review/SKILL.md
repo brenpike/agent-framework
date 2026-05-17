@@ -1,6 +1,6 @@
 ---
 name: request-github-codex-review
-description: Request Codex review on the current GitHub pull request.
+description: Request Codex review on the current GitHub pull request. For explicit ad-hoc requests only — normal flow uses push-triggered auto-review.
 allowed-tools:
   - Bash(gh pr view *)
   - Bash(gh pr comment *)
@@ -21,7 +21,7 @@ After:
 - [ ] Review request comment posted on PR
 - [ ] Final action is a Bash tool call (exit 0 = succeeded, exit 1 = blocked)
 
-Request Codex review on the current pull request.
+Request Codex review on the current pull request. This skill is for explicit ad-hoc review requests only — normal flow uses push-triggered auto-review via the `github-reviewer` agent's watch mode.
 
 Codex is an external reviewer, not a Claude Code subagent.
 

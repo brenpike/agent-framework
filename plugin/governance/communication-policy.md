@@ -162,10 +162,7 @@ These rules apply to all skills invoked by the orchestrator during pipeline exec
 - `agent-framework:checkpoint-commit`
 - `agent-framework:open-plan-pr`
 - `agent-framework:request-github-codex-review`
-- `agent-framework:review-loop-controller`
 - `agent-framework:local-codex-review`
-- `agent-framework:watch-github-pr-feedback`
-- `agent-framework:address-github-pr-feedback`
 
 Excluded (user-facing, text output preserved):
 - `agent-framework:plan-interrogation`

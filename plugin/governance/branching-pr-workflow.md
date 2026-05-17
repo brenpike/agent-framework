@@ -236,7 +236,7 @@ Never include any of the following in commit messages or PR content:
 
 ## External Review Remediation
 
-See `${CLAUDE_PLUGIN_ROOT}/governance/pr-review-remediation-loop.md`.
+See `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` for classification taxonomy. Review remediation is owned by the `github-reviewer` agent (post-PR) and `local-reviewer` agent (pre-PR).
 
 The orchestrator owns review replies, resolution, re-review requests, remediation commits, and pushes.
 
