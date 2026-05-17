@@ -2,10 +2,20 @@
 #
 # This file is a reference template loaded via Read tool. It is NOT executed
 # directly as a script. The skill reads this file, substitutes OWNER, REPO,
-# and PR_NUMBER with resolved values, and runs the resulting gh api graphql
-# command once via the existing Bash(gh api *) permission.
+# and PR_NUMBER with resolved values, and runs the resulting commands.
 #
-# Placeholders: OWNER, REPO, PR_NUMBER
+# Placeholders: OWNER, REPO, PR_NUMBER (used in both the GraphQL query and the
+# gh pr checks commands below).
+#
+# Output lines:
+#   STATE=        PR open/closed/merged state
+#   THREAD=       unresolved review thread reference
+#   COMMENT=      PR-level or thread comment reference
+#   REVIEW=       CHANGES_REQUESTED or COMMENTED review reference
+#   CHECK_FAIL=   failed status check (tab-separated fields; see gh pr checks block)
+#
+# Failures from gh pr checks are surfaced as data (CHECK_FAIL= lines) and do
+# not cause the preflight to exit non-zero.
 
 gh api graphql -f owner="OWNER" -f repo="REPO" -F pr=PR_NUMBER -f query='
 query($owner: String!, $repo: String!, $pr: Int!) {
@@ -71,3 +81,16 @@ query($owner: String!, $repo: String!, $pr: Int!) {
    | select(.author.login != $self)
    | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
 '
+
+# Check PR status checks for failures.
+# Uses gh pr checks (REST-backed). Failures are surfaced as data, not blockers.
+# REQUIRED field derived from --required flag; defaults to "no" if unavailable.
+required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
+gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name)\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\(.link)\tDESC=\(.description)"' 2>/dev/null | while IFS= read -r check_line; do
+  check_name=$(printf '%s' "$check_line" | cut -f1 | sed 's/^CHECK_FAIL=//')
+  if printf '%s' "$required_checks" | grep -qxF "$check_name"; then
+    printf '%s\tREQUIRED=yes\n' "$check_line"
+  else
+    printf '%s\tREQUIRED=no\n' "$check_line"
+  fi
+done
