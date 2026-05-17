@@ -187,7 +187,11 @@ if [ "$check_status" -eq 0 ] || [ "$check_status" -eq 1 ]; then
 fi
 ```
 
-If `check_status` is 8 (checks pending) or any value other than 0 or 1: skip the failed-check candidate-building block entirely for this run. Non-zero/non-one exits do not block the overall fix-mode flow — review feedback candidates continue processing normally.
+Exit-status handling after the code block:
+
+- **Exit 0 or 1 (normal):** Proceed with candidate building as above.
+- **Exit 8 (checks pending, benign):** Skip the failed-check candidate-building block for this run. Do NOT set `check_poll_failed`. Review feedback candidates continue processing normally. A pending-check exit does not block clean determination — CI checks may pass by the time results are needed.
+- **Exit >1 and ≠8 (genuine CLI/auth/permission failure):** Skip the failed-check candidate-building block for this run. Set `check_poll_failed: true` in the session state ledger. Review feedback candidates continue processing normally — do not abort the fix-mode flow. However, the `check_poll_failed` flag prevents the agent from reporting `exit_reason: clean` at Step 11 (see guard there).
 
 For each failed check:
 1. Build a candidate with fields: `check_name`, `state`, `link`, `description`, `required` (yes if name appears in `required_checks`, no otherwise).
@@ -358,8 +362,10 @@ For each resolved candidate (in the order they were fixed):
 
 ### Step 11: Return
 
+Before returning `exit_reason: clean`, check the session state ledger for `check_poll_failed: true`. If set: return `exit_reason: blocked`, `blocker_reason: check polling failed — CI status unknown` instead. CI checks were never inspected due to a genuine polling failure, so the overall fix-mode result cannot be reported as clean.
+
 Return the Output Contract YAML with:
-- `exit_reason: clean` (all actionable candidates resolved)
+- `exit_reason: clean` (all actionable candidates resolved, and `check_poll_failed` is not set)
 - `mode: fix`
 - `findings_resolved` / `findings_open` counts
 
@@ -625,6 +631,7 @@ Track session-local:
 - Current Monitor status
 - Failed check names (with fix SHA when remediated)
 - Check remediation status (fix-pushed-awaiting-rerun, confirmed-pass, still-failing)
+- `check_poll_failed: true` when Step 2a exits with a genuine CLI/auth/permission error (exit >1 and ≠8) — prevents `exit_reason: clean` at Step 11
 
 Do not reprocess the same item unless new activity appears on its thread.
 
