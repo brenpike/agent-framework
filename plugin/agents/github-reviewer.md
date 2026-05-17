@@ -416,9 +416,11 @@ On each Monitor event:
 When Monitor emits `CHECK_FAIL=` lines (from the `gh pr checks` polling block):
 1. Parse tab-separated fields: `CHECK_FAIL=<name>`, `STATE=<state>`, `BUCKET=fail`, `LINK=<url>`, `DESC=<description>`, `REQUIRED=<yes|no>`
 2. Compare check name against the state ledger:
-   - **Skip** if check status is `fix-pushed-awaiting-rerun` (fix pushed within the current or previous poll cycle — allow time for CI to re-run)
-   - **Skip** if check status is `confirmed-pass` (check passed on a subsequent poll — fully resolved)
-   - **Reprocess as same-finding repeat** if check was previously remediated (`fix-pushed-awaiting-rerun` or `confirmed-pass`) but now appears again with `BUCKET=fail` after at least one poll cycle has elapsed since the fix push. This triggers the same-finding repeat detection path below.
+   - **Skip** if check status is `fix-pushed-awaiting-rerun` and fewer than 2 polls have elapsed since the fix push (allow time for CI to re-run)
+   - **Transition to `confirmed-pass`** if check status is `fix-pushed-awaiting-rerun`, 2 or more polls have elapsed since the fix push, and the check is absent from this poll's CHECK_FAIL lines — update the ledger status to `confirmed-pass` and skip
+   - **Reprocess as same-finding repeat** if check status is `fix-pushed-awaiting-rerun`, 2 or more polls have elapsed since the fix push, and the check is still present in CHECK_FAIL lines (fix did not resolve the failure) — triggers the same-finding repeat detection path below
+   - **Skip** if check status is `confirmed-pass` and check is absent from CHECK_FAIL lines (fully resolved)
+   - **Reprocess as same-finding repeat** if check status is `confirmed-pass` but check reappears in CHECK_FAIL lines (regression after confirmed resolution) — triggers the same-finding repeat detection path below
    - **Add as new candidate** if check name has never been seen in the ledger
 3. Build candidate with `item_source: ci-check-failure`, `item_required` from REQUIRED field
 4. Add to the batch remediation set for this poll cycle
