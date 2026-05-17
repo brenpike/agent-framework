@@ -573,8 +573,8 @@ Phase 1a (shared helpers)
 | R7 | Sonnet-tier coder produces lower quality fixes than opus | More review iterations needed, potential break-fix | Break-fix detection catches oscillation; planner-escalation catches complexity; acceptable trade-off given cost savings |
 | R8 | Planner escalation loses reviewer context | Fixes from prior iterations may be invalidated by planner fix | Fresh reviewer loop after planner fix is intentional — prior fixes are committed and will be re-reviewed |
 | R9 | `address-github-pr-feedback` full retirement misses edge case | Post-fix thread resolution breaks | github-reviewer absorbs all three modes (classify, fix, post-fix); validate thread resolution works end-to-end |
-| R10 | Reviewer agent crash/timeout mid-loop | Partial work lost or duplicated | local-reviewer: disk-backed ledger enables re-invocation with `resume_from_ledger`. github-reviewer: GitHub API state (resolved threads filtered) prevents re-processing. Both fall through to existing tool-error STT rows (79-84) for spawn failures. |
-| R11 | Reviewer agent fails to spawn (tool-error at invocation) | Review flow blocked | Falls through to existing orchestrator tool-error STT rows (79-84). No reviewer-specific handling needed — standard error classification applies. |
+| R10 | Reviewer agent crash/timeout mid-loop | Partial work lost or duplicated | local-reviewer: disk-backed ledger enables re-invocation with `resume_from_ledger`. github-reviewer: GitHub API state (resolved threads filtered) prevents re-processing. Reviewer crash/timeout handled by STT rows 67-68. Spawn failures (Agent tool invocation error before reviewer starts) fall through to generic tool-error rows. |
+| R11 | Reviewer agent fails to spawn (tool-error at invocation) | Review flow blocked | Falls through to generic orchestrator tool-error rows (spawn failure before reviewer starts — distinct from rows 67-68 which handle crash/timeout after reviewer begins execution). Standard error classification applies. |
 
 ---
 
