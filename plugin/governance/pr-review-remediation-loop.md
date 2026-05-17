@@ -192,7 +192,7 @@ Run a Codex review loop on the local working branch before pushing and opening a
 ### Loop Governance
 
 - Default max iterations: 10
-- At max iterations: return blocked with three choices (continue 10 more / push now / stop entirely) — see `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller/SKILL.md` (Exit Conditions)
+- At max iterations: controller exits 0 with `exit_reason: "max-iterations-reached"` and all open findings; orchestrator surfaces three choices to user (continue 10 more / push now / stop entirely) — see `${CLAUDE_PLUGIN_ROOT}/skills/review-loop-controller/SKILL.md` (Exit Conditions)
 - Classification: use the same classification taxonomy as the existing Classification section above, applied to Codex findings instead of GitHub PR threads
 - Break-fix-break detection: see `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Break-fix-break cycle)
 

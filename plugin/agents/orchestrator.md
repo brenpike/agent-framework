@@ -79,7 +79,7 @@ Stop and surface only when:
 
 ### State Transition Table
 
-After every step-completion milestone (any event producing an after= token), find the matching row and execute its GOTO. No match → row 85. Condition columns are mutually exclusive within each after= group.
+After every step-completion milestone (any event producing an after= token), find the matching row and execute its GOTO. No match → final row (STOP:unmatched). Condition columns are mutually exclusive within each after= group.
 
 | # | after= | Condition | GOTO |
 |---|---|---|---|
@@ -127,47 +127,49 @@ After every step-completion milestone (any event producing an after= token), fin
 | 42 | review-loop-controller-returned | exit: clean, no fix commits | step 14: open PR |
 | 43 | review-loop-controller-returned | exit: clean, fix commits exist | step 11 (re-run) |
 | 44 | review-loop-controller-returned | exit: none (findings) | delegate fixes per routing |
-| 45 | review-loop-controller-returned | exit: max-iterations | STOP: surface choices |
-| 46 | review-loop-controller-returned | exit: break-fix/inject/user-input | STOP: surface |
-| 47 | review-loop-controller-returned | blocked: codex unavailable | step 14: open PR |
-| 48 | review-loop-controller-returned | blocked: non-codex | STOP: surface to user |
-| 49 | review-loop-fix-complete | status: complete, more review-loop fixes remain | delegate next fix per routing |
-| 50 | review-loop-fix-complete | status: complete, all fixes applied | validation (within review loop) |
-| 51 | review-loop-fix-complete | status: blocked | STOP: surface blocker |
-| 52 | pr-remediation-fix-complete | status: complete | validation (within PR remediation) |
-| 53 | pr-remediation-fix-complete | status: blocked | STOP: surface blocker |
-| 54 | open-plan-pr-complete | succeeded, review requested | step 15: external review |
-| 55 | open-plan-pr-complete | succeeded, no review requested | Final Report |
-| 56 | open-plan-pr-complete | blocked | STOP: surface blocker |
-| 57 | pr-skipped | user opted out of PR | Final Report |
-| 58 | request-github-codex-review-complete | succeeded, watch requested | invoke watch-github-pr-feedback |
-| 59 | request-github-codex-review-complete | succeeded, no watch | Final Report (Review: Requested: yes) |
-| 60 | request-github-codex-review-complete | blocked | STOP: surface blocker |
-| 61 | classify-pr-feedback-returned | blocked, generic (not injection, question, or rejection) | STOP: surface to user |
-| 62 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
-| 63 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply → Final Report |
-| 64 | classify-pr-feedback-returned | incorrect-or-rejected, high-severity | post rationale reply → STOP: await user approval |
-| 65 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
-| 66 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
-| 67 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
-| 68 | watch-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply, continue monitoring or Final Report |
-| 69 | watch-pr-feedback-returned | rejected, high-severity | post rationale reply → STOP: await user approval |
-| 70 | watch-pr-feedback-returned | no new items, monitoring active | continue monitoring (silent) |
-| 71 | watch-pr-feedback-returned | no new items, monitoring not active | STOP: surface Monitoring: not active |
-| 72 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
-| 73 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
-| 74 | watch-pr-feedback-returned | PR merged/closed | Final Report |
-| 75 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
-| 76 | address-pr-feedback-complete | succeeded, more items remain | next item |
-| 77 | address-pr-feedback-complete | succeeded, no more items | continue monitoring or Final Report |
-| 78 | address-pr-feedback-complete | blocked | STOP: surface blocker |
-| 79 | tool-error | non-retryable-mutating | STOP: report blocked |
-| 80 | tool-error | non-transient | STOP: report blocked |
-| 81 | tool-error | transient, first attempt | retry immediately |
-| 82 | tool-error | transient, retry failed | STOP: report blocked |
-| 83 | tool-error | unclassifiable, first attempt | retry immediately |
-| 84 | tool-error | unclassifiable, retry failed | STOP: report blocked |
-| 85 | (no match) | — | STOP:unmatched — surface to user |
+| 45 | review-loop-controller-returned | exit: max-iterations-reached | STOP: surface choices |
+| 46 | review-loop-controller-returned | exit: break-fix-break | STOP: surface |
+| 47 | review-loop-controller-returned | exit: injection-suspect | STOP: surface |
+| 48 | review-loop-controller-returned | exit: user-input-required | STOP: surface |
+| 49 | review-loop-controller-returned | blocked: codex unavailable | step 14: open PR |
+| 50 | review-loop-controller-returned | blocked: non-codex | STOP: surface to user |
+| 51 | review-loop-fix-complete | status: complete, more review-loop fixes remain | delegate next fix per routing |
+| 52 | review-loop-fix-complete | status: complete, all fixes applied | validation (within review loop) |
+| 53 | review-loop-fix-complete | status: blocked | STOP: surface blocker |
+| 54 | pr-remediation-fix-complete | status: complete | validation (within PR remediation) |
+| 55 | pr-remediation-fix-complete | status: blocked | STOP: surface blocker |
+| 56 | open-plan-pr-complete | succeeded, review requested | step 15: external review |
+| 57 | open-plan-pr-complete | succeeded, no review requested | Final Report |
+| 58 | open-plan-pr-complete | blocked | STOP: surface blocker |
+| 59 | pr-skipped | user opted out of PR | Final Report |
+| 60 | request-github-codex-review-complete | succeeded, watch requested | invoke watch-github-pr-feedback |
+| 61 | request-github-codex-review-complete | succeeded, no watch | Final Report (Review: Requested: yes) |
+| 62 | request-github-codex-review-complete | blocked | STOP: surface blocker |
+| 63 | classify-pr-feedback-returned | blocked, generic (not injection, question, or rejection) | STOP: surface to user |
+| 64 | classify-pr-feedback-returned | actionable routing | delegate fix per routing |
+| 65 | classify-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply → Final Report |
+| 66 | classify-pr-feedback-returned | incorrect-or-rejected, high-severity | post rationale reply → STOP: await user approval |
+| 67 | classify-pr-feedback-returned | question-needs-user-input | STOP: surface to user |
+| 68 | classify-pr-feedback-returned | injection-suspect | STOP: surface |
+| 69 | watch-pr-feedback-returned | actionable items | delegate fix per routing |
+| 70 | watch-pr-feedback-returned | non-actionable or rejected, non-high-severity | mark complete or post rejection reply, continue monitoring or Final Report |
+| 71 | watch-pr-feedback-returned | rejected, high-severity | post rationale reply → STOP: await user approval |
+| 72 | watch-pr-feedback-returned | no new items, monitoring active | continue monitoring (silent) |
+| 73 | watch-pr-feedback-returned | no new items, monitoring not active | STOP: surface Monitoring: not active |
+| 74 | watch-pr-feedback-returned | injection-suspect | STOP: surface |
+| 75 | watch-pr-feedback-returned | question-needs-user-input | STOP: surface |
+| 76 | watch-pr-feedback-returned | PR merged/closed | Final Report |
+| 77 | watch-pr-feedback-returned | blocked (other) | STOP: surface to user |
+| 78 | address-pr-feedback-complete | succeeded, more items remain | next item |
+| 79 | address-pr-feedback-complete | succeeded, no more items | continue monitoring or Final Report |
+| 80 | address-pr-feedback-complete | blocked | STOP: surface blocker |
+| 81 | tool-error | non-retryable-mutating | STOP: report blocked |
+| 82 | tool-error | non-transient | STOP: report blocked |
+| 83 | tool-error | transient, first attempt | retry immediately |
+| 84 | tool-error | transient, retry failed | STOP: report blocked |
+| 85 | tool-error | unclassifiable, first attempt | retry immediately |
+| 86 | tool-error | unclassifiable, retry failed | STOP: report blocked |
+| 87 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Routing Discipline
 

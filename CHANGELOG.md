@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.6.5] - 2026-05-16
+
+### Fixed
+
+- Skills emit explicit YAML routing data on exit 0 instead of leaking raw command stdout (`create-working-branch`, `request-github-codex-review`)
+- Remove raw review body content from multiple-candidate disambiguation stderr output in `address-github-pr-feedback` (external-content boundary enforcement)
+- Add `Bash(mkdir -p *)` to `review-loop-controller` allowed-tools for first-run ledger directory creation
+- Align State Transition Table conditions with exact emitted `exit_reason` values (`max-iterations-reached`, `break-fix-break`, `injection-suspect`, `user-input-required`)
+- Update stale `Candidate-url:`/`Source-kind:` uppercase field references to YAML `candidate_url`/`source_kind` in `address-github-pr-feedback` post-fix docs
+- Correct governance text for max-iterations behavior to match actual controller exit-0 contract
+- Fix capitalization inconsistency in communication-policy session fact cache (`Step:` → `step:`)
+
 ## [1.6.4] - 2026-05-16
 
 ### Added
