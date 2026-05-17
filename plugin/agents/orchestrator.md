@@ -131,31 +131,32 @@ After every step-completion milestone (any event producing an after= token), fin
 | 48 | local-reviewer-returned | exit: planner-escalation | delegate planner → coder (opus, same branch) → re-invoke local-reviewer (fresh) |
 | 49 | local-reviewer-returned | blocked: codex unavailable | step 14: open PR |
 | 50 | local-reviewer-returned | blocked: other | STOP: surface blocker |
-| 51 | open-plan-pr-complete | succeeded, review opted-in | invoke github-reviewer (watch mode) |
-| 52 | open-plan-pr-complete | succeeded, review not requested | Final Report |
-| 53 | open-plan-pr-complete | blocked | STOP: surface blocker |
-| 54 | pr-skipped | user opted out of PR | Final Report |
-| 55 | github-reviewer-returned | exit: clean | Final Report |
-| 56 | github-reviewer-returned | exit: max-cycles-reached | STOP: surface summary |
-| 57 | github-reviewer-returned | exit: pr-merged | Final Report |
-| 58 | github-reviewer-returned | exit: pr-closed | Final Report |
-| 59 | github-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
-| 60 | github-reviewer-returned | exit: user-input-required | STOP: surface finding |
-| 61 | github-reviewer-returned | exit: planner-escalation | delegate planner → coder (opus, same branch) → re-invoke github-reviewer (fresh) |
-| 62 | github-reviewer-returned | exit: high-severity-rejection | STOP: await user approval (rationale already posted by reviewer) |
-| 63 | github-reviewer-returned | blocked | STOP: surface blocker |
-| 64 | request-github-codex-review-complete | succeeded, watch requested | invoke github-reviewer (watch mode) |
-| 65 | request-github-codex-review-complete | succeeded, no watch | Final Report |
-| 66 | request-github-codex-review-complete | blocked | STOP: surface blocker |
-| 67 | tool-error | local-reviewer crash/timeout (exit 124/137, or timeout after partial execution — fix ledger exists) | read fix ledger from disk → re-invoke local-reviewer with resume_from_ledger |
-| 68 | tool-error | github-reviewer crash/timeout (exit 124/137, or timeout after partial execution) | re-invoke github-reviewer (fresh — resolved threads filtered by API) |
-| 69 | tool-error | non-retryable-mutating | STOP: report blocked |
-| 70 | tool-error | non-transient | STOP: report blocked |
-| 71 | tool-error | transient, first attempt | retry immediately |
-| 72 | tool-error | transient, retry failed | STOP: report blocked |
-| 73 | tool-error | unclassifiable, first attempt | retry immediately |
-| 74 | tool-error | unclassifiable, retry failed | STOP: report blocked |
-| 75 | (no match) | — | STOP:unmatched — surface to user |
+| 51 | open-plan-pr-complete | succeeded, review opted-in, user request contains watch/monitor/wait/poll/loop | invoke github-reviewer (watch mode) |
+| 52 | open-plan-pr-complete | succeeded, review opted-in, no watch keywords | invoke github-reviewer (fix mode) |
+| 53 | open-plan-pr-complete | succeeded, review not requested | Final Report |
+| 54 | open-plan-pr-complete | blocked | STOP: surface blocker |
+| 55 | pr-skipped | user opted out of PR | Final Report |
+| 56 | github-reviewer-returned | exit: clean | Final Report |
+| 57 | github-reviewer-returned | exit: max-cycles-reached | STOP: surface summary |
+| 58 | github-reviewer-returned | exit: pr-merged | Final Report |
+| 59 | github-reviewer-returned | exit: pr-closed | Final Report |
+| 60 | github-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
+| 61 | github-reviewer-returned | exit: user-input-required | STOP: surface finding |
+| 62 | github-reviewer-returned | exit: planner-escalation | delegate planner → coder (opus, same branch) → re-invoke github-reviewer (fresh) |
+| 63 | github-reviewer-returned | exit: high-severity-rejection | STOP: await user approval (rationale already posted by reviewer) |
+| 64 | github-reviewer-returned | blocked | STOP: surface blocker |
+| 65 | request-github-codex-review-complete | succeeded, watch requested | invoke github-reviewer (watch mode) |
+| 66 | request-github-codex-review-complete | succeeded, no watch | Final Report |
+| 67 | request-github-codex-review-complete | blocked | STOP: surface blocker |
+| 68 | tool-error | local-reviewer crash/timeout (exit 124/137, or timeout after partial execution — fix ledger exists) | read fix ledger from disk → re-invoke local-reviewer with resume_from_ledger |
+| 69 | tool-error | github-reviewer crash/timeout (exit 124/137, or timeout after partial execution) | re-invoke github-reviewer (fresh — resolved threads filtered by API) |
+| 70 | tool-error | non-retryable-mutating | STOP: report blocked |
+| 71 | tool-error | non-transient | STOP: report blocked |
+| 72 | tool-error | transient, first attempt | retry immediately |
+| 73 | tool-error | transient, retry failed | STOP: report blocked |
+| 74 | tool-error | unclassifiable, first attempt | retry immediately |
+| 75 | tool-error | unclassifiable, retry failed | STOP: report blocked |
+| 76 | (no match) | — | STOP:unmatched — surface to user |
 
 ### Routing Discipline
 
@@ -235,7 +236,7 @@ working_branch: <current working branch>
 trunk: <resolved trunk>
 claude_mem: present | absent
 max_iterations: 10  # default; raise on user-approved continuation
-resume_from_ledger: <path>  # optional, for crash recovery (STT row 67)
+resume_from_ledger: <path>  # optional, for crash recovery (STT row 68)
 ```
 
 Handle return per STT rows 42-50. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → delegate coder (opus, same branch) to implement → re-invoke local-reviewer fresh (new invocation, no `resume_from_ledger`).
@@ -253,7 +254,7 @@ max_watch_duration: 14400  # seconds, default 4h
 max_remediation_cycles: 3  # default
 ```
 
-Handle return per STT rows 55-63. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → delegate coder (opus, same branch) to implement → re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API on fresh start).
+Handle return per STT rows 56-64. On `exit: planner-escalation`: delegate planner (opus) for a remediation plan → delegate coder (opus, same branch) to implement → re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API on fresh start).
 
 ### github-reviewer Invocation (Fix Mode)
 
@@ -266,11 +267,11 @@ base: <resolved trunk>
 target: <comment URL or ID>  # optional; absent = all unresolved
 ```
 
-Handle return per STT rows 55-63 (same rows apply to both modes).
+Handle return per STT rows 56-64 (same rows apply to both modes).
 
 ### Tool-Error Recovery for Reviewer Agents
 
-STT rows 67-68 match only POST-START failures (exit code 124 or 137, or timeout after partial execution). Indicators of post-start execution: fix ledger exists on disk (local-reviewer), or pushed commits/posted replies visible in PR (github-reviewer). Spawn/config failures (immediate exit before any work) fall through to generic tool-error rows 69-74.
+STT rows 68-69 match only POST-START failures (exit code 124 or 137, or timeout after partial execution). Indicators of post-start execution: fix ledger exists on disk (local-reviewer), or pushed commits/posted replies visible in PR (github-reviewer). Spawn/config failures (immediate exit before any work) fall through to generic tool-error rows 70-75.
 
 ## Planner-First Rule
 

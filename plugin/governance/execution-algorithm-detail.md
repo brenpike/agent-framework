@@ -43,15 +43,17 @@ c. Handle terminal return per STT rows 42-50:
    - `blocked: codex unavailable` → log `Review: local pre-PR review skipped (codex unavailable)`, proceed to step 14.
    - `blocked: other` → STOP: surface blocker.
 
-d. Tool-error recovery (STT row 67): if the local-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (fix ledger exists at `.agent-framework/review-loop/fix-ledger.yaml`), read the ledger path and re-invoke with `resume_from_ledger`. If no ledger exists (spawn failure), fall through to generic tool-error rows.
+d. Tool-error recovery (STT row 68): if the local-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (fix ledger exists at `.agent-framework/review-loop/fix-ledger.yaml`), read the ledger path and re-invoke with `resume_from_ledger`. If no ledger exists (spawn failure), fall through to generic tool-error rows.
 
 ## Step 15: Post-PR Review
 
 **Post-PR review.** After the PR is opened (step 14), invoke the `agent-framework:github-reviewer` agent when (a) the user request contains `review`, `codex`, or `audit`; OR (b) `CLAUDE.md` sets review-on-PR = true. If neither (a) nor (b) is true, skip review and proceed to the Final Report with `Review: Requested: no`. External review is opt-in; this is the default path.
 
-### Standard Path: Watch Mode
+### Standard Path: Mode Routing
 
-When review is opted-in after PR open (STT row 51), invoke `agent-framework:github-reviewer` in watch mode:
+When review is opted-in after PR open, route by keyword presence in the original user request:
+
+- **STT row 51 — watch mode:** user request contains `watch`, `monitor`, `wait`, `poll`, or `loop` → invoke `agent-framework:github-reviewer` in watch mode:
 
 ```yaml
 mode: watch
@@ -63,9 +65,18 @@ max_watch_duration: 14400
 max_remediation_cycles: 3
 ```
 
-The github-reviewer agent owns the entire remediation lifecycle internally (Monitor setup, feedback detection, classification, injection scanning, simple fix delegation at sonnet, validation, checkpoint commits, push, fix-SHA reply posting, thread resolution, cycle tracking). The orchestrator does not drive individual remediation items.
+- **STT row 52 — fix mode:** user request contains none of the watch keywords → invoke `agent-framework:github-reviewer` in fix mode (one-shot):
 
-Handle terminal return per STT rows 55-63:
+```yaml
+mode: fix
+pr: <PR number>
+working_branch: <current working branch>
+base: <resolved trunk>
+```
+
+The github-reviewer agent owns the entire remediation lifecycle internally (Monitor setup for watch mode, feedback detection, classification, injection scanning, simple fix delegation at sonnet, validation, checkpoint commits, push, fix-SHA reply posting, thread resolution, cycle tracking). The orchestrator does not drive individual remediation items.
+
+Handle terminal return per STT rows 56-64:
 - `exit: clean` → Final Report.
 - `exit: max-cycles-reached` → STOP: surface summary of remaining open items.
 - `exit: pr-merged` → Final Report.
@@ -80,11 +91,11 @@ Handle terminal return per STT rows 55-63:
 
 When the user explicitly requests Codex review (outside the standard pipeline), use `agent-framework:request-github-codex-review` skill to submit the review request, then:
 
-- On `succeeded, watch requested` (STT row 64): invoke github-reviewer in watch mode (same as standard path above).
-- On `succeeded, no watch` (STT row 65): Final Report with `Review: Requested: yes`.
-- On `blocked` (STT row 66): STOP: surface blocker.
+- On `succeeded, watch requested` (STT row 65): invoke github-reviewer in watch mode (same as standard path above).
+- On `succeeded, no watch` (STT row 66): Final Report with `Review: Requested: yes`.
+- On `blocked` (STT row 67): STOP: surface blocker.
 
-### Tool-Error Recovery (STT row 68)
+### Tool-Error Recovery (STT row 69)
 
 If the github-reviewer agent crashes or times out (exit 124/137) AFTER starting execution (evidence: pushed commits or posted replies visible in the PR), re-invoke github-reviewer fresh. The agent's crash recovery design (C3) ensures no duplicate work: resolved threads are excluded by API, self-authored replies are filtered at detection, and pushed commits persist.
 

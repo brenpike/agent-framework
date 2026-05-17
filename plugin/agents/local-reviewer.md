@@ -116,7 +116,7 @@ Repeat until a terminal exit condition fires:
 
 #### Step 1: Check Iteration Ceiling
 
-If `iteration >= max_iterations`: persist ledger, return Output Contract with `exit_reason: max-iterations-reached`.
+If `iteration > max_iterations`: persist ledger, return Output Contract with `exit_reason: max-iterations-reached`.
 
 #### Step 2: Invoke Local Codex Review
 
