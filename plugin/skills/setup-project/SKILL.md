@@ -130,7 +130,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5 (except `hooks.SubagentStart` when `caveman` = `yes`, as specified in steps 5 and 10d)
-- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, and files created by invoked skills (`agent-framework:bootstrap-context`)
+- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, and files created or modified by invoked skills (`agent-framework:bootstrap-context`)
 - commit, push, or otherwise touch git state
 - invoke skills other than `agent-framework:bootstrap-context`
 - proceed if the project root cannot be resolved
