@@ -263,6 +263,7 @@ Contents:
 | `plan-interrogation` | Keep, strip governance refs |
 | `setup-project` | Keep, trim |
 | `bootstrap-context` | Keep, trim |
+| `zoom-out` | Keep as-is |
 | `request-github-codex-review` | **DELETE** |
 
 ### 4.4 Shared References (SURVIVING — mechanical only)
