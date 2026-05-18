@@ -135,6 +135,7 @@ All skills are invoked using the namespaced form:
 | `agent-framework:request-github-codex-review` | Request Codex review on an existing pushed PR |
 | `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.agent-framework/` to `.gitignore` |
 | `agent-framework:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `agent-framework:coder` context only |
+| `agent-framework:zoom-out` | Prompt the agent to zoom out and provide broader context or a higher-level perspective on unfamiliar code |
 
 ## Governance
 
