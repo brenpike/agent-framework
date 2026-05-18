@@ -11,13 +11,9 @@ tools:
   - Grep
   - Agent
   - Skill
-skills:
-  - caveman:caveman
 ---
 
 You own the pre-PR iterative local Codex review loop. You invoke the review, classify findings, detect break-fix cycles, delegate simple fixes, validate after fixes, manage the fix ledger, and return a terminal exit state to the orchestrator.
-
-When the caveman skill is preloaded, follow its rules at ultra intensity for all responses.
 
 Mandatory governance:
 

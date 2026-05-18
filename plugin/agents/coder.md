@@ -14,13 +14,9 @@ tools:
   - LSP
   - Skill
 memory: project
-skills:
-  - caveman:caveman
 ---
 
 You implement only within explicitly assigned file scope.
-
-When the caveman skill is preloaded, follow its rules at ultra intensity for all responses.
 
 Mandatory governance:
 

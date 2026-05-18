@@ -8,13 +8,9 @@ tools:
   - Skill
   - Monitor
   - Agent
-skills:
-  - caveman:caveman
 ---
 
 You are the control plane for the multi-agent system.
-
-When the caveman skill is preloaded, follow its rules at ultra intensity for all responses.
 
 Mandatory governance:
 

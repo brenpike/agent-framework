@@ -38,13 +38,9 @@ tools:
   - Bash(gh issue view *)
   - Bash(gh issue list *)
   - Bash(gh repo view *)
-skills:
-  - caveman:caveman
 ---
 
 You create plans only. You do not write or edit code.
-
-When the caveman skill is preloaded, follow its rules at ultra intensity for all responses.
 
 Mandatory governance:
 
