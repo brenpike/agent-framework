@@ -285,14 +285,15 @@ When intake detects `routing: pr-feedback-remediation` (per `${CLAUDE_PLUGIN_ROO
 Resolve the PR's head ref, base ref, and ensure the working tree is on the PR head:
 
 1. `gh pr view <PR_NUMBER> --json headRefName,baseRefName --jq '{head: .headRefName, base: .baseRefName}'` — capture `<head_ref>` and `<base_ref>`.
-2. `gh pr checkout <PR_NUMBER>` — fetch the PR head from the remote and switch to it. This ensures the local branch tracks the remote PR head correctly, even when a stale local branch with the same name already exists.
-3. If checkout fails or git state is unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Unsafe git state): STOP with blocker.
+2. Pre-checkout safety: confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Unsafe git state). If unsafe (uncommitted changes, unmerged paths, in-progress rebase/merge/cherry-pick): STOP with blocker before switching branches.
+3. `gh pr checkout --force <PR_NUMBER>` — fetch the PR head from the remote and force-reset the local branch to match. The `--force` flag ensures that even when a stale or diverged local branch with the same name already exists, it is reset to the latest PR head rather than preserving outdated local state.
+4. Post-checkout verification: confirm git state is not unsafe after checkout. If unsafe: STOP with blocker.
 
 ### github-reviewer Invocation
 
 Invoke per the existing contracts in Reviewer Delegation above. Pass:
 
-- **Fix mode** (STT row 2): `mode: fix`, `pr: <N>`, `working_branch: <head_ref>`, `base: <base_ref>`.
+- **Fix mode** (STT row 2): `mode: fix`, `pr: <N>`, `working_branch: <head_ref>`, `base: <base_ref>`, `target: <target>` (when resolved; omit when absent — reviewer treats absent as all unresolved).
 - **Watch mode** (STT row 1): `mode: watch`, `pr: <N>`, `working_branch: <head_ref>`, `base: <base_ref>`, `reviewer_filter: all`, `max_watch_duration: 14400`, `max_remediation_cycles: 3`.
 
 ### Return Handling
@@ -309,6 +310,7 @@ routing: pr-feedback-remediation
 pr: <N>
 working-branch: <head_ref>
 trunk: <base_ref>
+target: <comment URL or ID>  # optional; absent when user request does not reference a specific comment/thread
 ```
 
 ## Planner-First Rule
