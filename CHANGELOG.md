@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.9.0] - 2026-05-17
+
+### Added
+- New `bootstrap-context` skill that analyzes project artifacts (CLAUDE.md, README, manifests, directory structure, source patterns) to generate or update a populated CONTEXT.md domain glossary
+- `setup-project` skill now invokes `bootstrap-context` as its final step to auto-generate CONTEXT.md on first setup
+- `setup-project` skill supports update mode: re-running bootstrap-context adds new terms without removing existing content (case-insensitive deduplication)
+
 ## [1.6.5] - 2026-05-16
 
 ### Fixed
