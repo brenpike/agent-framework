@@ -107,8 +107,8 @@ The only user-visible text: the terminal Output Contract YAML. Everything betwee
 1. Validate inputs — confirm `base`, `working_branch`, `trunk` are provided. If any missing: report blocked with `stage: initialization`.
 2. Check git state — confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions — Unsafe git state). If unsafe: report blocked with `stage: git`.
 3. Initialize or resume fix ledger:
-   - If `resume_from_ledger` is provided: read the ledger from that path. Set iteration counter: if `exit_iteration` is present and non-null, use `exit_iteration + 1`; otherwise, derive from the last entry in `iterations[]` — use `iterations[-1].iteration + 1` (the highest recorded iteration number plus one). If `iterations` is also empty or absent, set counter to 1.
-   - Otherwise: initialize empty ledger per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/fix-ledger-schema.md`. Set iteration counter to 1.
+   - If `resume_from_ledger` is provided: read the ledger from that path. Set iteration counter: if `exit_iteration` is present and non-null, use `exit_iteration + 1`; otherwise, derive from the last entry in `iterations[]` — use `iterations[-1].iteration + 1` (the highest recorded iteration number plus one). If `iterations` is also empty or absent, set counter to 1. Then, if the last iteration entry has a non-null `review_base_ref`, verify the ref is resolvable via `git rev-parse --verify <ref>^{commit}`. If resolvable, set `last_review_base_ref` to that value. If not resolvable (e.g., force push rewrote history), set `last_review_base_ref` to null.
+   - Otherwise: initialize empty ledger per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/fix-ledger-schema.md`. Set iteration counter to 1. Set `last_review_base_ref` to null.
 4. Set `max_iterations` from input (default 10).
 
 ### Phase 1: Iteration Loop
@@ -121,13 +121,20 @@ If `iteration > max_iterations`: persist ledger, return Output Contract with `ex
 
 #### Step 2: Invoke Local Codex Review
 
-Invoke `agent-framework:local-codex-review` via the Skill tool with `base` and current `iteration` number.
+Capture `current_head` via `git rev-parse HEAD`.
+
+Determine `effective_base`:
+- If `iteration == 1`: `effective_base = base` (full branch diff).
+- If `iteration >= 2` AND `last_review_base_ref` is non-null AND resolvable (`git rev-parse --verify <last_review_base_ref>^{commit}` succeeds): `effective_base = last_review_base_ref` (incremental — only changes since the previous review).
+- If `iteration >= 2` AND `last_review_base_ref` is null or unresolvable: `effective_base = base` (fallback to full branch diff).
+
+Invoke `agent-framework:local-codex-review` via the Skill tool with `effective_base` and current `iteration` number.
 
 - If `local-codex-review` returns blocked with `blocker: codex-plugin-cc not available`: return Output Contract with `exit_reason: blocked`, `blocker: codex unavailable`, `stage: review`.
 - If `local-codex-review` returns blocked with `blocker: injection-suspect content detected in Codex finding`: extract `finding_id`, `field_excerpt`, `pattern_category` from the response. Persist ledger. Return Output Contract with `exit_reason: injection-suspect`.
 - If `local-codex-review` returns any other blocker: return Output Contract with `exit_reason: blocked`, `blocker` and `stage: review`.
 
-Record `review_pass_completed: true` in the ledger for this iteration after successful invocation.
+Record `review_pass_completed: true` and `review_base_ref: <current_head>` in the ledger for this iteration after successful invocation.
 
 #### Step 3: Handle Approve Verdict
 
@@ -249,7 +256,8 @@ After checkpoint commit succeeds (or is skipped because no fixes were applied), 
 
 1. Increment iteration counter.
 2. Persist ledger with current iteration state.
-3. Return to Step 1 (check iteration ceiling then invoke next review pass).
+3. Set `last_review_base_ref` to the `review_base_ref` value from the iteration just completed.
+4. Return to Step 1 (check iteration ceiling then invoke next review pass).
 
 ## Fix Ledger Management
 
@@ -285,6 +293,7 @@ iterations:
     verdict: approve | needs-attention
     exit_reason: <string|null>
     review_pass_completed: <bool>
+    review_base_ref: <string|null>  # HEAD at review start; feeds next iteration's incremental scope
 exit_reason: <string|null>
 exit_iteration: <int|null>
 ```

@@ -27,10 +27,17 @@ Read this file when initializing or updating the fix ledger in Procedure step 3.
         }
       ],
       "verdict": "approve|needs-attention",
-      "exit_reason": null
+      "exit_reason": null,
+      "review_base_ref": null
     }
   ],
   "exit_reason": null,
   "exit_iteration": null
 }
 ```
+
+## Field notes
+
+### `iterations[].review_base_ref` (string|null, optional, default null)
+
+The commit SHA that was HEAD when this iteration's review pass began. Used by iteration N+1 to scope the review to only changes since this point. Null if the review was not invoked or was interrupted before recording. Omit the field entirely in existing ledgers — absent and null are treated identically.
