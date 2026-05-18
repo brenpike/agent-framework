@@ -68,7 +68,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 6. If `dry_run` = `yes`:
    a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.agent-framework/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. Determine the `.envrc` action that would be taken: check whether `<project root>/.envrc` exists and whether it contains an active (non-commented) line matching `export CAVEMAN_DEFAULT_MODE=ultra` (the same check used in step 9b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
-   c. Print the merged settings JSON and the gitignore action together.
+   c. Print the merged settings JSON, the gitignore action, and the envrc action together.
    d. Stop without writing any files.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
 8. Ensure `.agent-framework/` is listed in the project's `.gitignore`:
