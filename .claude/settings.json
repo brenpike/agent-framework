@@ -35,6 +35,7 @@
   },
   "enabledPlugins": {
     "agent-framework@brenpike": true,
+    "caveman@caveman": true,
     "claude-mem@thedotmack": true,
     "codex@openai-codex": true
   },

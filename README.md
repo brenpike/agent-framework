@@ -68,6 +68,12 @@ Once configured, the orchestrator is the session default agent. All skills are a
   ```
   When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `agent-framework:local-codex-review`) and post-PR review automation via the `github-reviewer` agent (a self-owning agent that handles monitoring, feedback classification, fix delegation, and thread resolution). `agent-framework:request-github-codex-review` is available for ad-hoc Codex review requests outside the automated flow. The framework works without it; if not installed, local review steps are skipped gracefully.
 
+- [`caveman`](https://github.com/caveman/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
+  ```json
+  "enabledPlugins": { "caveman@caveman": true },
+  "pluginConfigs": { "caveman@caveman": { "options": { "defaultLevel": "ultra" } } }
+  ```
+
 ## After cloning a project that uses this plugin
 
 ```text
