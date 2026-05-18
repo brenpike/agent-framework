@@ -468,7 +468,7 @@ Git: Class=[type] Base=[branch] Work=[branch] Worktrees=[y/n] Checkpoints=[summa
 Versioning: Required=[y/n] Completed=[y/n/na]
 Review: Requested=[y/n] Remediated=[y/n/na] Monitoring=[active|not active|not requested]
 Issues: [issue list | None]
-Session facts: trunk=[branch] validation=[cmd] version=[x.y.z] task-type=[type] claude-mem=[p/a] local-review=[active/opted-out] active-step=STEP-NNN active-task=TASK-NNN
+Session facts: trunk=[branch] validation=[cmd] version=[x.y.z] task-type=[type] claude-mem=[p/a] local-review=[active/opted-out] review=[active/opted-out] active-step=STEP-NNN active-task=TASK-NNN
 ```
 
 If blocked, use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md`.
