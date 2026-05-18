@@ -111,7 +111,7 @@ gitignore:
 - .gitignore: created | updated | already present | skipped (dry_run)
 
 envrc:
-- .envrc: created | updated | already present | skipped (dry_run)
+- .envrc: created | updated | already present | would-create | would-append | skipped (dry_run)
 
 keys_applied:
 - enabledPlugins["agent-framework@brenpike"]: added | already present
