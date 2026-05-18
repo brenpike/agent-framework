@@ -494,9 +494,17 @@ After classifying all new items from a single poll:
 
 1. Process all simple-fix items in severity order (delegate coder/designer at sonnet). Track `fixes_applied_this_cycle`: increment only when a coder/designer delegation returns `complete` with file changes. Track `delegations_blocked`: increment when a coder/designer delegation returns `blocked`.
 2. **Guard:**
-   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0`: do NOT mark blocked items as handled in the state ledger. Skip validation, checkpoint commit, push, and reply/resolve. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
-   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND there are no rationale-replied candidates (no `incorrect-or-rejected` or `non-actionable` items that received a rationale reply during routing): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Continue to the next poll cycle. An empty poll never triggers `exit_reason: clean` — only terminal Monitor events (`STATE=MERGED`, `STATE=CLOSED`, `WATCH_TIMEOUT`) end the watch loop.
-   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND there are rationale-replied candidates (`incorrect-or-rejected` at any severity or `non-actionable` with rationale replies posted during routing): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, or push (steps 3–5). Still run the post-fix reply and resolve step (step 6, same as Fix Mode Step 10) for thread resolution of the rationale-replied candidates. Continue to the next poll cycle after resolution completes.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0` AND `deferred_escalations` is empty: do NOT mark blocked items as handled in the state ledger. Skip validation, checkpoint commit, push, and reply/resolve. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0` AND `deferred_escalations` is non-empty: skip validation, checkpoint commit, push, and reply/resolve. Signal Monitor to stop via `touch <STOP_FILE>`, then return with the highest-priority deferred escalation (see priority order below).
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty AND there are no rationale-replied candidates: mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Continue to the next poll cycle. An empty poll never triggers `exit_reason: clean` — only terminal Monitor events (`STATE=MERGED`, `STATE=CLOSED`, `WATCH_TIMEOUT`) end the watch loop.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty AND there are rationale-replied candidates (`incorrect-or-rejected` at any severity or `non-actionable` with rationale replies posted): skip validation, checkpoint commit, and push (steps 3–5). Proceed to step 6 (post-fix reply and resolve) for thread resolution of the rationale-replied candidates. Mark resolved items as handled. Continue to the next poll cycle.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is non-empty AND there are no rationale-replied candidates: signal Monitor to stop via `touch <STOP_FILE>`, then return with the highest-priority deferred escalation.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is non-empty AND there are rationale-replied candidates: skip validation, checkpoint commit, and push (steps 3–5). Proceed to step 6 (post-fix reply and resolve) for thread resolution of the rationale-replied candidates. Then signal Monitor to stop via `touch <STOP_FILE>` and return with the highest-priority deferred escalation.
+   - If `fixes_applied_this_cycle > 0`: proceed to steps 3–6 (validate, commit, push, reply-resolve for fixed items and rationale-replied candidates). After step 6 completes, if `deferred_escalations` is non-empty, signal Monitor to stop via `touch <STOP_FILE>` and return with the highest-priority deferred escalation. If `deferred_escalations` is empty, continue to step 7 (increment cycles_completed) and proceed to the next poll cycle.
+
+   **Deferred escalation priority order:** `high-severity-rejection` > `user-input-required` > `planner-escalation`. When returning with a deferred escalation: use the winning item's conditional fields (`candidate_url`, `escalation_target`, `rationale_text` as appropriate). Set `findings_resolved` to count items fixed this cycle. Set `findings_open` to count deferred-escalation items plus any other unfixed items. If multiple items were deferred, include all their URLs in `deferred_escalation_items`.
+
+   Exception: `injection-suspect` still signals Monitor to stop immediately (unchanged — security boundary), handled in the per-item injection scan before the batch remediation cycle begins.
 3. Validate (same as Fix Mode Step 7)
 4. Checkpoint commit (same as Fix Mode Step 8)
 5. Pre-push safety check and push (same as Fix Mode Step 9)
@@ -512,14 +520,6 @@ After each remediation cycle, check `cycles_completed >= max_remediation_cycles`
 Per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions — Same finding): if a finding repeats after attempted remediation, signal Monitor to stop, return `exit_reason: max-cycles-reached` with the repeated finding details in `blocker_reason`.
 
 **Same-finding repeat for checks:** If the same check name fails after a remediation cycle committed a fix for it AND the check has completed a re-run (bucket is "fail" not "pending"), it counts as a same-finding repeat and triggers `exit_reason: max-cycles-reached`.
-
-**Escalation during watch:**
-
-When any item in a poll cycle classifies as planner-escalation, user-input-required, or high-severity-rejection: record it in `deferred_escalations` (same as Fix Mode). Complete the batch remediation cycle for all simple-fix items in the same poll. After the cycle's reply-resolve step (step 6 of batch remediation): signal Monitor to stop via `touch <STOP_FILE>`, then return with the highest-priority deferred escalation using the same priority order and Output Contract fields as Fix Mode.
-
-Exception: `injection-suspect` still signals Monitor to stop immediately (unchanged — security boundary).
-
-If the poll cycle contains ONLY escalation-class items (zero simple-fix candidates): signal Monitor to stop immediately and return with the highest-priority deferred escalation (no deferral benefit).
 
 ### Step 4: Return
 
@@ -582,14 +582,20 @@ When feedback is classified `incorrect-or-rejected` with `severity_category: hig
 
 ## Thread Resolution Rules
 
-Resolve review threads only after ALL of:
+Resolve review threads when the thread has a self-authored resolution reply (fix-SHA or rationale) and the applicable prerequisites are met.
+
+**For fix-committed threads** (threads where an `actionable-*` or `failed-ci-check` fix was applied), resolve after ALL of:
 
 - Fix is committed
 - Fix is pushed
 - Validation passed (or explicitly reported as not run)
 - Fix-SHA reply was posted on the thread
 
-OR when the thread received a rationale reply (`incorrect-or-rejected` or `non-actionable` classification with rationale already posted) — no fix commit, push, or fix-SHA reply is required for rationale-replied threads.
+**For rationale-replied threads** (`incorrect-or-rejected` at any severity, or `non-actionable` threads where a rationale reply was posted), resolve after ALL of:
+
+- Rationale reply was posted on the thread
+
+No fix commit, push, or fix-SHA reply is required for rationale-replied threads — the rationale reply itself is the resolution reply.
 
 Do not resolve:
 
@@ -597,7 +603,7 @@ Do not resolve:
 - Threads where the fix failed validation
 - Threads where no fix-SHA reply AND no rationale reply has been posted (i.e., threads with zero self-authored resolution replies)
 
-Resolution is non-blocking: if `resolveReviewThread` mutation fails, log the failure and continue. The fix-SHA reply is the primary re-review gate.
+Resolution is non-blocking: if `resolveReviewThread` mutation fails, log the failure and continue. The fix-SHA reply is the primary re-review gate for fix-committed threads; the rationale reply serves that role for rejected/non-actionable threads.
 
 ## Escalation Boundaries
 
