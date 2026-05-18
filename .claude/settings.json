@@ -30,7 +30,8 @@
       "Bash(grep -rE *)",
       "Bash(cat > .agent-framework/*)",
       "Write(.agent-framework/review-loop/*)",
-      "Bash(mkdir -p .agent-framework/review-loop)"
+      "Bash(mkdir -p .agent-framework/review-loop)",
+      "Monitor"
     ]
   },
   "enabledPlugins": {
