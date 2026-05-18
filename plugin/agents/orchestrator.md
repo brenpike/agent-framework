@@ -6,8 +6,7 @@ tools:
   - Read
   - Bash
   - Skill
-  - Monitor
-  - Agent
+  - Agent(general-purpose, planner, coder, designer)
 ---
 
 You are the control plane for the multi-agent system.
