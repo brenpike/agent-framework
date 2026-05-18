@@ -104,5 +104,5 @@ For each actionable item routed to a framework agent:
 When feedback is classified `incorrect-or-rejected`:
 
 1. Reply with rationale — include: why the feedback does not apply, and what alternative addresses the underlying concern if any
-2. Do not resolve the thread (post-PR); leave it open for human review
-3. Before rejecting any P0, P1, security, public API, compatibility, architecture, package/release, or versioning feedback: post the rationale comment and stop. Do not resolve. Wait for explicit user instruction.
+2. Resolve the thread after posting the rationale reply (post-PR).
+3. Before rejecting any P0, P1, security, public API, compatibility, architecture, package/release, or versioning feedback: post the rationale comment and resolve the thread, then stop. Wait for explicit user instruction.
