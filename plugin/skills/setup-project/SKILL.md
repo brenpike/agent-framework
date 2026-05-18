@@ -8,6 +8,7 @@ allowed-tools:
   - Bash(test *)
   - Bash(mkdir -p *)
   - Bash(chmod +x *)
+  - Skill
 shell: bash
 ---
 
@@ -29,6 +30,7 @@ After:
 - [ ] `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`
 - [ ] `pluginConfigs` for caveman applied to `.claude/settings.json`
 - [ ] SubagentStart hook for caveman ultra configured
+- [ ] `agent-framework:bootstrap-context` invoked (or skipped in dry_run)
 
 # Setup Project
 
@@ -87,6 +89,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
     c. If the file already exists, report `already present` and skip.
     d. Ensure `.claude/settings.json` contains a `hooks.SubagentStart` entry pointing to `.claude/hooks/caveman-ultra-subagent.sh`. If already present, report `already present`. If absent, merge it into the settings JSON.
 11. Report which keys were added vs already present.
+12. Invoke `agent-framework:bootstrap-context` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). If `dry_run` = `yes`: skip invocation, report `context_bootstrap: skipped (dry_run)`. The skill has its own skip guard for existing files.
 
 ## Merge Rules
 
@@ -98,9 +101,9 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5
-- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, and `.claude/hooks/`
+- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, and files created by invoked skills (`agent-framework:bootstrap-context`)
 - commit, push, or otherwise touch git state
-- invoke other skills
+- invoke skills other than `agent-framework:bootstrap-context`
 - proceed if the project root cannot be resolved
 
 ## Output
@@ -133,6 +136,9 @@ keys_applied:
 - pluginConfigs["caveman@caveman"]: added | already present
 
 dry_run: yes | no
+
+context_bootstrap:
+- bootstrap-context: invoked | skipped (dry_run)
 
 conflicts:
 - [key]: existing value vs required value
