@@ -284,6 +284,7 @@ When intake detects `routing: pr-feedback-remediation` (per `${CLAUDE_PLUGIN_ROO
 
 Resolve the PR's head ref, base ref, and ensure the working tree is on the PR head:
 
+0. **PR-absent resolution:** When `pr: absent` (from intake): resolve PR number from the current branch via `gh pr list --head $(git branch --show-current) --state open --json number --jq '.[0].number'`. If resolved, update `pr: <N>` in Session facts and continue with step 1. If no open PR found: STOP with blocker — "No open PR found for the current branch. Specify a PR number or switch to the PR branch."
 1. `gh pr view <PR_NUMBER> --json headRefName,baseRefName,headRepositoryOwner --jq '{head: .headRefName, base: .baseRefName, headOwner: .headRepositoryOwner.login}'` — capture `<head_ref>`, `<base_ref>`, and `<head_owner>`.
 2. **Fork detection:** Compare `<head_owner>` against the base repo owner (`gh repo view --json owner --jq '.owner.login'`). If they differ: STOP with blocker — "PR #<N> is from a fork (<head_owner>). Automated remediation cannot push to fork remotes. Address review comments manually."
 3. **Pre-checkout safety:** Confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Unsafe git state). If unsafe (uncommitted changes, unmerged paths, in-progress rebase/merge/cherry-pick): STOP with blocker before switching branches.
@@ -309,7 +310,7 @@ task-type: bugfix
 claude-mem: <resolved>
 local-review: <resolved>
 routing: pr-feedback-remediation
-pr: <N>
+pr: <N> | absent  # absent resolved during Branch Resolution step 0
 working-branch: <head_ref>
 trunk: <base_ref>
 target: <comment URL or ID>  # optional; absent when user request does not reference a specific comment/thread
