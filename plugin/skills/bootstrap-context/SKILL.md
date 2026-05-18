@@ -61,7 +61,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    b. First `# ` heading in `README.md`
    c. `basename` of project root directory, with hyphens/underscores replaced by spaces, title-cased
 
-4. **Multi-context detection:** Scan for top-level directories that indicate bounded contexts: `services/`, `packages/`, `apps/`, `modules/`, `libs/`, `crates/`, `workspaces/`. For each found, check if it contains 2+ subdirectories with source files. If 2+ bounded context directories are detected, set `multi_context: true`. Otherwise `multi_context: false`.
+4. **Multi-context detection:** Scan for top-level directories that indicate bounded contexts, such as: `src/`, `services/`, `packages/`, `apps/`, `modules/`, `libs/`, `crates/`, `workspaces/`. For each found, check if it contains 2+ subdirectories with source files. If 2+ bounded context directories are detected, set `multi_context: true`. Otherwise `multi_context: false`.
 
 5. **Artifact discovery:** Read the following files if they exist (first 200 lines each to stay within budget):
    a. `CLAUDE.md` — project rules, architecture, conventions
