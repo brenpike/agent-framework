@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(git rev-parse *)
   - Bash(test *)
   - Bash(mkdir -p *)
+  - Skill
 shell: bash
 ---
 
@@ -25,6 +26,7 @@ After:
 - [ ] Existing keys preserved
 - [ ] Output uses lowercase snake_case field names
 - [ ] `.agent-framework/` entry ensured in `.gitignore`
+- [ ] `agent-framework:bootstrap-context` invoked (or skipped in dry_run)
 
 # Setup Project
 
@@ -71,6 +73,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    b. If `.gitignore` exists, read it. If it already contains `.agent-framework/` as a standalone line (trimmed), report `already present` and skip.
    c. Otherwise append `.agent-framework/` to the end of the file (prepend a blank line if the file does not end with a newline).
 9. Report which keys were added vs already present.
+10. Invoke `agent-framework:bootstrap-context` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). If `dry_run` = `yes`: skip invocation, report `context_bootstrap: skipped (dry_run)`. The skill has its own skip guard for existing files.
 
 ## Merge Rules
 
@@ -84,7 +87,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 - write any key not listed in step 5
 - modify project files outside `.claude/settings.json` and `.gitignore`
 - commit, push, or otherwise touch git state
-- invoke other skills
+- invoke skills other than `agent-framework:bootstrap-context`
 - proceed if the project root cannot be resolved
 
 ## Output
@@ -108,6 +111,9 @@ keys_applied:
 - enabledPlugins["codex@openai-codex"]: added | already present | not requested
 
 dry_run: yes | no
+
+context_bootstrap:
+- bootstrap-context: invoked | skipped (dry_run)
 
 conflicts:
 - [key]: existing value vs required value
