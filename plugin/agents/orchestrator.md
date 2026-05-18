@@ -353,7 +353,7 @@ Record resolved trunk and validation in `Session facts:` — reuse without re-re
 
 ## Execution Algorithm
 
-0. Intake — task-type classification, PR-feedback-remediation detection, local-review opt-out detection, claude-mem detection, pre-planning lookup. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0).
+0. Intake — task-type classification, PR-feedback-remediation detection, local-review opt-out detection, claude-mem detection, pre-planning lookup. Per `${CLAUDE_PLUGIN_ROOT}/governance/execution-algorithm-detail.md` (Step 0). Watch mode is detected when the user request contains `watch`, `monitor`, `wait`, `poll`, or `loop`.
 0a. If `routing: pr-feedback-remediation`: resolve PR branch, invoke github-reviewer directly (skip steps 1-14). Per PR Feedback Remediation Fast Path.
 1. Call planner via Agent tool unless trivial fast path applies.
 2. If planner fails, follow Tool-call error recovery.
