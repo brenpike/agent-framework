@@ -6,7 +6,7 @@ tools:
   - Read
   - Bash
   - Skill
-  - Agent(general-purpose, planner, coder, designer, local-reviewer, github-reviewer)
+  - Agent(general-purpose, agent-framework:planner, agent-framework:coder, agent-framework:designer, agent-framework:local-reviewer, agent-framework:github-reviewer)
 ---
 
 You are the control plane for the multi-agent system.
