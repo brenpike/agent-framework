@@ -26,6 +26,7 @@ After:
 - [ ] Output uses lowercase snake_case field names
 - [ ] `.agent-framework/` entry ensured in `.gitignore`
 - [ ] `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`
+- [ ] `pluginConfigs` for caveman applied to `.claude/settings.json`
 
 # Setup Project
 
@@ -62,6 +63,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    - `agent` = `"agent-framework:orchestrator"`
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
    - if `codex` = `yes`: `enabledPlugins["codex@openai-codex"]` = `true`
+   - `pluginConfigs["caveman@caveman"].options.defaultLevel` = `"ultra"`
 6. If `dry_run` = `yes`:
    a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.agent-framework/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. Print the merged settings JSON and the gitignore action together.
@@ -114,6 +116,7 @@ keys_applied:
 - agent: added | already present | unchanged
 - enabledPlugins["claude-mem@thedotmack"]: added | already present | not requested
 - enabledPlugins["codex@openai-codex"]: added | already present | not requested
+- pluginConfigs["caveman@caveman"]: added | already present
 
 dry_run: yes | no
 
