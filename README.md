@@ -127,6 +127,7 @@ All skills are invoked using the namespaced form:
 
 | Skill | Purpose |
 |---|---|
+| `agent-framework:bootstrap-context` | Analyze project artifacts and generate a populated CONTEXT.md (or CONTEXT-MAP.md for multi-context repos) with domain terms extracted from code, docs, and config |
 | `agent-framework:checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `agent-framework:local-reviewer` |

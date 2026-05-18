@@ -22,7 +22,6 @@
       "Bash(git stash show *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(for *)",
       "Bash(sed -n *)",
       "Bash(gh api user *)",
       "Bash(gh api graphql *)",

@@ -179,8 +179,8 @@ To distinguish: a `target` value that contains `github.com`, `pullrequestreview`
 Query PR status checks for failures:
 
 ```sh
-required_checks=$(gh pr checks <PR_NUMBER> --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
-check_output=$(gh pr checks <PR_NUMBER> --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | (.name | gsub("[\\t\\n\\r]"; " ")) + "\t" + .state + "\t" + .bucket + "\t" + ((.link // "") | gsub("[\\t\\n\\r]"; " ")) + "\t" + ((.description // "") | gsub("[\\t\\n\\r]"; " "))' 2>/dev/null)
+required_checks=$(gh pr checks <PR_NUMBER> --repo <OWNER>/<REPO> --required --json name --jq '.[].name' 2>/dev/null)
+check_output=$(gh pr checks <PR_NUMBER> --repo <OWNER>/<REPO> --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | (.name | gsub("[\\t\\n\\r]"; " ")) + "\t" + .state + "\t" + .bucket + "\t" + ((.link // "") | gsub("[\\t\\n\\r]"; " ")) + "\t" + ((.description // "") | gsub("[\\t\\n\\r]"; " "))' 2>/dev/null)
 check_status=$?
 # Exit-status semantics for gh pr checks:
 #   0 = all checks passed (check_output is empty — no failed checks, no candidates)
