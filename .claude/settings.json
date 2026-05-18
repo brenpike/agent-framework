@@ -38,5 +38,12 @@
     "claude-mem@thedotmack": true,
     "codex@openai-codex": true
   },
-  "agent": "agent-framework:orchestrator"
+  "agent": "agent-framework:orchestrator",
+  "pluginConfigs": {
+    "caveman@caveman": {
+      "options": {
+        "defaultLevel": "ultra"
+      }
+    }
+  }
 }
