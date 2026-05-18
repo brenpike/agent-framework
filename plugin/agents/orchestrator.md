@@ -284,10 +284,12 @@ When intake detects `routing: pr-feedback-remediation` (per `${CLAUDE_PLUGIN_ROO
 
 Resolve the PR's head ref, base ref, and ensure the working tree is on the PR head:
 
-1. `gh pr view <PR_NUMBER> --json headRefName,baseRefName --jq '{head: .headRefName, base: .baseRefName}'` — capture `<head_ref>` and `<base_ref>`.
-2. Pre-checkout safety: confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Unsafe git state). If unsafe (uncommitted changes, unmerged paths, in-progress rebase/merge/cherry-pick): STOP with blocker before switching branches.
-3. `gh pr checkout --force <PR_NUMBER>` — fetch the PR head from the remote and force-reset the local branch to match. The `--force` flag ensures that even when a stale or diverged local branch with the same name already exists, it is reset to the latest PR head rather than preserving outdated local state.
-4. Post-checkout verification: confirm git state is not unsafe after checkout. If unsafe: STOP with blocker.
+1. `gh pr view <PR_NUMBER> --json headRefName,baseRefName,headRepositoryOwner --jq '{head: .headRefName, base: .baseRefName, headOwner: .headRepositoryOwner.login}'` — capture `<head_ref>`, `<base_ref>`, and `<head_owner>`.
+2. **Fork detection:** Compare `<head_owner>` against the base repo owner (`gh repo view --json owner --jq '.owner.login'`). If they differ: STOP with blocker — "PR #<N> is from a fork (<head_owner>). Automated remediation cannot push to fork remotes. Address review comments manually."
+3. **Pre-checkout safety:** Confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Unsafe git state). If unsafe (uncommitted changes, unmerged paths, in-progress rebase/merge/cherry-pick): STOP with blocker before switching branches.
+4. **Unpushed commits guard:** If the branch `<head_ref>` already exists locally (`git show-ref --verify --quiet refs/heads/<head_ref>`), check for unpushed commits: `git rev-list --count origin/<head_ref>..<head_ref> 2>/dev/null`. If count > 0: STOP with blocker — "Branch <head_ref> has <N> unpushed local commit(s) that would be lost by --force checkout. Push or stash them first." If `origin/<head_ref>` does not exist as a tracking ref (command fails): STOP with blocker — "Cannot determine remote state for <head_ref>. Fetch or verify remote tracking."
+5. `gh pr checkout --force <PR_NUMBER>` — fetch the PR head from the remote and force-reset the local branch to match. The `--force` flag ensures that even when a stale or diverged local branch with the same name already exists, it is reset to the latest PR head rather than preserving outdated local state.
+6. **Post-checkout verification:** Confirm git state is not unsafe after checkout. If unsafe: STOP with blocker.
 
 ### github-reviewer Invocation
 
