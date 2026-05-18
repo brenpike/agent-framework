@@ -576,8 +576,8 @@ When feedback is classified `incorrect-or-rejected` with `severity_category: hig
 
 1. Post rationale reply on the thread/comment.
 2. Resolve the thread after posting the rationale reply.
-3. STOP immediately. Return `exit_reason: high-severity-rejection` with `candidate_url` and `rationale_text`.
-4. The orchestrator awaits explicit user approval before continuing.
+3. Record in `deferred_escalations` with `exit_reason: high-severity-rejection`, `candidate_url`, and `rationale_text`. Continue processing remaining candidates.
+4. After all candidates are processed, if `deferred_escalations` is non-empty, return with the highest-priority deferred escalation. The orchestrator awaits explicit user approval before continuing.
 
 ## Thread Resolution Rules
 
