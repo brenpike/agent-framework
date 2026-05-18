@@ -34,6 +34,7 @@
       "Bash(grep -n *)",
       "Bash(grep -rn *)",
       "Bash(grep -rE *)",
+      "Bash(printf *)",
       "Bash(cat > .agent-framework/*)",
       "Write(.agent-framework/review-loop/*)",
       "Bash(mkdir -p .agent-framework/review-loop)",
