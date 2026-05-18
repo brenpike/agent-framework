@@ -173,8 +173,6 @@ intake-complete, planner-returned, git-preflight-complete, create-working-branch
 
 Classify per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Transient failure).
 
-**Monitor exception:** handled by Monitor Use rule (one manual check → `Monitoring: not active`). Skip generic retry.
-
 **Classification:** Read-only = Read, read-only Bash, `agent-framework:planner`. Mutating = coder/designer Agent calls, all other Agents, all Skills, state-modifying Bash. Mutating calls: never auto-retry → blocked with `non-retryable-mutating`.
 
 **Transient** (read-only only): retry once immediately. Retry fails → blocked `transient-exhausted` or `unclassifiable-exhausted`. Unclassifiable errors are retryable (one read-only retry costs less than stalling).
@@ -352,14 +350,6 @@ Include chosen tier as `Model:` in every delegation.
 Before implementation, explicitly establish: work classification (`feature|bugfix|hotfix|refactor|chore|docs|test|ci`), base branch, trunk freshness (fetch + divergence check), working branch name, branch exists vs create, worktree yes/no, checkpoint commit policy, PR target.
 
 Record resolved trunk and validation in `Session facts:` — reuse without re-resolution. If any are undefined, do not begin implementation. Full detail: `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
-
-## Monitor Use
-
-Use Monitor only when user request contains: `watch`, `monitor`, `wait`, `poll`, or `loop`. Commands must be read-only, deterministic, bounded, and parser-stable.
-
-On non-zero exit, startup error, or first-poll parser failure: run one manual check with the same command, then report `Monitoring: not active`. No second Monitor with a different parser unless user approves.
-
-Note: Monitor-based PR watching is owned by `agent-framework:github-reviewer` (watch mode). The orchestrator invokes the agent; the agent manages its own Monitor lifecycle.
 
 ## Execution Algorithm
 
