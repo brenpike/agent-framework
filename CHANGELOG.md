@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.8.1] - 2026-05-18
+
+### Fixed
+
+- Resolve rejected review threads after posting rationale reply instead of leaving them open — rejected threads now follow the same reply-then-resolve pattern as fixed threads (`question-needs-user-input` threads remain unresolved)
+- Add cross-thread scope boundary to fix-SHA skip rule preventing the agent from confusing different threads about similar topics on the same file
+
 ## [1.6.5] - 2026-05-16
 
 ### Fixed
