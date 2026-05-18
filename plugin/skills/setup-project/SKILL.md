@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(git rev-parse *)
   - Bash(test *)
   - Bash(mkdir -p *)
+  - Bash(chmod +x *)
 shell: bash
 ---
 
@@ -27,6 +28,7 @@ After:
 - [ ] `.agent-framework/` entry ensured in `.gitignore`
 - [ ] `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`
 - [ ] `pluginConfigs` for caveman applied to `.claude/settings.json`
+- [ ] SubagentStart hook for caveman ultra configured
 
 # Setup Project
 
@@ -79,7 +81,12 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    a. If `<project root>/.envrc` does not exist, create it with a single line `export CAVEMAN_DEFAULT_MODE=ultra`.
    b. If `.envrc` exists, read it. If it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`), report `already present` and skip. Lines starting with `#` (after trimming) are not active.
    c. Otherwise append `export CAVEMAN_DEFAULT_MODE=ultra` to the end of the file (prepend a newline if the file does not end with one).
-10. Report which keys were added vs already present.
+10. Ensure the SubagentStart hook for caveman ultra mode is configured:
+    a. Create `<project root>/.claude/hooks/` directory if it does not exist (`mkdir -p`).
+    b. If `<project root>/.claude/hooks/caveman-ultra-subagent.sh` does not exist, create it with the caveman ultra SubagentStart hook script content and make it executable (`chmod +x`).
+    c. If the file already exists, report `already present` and skip.
+    d. Ensure `.claude/settings.json` contains a `hooks.SubagentStart` entry pointing to `.claude/hooks/caveman-ultra-subagent.sh`. If already present, report `already present`. If absent, merge it into the settings JSON.
+11. Report which keys were added vs already present.
 
 ## Merge Rules
 
@@ -91,7 +98,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5
-- modify project files outside `.claude/settings.json`, `.gitignore`, and `.envrc`
+- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, and `.claude/hooks/`
 - commit, push, or otherwise touch git state
 - invoke other skills
 - proceed if the project root cannot be resolved
@@ -112,6 +119,10 @@ gitignore:
 
 envrc:
 - .envrc: created | updated | already present | would-create | would-append | skipped (dry_run)
+
+hooks:
+- .claude/hooks/caveman-ultra-subagent.sh: created | already present
+- hooks.SubagentStart in settings.json: added | already present
 
 keys_applied:
 - enabledPlugins["agent-framework@brenpike"]: added | already present

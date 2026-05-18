@@ -55,5 +55,17 @@
         "defaultLevel": "ultra"
       }
     }
+  },
+  "hooks": {
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/caveman-ultra-subagent.sh"
+          }
+        ]
+      }
+    ]
   }
 }
