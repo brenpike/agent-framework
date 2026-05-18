@@ -5,7 +5,6 @@ model: claude-opus-4-6
 tools:
   - Read
   - Write
-  - Edit
   - Bash
   - Glob
   - Grep
