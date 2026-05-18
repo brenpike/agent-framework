@@ -8,7 +8,7 @@ tools:
   - Bash
   - Glob
   - Grep
-  - Agent(general-purpose, coder, designer)
+  - Agent(general-purpose, agent-framework:coder, agent-framework:designer)
   - Skill
   - Monitor
 ---
