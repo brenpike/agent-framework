@@ -25,6 +25,7 @@ After:
 - [ ] Existing keys preserved
 - [ ] Output uses lowercase snake_case field names
 - [ ] `.agent-framework/` entry ensured in `.gitignore`
+- [ ] `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`
 
 # Setup Project
 
@@ -70,7 +71,11 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    a. If `<project root>/.gitignore` does not exist, create it with a single line `.agent-framework/`.
    b. If `.gitignore` exists, read it. If it already contains `.agent-framework/` as a standalone line (trimmed), report `already present` and skip.
    c. Otherwise append `.agent-framework/` to the end of the file (prepend a blank line if the file does not end with a newline).
-9. Report which keys were added vs already present.
+9. Ensure `.envrc` contains `export CAVEMAN_DEFAULT_MODE=ultra`:
+   a. If `<project root>/.envrc` does not exist, create it with a single line `export CAVEMAN_DEFAULT_MODE=ultra`.
+   b. If `.envrc` exists, read it. If it already contains `CAVEMAN_DEFAULT_MODE=ultra` as a substring of any line, report `already present` and skip.
+   c. Otherwise append `export CAVEMAN_DEFAULT_MODE=ultra` to the end of the file (prepend a newline if the file does not end with one).
+10. Report which keys were added vs already present.
 
 ## Merge Rules
 
@@ -82,7 +87,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5
-- modify project files outside `.claude/settings.json` and `.gitignore`
+- modify project files outside `.claude/settings.json`, `.gitignore`, and `.envrc`
 - commit, push, or otherwise touch git state
 - invoke other skills
 - proceed if the project root cannot be resolved
@@ -100,6 +105,9 @@ target_file:
 
 gitignore:
 - .gitignore: created | updated | already present | skipped (dry_run)
+
+envrc:
+- .envrc: created | updated | already present
 
 keys_applied:
 - enabledPlugins["agent-framework@brenpike"]: added | already present
