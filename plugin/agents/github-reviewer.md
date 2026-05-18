@@ -495,7 +495,8 @@ After classifying all new items from a single poll:
 1. Process all simple-fix items in severity order (delegate coder/designer at sonnet). Track `fixes_applied_this_cycle`: increment only when a coder/designer delegation returns `complete` with file changes. Track `delegations_blocked`: increment when a coder/designer delegation returns `blocked`.
 2. **Guard:**
    - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0`: do NOT mark blocked items as handled in the state ledger. Skip validation, checkpoint commit, push, and reply/resolve. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
-   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` (genuinely no actionable items — all were non-actionable, rejected, or escalated): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Continue to the next poll cycle. An empty poll never triggers `exit_reason: clean` — only terminal Monitor events (`STATE=MERGED`, `STATE=CLOSED`, `WATCH_TIMEOUT`) end the watch loop.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND there are no rationale-replied candidates (no `incorrect-or-rejected` or `non-actionable` items that received a rationale reply during routing): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Continue to the next poll cycle. An empty poll never triggers `exit_reason: clean` — only terminal Monitor events (`STATE=MERGED`, `STATE=CLOSED`, `WATCH_TIMEOUT`) end the watch loop.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND there are rationale-replied candidates (`incorrect-or-rejected` at any severity or `non-actionable` with rationale replies posted during routing): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, or push (steps 3–5). Still run the post-fix reply and resolve step (step 6, same as Fix Mode Step 10) for thread resolution of the rationale-replied candidates. Continue to the next poll cycle after resolution completes.
 3. Validate (same as Fix Mode Step 7)
 4. Checkpoint commit (same as Fix Mode Step 8)
 5. Pre-push safety check and push (same as Fix Mode Step 9)
@@ -587,6 +588,8 @@ Resolve review threads only after ALL of:
 - Fix is pushed
 - Validation passed (or explicitly reported as not run)
 - Fix-SHA reply was posted on the thread
+
+OR when the thread received a rationale reply (`incorrect-or-rejected` or `non-actionable` classification with rationale already posted) — no fix commit, push, or fix-SHA reply is required for rationale-replied threads.
 
 Do not resolve:
 
