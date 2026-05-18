@@ -313,7 +313,7 @@ After each delegation:
 - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0` AND `deferred_escalations` is empty: skip Steps 7–10. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
 - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0` AND `deferred_escalations` is non-empty: skip Steps 7–10. Return with the highest-priority deferred escalation (see priority order below).
 - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty AND there are no rationale-replied candidates: skip Steps 7–10. Go directly to Step 11 and return `exit_reason: clean` with `findings_resolved` / `findings_open` counts reflecting the classified-but-not-fixed items.
-- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty AND there are rationale-replied candidates (standard-severity `incorrect-or-rejected` or `non-actionable` with replies posted in Step 6): skip Steps 7–9. Proceed to Step 10 for thread resolution of the rationale-replied candidates, then go to Step 11.
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty AND there are rationale-replied candidates (`incorrect-or-rejected` at any severity or `non-actionable` with rationale replies posted in Step 6): skip Steps 7–9. Proceed to Step 10 for thread resolution of the rationale-replied candidates, then go to Step 11.
 - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is non-empty (all items are escalation-class, zero simple fixes) AND there are no rationale-replied candidates: skip Steps 7–10. Return with the highest-priority deferred escalation.
 - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is non-empty AND there are rationale-replied candidates: skip Steps 7–9. Proceed to Step 10 for thread resolution of the rationale-replied candidates, then return with the highest-priority deferred escalation.
 - If `fixes_applied_this_cycle > 0`: proceed to Steps 7–10 (validate, commit, push, reply-resolve for fixed items and rationale-replied candidates). After Step 10 completes, if `deferred_escalations` is non-empty, return with the highest-priority deferred escalation. If `deferred_escalations` is empty, go to Step 11 (normal return).
@@ -351,7 +351,7 @@ git push origin <working_branch>
 
 ### Step 10: Post-Fix Reply and Resolve
 
-For each resolved candidate (in the order they were fixed) AND each candidate that received a rationale reply in Step 6 (standard-severity `incorrect-or-rejected` and `non-actionable` items whose rationale reply was posted):
+For each resolved candidate (in the order they were fixed) AND each candidate that received a rationale reply in Step 6 (`incorrect-or-rejected` at any severity and `non-actionable` items whose rationale reply was posted in Step 6):
 
 1. **Post fix-SHA reply** (skip for rationale-replied candidates — rationale reply was already posted in Step 6). Reply mechanism by source:
    - Inline review thread: `addPullRequestReviewThreadReply` GraphQL mutation (requires `thread_id`)
