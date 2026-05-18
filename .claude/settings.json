@@ -25,18 +25,48 @@
       "Bash(sed -n *)",
       "Bash(gh api user *)",
       "Bash(gh api graphql *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr checkout *)",
+      "Bash(gh repo view *)",
       "Bash(grep -n *)",
       "Bash(grep -rn *)",
       "Bash(grep -rE *)",
+      "Bash(printf 'branch: *)",
+      "Bash(printf 'url: *)",
+      "Bash(printf 'blocker: *)",
       "Bash(cat > .agent-framework/*)",
       "Write(.agent-framework/review-loop/*)",
-      "Bash(mkdir -p .agent-framework/review-loop)"
+      "Bash(mkdir -p .agent-framework/review-loop)",
+      "Monitor"
     ]
   },
   "enabledPlugins": {
     "agent-framework@brenpike": true,
+    "caveman@caveman": true,
     "claude-mem@thedotmack": true,
     "codex@openai-codex": true
   },
-  "agent": "agent-framework:orchestrator"
+  "agent": "agent-framework:orchestrator",
+  "pluginConfigs": {
+    "caveman@caveman": {
+      "options": {
+        "defaultLevel": "ultra"
+      }
+    }
+  },
+  "hooks": {
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/caveman-ultra-subagent.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

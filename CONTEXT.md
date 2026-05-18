@@ -23,11 +23,11 @@ A modifying agent that owns presentational markup, styling, and static accessibi
 _Avoid_: UI agent, stylist
 
 **Local-Reviewer**:
-The agent that runs pre-PR Codex review in a loop, classifies findings, and delegates simple fixes before the PR is opened.
+The agent that runs pre-PR Codex review in a loop, classifies findings, and reports terminal results to the orchestrator before the PR is opened.
 _Avoid_: linter, pre-check
 
 **GitHub-Reviewer**:
-The agent that monitors or processes post-PR review feedback, classifies comments, and delegates remediation.
+The agent that monitors or processes post-PR review feedback, classifies comments, and reports terminal results to the orchestrator.
 _Avoid_: PR bot, review handler
 
 ### Execution

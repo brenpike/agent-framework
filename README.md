@@ -68,6 +68,12 @@ Once configured, the orchestrator is the session default agent. All skills are a
   ```
   When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `agent-framework:local-codex-review`) and post-PR review automation via the `github-reviewer` agent (a self-owning agent that handles monitoring, feedback classification, fix delegation, and thread resolution). `agent-framework:request-github-codex-review` is available for ad-hoc Codex review requests outside the automated flow. The framework works without it; if not installed, local review steps are skipped gracefully.
 
+- [`caveman`](https://github.com/caveman/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
+  ```json
+  "enabledPlugins": { "caveman@caveman": true },
+  "pluginConfigs": { "caveman@caveman": { "options": { "defaultLevel": "ultra" } } }
+  ```
+
 ## After cloning a project that uses this plugin
 
 ```text
@@ -121,6 +127,7 @@ All skills are invoked using the namespaced form:
 
 | Skill | Purpose |
 |---|---|
+| `agent-framework:bootstrap-context` | Analyze project artifacts and generate a populated CONTEXT.md (or CONTEXT-MAP.md for multi-context repos) with domain terms extracted from code, docs, and config |
 | `agent-framework:checkpoint-commit` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `agent-framework:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `agent-framework:local-reviewer` |
@@ -129,6 +136,7 @@ All skills are invoked using the namespaced form:
 | `agent-framework:request-github-codex-review` | Request Codex review on an existing pushed PR |
 | `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.agent-framework/` to `.gitignore` |
 | `agent-framework:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `agent-framework:coder` context only |
+| `agent-framework:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
 
 ## Governance
 
