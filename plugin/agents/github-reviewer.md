@@ -483,7 +483,7 @@ After classifying all new items from a single poll:
 1. Process all simple-fix items in severity order (delegate coder/designer at sonnet). Track `fixes_applied_this_cycle`: increment only when a coder/designer delegation returns `complete` with file changes. Track `delegations_blocked`: increment when a coder/designer delegation returns `blocked`.
 2. **Guard:**
    - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0`: do NOT mark blocked items as handled in the state ledger. Skip validation, checkpoint commit, push, and reply/resolve. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
-   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` (genuinely no actionable items — all were non-actionable, rejected, or escalated): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Skip to the next poll cycle (continue watching) or return `exit_reason: clean` if no actionable items remain.
+   - If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` (genuinely no actionable items — all were non-actionable, rejected, or escalated): mark non-actionable/rejected items as handled in the state ledger. Do not run validation, checkpoint commit, push, or reply/resolve. Continue to the next poll cycle. An empty poll never triggers `exit_reason: clean` — only terminal Monitor events (`STATE=MERGED`, `STATE=CLOSED`, `WATCH_TIMEOUT`) end the watch loop.
 3. Validate (same as Fix Mode Step 7)
 4. Checkpoint commit (same as Fix Mode Step 8)
 5. Pre-push safety check and push (same as Fix Mode Step 9)
