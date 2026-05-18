@@ -282,19 +282,18 @@ When intake detects `routing: pr-feedback-remediation` (per `${CLAUDE_PLUGIN_ROO
 
 ### Branch Resolution
 
-Resolve the PR's head ref and ensure the working tree is on it:
+Resolve the PR's head ref, base ref, and ensure the working tree is on the PR head:
 
-1. `gh pr view <PR_NUMBER> --json headRefName --jq .headRefName` — capture `<head_ref>`.
-2. `git fetch origin <head_ref>` — ensure local tracking is current.
-3. `git checkout <head_ref>` — switch to the PR's working branch.
-4. If checkout fails or git state is unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Unsafe git state): STOP with blocker.
+1. `gh pr view <PR_NUMBER> --json headRefName,baseRefName --jq '{head: .headRefName, base: .baseRefName}'` — capture `<head_ref>` and `<base_ref>`.
+2. `gh pr checkout <PR_NUMBER>` — fetch the PR head from the remote and switch to it. This ensures the local branch tracks the remote PR head correctly, even when a stale local branch with the same name already exists.
+3. If checkout fails or git state is unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Unsafe git state): STOP with blocker.
 
 ### github-reviewer Invocation
 
 Invoke per the existing contracts in Reviewer Delegation above. Pass:
 
-- **Fix mode** (STT row 2): `mode: fix`, `pr: <N>`, `working_branch: <head_ref>`, `base: <resolved trunk>`.
-- **Watch mode** (STT row 1): `mode: watch`, `pr: <N>`, `working_branch: <head_ref>`, `base: <resolved trunk>`, `reviewer_filter: all`, `max_watch_duration: 14400`, `max_remediation_cycles: 3`.
+- **Fix mode** (STT row 2): `mode: fix`, `pr: <N>`, `working_branch: <head_ref>`, `base: <base_ref>`.
+- **Watch mode** (STT row 1): `mode: watch`, `pr: <N>`, `working_branch: <head_ref>`, `base: <base_ref>`, `reviewer_filter: all`, `max_watch_duration: 14400`, `max_remediation_cycles: 3`.
 
 ### Return Handling
 
@@ -309,7 +308,7 @@ local-review: <resolved>
 routing: pr-feedback-remediation
 pr: <N>
 working-branch: <head_ref>
-trunk: <resolved trunk>
+trunk: <base_ref>
 ```
 
 ## Planner-First Rule
