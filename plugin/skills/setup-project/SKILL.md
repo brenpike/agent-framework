@@ -25,6 +25,8 @@ After:
 - [ ] Existing keys preserved
 - [ ] Output uses lowercase snake_case field names
 - [ ] `.agent-framework/` entry ensured in `.gitignore`
+- [ ] `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`
+- [ ] `pluginConfigs` for caveman applied to `.claude/settings.json`
 
 # Setup Project
 
@@ -59,18 +61,25 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 5. Merge required keys, preserving every existing key the user already had:
    - `enabledPlugins["agent-framework@brenpike"]` = `true`
    - `agent` = `"agent-framework:orchestrator"`
+   - `enabledPlugins["caveman@caveman"]` = `true`
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
    - if `codex` = `yes`: `enabledPlugins["codex@openai-codex"]` = `true`
+   - `pluginConfigs["caveman@caveman"].options.defaultLevel` = `"ultra"`
 6. If `dry_run` = `yes`:
    a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.agent-framework/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
-   b. Print the merged settings JSON and the gitignore action together.
-   c. Stop without writing any files.
+   b. Determine the `.envrc` action that would be taken: check whether `<project root>/.envrc` exists and whether it contains an active (non-commented) line matching `export CAVEMAN_DEFAULT_MODE=ultra` (the same check used in step 9b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
+   c. Print the merged settings JSON, the gitignore action, and the envrc action together.
+   d. Stop without writing any files.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
 8. Ensure `.agent-framework/` is listed in the project's `.gitignore`:
    a. If `<project root>/.gitignore` does not exist, create it with a single line `.agent-framework/`.
    b. If `.gitignore` exists, read it. If it already contains `.agent-framework/` as a standalone line (trimmed), report `already present` and skip.
    c. Otherwise append `.agent-framework/` to the end of the file (prepend a blank line if the file does not end with a newline).
-9. Report which keys were added vs already present.
+9. Ensure `.envrc` contains `export CAVEMAN_DEFAULT_MODE=ultra`:
+   a. If `<project root>/.envrc` does not exist, create it with a single line `export CAVEMAN_DEFAULT_MODE=ultra`.
+   b. If `.envrc` exists, read it. If it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`), report `already present` and skip. Lines starting with `#` (after trimming) are not active.
+   c. Otherwise append `export CAVEMAN_DEFAULT_MODE=ultra` to the end of the file (prepend a newline if the file does not end with one).
+10. Report which keys were added vs already present.
 
 ## Merge Rules
 
@@ -82,7 +91,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5
-- modify project files outside `.claude/settings.json` and `.gitignore`
+- modify project files outside `.claude/settings.json`, `.gitignore`, and `.envrc`
 - commit, push, or otherwise touch git state
 - invoke other skills
 - proceed if the project root cannot be resolved
@@ -101,11 +110,16 @@ target_file:
 gitignore:
 - .gitignore: created | updated | already present | skipped (dry_run)
 
+envrc:
+- .envrc: created | updated | already present | skipped (dry_run)
+
 keys_applied:
 - enabledPlugins["agent-framework@brenpike"]: added | already present
 - agent: added | already present | unchanged
+- enabledPlugins["caveman@caveman"]: added | already present
 - enabledPlugins["claude-mem@thedotmack"]: added | already present | not requested
 - enabledPlugins["codex@openai-codex"]: added | already present | not requested
+- pluginConfigs["caveman@caveman"]: added | already present
 
 dry_run: yes | no
 
