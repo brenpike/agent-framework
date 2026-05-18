@@ -87,14 +87,14 @@ The github-reviewer agent owns the entire remediation lifecycle internally (Moni
 
 Handle terminal return per STT rows 59-67:
 - `exit: clean` → Final Report. Note: `clean` means both review feedback and PR status checks are resolved (or no actionable items existed).
-- `exit: max-cycles-reached` → STOP: surface summary of remaining open items.
+- `exit: max-cycles-reached` → STOP: surface summary of remaining open items. On user continue: re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API).
 - `exit: pr-merged` → Final Report.
 - `exit: pr-closed` → Final Report.
-- `exit: injection-suspect` → STOP: surface finding details.
-- `exit: user-input-required` → STOP: surface finding.
+- `exit: injection-suspect` → STOP: surface finding details. On user approval to proceed: re-invoke github-reviewer fresh.
+- `exit: user-input-required` → STOP: surface finding. On user response: re-invoke github-reviewer fresh.
 - `exit: planner-escalation` → delegate planner (opus) for remediation plan → delegate per plan (coder or designer, opus) to implement → verify → validate → checkpoint → push → re-invoke github-reviewer fresh (new invocation — resolved threads filtered by API).
-- `exit: high-severity-rejection` → STOP: await explicit user approval (rationale already posted by the reviewer agent).
-- `blocked` → STOP: surface blocker.
+- `exit: high-severity-rejection` → STOP: await explicit user approval (rationale already posted by the reviewer agent). On approval: re-invoke github-reviewer fresh.
+- `blocked` → STOP: surface blocker. On resolution: re-invoke github-reviewer fresh.
 
 ### Ad-Hoc Path: Explicit Codex Review Request
 

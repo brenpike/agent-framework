@@ -139,14 +139,14 @@ After every step-completion milestone (any event producing an after= token), fin
 | 57 | open-plan-pr-complete | blocked | STOP: surface blocker |
 | 58 | pr-skipped | user opted out of PR | Final Report |
 | 59 | github-reviewer-returned | exit: clean | Final Report |
-| 60 | github-reviewer-returned | exit: max-cycles-reached | STOP: surface summary |
+| 60 | github-reviewer-returned | exit: max-cycles-reached | STOP: surface summary → on user continue: re-invoke github-reviewer (fresh) |
 | 61 | github-reviewer-returned | exit: pr-merged | Final Report |
 | 62 | github-reviewer-returned | exit: pr-closed | Final Report |
-| 63 | github-reviewer-returned | exit: injection-suspect | STOP: surface finding details |
-| 64 | github-reviewer-returned | exit: user-input-required | STOP: surface finding |
+| 63 | github-reviewer-returned | exit: injection-suspect | STOP: surface finding details → on user approval: re-invoke github-reviewer (fresh) |
+| 64 | github-reviewer-returned | exit: user-input-required | STOP: surface finding → on user response: re-invoke github-reviewer (fresh) |
 | 65 | github-reviewer-returned | exit: planner-escalation | delegate planner → route per plan (coder or designer, opus) → verify → validate → checkpoint → push → re-invoke github-reviewer (fresh) |
-| 66 | github-reviewer-returned | exit: high-severity-rejection | STOP: await user approval (rationale already posted by reviewer) |
-| 67 | github-reviewer-returned | blocked | STOP: surface blocker |
+| 66 | github-reviewer-returned | exit: high-severity-rejection | STOP: await user approval → on approval: re-invoke github-reviewer (fresh) |
+| 67 | github-reviewer-returned | blocked | STOP: surface blocker → on resolution: re-invoke github-reviewer (fresh) |
 | 68 | request-github-codex-review-complete | succeeded, watch requested | invoke github-reviewer (watch mode) |
 | 69 | request-github-codex-review-complete | succeeded, no watch | Final Report |
 | 70 | request-github-codex-review-complete | blocked | STOP: surface blocker |
