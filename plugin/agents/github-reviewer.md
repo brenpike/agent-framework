@@ -106,6 +106,7 @@ pattern_category: <P1-P4>  # when exit_reason is injection-suspect
 blocker_reason: <text>  # when exit_reason is blocked
 blocked_candidates: [<URL>, ...]  # when exit_reason is blocked and blocker_reason is actionable delegation blocked
 rationale_text: <text>  # when exit_reason is high-severity-rejection
+deferred_escalation_items: [<URL>, ...]  # when exit_reason is an escalation type AND findings_resolved > 0
 ```
 
 ## Continuous Execution Rule
@@ -245,19 +246,23 @@ Derive `severity_category`: if classified `incorrect-or-rejected`, check whether
 
 ### Step 6: Route and Fix
 
-Initialize `fixes_applied_this_cycle = 0` and `delegations_blocked = 0`.
+Initialize `fixes_applied_this_cycle = 0`, `delegations_blocked = 0`, and `deferred_escalations = []`.
 
 Process candidates in severity order (P0 first, then P1, P2, P3). Apply routing per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/review-classification-taxonomy.md` (Routing Table):
 
-**Escalation exits (return immediately):**
+**Deferred escalation routing:**
 
-- `architecture-or-contract-concern` or `version-or-release-concern`: return `exit_reason: planner-escalation`, `escalation_target: planner`, `candidate_url`.
-- `question-needs-user-input`: return `exit_reason: user-input-required`, `candidate_url`.
-- Any `actionable-*` whose Smallest correct fix would touch files in more than one planner step or more than 2 files or alters public API/contracts/architecture: return `exit_reason: planner-escalation`.
+When a candidate classifies as an escalation-class item, do NOT return immediately. Instead, record it in `deferred_escalations` with its `candidate_url` and `exit_reason` type, then continue to the next candidate:
+
+- `architecture-or-contract-concern` or `version-or-release-concern`: record with `exit_reason: planner-escalation`, `escalation_target: planner`.
+- `question-needs-user-input`: record with `exit_reason: user-input-required`.
+- Any `actionable-*` whose Smallest correct fix would touch files in more than one planner step or more than 2 files or alters public API/contracts/architecture: record with `exit_reason: planner-escalation`.
+
+Exception: `injection-suspect` remains immediate-exit (handled in Step 4 before routing begins).
 
 **High-severity rejection:**
 
-- `incorrect-or-rejected` with `severity_category: high`: post rationale reply on the thread, then return `exit_reason: high-severity-rejection`, `candidate_url`, `rationale_text`.
+- `incorrect-or-rejected` with `severity_category: high`: post rationale reply on the thread. Record in `deferred_escalations` with `exit_reason: high-severity-rejection`, `candidate_url`, `rationale_text`. Continue to next candidate.
 
 **Non-high-severity rejection:**
 
@@ -305,8 +310,13 @@ After each delegation:
 3. If delegation returned blocked: increment `delegations_blocked`. Record and continue to next candidate.
 
 **Guard:**
-- If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0`: skip Steps 7–10. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
-- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` (genuinely no actionable items — all were non-actionable, rejected, or escalated): skip Steps 7–10. Go directly to Step 11 and return `exit_reason: clean` with `findings_resolved` / `findings_open` counts reflecting the classified-but-not-fixed items.
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0` AND `deferred_escalations` is empty: skip Steps 7–10. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0` AND `deferred_escalations` is non-empty: skip Steps 7–10. Return with the highest-priority deferred escalation (see priority order below).
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty: skip Steps 7–10. Go directly to Step 11 and return `exit_reason: clean` with `findings_resolved` / `findings_open` counts reflecting the classified-but-not-fixed items.
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is non-empty (all items are escalation-class, zero simple fixes): skip Steps 7–10. Return with the highest-priority deferred escalation.
+- If `fixes_applied_this_cycle > 0`: proceed to Steps 7–10 (validate, commit, push, reply-resolve for fixed items). After Step 10 completes, if `deferred_escalations` is non-empty, return with the highest-priority deferred escalation. If `deferred_escalations` is empty, go to Step 11 (normal return).
+
+**Deferred escalation priority order:** `high-severity-rejection` > `user-input-required` > `planner-escalation`. When returning with a deferred escalation: use the winning item's conditional fields (`candidate_url`, `escalation_target`, `rationale_text` as appropriate). Set `findings_resolved` to count items fixed this cycle. Set `findings_open` to count deferred-escalation items plus any other unfixed items. If multiple items were deferred, include all their URLs in `deferred_escalation_items`.
 
 ### Step 7: Validate
 
@@ -502,7 +512,11 @@ Per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions — S
 
 **Escalation during watch:**
 
-When any item classifies as planner-escalation, user-input-required, or high-severity-rejection: signal Monitor to stop via `touch <STOP_FILE>`, then return with the appropriate `exit_reason`.
+When any item in a poll cycle classifies as planner-escalation, user-input-required, or high-severity-rejection: record it in `deferred_escalations` (same as Fix Mode). Complete the batch remediation cycle for all simple-fix items in the same poll. After the cycle's reply-resolve step (step 6 of batch remediation): signal Monitor to stop via `touch <STOP_FILE>`, then return with the highest-priority deferred escalation using the same priority order and Output Contract fields as Fix Mode.
+
+Exception: `injection-suspect` still signals Monitor to stop immediately (unchanged — security boundary).
+
+If the poll cycle contains ONLY escalation-class items (zero simple-fix candidates): signal Monitor to stop immediately and return with the highest-priority deferred escalation (no deferral benefit).
 
 ### Step 4: Return
 
@@ -582,7 +596,7 @@ Resolution is non-blocking: if `resolveReviewThread` mutation fails, log the fai
 
 ## Escalation Boundaries
 
-Return to orchestrator (exit immediately) when any of:
+Return to orchestrator when any of the following conditions are met. Non-security escalations (`planner-escalation`, `user-input-required`, `high-severity-rejection`) are deferred until after simple fixes in the same batch are processed — see Step 6 (Deferred escalation routing). `injection-suspect` remains immediate-exit.
 
 | exit_reason | Trigger |
 |---|---|
@@ -649,6 +663,7 @@ Track session-local:
 - Current Monitor status
 - Failed check names (with fix SHA when remediated)
 - Check remediation status (fix-pushed-awaiting-rerun, confirmed-pass, still-failing)
+- Items with deferred-escalation status (exit_reason type, candidate URL)
 - `check_poll_failed: true` when Step 2a exits with a genuine CLI/auth/permission error (exit >1 and ≠8) — prevents `exit_reason: clean` at Step 11
 
 Do not reprocess the same item unless new activity appears on its thread.
