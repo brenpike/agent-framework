@@ -171,7 +171,9 @@ Exception: `injection-suspect` remains immediate-exit (already handled in Step 4
 
 #### Step 7: All-Non-Actionable Check
 
-If every finding classifies as `non-actionable` or `incorrect-or-rejected` (zero actionable findings): persist ledger. Return Output Contract with `exit_reason: clean`.
+If every finding classifies as `non-actionable` or `incorrect-or-rejected` (zero actionable findings): persist ledger. Check `deferred_escalations`:
+- If `deferred_escalations` is non-empty: return with the highest-priority deferred escalation. Priority order: `high-severity-rejection` > `user-input-required` > `planner-escalation`.
+- If `deferred_escalations` is empty: return Output Contract with `exit_reason: clean`.
 
 #### Step 8: Break-Fix Detection
 

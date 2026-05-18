@@ -312,9 +312,11 @@ After each delegation:
 **Guard:**
 - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0` AND `deferred_escalations` is empty: skip Steps 7–10. Return `exit_reason: blocked`, `blocker_reason: actionable delegation blocked`, and include the blocked candidate URLs in `blocked_candidates`.
 - If `fixes_applied_this_cycle == 0` AND `delegations_blocked > 0` AND `deferred_escalations` is non-empty: skip Steps 7–10. Return with the highest-priority deferred escalation (see priority order below).
-- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty: skip Steps 7–10. Go directly to Step 11 and return `exit_reason: clean` with `findings_resolved` / `findings_open` counts reflecting the classified-but-not-fixed items.
-- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is non-empty (all items are escalation-class, zero simple fixes): skip Steps 7–10. Return with the highest-priority deferred escalation.
-- If `fixes_applied_this_cycle > 0`: proceed to Steps 7–10 (validate, commit, push, reply-resolve for fixed items). After Step 10 completes, if `deferred_escalations` is non-empty, return with the highest-priority deferred escalation. If `deferred_escalations` is empty, go to Step 11 (normal return).
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty AND there are no rationale-replied candidates: skip Steps 7–10. Go directly to Step 11 and return `exit_reason: clean` with `findings_resolved` / `findings_open` counts reflecting the classified-but-not-fixed items.
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is empty AND there are rationale-replied candidates (standard-severity `incorrect-or-rejected` or `non-actionable` with replies posted in Step 6): skip Steps 7–9. Proceed to Step 10 for thread resolution of the rationale-replied candidates, then go to Step 11.
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is non-empty (all items are escalation-class, zero simple fixes) AND there are no rationale-replied candidates: skip Steps 7–10. Return with the highest-priority deferred escalation.
+- If `fixes_applied_this_cycle == 0` AND `delegations_blocked == 0` AND `deferred_escalations` is non-empty AND there are rationale-replied candidates: skip Steps 7–9. Proceed to Step 10 for thread resolution of the rationale-replied candidates, then return with the highest-priority deferred escalation.
+- If `fixes_applied_this_cycle > 0`: proceed to Steps 7–10 (validate, commit, push, reply-resolve for fixed items and rationale-replied candidates). After Step 10 completes, if `deferred_escalations` is non-empty, return with the highest-priority deferred escalation. If `deferred_escalations` is empty, go to Step 11 (normal return).
 
 **Deferred escalation priority order:** `high-severity-rejection` > `user-input-required` > `planner-escalation`. When returning with a deferred escalation: use the winning item's conditional fields (`candidate_url`, `escalation_target`, `rationale_text` as appropriate). Set `findings_resolved` to count items fixed this cycle. Set `findings_open` to count deferred-escalation items plus any other unfixed items. If multiple items were deferred, include all their URLs in `deferred_escalation_items`.
 
@@ -349,9 +351,9 @@ git push origin <working_branch>
 
 ### Step 10: Post-Fix Reply and Resolve
 
-For each resolved candidate (in the order they were fixed):
+For each resolved candidate (in the order they were fixed) AND each candidate that received a rationale reply in Step 6 (standard-severity `incorrect-or-rejected` and `non-actionable` items whose rationale reply was posted):
 
-1. **Post fix-SHA reply.** Reply mechanism by source:
+1. **Post fix-SHA reply** (skip for rationale-replied candidates — rationale reply was already posted in Step 6). Reply mechanism by source:
    - Inline review thread: `addPullRequestReviewThreadReply` GraphQL mutation (requires `thread_id`)
    - Top-level PR comment: `gh pr comment <pr> --body "..."` with candidate URL for traceability
    - Review summary: `gh pr comment <pr> --body "..."` with candidate URL for traceability
@@ -366,7 +368,7 @@ For each resolved candidate (in the order they were fixed):
 
    Do not resolve:
    - `question-needs-user-input` threads (any unaddressed comment classified as such blocks resolution)
-   - Threads where no fix-SHA reply was posted
+   - Threads where no fix-SHA reply AND no rationale reply was posted (i.e., threads with zero self-authored resolution replies)
    - Threads where any non-self comment is unaddressed (no fix-SHA reply and not classified as `non-actionable` or `incorrect-or-rejected`)
 
 **Check-failure items (no thread resolution):**
@@ -590,7 +592,7 @@ Do not resolve:
 
 - `question-needs-user-input` threads
 - Threads where the fix failed validation
-- Threads where no reply (fix-SHA or rationale) has been posted
+- Threads where no fix-SHA reply AND no rationale reply has been posted (i.e., threads with zero self-authored resolution replies)
 
 Resolution is non-blocking: if `resolveReviewThread` mutation fails, log the failure and continue. The fix-SHA reply is the primary re-review gate.
 
