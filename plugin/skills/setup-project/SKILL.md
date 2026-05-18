@@ -61,6 +61,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 5. Merge required keys, preserving every existing key the user already had:
    - `enabledPlugins["agent-framework@brenpike"]` = `true`
    - `agent` = `"agent-framework:orchestrator"`
+   - `enabledPlugins["caveman@caveman"]` = `true`
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
    - if `codex` = `yes`: `enabledPlugins["codex@openai-codex"]` = `true`
    - `pluginConfigs["caveman@caveman"].options.defaultLevel` = `"ultra"`
@@ -114,6 +115,7 @@ envrc:
 keys_applied:
 - enabledPlugins["agent-framework@brenpike"]: added | already present
 - agent: added | already present | unchanged
+- enabledPlugins["caveman@caveman"]: added | already present
 - enabledPlugins["claude-mem@thedotmack"]: added | already present | not requested
 - enabledPlugins["codex@openai-codex"]: added | already present | not requested
 - pluginConfigs["caveman@caveman"]: added | already present
