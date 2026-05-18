@@ -85,7 +85,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5
-- modify project files outside `.claude/settings.json` and `.gitignore`
+- modify project files outside `.claude/settings.json`, `.gitignore`, and files created by invoked skills (`agent-framework:bootstrap-context`)
 - commit, push, or otherwise touch git state
 - invoke skills other than `agent-framework:bootstrap-context`
 - proceed if the project root cannot be resolved

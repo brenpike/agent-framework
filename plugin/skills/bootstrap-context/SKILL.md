@@ -63,7 +63,10 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 
 4. **Multi-context detection:** Scan for top-level directories that indicate bounded contexts, such as: `src/`, `services/`, `packages/`, `apps/`, `modules/`, `libs/`, `crates/`, `workspaces/`. For each found, check if it contains 2+ subdirectories with source files. If 2+ bounded context directories are detected, set `multi_context: true`. Otherwise `multi_context: false`.
 
-5. **Artifact discovery:** Read the following files if they exist (first 200 lines each to stay within budget):
+5. **Root CONTEXT.md conflict check:** If `multi_context: true` AND `mode: update` (root CONTEXT.md exists but no CONTEXT-MAP.md):
+   Stop blocked with reason: "Root CONTEXT.md exists but project layout requires multi-context (CONTEXT-MAP.md + per-context CONTEXT.md files). Delete the root CONTEXT.md and re-run bootstrap-context, or proceed manually." Do NOT auto-delete or auto-convert.
+
+6. **Artifact discovery:** Read the following files if they exist (first 200 lines each to stay within budget):
    a. `CLAUDE.md` — project rules, architecture, conventions
    b. `AGENT.md` or `AGENTS.md` — agent instructions
    c. `README.md` — project description, key concepts
@@ -72,16 +75,16 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    f. Source file names in key directories (use `find . -maxdepth 3 -name '*.ts' -o -name '*.tsx' -o -name '*.py' -o -name '*.go' -o -name '*.rs' -o -name '*.java' -o -name '*.cs' -o -name '*.rb' | head -100`)
    g. Grep for domain type declarations: `grep -rn 'class \|interface \|type \|enum \|struct \|trait \|model \|schema ' --include='*.ts' --include='*.py' --include='*.go' --include='*.rs' --include='*.java' --include='*.cs' --include='*.rb' -l | head -50` — capture filenames only, then read first 5 lines of each match for the declaration name
 
-6. **Term extraction:** From the artifacts gathered in step 5, identify domain-specific terms. Apply these filters:
+7. **Term extraction:** From the artifacts gathered in step 6, identify domain-specific terms. Apply these filters:
    - **Include:** Terms that represent concepts unique to this project's domain — entities, aggregates, value objects, domain events, bounded context names, business rules, workflows
    - **Exclude:** General programming terms — controller, service, repository, handler, middleware, util, helper, config, error, response, request, manager, factory, provider, adapter, wrapper, base, abstract, interface (the keyword), type (the keyword), enum (the keyword), model (the keyword when used generically)
    - **Group:** When natural clusters emerge (3+ related terms), organize under subheadings
    - For each term: write a one-sentence definition based on how it's used in the project artifacts. Add `_Avoid_:` aliases if synonyms are evident.
    - **Deduplicate:** Compare each extracted term against the known-terms set (case-insensitive). Skip any term already present in the existing CONTEXT.md. This ensures re-running the skill never adds duplicates.
 
-7. **Relationship extraction:** From the artifacts, identify relationships between extracted terms. Express cardinality where obvious (one-to-many, belongs-to, produces, consumes, etc.).
+8. **Relationship extraction:** From the artifacts, identify relationships between extracted terms. Express cardinality where obvious (one-to-many, belongs-to, produces, consumes, etc.).
 
-8. **Generate output file(s):**
+9. **Generate output file(s):**
 
    **If `multi_context: false` and `mode: create`:**
    Create `<project root>/CONTEXT.md` following the format in `${CLAUDE_PLUGIN_ROOT}/skills/plan-interrogation/references/CONTEXT-FORMAT.md`:
@@ -117,7 +120,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    **If `multi_context: true` and `mode: update-multi`:**
    Read existing CONTEXT-MAP.md. Add any newly detected bounded contexts. For each per-context CONTEXT.md, append new terms not in that file's known-terms set. Do NOT modify or remove existing content.
 
-9. Report output.
+10. Report output.
 
 ## Term Quality Rules
 
@@ -137,6 +140,7 @@ Per `${CLAUDE_PLUGIN_ROOT}/skills/plan-interrogation/references/CONTEXT-FORMAT.m
 - Read full source file contents — use structural signals (filenames, declarations, grep) only
 - Commit, push, or touch git state
 - Exceed 20 bounded contexts in multi-context mode
+- Auto-convert a root CONTEXT.md to multi-context layout — stop blocked and inform the user
 
 ## Output
 
