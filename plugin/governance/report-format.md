@@ -1,6 +1,6 @@
 # Report Format
 
-YAML report schemas for worker agents. Anchor IDs per `${CLAUDE_PLUGIN_ROOT}/governance/context-management-policy.md` (Retrieval Anchors).
+YAML report schemas for worker agents.
 
 ## Worker Report — Complete
 
