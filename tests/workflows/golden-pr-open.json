@@ -2,9 +2,9 @@
   "workflow": "pr-open",
   "description": "PR opening gate conditions and version bump check",
   "steps": [
-    { "state": "Validate", "source": { "file": "plugin/governance/agent-system-policy.md", "pattern": "Validation procedure" } },
+    { "state": "Validate", "source": { "file": "plugin/governance/definitions.md", "pattern": "## Validation Procedure" } },
     { "state": "Version Bump", "source": { "file": "plugin/governance/versioning.md", "pattern": "## Bump Trigger" } },
-    { "state": "PR", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Open PR when plan complete" } },
+    { "state": "PR", "source": { "file": "plugin/governance/workflow.md", "pattern": "Open PR only when: plan complete, validation passed" } },
     { "state": "Final Report", "source": { "file": "plugin/agents/orchestrator.md", "pattern": "Result: complete | partial | blocked" } }
   ]
 }

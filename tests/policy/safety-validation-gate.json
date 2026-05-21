@@ -1,17 +1,17 @@
 {
   "rule": "Validation gate",
   "source": {
-    "file": "plugin/governance/agent-system-policy.md",
-    "pattern": "Run every declared command. There is no duration cap"
+    "file": "plugin/governance/definitions.md",
+    "pattern": "Execute every command listed in the project's `CLAUDE.md` validation section. No duration cap."
   },
   "consumers": [
     {
       "file": "plugin/agents/orchestrator.md",
-      "pattern": "Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Validation procedure)"
+      "pattern": "Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)"
     },
     {
       "file": "plugin/agents/coder.md",
-      "pattern": "run validation per the \"Validation procedure\" definition"
+      "pattern": "run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)"
     },
     {
       "file": "plugin/skills/open-plan-pr/SKILL.md",

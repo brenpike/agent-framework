@@ -1,13 +1,13 @@
 {
   "rule": "Explicit file scope",
   "source": {
-    "file": "plugin/governance/scope-policy.md",
-    "pattern": "Any modifying agent must work only in explicitly assigned files"
+    "file": "plugin/governance/safety-rails.md",
+    "pattern": "Do not expand scope beyond assigned files"
   },
   "consumers": [
     {
       "file": "plugin/agents/orchestrator.md",
-      "pattern": "exact file-scoped delegation"
+      "pattern": "with exact file scope"
     },
     {
       "file": "plugin/agents/coder.md",
