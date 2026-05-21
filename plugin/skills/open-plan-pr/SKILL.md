@@ -32,11 +32,11 @@ After:
 
 Open a pull request for the completed approved plan.
 
-Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` and `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md` and `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`.
 
 ## Required Inputs
 
-The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Resolution Order). The skill does not resolve them on its own.
+The orchestrator resolves and passes these. The skill does not resolve them on its own.
 
 - `base`: resolved trunk branch (PR target).
 - `head`: working branch (current branch).
@@ -46,7 +46,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 
 1. Confirm current branch matches `head` and is not `base`.
 2. Confirm no unexpected unstaged changes.
-3. Confirm validation outcome per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) is one of: every declared command passed, OR `Not run (no validation commands defined)`. Exit 1 with blocker if the procedure returned the Worker Report — Blocked (`stage: validation`) or any declared command failed.
+3. Confirm validation outcome per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure) is one of: every declared command passed, OR `Not run (no validation commands defined)`. Exit 1 with blocker if the procedure returned the Worker Report — Blocked (`stage: validation`) or any declared command failed.
 4. Confirm required version/release metadata is included or not required.
 5. Capture local HEAD SHA: `git rev-parse HEAD`.
 6. Place the working branch on a remote that `gh pr create` can target:
@@ -87,7 +87,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 
 ## Silence Discipline
 
-This is a pipeline skill. Per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Skill Output Convention):
+This is a pipeline skill:
 
 - Produce zero text output at any point during execution. Your only outputs are tool calls.
 - Your final action must be a Bash tool call.
@@ -98,8 +98,8 @@ This is a pipeline skill. Per `${CLAUDE_PLUGIN_ROOT}/governance/communication-po
 ## Do Not
 
 - open PR for a partial plan unless one of: the user explicitly requested a draft PR, OR the planner's `Delivery: Shape` field equals `multi-plan`
-- open PR if the Validation procedure returned the Worker Report — Blocked (`stage: validation`) or any declared validation command failed. `Validated: Not run (no validation commands defined)` is a valid terminal state per `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md` (Definitions → Validation procedure) and does not block PR opening.
+- open PR if the Validation procedure returned the Worker Report — Blocked (`stage: validation`) or any declared validation command failed. `Validated: Not run (no validation commands defined)` is a valid terminal state per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure) and does not block PR opening.
 - open PR if required version/release metadata is missing per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md`
 - continue past step 6 with an unverified push state
 - invent missing validation
-- include any of the strings forbidden by `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Pull Requests) generated-content list
+- include any of the following strings (any case) in commit messages or PR content: `Co-Authored-By:`, `Generated with`, `Created with Claude`, `🤖 Generated`, any `Authored-by:` line naming a bot/AI/agent, or any line attributing generated-content authorship
