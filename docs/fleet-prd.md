@@ -155,6 +155,77 @@ merge_order: []  # ordered list of merged stream names
 - Fleet persistence across terminal restarts
 - Nested fleets (fleet within a fleet)
 
+## Rebrand: agent-framework → Hivemind
+
+This feature ships alongside a full rebrand from `agent-framework` to `Hivemind`. The rebrand applies themed terminology to the framework's unique concepts while keeping universal development concepts (trunk, branch, commit, PR, validation, scope, version bump) unchanged.
+
+### Naming Principle
+
+**Themed names for identity, plain descriptions for invocation.** Skill names use themed terms (`hivemind:molt`, `hivemind:spawn-brood`) but skill descriptions use plain English so users can invoke them with either vocabulary. Zero additional cognitive load for users who don't know the domain language.
+
+### Domain Language Mapping
+
+| Framework Concept | Hivemind Term | Rationale |
+|---|---|---|
+| agent-framework (product) | **Hivemind** | Shared alien intelligence coordinating the swarm |
+| Orchestrator | **Cerebrate** | Session-level commander; multiple cerebrates in a brood |
+| Planner | **Overlord** | Provides vision/intel, doesn't modify — the biological scanner |
+| Coder | **Drone** | Builder caste — universal across hive fiction |
+| Designer | **Changeling** | Shapeshifter — reshapes visual form and presentation |
+| Fleet | **Brood** | Offspring cluster dispatched as a parallel group |
+| Stream | **Strain** | Genetic subtype — each evolves independently |
+| Coordinator Mode | **Hatchery** | Where broods spawn from; cerebrate monitors from here |
+| Delegation | **Spawn** | Creating a unit with embedded purpose |
+| Handoff | **Essence** | Distilled knowledge passed forward between phases |
+| Plan Artifact | **Psionic Map** | Overlord's psychic scan of the problem territory |
+| Escalation | **Flare** | Urgent signal back to cerebrate |
+| Trivial Fast Path | **Reflex** | Instinctive response — no overlord needed |
+| Review Loop | **Adaptation Cycle** | Iterating toward fitness under environmental pressure |
+| Break-Fix-Break | **Mutation Decay** | Unstable mutations oscillating — mandatory stop |
+
+### What stays unchanged
+
+Universal development concepts keep their standard names: trunk, working branch, checkpoint commit, validation, PR, scope, version bump, fix ledger, remediation. The theme applies only to concepts unique to the framework — terms users must learn anyway. Theming them makes them stickier without adding cognitive load.
+
+### Skill Rename Mapping
+
+| Current Skill | Hivemind Skill | Description (invocation trigger) |
+|---|---|---|
+| `agent-framework:create-working-branch` | `hivemind:create-working-branch` | Create or confirm the compliant working branch (unchanged name — universal concept) |
+| `agent-framework:checkpoint-commit` | `hivemind:molt` | Create a checkpoint commit for the current approved plan after a completed phase, milestone, version bump, or review remediation item |
+| `agent-framework:open-plan-pr` | `hivemind:open-plan-pr` | Open a pull request for a successfully completed approved plan (unchanged name — universal concept) |
+| `agent-framework:fleet-dispatch` | `hivemind:spawn-brood` | Dispatch parallel orchestrator sessions as a brood of independent strains |
+| `agent-framework:fleet-status` | `hivemind:brood-status` | Check status of all active brood sessions |
+| `agent-framework:local-codex-review` | `hivemind:adaptation-cycle` | Run a local pre-PR code review cycle |
+| `agent-framework:plan-interrogation` | `hivemind:plan-interrogation` | Intensely interview the user about their plan (unchanged name — self-explanatory) |
+| `agent-framework:setup-project` | `hivemind:setup-project` | One-time project setup (unchanged name — self-explanatory) |
+| `agent-framework:bootstrap-context` | `hivemind:bootstrap-context` | Generate CONTEXT.md (unchanged name — self-explanatory) |
+| `agent-framework:tdd` | `hivemind:tdd` | Test-driven development workflow (unchanged name — universal concept) |
+| `agent-framework:zoom-out` | `hivemind:zoom-out` | Architecture analysis (unchanged name — self-explanatory) |
+
+### Agent Rename Mapping
+
+| Current Agent | Hivemind Agent | File |
+|---|---|---|
+| `agent-framework:orchestrator` | `hivemind:cerebrate` | `agents/cerebrate.md` |
+| `agent-framework:planner` | `hivemind:overlord` | `agents/overlord.md` |
+| `agent-framework:coder` | `hivemind:drone` | `agents/drone.md` |
+| `agent-framework:designer` | `hivemind:changeling` | `agents/changeling.md` |
+| `agent-framework:local-reviewer` | `hivemind:local-reviewer` | `agents/local-reviewer.md` (unchanged — reviewer is universal) |
+| `agent-framework:github-reviewer` | `hivemind:github-reviewer` | `agents/github-reviewer.md` (unchanged — reviewer is universal) |
+
+### Plugin Namespace
+
+- Plugin name: `hivemind`
+- Publisher: `brenpike`
+- Full install path: `hivemind@brenpike`
+- Skill namespace: `hivemind:<skill-name>`
+- Agent namespace: `hivemind:<agent-name>`
+
+### README Requirement
+
+The README.md must include the domain language mapping as both informational reference and branding element. The mapping table should help users understand the framework's unique terminology while establishing the alien swarm identity. See `docs/hivemind-readme-domain-section.md` for the planned README content.
+
 ## Dependencies
 
 - Claude Code `--worktree` flag (stable, current version 2.1.146)

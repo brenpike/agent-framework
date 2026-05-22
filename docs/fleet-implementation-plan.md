@@ -132,11 +132,29 @@ In both routes, coordinator mode means: monitor via `agent-framework:fleet-statu
 - Add `.claude/worktrees/` to `.gitignore`
 - Add fleet documentation section to CLAUDE.md referencing fleet-dispatch, fleet-status skills and the fleet PRD
 
-### STEP-007: Version Bump
+### STEP-007: Rebrand — Plugin Rename and README
+**Owner:** coder
+**Files:**
+  - `plugin/.claude-plugin/plugin.json` (rename `agent-framework` → `hivemind`)
+  - `.claude-plugin/marketplace.json` (update plugin name reference)
+  - `README.md` (rewrite with Hivemind branding + domain language mapping)
+  - All agent files renamed per Agent Rename Mapping in PRD
+  - All skill SKILL.md files updated with new namespace
+  - All governance docs updated with new agent/skill names
+  - All cross-references updated from `agent-framework:` to `hivemind:`
+  - CLAUDE.md updated with new names and namespace
+
+**Note:** This is a sweeping rename affecting most files under `plugin/`. It should be its own dedicated step to isolate the rename from functional changes. All `${CLAUDE_PLUGIN_ROOT}` path references remain unchanged — only namespaced names and agent/skill identifiers change.
+
+Depends on: STEP-001 through STEP-006 (rename after all functional changes are in place)
+
+### STEP-008: Version Bump
 **Owner:** coder
 **Files:** `plugin/.claude-plugin/plugin.json`, `CHANGELOG.md`
 
 Minor bump — new backward-compatible capability (fleet execution).
+
+Depends on: STEP-001 through STEP-007
 
 ## Dependencies
 
@@ -147,7 +165,8 @@ STEP-004 ──┤
 STEP-001 ──┘
 STEP-002 (independent)
 STEP-006 (independent, after STEP-001 + STEP-002 exist)
-STEP-007 (after all other steps)
+STEP-007 (after STEP-001 through STEP-006 — rename after functional changes)
+STEP-008 (after all other steps — version bump)
 ```
 
 ## Delivery Shape
@@ -174,3 +193,6 @@ Note: The original 12-step plan was reduced to 7 steps during interrogation. Fou
 - Investigate fleet-status rendering: table format, colors, refresh behavior
 - Define planner output schema for fleet-plan (stream descriptions + overlap_risk + overlap_details)
 - Determine orchestrator's native input resolution capabilities for v1 (plan files, `gh issue view`, plain text — what else?)
+- Determine if rebrand should be a separate PR (isolate rename noise from functional changes) or same PR
+- Audit all governance doc cross-references for `agent-framework:` → `hivemind:` completeness
+- Determine README structure and content (see docs/hivemind-readme-domain-section.md)

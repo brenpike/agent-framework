@@ -198,6 +198,50 @@ _Avoid_: task (too generic), work item, lane
 The YAML file at `.agent-framework/fleet/manifest.yaml` in the main checkout, tracking active fleet sessions, their worktree paths, branches, tmux sessions, and status.
 _Avoid_: fleet config, fleet state, registry
 
+**Cerebrate**:
+The Hivemind term for the orchestrator agent. Session-level commander that directs work but never implements. Multiple cerebrates operate in a brood, each commanding its own strain.
+_Avoid_: orchestrator (deprecated external name), queen, prime
+
+**Overlord**:
+The Hivemind term for the planner agent. Provides vision and intelligence by scanning the problem territory. Read-only — reports back but does not modify.
+_Avoid_: planner (deprecated external name), scout
+
+**Drone**:
+The Hivemind term for the coder agent. Builder caste that constructs code within assigned scope.
+_Avoid_: coder (deprecated external name), worker
+
+**Changeling**:
+The Hivemind term for the designer agent. Shapeshifter that reshapes visual form, presentation, and UI within assigned scope.
+_Avoid_: designer (deprecated external name)
+
+**Spawn**:
+The Hivemind term for delegation. The act of creating an agent instance with an embedded purpose — a structured message from cerebrate to a specialist agent containing task objective, file scope, and completion criteria.
+_Avoid_: delegation (deprecated external name), assignment, dispatch
+
+**Essence**:
+The Hivemind term for handoff. The distilled knowledge artifact produced at phase completion and passed forward to enable the next phase to reconstruct context.
+_Avoid_: handoff (deprecated external name), transfer, relay
+
+**Psionic Map**:
+The Hivemind term for plan artifact. The overlord's output document containing steps, file scopes, decisions, risks, and assumptions — the psychic scan of the problem territory.
+_Avoid_: plan artifact (deprecated external name), spec, blueprint
+
+**Flare**:
+The Hivemind term for escalation. An urgent signal from any agent back to the cerebrate when a condition is encountered that cannot be safely resolved.
+_Avoid_: escalation (deprecated external name), error, block
+
+**Reflex**:
+The Hivemind term for trivial fast path. An instinctive response that bypasses the overlord when all reflex conditions are met — one owner, one known file, trivial change, clear classification, no version impact, no remediation.
+_Avoid_: trivial fast path (deprecated external name), shortcut, quick path
+
+**Adaptation Cycle**:
+The Hivemind term for review loop. The iterative cycle where a reviewer invokes review tooling, classifies findings, adapts (fixes simple issues), and repeats until stable or a stop condition fires.
+_Avoid_: review loop (deprecated external name), feedback loop
+
+**Mutation Decay**:
+The Hivemind term for break-fix-break cycle. The detected oscillation where adapting to one finding reintroduces a previously fixed finding, indicating unstable evolution. Forces a mandatory stop.
+_Avoid_: break-fix-break cycle (deprecated external name), regression loop
+
 ## Relationships
 
 - An **Orchestrator** delegates to exactly one **Planner**, **Coder**, **Designer**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
@@ -223,6 +267,13 @@ _Avoid_: fleet config, fleet state, registry
 - Each **Stream** maps to exactly one child **Orchestrator** session, one **Working Branch**, and one PR
 - A **Coordinator Mode** orchestrator dispatches one **Fleet** and monitors via the **Fleet Manifest**
 - A **Fleet-Plan** is distinct from a **Plan Artifact**: fleet-plans contain stream descriptions, plan artifacts contain steps (`STEP-NNN`)
+
+- A **Cerebrate** spawns **Drones**, **Changelings**, **Overlords**, and reviewers via **Spawn**
+- A **Spawn** carries the **Psionic Map**'s step assignment to exactly one specialist agent
+- A completed phase produces **Essence** consumed by the next phase's **Spawn**
+- A **Flare** terminates a phase and returns control to the **Cerebrate**
+- A **Reflex** bypasses the **Overlord** entirely — **Cerebrate** spawns directly
+- An **Adaptation Cycle** may trigger **Mutation Decay**, forcing a **Flare**
 
 ## Example dialogue
 
