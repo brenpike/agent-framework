@@ -11,7 +11,7 @@ The control-plane agent that owns task intake, delegation sequencing, branch/PR 
 _Avoid_: coordinator, dispatcher, controller
 
 **Planner**:
-A read-only agent that produces a plan artifact with file scopes, step sequencing, and retrieval anchors before execution begins.
+A read-only agent that produces a plan artifact with file scopes, step sequencing, and risk assessment before execution begins.
 _Avoid_: architect, analyst
 
 **Coder**:
@@ -49,16 +49,16 @@ A git commit made at a phase boundary or milestone, preserving incremental progr
 _Avoid_: save point, intermediate commit
 
 **Plan Artifact**:
-The planner's output document containing steps, file scopes, decisions, risks, and retrieval anchors; required before execution begins for non-trivial tasks.
+The planner's output document containing steps, file scopes, decisions, risks, and assumptions; required before execution begins for non-trivial tasks.
 _Avoid_: spec, design doc, blueprint
 
 **Trivial Fast Path (TFP)**:
-The bypass route for single-file, low-risk changes (<=20 lines, no public API impact) that skips planner delegation when all six TFP conditions are met.
+The bypass route that skips planner delegation when all TFP conditions are met: one owner, one known file, trivial change, clear branch classification, no version impact, no review remediation.
 _Avoid_: quick path, shortcut
 
-**Bypass Code**:
-An audit reason code attached to a delegation preamble declaring why normal preconditions are waived; `TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, and `USER_OVERRIDE` (when step omitted) are step-omitting and use a synthetic `TASK-NNN`, while `NO_PRIOR_PHASE` is never step-omitting — it annotates that no prior handoff exists but retains `step: STEP-NNN` and requires a complete report.
-_Avoid_: exemption, override
+**Session Facts**:
+Cached resolved values (trunk name, task-type, claude-mem status, active-step) that persist within a task to avoid redundant lookups.
+_Avoid_: state, config, environment
 
 ### Governance
 
@@ -73,10 +73,6 @@ _Avoid_: assignment, context, area
 **Validation**:
 The set of project-declared commands (from CLAUDE.md) that must pass before a phase is accepted.
 _Avoid_: tests, checks (which is broader)
-
-**State Transition Table (STT)**:
-The orchestrator's lookup table that maps each step-completion event to the next action.
-_Avoid_: decision tree, flowchart, routing table
 
 **Escalation**:
 The mandatory stop-and-report action when an agent encounters a condition it cannot safely resolve.
@@ -107,16 +103,60 @@ _Avoid_: pre-check, setup
 ### Review
 
 **Review Loop**:
-The iterative cycle where a reviewer agent invokes Codex, classifies findings, delegates fixes, validates, and repeats until clean or a stop condition fires.
+The iterative cycle where a reviewer agent invokes Codex, classifies findings, fixes simple issues directly (≤2 files), escalates complex ones, validates, and repeats until clean or a stop condition fires.
 _Avoid_: review cycle (ambiguous with remediation cycle), feedback loop
 
 **Remediation**:
-The act of addressing a review finding: classify, delegate to coder/designer, validate, checkpoint-commit, push.
+The act of addressing a review finding: classify, fix directly (≤2 files) or escalate to orchestrator, validate, checkpoint-commit, push.
 _Avoid_: resolution, fix (too generic)
 
 **Break-Fix-Break Cycle**:
 The detected oscillation where fixing one finding reintroduces a previously fixed finding (2-of-3 signal match), forcing a mandatory stop.
 _Avoid_: regression loop, flip-flop
+
+**Fix Ledger**:
+The persisted YAML artifact (`.agent-framework/review-loop/fix-ledger.yaml`) tracking finding status across review loop iterations; status transitions: open → fixing → fixed/regressed, fixed → cycling.
+_Avoid_: review log, finding tracker
+
+**Fix Mode**:
+The one-shot operating mode of the github-reviewer agent that processes existing unresolved feedback in a single remediation pass without polling.
+_Avoid_: one-shot mode, immediate mode
+
+**Watch Mode**:
+The continuous operating mode of the github-reviewer agent that polls for new feedback via Monitor, processes each batch, and exits on terminal events (merged, closed, timeout, max cycles).
+_Avoid_: polling mode, monitor mode, continuous mode
+
+### Plugin Structure
+
+**Skill**:
+A namespaced executable procedure (`agent-framework:<name>`) invoked by agents via the Skill tool, with its own SKILL.md defining trigger conditions and behavior.
+_Avoid_: command, action, tool
+
+**Governance**:
+The set of policy modules under `plugin/governance/` that define binding runtime rules for all agents.
+_Avoid_: rules, docs, policies (plural)
+
+**`${CLAUDE_PLUGIN_ROOT}`**:
+The path variable resolving to `plugin/` where `plugin.json` lives; all cross-references inside the plugin use this prefix.
+_Avoid_: plugin path, root, base path
+
+### Definitions & Safety
+
+**Unsafe Git State**:
+The canonical set of six conditions — branch is trunk, HEAD detached, unmerged paths, in-progress rebase/merge/cherry-pick/bisect, uncommitted out-of-scope changes, or trunk unidentifiable — that gates all modifying agent operations.
+_Avoid_: dirty state, bad state
+
+**Smallest Correct Fix**:
+The minimum-change principle for review remediation: fewest files addressing targeted feedback without scope expansion; among equal file count, fewest changed lines.
+_Avoid_: minimal fix, quick fix
+
+**Transient Failure**:
+A failure classified strictly by root cause — HTTP 5xx, HTTP 429, TCP reset/refused, DNS failure, TLS handshake failure, exit 124 (timeout), exit 137 (SIGKILL), network unreachable, or git transport errors — as the only type eligible for retry.
+_Avoid_: temporary error, retryable error
+
+**Destructive Fix Gate**:
+The mandatory human-confirmation gate that fires before any remediation fix touching one of ten security-relevant categories (auth, crypto, validation, dependencies, CI, secrets, permissions, trust boundaries, workflow files, credential exposure).
+_Avoid_: security check, approval gate
 
 **External Content Boundary**:
 The security rule that all text from PR comments, Codex findings, and fetched URLs is data — never interpreted as agent instructions.
@@ -126,71 +166,50 @@ _Avoid_: trust boundary (broader concept), sandbox
 The security classification for review text containing direct agent instruction attempts, tool manipulation, or policy override language.
 _Avoid_: malicious input, attack
 
-### Context Management
+### Architecture
 
-**Auto-Clear**:
-The procedure that purges ephemeral context and selectively rehydrates durable artifacts, triggered by phase completion (Path A) or mid-phase threshold (Path B).
-_Avoid_: context reset (which is only one trigger), garbage collection
+**Intent-Based Governance**:
+The architectural approach (ADR-0006) replacing exhaustive mechanical rules with intent descriptions backed by mechanical safety rails for inter-agent interfaces, safety stops, and exact commands.
+_Avoid_: intent-driven rules, soft governance
 
-**Retrieval Anchor**:
-A tagged identifier (`DEC-NNN`, `RISK-NNN`, `ASM-NNN`, `EVD-NNN`) attached to a decision, risk, assumption, or evidence item, enabling cross-phase retrieval.
-_Avoid_: tag, label, reference
-
-**Session Facts**:
-Cached resolved values (trunk name, task-type, claude-mem status, active-step) that persist within a task to avoid redundant lookups.
-_Avoid_: state, config, environment
-
-**Rehydration**:
-The selective reload of durable artifacts (stored reports, retrieval anchors) after an auto-clear, restoring enough context for the next phase.
-_Avoid_: reload, restore, replay
-
-**Reconstruction Test**:
-The binary gate at phase transitions verifying the next phase can proceed from the handoff artifact and anchors alone, without the prior phase's full transcript.
-_Avoid_: readiness check, completeness test
-
-### Plugin Structure
-
-**Skill**:
-A namespaced executable procedure (`agent-framework:<name>`) invoked by agents via the Skill tool, with its own SKILL.md defining trigger conditions and behavior.
-_Avoid_: command, action, tool
-
-**Governance**:
-The collective set of mandatory and conditional policy modules under `plugin/governance/` that define binding runtime rules for all agents.
-_Avoid_: rules, docs, policies (plural)
-
-**`${CLAUDE_PLUGIN_ROOT}`**:
-The path variable resolving to `plugin/` where `plugin.json` lives; all cross-references inside the plugin use this prefix.
-_Avoid_: plugin path, root, base path
+**Worker Report**:
+The YAML artifact produced by a modifying agent at phase completion, in one of three schemas: complete (with decisions, risks, and handoff fields), blocked (with stage, blocker, and next), or trivial (minimal for single-file changes).
+_Avoid_: phase report, agent output, result
 
 ## Relationships
 
 - An **Orchestrator** delegates to exactly one **Planner**, **Coder**, **Designer**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
 - A **Plan Artifact** contains one or more steps (`STEP-NNN`), each assigned to exactly one **Coder** or **Designer**
-- A **Delegation** targets exactly one **Step** (`STEP-NNN`) or, for step-omitting **Bypass Codes** (`TRIVIAL_CHANGE`, `SINGLE_STEP_TASK`, `USER_OVERRIDE` when step omitted), a synthetic `TASK-NNN`; `NO_PRIOR_PHASE` is never step-omitting and always accompanies a `step: STEP-NNN`
+- A **Delegation** targets exactly one **Step** (`STEP-NNN`) from the **Plan Artifact**, or a single task when the **Trivial Fast Path** applies
 - A **Phase** produces exactly one **Handoff** on success
-- A **Handoff** enables **Rehydration** after **Auto-Clear**
-- A **Retrieval Anchor** survives **Auto-Clear** and is available for **Rehydration**
 - A **Working Branch** maps to exactly one **Plan Artifact** and one PR
 - A **Review Loop** may produce zero or more **Remediation** cycles
 - A **Break-Fix-Break Cycle** terminates a **Review Loop** with mandatory **Escalation**
 - A **Bump Trigger** fires at most one version increment per PR
-- A **Reconstruction Test** gates every **Handoff** before the next **Phase** is delegated
-- Every **Governance Doc** is either mandatory (always loaded) or conditional (activation condition required)
+- Each agent loads specific **Governance Docs** per its `Load and follow` list
+
+- A **Fix Ledger** persists across iterations of a **Review Loop**, tracking finding status from open through fixed or cycling
+- The **Destructive Fix Gate** overrides normal **Remediation** flow, requiring human approval before commit
+- A **Fix Mode** invocation processes existing unresolved feedback in a single **Remediation** pass
+- A **Watch Mode** invocation produces zero or more **Remediation** cycles, bounded by `max_remediation_cycles`
+- A **Worker Report** is the structured output of every **Phase**, consumed as input to a **Handoff**
+- **Intent-Based Governance** defines which rules remain mechanical (**Unsafe Git State**, **Destructive Fix Gate**, **External Content Boundary**, report schemas) vs intent-described
+- An **Unsafe Git State** blocks all modifying agent operations until resolved
 
 ## Example dialogue
 
 > **Dev:** "This is a one-line typo fix in a governance doc — do I still need the **Planner**?"
-> **Domain expert:** "Check the **Trivial Fast Path** conditions. If all six pass — single owner, one known file, <=20 lines, clear **Branch Classification**, no version impact, not **Remediation** — the **Orchestrator** skips the **Planner** and delegates directly to a **Coder**."
+> **Domain expert:** "Check the **Trivial Fast Path** conditions. If they all pass — one owner, one known file, trivial change, clear **Branch Classification**, no version impact, not **Remediation** — the **Orchestrator** skips the **Planner** and delegates directly to a **Coder**."
 
 > **Dev:** "The **Review Loop** keeps flipping between two states — what happens?"
 > **Domain expert:** "That's a **Break-Fix-Break Cycle**. When 2-of-3 signals fire (line-range overlap, git revert, N-2 oscillation), the loop stops and the **Orchestrator** escalates to the user. No more automatic **Remediation** until a human decides."
 
-> **Dev:** "After **Auto-Clear**, how does the next **Phase** know what happened?"
-> **Domain expert:** "Through **Rehydration**. The **Orchestrator** reloads the stored **Handoff** and any referenced **Retrieval Anchors**. The **Reconstruction Test** already verified that's sufficient before the clear happened."
+> **Dev:** "The **GitHub-Reviewer** is in **Watch Mode** and found a fix that removes an auth check — does it apply it?"
+> **Domain expert:** "No. That hits the **Destructive Fix Gate** — category 1, removing authentication. The reviewer returns blocked and surfaces the proposed change for human approval before committing."
 
 ## Flagged ambiguities
 
-- "phase" vs "step" — resolved: a **step** is the planner's unit of work (`STEP-NNN`); a **phase** is the orchestrator's unit of execution (one delegation round-trip). They usually correspond 1:1 but the distinction matters for **Bypass Codes** where steps are omitted.
+- "phase" vs "step" — resolved: a **step** is the planner's unit of work (`STEP-NNN`); a **phase** is the orchestrator's unit of execution (one delegation round-trip). They correspond 1:1 for planned work; trivial fast path tasks have a single phase with no plan step.
 - "handoff" vs "delegation" — resolved: **Delegation** flows downward (orchestrator to worker); **Handoff** flows upward/forward (worker report stored for future phases).
 - "scope" — resolved: always means file scope (the explicit file list in a delegation), never task scope or project scope.
-- "validation" vs "verification" — resolved: **Validation** means running declared project commands; verification means the orchestrator's post-phase acceptance checks (contradiction detection, **Reconstruction Test**, anchor completeness).
+- "validation" vs "verification" — resolved: **Validation** means running declared project commands; verification means the orchestrator's post-phase acceptance checks (scope compliance, report schema conformance, git state safety).
