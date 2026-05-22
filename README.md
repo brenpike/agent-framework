@@ -48,7 +48,7 @@ The setup skill also adds `.agent-framework/` to your project's `.gitignore`. Th
    - Versioning configuration (bump triggers, changelogs, tag prefixes)
    - Architecture and code style notes
 
-3. Create `AGENTS.md` at the project root with project-specific Codex review guidance. Use `plugin/governance/AGENTS.template.md` as a starting point and adapt:
+3. Create `AGENTS.md` at the project root with project-specific Codex review guidance. Include:
    - Review focus areas
    - Severity definitions
    - Project-specific conventions for reviewers
@@ -66,7 +66,7 @@ Once configured, the orchestrator is the session default agent. All skills are a
   /reload-plugins
   /codex:setup
   ```
-  When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `agent-framework:local-codex-review`) and post-PR review automation via the `github-reviewer` agent (a self-owning agent that handles monitoring, feedback classification, fix delegation, and thread resolution). `agent-framework:request-github-codex-review` is available for ad-hoc Codex review requests outside the automated flow. The framework works without it; if not installed, local review steps are skipped gracefully.
+  When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `agent-framework:local-codex-review`) and post-PR review automation via the `github-reviewer` agent (a self-owning agent that handles monitoring, feedback classification, fix delegation, and thread resolution). The framework works without it; if not installed, local review steps are skipped gracefully.
 
 - [`caveman`](https://github.com/caveman/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
   ```json
@@ -108,7 +108,7 @@ README.md
 
 `tools/` and `tests/` contain development-time validation scripts and test fixtures. They live outside `plugin/` and are not distributed as plugin runtime data.
 
-`${CLAUDE_PLUGIN_ROOT}` resolves to the `plugin/` directory at runtime, so all internal cross-references (e.g. `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`) resolve correctly without per-consumer configuration.
+`${CLAUDE_PLUGIN_ROOT}` resolves to the `plugin/` directory at runtime, so all internal cross-references (e.g. `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`) resolve correctly without per-consumer configuration.
 
 ## Agents
 
@@ -133,7 +133,6 @@ All skills are invoked using the namespaced form:
 | `agent-framework:local-codex-review` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `agent-framework:local-reviewer` |
 | `agent-framework:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `agent-framework:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
-| `agent-framework:request-github-codex-review` | Request Codex review on an existing pushed PR |
 | `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.agent-framework/` to `.gitignore` |
 | `agent-framework:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `agent-framework:coder` context only |
 | `agent-framework:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
@@ -144,19 +143,12 @@ Reference documentation in `plugin/governance/`:
 
 | File | Contents |
 |---|---|
-| `core-contract.md` | Master contract defining mandatory/conditional modules, agent roles, and governance structure |
-| `agent-system-policy.md` | Cross-agent constraints, authority matrix, allowed agent topology, definitions |
-| `branching-pr-workflow.md` | Branch taxonomy, naming rules, commit and PR policy |
-| `communication-policy.md` | Phase-closing reports, step deltas, handoff formats |
-| `context-management-policy.md` | Retrieval anchors, bypass codes, compaction rules |
-| `scope-policy.md` | File-scope enforcement and scope-change escalation |
+| `definitions.md` | Canonical vocabulary, authority matrix, agent roles, and cross-agent constraints |
+| `workflow.md` | Branch taxonomy, naming rules, commit and PR policy, orchestrator workflow |
+| `safety-rails.md` | Hard-stop rules, security constraints, secret-handling, and escalation triggers |
+| `report-format.md` | Phase-closing report schemas, handoff formats, and step-delta structure |
 | `versioning.md` | SemVer rules, bump triggers, changelog and tag policy |
-| `security-policy.md` | Security constraints and secret-handling rules |
-| `escalation-policy.md` | Escalation triggers and routing rules |
-| `auto-clear-thrash-runbook.md` | Runbook for auto-clear thrashing incidents |
-| `reconstruction-failure-runbook.md` | Runbook for context reconstruction failures |
-| `unresolved-contradiction-runbook.md` | Runbook for unresolved governance contradictions |
-| `AGENTS.template.md` | Template for project-specific Codex reviewer guidance |
+| `security-policy.md` | External content boundaries, destructive-fix confirmation gate, injection classification |
 
 Governance docs are plugin runtime data — agents load them via `${CLAUDE_PLUGIN_ROOT}/governance/` paths at runtime. They are load-bearing: renaming section headers or files can break agent rules that reference them. See `CLAUDE.md` for editing constraints.
 

@@ -1,8 +1,8 @@
 {
   "rule": "Blocked validation blocks PR",
   "source": {
-    "file": "plugin/governance/branching-pr-workflow.md",
-    "pattern": "PR is not opened if the procedure returned Blocked or any command failed"
+    "file": "plugin/governance/workflow.md",
+    "pattern": "Open PR only when: plan complete, validation passed, version bump included if required, branch pushed"
   },
   "consumers": [
     {

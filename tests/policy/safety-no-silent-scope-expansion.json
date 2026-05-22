@@ -1,8 +1,8 @@
 {
   "rule": "No silent scope expansion",
   "source": {
-    "file": "plugin/governance/scope-policy.md",
-    "pattern": "No agent may silently expand scope"
+    "file": "plugin/governance/safety-rails.md",
+    "pattern": "Do not expand scope beyond assigned files"
   },
   "consumers": [
     {

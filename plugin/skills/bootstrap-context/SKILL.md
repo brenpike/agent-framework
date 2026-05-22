@@ -178,4 +178,4 @@ term_sources:
 recommendation: "Run `agent-framework:plan-interrogation` to refine and expand this glossary."
 ```
 
-Use the blocked report contract from `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` for blocked states.
+Use the Worker Report — Blocked schema from `${CLAUDE_PLUGIN_ROOT}/governance/report-format.md` for blocked states.

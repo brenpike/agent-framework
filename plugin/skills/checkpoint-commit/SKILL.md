@@ -28,24 +28,24 @@ After:
 
 Create a checkpoint commit for the current approved plan.
 
-Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md`.
 
 ## Required Inputs
 
-The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Resolution Order). The skill does not resolve them on its own.
+The orchestrator resolves and passes these. The skill does not resolve them on its own.
 
 - `trunk`: resolved trunk branch name (the branch that must not be committed to directly).
 
 ## Requirements
 
-1. Confirm current branch is not `trunk` and that git state is not unsafe per the "Unsafe git state" definition in `${CLAUDE_PLUGIN_ROOT}/governance/agent-system-policy.md`.
+1. Confirm current branch is not `trunk` and that git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State).
 2. Review staged and unstaged diff.
 3. Stage only files that belong to the completed phase, milestone, version bump, or review-remediation item.
 4. Create a commit message in the form `<type>(<optional scope>): <subject>`, where:
    - `<type>` is one of: `feat`, `fix`, `hotfix`, `refactor`, `docs`, `test`, `chore`, `ci`
    - `<subject>` is 72 characters or fewer
    - include a body only when one of: (a) the change reverts a prior commit, (b) the change includes a `BREAKING CHANGE:` footer, (c) the planner's delegation contains a `Why:` field, OR (d) the orchestrator passes `commit_body` explicitly. Otherwise omit the body.
-   - the message must not contain any of the strings forbidden by `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Pull Requests) generated-content list
+   - the message must not contain any of the following strings (any case): `Co-Authored-By:`, `Generated with`, `Created with Claude`, `🤖 Generated`, any `Authored-by:` line naming a bot/AI/agent, or any line attributing generated-content authorship
 5. **Final Bash tool call.** Commit and emit YAML routing data in a single compound command:
 
    ```bash
@@ -56,7 +56,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 
 ## Silence Discipline
 
-This is a pipeline skill. Per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Skill Output Convention):
+This is a pipeline skill:
 
 - Produce zero text output at any point during execution. Your only outputs are tool calls.
 - Your final action must be a Bash tool call.

@@ -30,27 +30,27 @@ After:
 
 Create or confirm the working branch for the current approved plan.
 
-Follow `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md`.
+Follow `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md`.
 
 ## Required Inputs
 
-The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Resolution Order). The skill does not resolve them on its own.
+The orchestrator resolves and passes these. The skill does not resolve them on its own.
 
 - `base`: base branch the working branch is created from (typically the resolved trunk; may differ for stacked work).
 - `working_branch`: requested working branch name (must follow branch taxonomy and naming rules).
 - `classification`: work classification (`feature|bugfix|hotfix|refactor|chore|docs|test|ci`).
-- `trunk-freshness`: resolved trunk freshness state from the Required Git Preflight check per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate). One of: `fresh`, `stale (N behind)`, `stale (diverged — local N ahead)`, `stale (diverged — local M ahead, N behind)`, or `skipped`. Absent = skill exits 1 with blocker.
+- `trunk-freshness`: resolved trunk freshness state from the orchestrator's preflight check per `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md` (Trunk Freshness). One of: `fresh`, `stale (N behind)`, `stale (diverged — local N ahead)`, `stale (diverged — local M ahead, N behind)`, or `skipped`. Absent = skill exits 1 with blocker.
 
 ## Requirements
 
 1. Confirm current branch.
 2. Confirm `base` exists locally or fetch it.
-3. Check the `trunk-freshness` session fact passed by the orchestrator per `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate).
+3. Check the `trunk-freshness` session fact passed by the orchestrator per `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md` (Trunk Freshness).
    - `trunk-freshness: fresh` — proceed normally, no warning.
    - `trunk-freshness: stale (N behind)` — emit a warning that trunk is stale but proceed (user already acknowledged at preflight).
    - `trunk-freshness: stale (diverged — local N ahead)` — emit a warning that local trunk has unpushed commits but proceed (user already acknowledged at preflight).
    - `trunk-freshness: stale (diverged — local M ahead, N behind)` — emit a warning that local trunk has diverged from origin but proceed (user already acknowledged at preflight).
-   - `trunk-freshness: skipped` — proceed with a note that freshness was intentionally skipped per documented skip conditions in `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Trunk Freshness Gate).
+   - `trunk-freshness: skipped` — proceed with a note that freshness was intentionally skipped.
    - Absent — emit `printf 'blocker: trunk-freshness session fact not provided by orchestrator' >&2; exit 1`.
 4. Confirm `working_branch` follows the branch taxonomy and naming rules.
 5. Confirm there are no unexpected unstaged/uncommitted changes that make switching unsafe.
@@ -59,7 +59,7 @@ The orchestrator resolves and passes these per `${CLAUDE_PLUGIN_ROOT}/governance
 
 ## Silence Discipline
 
-This is a pipeline skill. Per `${CLAUDE_PLUGIN_ROOT}/governance/communication-policy.md` (Skill Output Convention):
+This is a pipeline skill:
 
 - Produce zero text output at any point during execution. Your only outputs are tool calls.
 - Your final action must be a Bash tool call.

@@ -85,7 +85,7 @@ A change "matches a row" when both:
   - for the MAJOR, MINOR, and PATCH rows: at least one bullet in Bump Trigger above is satisfied by the change
   - for the No-bump row: the change matches one or more bullets in the "No bump is required by default" list above and matches no bullet in Bump Trigger
 
-To compute the dominant row: read each commit's full subject and body via `git log --format='%H%n%s%n%b%n--END--' <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/branching-pr-workflow.md` (Required Git Preflight).
+To compute the dominant row: read each commit's full subject and body via `git log --format='%H%n%s%n%b%n--END--' <base>..HEAD`, where `<base>` is the resolved base branch from `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md` (Framework Defaults).
 
 **Revert pre-pass.** Before mapping rows, drop revert pairs from the set:
 
@@ -170,11 +170,3 @@ Recommended generic formats:
 
 - single artifact: `vX.Y.Z`
 - multiple artifacts: `<artifact-prefix>/vX.Y.Z`
-
-## Agent Rules
-
-- Orchestrator owns bump detection and bump type decisions.
-- Planner may recommend versioning implications but must not edit files.
-- Coder may edit version/release files only when explicitly delegated.
-- Designer never edits version/release files unless a purely presentational documentation file is explicitly assigned.
-- If project-specific version paths or canonical version source are unclear, stop and ask the user.

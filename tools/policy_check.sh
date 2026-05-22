@@ -174,7 +174,7 @@ while IFS= read -r -d '' md_file; do
     while IFS= read -r textline || [[ -n "$textline" ]]; do
         line_num=$((line_num + 1))
 
-        # INVARIANT: The rule definition itself in agent-system-policy.md is not a violation.
+        # INVARIANT: The rule definition itself in governance docs is not a violation.
         if echo "$textline" | grep -qP 'Do not use the word.*ambiguous.*as a hedge'; then
             continue
         fi
@@ -241,10 +241,12 @@ echo ''
 echo '=== CHECK 2: Required files exist ==='
 
 REQUIRED_FILES=(
-    'plugin/governance/agent-system-policy.md'
-    'plugin/governance/branching-pr-workflow.md'
+    'plugin/governance/definitions.md'
+    'plugin/governance/report-format.md'
+    'plugin/governance/safety-rails.md'
+    'plugin/governance/security-policy.md'
     'plugin/governance/versioning.md'
-    'plugin/governance/AGENTS.template.md'
+    'plugin/governance/workflow.md'
     'plugin/agents/orchestrator.md'
     'plugin/agents/planner.md'
     'plugin/agents/coder.md'
@@ -490,29 +492,6 @@ if [[ "$check7_found" == false ]]; then
     echo "[PASS] Check 7: All $skill_file_count skill files have complete frontmatter"
     CHECKS_PASSED=$((CHECKS_PASSED + 1))
 else
-    CHECKS_FAILED=$((CHECKS_FAILED + 1))
-fi
-
-# ── CHECK 8: AGENTS.template.md referenced in README ──────────────────────
-
-echo ''
-echo '=== CHECK 8: AGENTS.template.md referenced in README ==='
-
-README_PATH="$REPO_ROOT/README.md"
-
-if [[ -f "$README_PATH" ]]; then
-    readme_content="$(<"$README_PATH")"
-    if echo "$readme_content" | grep -q 'AGENTS\.template\.md'; then
-        echo '[PASS] Check 8: README.md references AGENTS.template.md'
-        CHECKS_PASSED=$((CHECKS_PASSED + 1))
-    else
-        add_finding 'CHECK8' 'README.md' 0 \
-            'README.md does not reference AGENTS.template.md'
-        CHECKS_FAILED=$((CHECKS_FAILED + 1))
-    fi
-else
-    add_finding 'CHECK8' 'README.md' 0 \
-        'README.md does not exist'
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 

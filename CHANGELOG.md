@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.10.0] - 2026-05-21
+
+### Changed
+
+- **Intent-based governance rewrite (ADR-0006).** All governance files rewritten from procedural rules to intent-based style, expressing *why* each constraint exists rather than *what* to do step by step. Estimated 80–85% reduction in governance overhead tokens per session.
+- **4 new consolidated governance files** replace 12 old files: `definitions.md`, `safety-rails.md`, `workflow.md`, `report-format.md`.
+- **12 old governance files deleted:** `agent-system-policy.md`, `branching-pr-workflow.md`, `communication-policy.md`, `context-management-policy.md`, `escalation-policy.md`, `git-policy.md`, `monitoring-policy.md`, `pr-review-remediation-loop.md`, `reconstruction-failure-runbook.md`, `unresolved-contradiction-runbook.md`, `auto-clear-thrash-runbook.md`, `core-contract.md`.
+- **6 agent definitions rewritten** to intent-based style with approximately 66% line reduction: `orchestrator.md`, `planner.md`, `coder.md`, `designer.md`, `local-reviewer.md`, `github-reviewer.md`.
+- **3 subagent files deleted** — `injection-suspect-checker`, `feedback-classifier`, `break-fix-detector` — logic inlined into reviewer agents per ADR-0005.
+- **`review-classification-taxonomy.md` deleted** — replaced by inline intent in reviewer agents.
+- **`request-github-codex-review` skill deleted** — github-reviewer agent handles this directly.
+- **6 surviving skills updated** with new governance references (`checkpoint-commit`, `create-working-branch`, `open-plan-pr`, `address-github-pr-feedback`, `watch-github-pr-feedback`, `setup-project`).
+- **`security-policy.md` and `versioning.md` updated** for dangling reference cleanup after governance restructure.
+- **Shell scripts stripped of tutorial comments** (`tools/policy_check.sh`, `tools/validate_reports.sh`).
+- **`CLAUDE.md` and `README.md` updated** to reflect new governance structure and deleted files.
+
 ## [1.9.0] - 2026-05-18
 
 ### Added

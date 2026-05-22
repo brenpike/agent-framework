@@ -1,11 +1,10 @@
 {
   "rule": "Branch classification list is identical across mirror files",
   "source": {
-    "file": "plugin/governance/branching-pr-workflow.md",
-    "pattern": "feature\\|bugfix\\|hotfix\\|refactor\\|chore\\|docs\\|test\\|ci"
+    "file": "plugin/governance/workflow.md",
+    "pattern": "## Branch Taxonomy"
   },
   "consumers": [
-    { "file": "plugin/agents/orchestrator.md", "pattern": "feature|bugfix|hotfix|refactor|chore|docs|test|ci" },
     { "file": "plugin/skills/create-working-branch/SKILL.md", "pattern": "feature|bugfix|hotfix|refactor|chore|docs|test|ci" }
   ]
 }
