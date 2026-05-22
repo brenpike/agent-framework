@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.10.1] - 2026-05-21
+
+### Changed
+
+- **Reduced github-reviewer token usage.** Removed 5 duplicate sections from agent body (Self-Fix Guidance, Push Safety, Crash Recovery, Monitor Rules, References) that restated loaded governance docs. Trimmed Safety section to 5 net-new rules. Consolidated GraphQL reference: merged duplicate thread queries, compressed Detection Filtering/Shell Rules/Pagination/Author Filtering sections, deleted duplicate Safety Rules. Total reduction: ~129 lines across 2 files.
+
 ## [1.10.0] - 2026-05-21
 
 ### Changed
