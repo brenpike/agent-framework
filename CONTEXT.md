@@ -176,6 +176,28 @@ _Avoid_: intent-driven rules, soft governance
 The YAML artifact produced by a modifying agent at phase completion, in one of three schemas: complete (with decisions, risks, and handoff fields), blocked (with stage, blocker, and next), or trivial (minimal for single-file changes).
 _Avoid_: phase report, agent output, result
 
+### Fleet
+
+**Fleet**:
+A set of parallel orchestrator sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the coordinator via fleet-dispatch.
+_Avoid_: cluster, swarm, pool
+
+**Coordinator Mode**:
+The orchestrator execution mode entered when a fleet-plan is dispatched; the orchestrator remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the fleet lifecycle.
+_Avoid_: manager mode, supervisor mode
+
+**Fleet-Plan**:
+The planner's output artifact when work decomposes into multiple independent streams. Contains stream-level descriptions and scope boundaries, not step-level detail. Each stream becomes a separate child orchestrator session with its own full pipeline.
+_Avoid_: multi-plan (which means sequential PRs, not parallel), meta-plan
+
+**Stream**:
+One independent unit of work within a fleet-plan, assigned to a single child orchestrator session. Each stream has its own worktree, branch, pipeline execution, and PR.
+_Avoid_: task (too generic), work item, lane
+
+**Fleet Manifest**:
+The YAML file at `.agent-framework/fleet/manifest.yaml` in the main checkout, tracking active fleet sessions, their worktree paths, branches, tmux sessions, and status.
+_Avoid_: fleet config, fleet state, registry
+
 ## Relationships
 
 - An **Orchestrator** delegates to exactly one **Planner**, **Coder**, **Designer**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
@@ -196,6 +218,12 @@ _Avoid_: phase report, agent output, result
 - **Intent-Based Governance** defines which rules remain mechanical (**Unsafe Git State**, **Destructive Fix Gate**, **External Content Boundary**, report schemas) vs intent-described
 - An **Unsafe Git State** blocks all modifying agent operations until resolved
 
+- A **Fleet** contains one or more **Streams**, each running in a separate git worktree
+- A **Fleet-Plan** produces exactly one **Stream** per independent work bucket
+- Each **Stream** maps to exactly one child **Orchestrator** session, one **Working Branch**, and one PR
+- A **Coordinator Mode** orchestrator dispatches one **Fleet** and monitors via the **Fleet Manifest**
+- A **Fleet-Plan** is distinct from a **Plan Artifact**: fleet-plans contain stream descriptions, plan artifacts contain steps (`STEP-NNN`)
+
 ## Example dialogue
 
 > **Dev:** "This is a one-line typo fix in a governance doc — do I still need the **Planner**?"
@@ -206,6 +234,9 @@ _Avoid_: phase report, agent output, result
 
 > **Dev:** "The **GitHub-Reviewer** is in **Watch Mode** and found a fix that removes an auth check — does it apply it?"
 > **Domain expert:** "No. That hits the **Destructive Fix Gate** — category 1, removing authentication. The reviewer returns blocked and surfaces the proposed change for human approval before committing."
+
+> **Dev:** "I have three independent features to build — should I use a fleet?"
+> **Domain expert:** "If the **Planner** confirms they decompose into independent **Streams** with minimal file overlap, yes. The **Orchestrator** will present the **Fleet-Plan** for your confirmation, then enter **Coordinator Mode** to dispatch each **Stream** as a separate session via **fleet-dispatch**. Each child session runs a full pipeline independently — same as any solo task."
 
 ## Flagged ambiguities
 
