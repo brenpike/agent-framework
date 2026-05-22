@@ -109,11 +109,15 @@ One independent unit of work within a fleet-plan, assigned to a single child orc
 Changes:
 
 1. Add `agent-framework:fleet-dispatch` and `agent-framework:fleet-status` to the Skills section
-2. Add coordinator mode route to "The Workflow" section, after step 3 (Plan):
+2. Add fleet initiation routes to "The Workflow" section, after step 3 (Plan):
 
 ```markdown
-3a. **Fleet route** — If planner returns `delivery: fleet` with stream descriptions: present the fleet-plan to the user for confirmation. On confirmation, invoke `agent-framework:fleet-dispatch` with the stream list. Enter coordinator mode: monitor via `agent-framework:fleet-status` on demand, provide on-demand help (rebases, etc.), and report aggregate status when all streams complete. Skip steps 4-12 (each child session runs its own full pipeline).
+3a. **Fleet route (planner-detected)** — If planner returns `delivery: fleet` with stream descriptions and overlap assessment: present the fleet-plan to the user. If `overlap_risk` is medium or high, warn user with overlap details and require explicit approval. On confirmation, invoke `agent-framework:fleet-dispatch` with the stream list. Enter coordinator mode.
+
+3b. **Fleet route (user-directed)** — If user explicitly requests a fleet with multiple items: resolve inputs into stream descriptions (read plan files, fetch GitHub issue details, accept plain text). Send resolved descriptions to planner for independence validation and overlap analysis. Planner returns `delivery: fleet` with `overlap_risk` assessment. Continue per step 3a.
 ```
+
+In both routes, coordinator mode means: monitor via `agent-framework:fleet-status` on demand, provide on-demand help (rebases, etc.), and report aggregate status when all streams complete. Skip steps 4-12 (each child session runs its own full pipeline).
 
 3. Add to Model Routing table:
 
@@ -168,3 +172,5 @@ Note: The original 12-step plan was reduced to 7 steps during interrogation. Fou
 - Determine tmux session naming convention used by `claude --tmux` (for manifest `tmux_session` field)
 - Clean up `.claude/settings.local.json` — move workflow permissions to tracked `settings.json`, leave only machine-specific paths in local
 - Investigate fleet-status rendering: table format, colors, refresh behavior
+- Define planner output schema for fleet-plan (stream descriptions + overlap_risk + overlap_details)
+- Determine orchestrator's native input resolution capabilities for v1 (plan files, `gh issue view`, plain text — what else?)
