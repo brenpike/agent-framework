@@ -18,7 +18,6 @@ Important layout facts:
 - `plugin/` is the installed plugin payload. Runtime agents, skills, plugin metadata, and active governance live there.
 - `plugin/.claude-plugin/plugin.json` is the canonical plugin version source.
 - `plugin/governance/` contains runtime governance loaded by agents. New governance files are dead unless referenced by an agent or skill.
-- `docs/planning/` is human-only planning material. Do not treat it as active plugin governance.
 
 ## Review Focus
 
@@ -51,8 +50,6 @@ Each comment must include all of:
 - severity from the table above
 
 Do not comment on naming, formatting, import ordering, or stylistic choices unless `CLAUDE.md`, `README.md`, or an active governance document under `plugin/governance/` defines the rule being violated.
-
-Do not treat `docs/planning/` content as normative runtime policy. Review it for internal consistency and repository hygiene only.
 
 ## Validation Expectations
 
