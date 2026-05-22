@@ -26,7 +26,7 @@ The standard pipeline for a task:
 
 1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (watch/monitor/wait/poll/loop), claude-mem availability, local-review availability (codex plugin present or not).
 
-2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then invoke `agent-framework:github-reviewer` directly (fix mode or watch mode based on watch keywords). Skip steps 3-12. Handle reviewer return per step 13.
+2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then invoke `agent-framework:github-reviewer` directly (fix mode or watch mode based on watch keywords). Skip steps 3-11. Handle reviewer return per step 12.
 
 3. **Plan** — Invoke `agent-framework:planner` unless ALL trivial-fast-path conditions are met: one owner, one known file, trivial change, branch classification clear, no version impact, no review remediation. If planner returns open questions, surface them and stop.
 
