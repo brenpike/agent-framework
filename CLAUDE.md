@@ -16,14 +16,13 @@ plugin/                           # plugin root (resolves to ${CLAUDE_PLUGIN_ROO
   skills/<skill-name>/SKILL.md
   skills/_shared/                 # cross-skill helper docs (e.g. GraphQL ops)
   governance/                     # *.md loaded by agents at runtime
-docs/planning/                    # human-only working notes (not loaded by plugin)
 README.md
 CLAUDE.md
 ```
 
 `${CLAUDE_PLUGIN_ROOT}` resolves to `plugin/` because that's where `plugin.json` lives. All cross-refs inside `plugin/` use `${CLAUDE_PLUGIN_ROOT}/...` paths — never relative or repo-rooted paths.
 
-Anything the runtime loads must live under `plugin/`. `docs/` is for human-only notes (planning, design discussion) and is never referenced by agents or skills.
+Anything the runtime loads must live under `plugin/`.
 
 ## Editing rules specific to this repo
 

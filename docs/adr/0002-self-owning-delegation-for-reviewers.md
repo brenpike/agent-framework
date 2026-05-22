@@ -1,5 +1,7 @@
 # Self-owning delegation model for reviewer agents
 
+**Status:** superseded by ADR-0005 — 2026-05-18
+
 Reviewer agents delegate coder/designer fixes directly (at sonnet tier) rather than returning to the orchestrator for every fix delegation. Reviewers return to the orchestrator only on terminal conditions: loop complete, planner-routed findings, injection suspects, user-input-required, max iterations reached, or blocked.
 
 The initial design (Pattern A) had reviewers classify findings and return routing recommendations to the orchestrator per iteration — identical to the current skill-based approach. Interrogation revealed this doesn't meaningfully improve over the status quo: same round-trip cost, same serialization overhead, same orchestrator context pollution. The whole point of agent promotion is gaining delegation authority that skills lack.
