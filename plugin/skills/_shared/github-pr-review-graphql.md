@@ -175,7 +175,7 @@ All queries must apply both filters before yielding results as actionable feedba
 1. **Exclude empty body:** `select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))`
 2. **Exclude self-authored:** `select(.author.login != $ENV.SELF_LOGIN)` — resolve once per poll: `export SELF_LOGIN=$(gh api user --jq .login)`
 
-Both filters are already applied in the query templates above.
+The Fetch Review Threads (unresolved summary output) and Fetch Top-Level PR Comments templates apply both filters inline. The Fetch Reviews and Fetch Thread Comments (Paginated) templates return raw nodes — consuming agents must apply both filters to their results before yielding as actionable feedback. For Fetch Reviews, also filter to `state` values `CHANGES_REQUESTED` or `COMMENTED`.
 
 ## Reply to Review Thread
 
