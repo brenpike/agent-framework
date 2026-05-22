@@ -78,7 +78,7 @@ findings_open: <int>
 
 10. **Push:** Pre-push safety: verify `git branch --show-current` equals `working_branch`, verify git state is safe. Push once: `git push origin <working_branch>`. Never push per-fix — batch push only.
 
-11. **Reply and resolve:** For each fixed candidate, post `Fixed in <SHA>. <one-line summary>.` on the thread. For top-level/review-summary candidates, include `Addresses: <candidate_url>`. Resolve inline threads only when ALL non-self comments are addressed (each has a fix-SHA reply or was classified non-actionable with rationale posted). Do not resolve `question-needs-user-input` threads. Resolution is non-blocking — if it fails, log and continue.
+11. **Reply and resolve:** Resolve review threads only after fix is committed, pushed, validated, and a fix-SHA reply is posted. For each fixed candidate, post `Fixed in <SHA>. <one-line summary>.` on the thread. For top-level/review-summary candidates, include `Addresses: <candidate_url>`. Resolve inline threads only when ALL non-self comments are addressed (each has a fix-SHA reply or was classified non-actionable with rationale posted). Do not resolve `question-needs-user-input` threads. Resolution is non-blocking — if it fails, log and continue.
 
 12. **Return:** If deferred escalations exist, return with highest-priority escalation. Otherwise return `clean`.
 
@@ -86,7 +86,7 @@ findings_open: <int>
 
 1. **Preflight:** Same as fix mode steps 1-2, plus run preflight validation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/preflight-check.sh`.
 
-2. **Start Monitor:** Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/monitor-command-template.sh`, substitute placeholders (OWNER, REPO, PR_NUMBER, MAX_WATCH_DEFAULT, POLL_INTERVAL_DEFAULT). Derive stop file: `/tmp/af_watch_stop_<OWNER>_<REPO>_pr<PR_NUMBER>`. Start Monitor. If startup fails: retry once if transient, then one manual check, then return `blocked`. After Monitor starts, verify the first poll completes without parser error before declaring monitoring active. If the first poll fails, return `blocked`.
+2. **Start Monitor:** Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/monitor-command-template.sh`, substitute placeholders (OWNER, REPO, PR_NUMBER, MAX_WATCH_DEFAULT, POLL_INTERVAL_DEFAULT). Derive stop file: `/tmp/af_watch_stop_<OWNER>_<REPO>_pr<PR_NUMBER>`. Start Monitor. If startup fails: retry once if transient, then one manual check, then return `blocked`. If Monitor returns a non-error response and the first poll completes without a parser error, monitoring is active. If the first poll fails, return `blocked`.
 
 3. **Process events:** On each Monitor event:
    - Terminal: `STATE=MERGED` -> `pr-merged`, `STATE=CLOSED` -> `pr-closed`, `WATCH_TIMEOUT` -> `max-cycles-reached`, `POLL_ERROR` -> `blocked`.
@@ -135,7 +135,7 @@ On re-invocation after crash: start fresh. GitHub API returns only unresolved th
 
 ## Monitor Rules
 
-Commands must be: read-only, deterministic, bounded (max watch duration enforced by script), parser-stable (no external parser binaries). Use `gh api graphql --jq` and `gh pr checks --json --jq` only. Standard POSIX utilities permitted. Use `grep --line-buffered` in pipes feeding Monitor.
+Monitor commands must be: read-only, deterministic, bounded (max watch duration enforced by script), parser-stable (no external parser binaries). Use `gh api graphql --jq` and `gh pr checks --json --jq` only. Standard POSIX utilities permitted. Use `grep --line-buffered` in pipes feeding Monitor.
 
 ## Silence
 

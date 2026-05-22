@@ -19,12 +19,13 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 - Never commit directly to the resolved trunk branch
 - Never begin implementation before git preflight is established
 - Only delegate to: `agent-framework:planner`, `agent-framework:coder`, `agent-framework:designer`, `agent-framework:local-reviewer`, `agent-framework:github-reviewer`
+- Never claim monitoring is active unless Monitor (or an equivalent real background trigger) returned a non-error response
 
 ## The Workflow
 
 The standard pipeline for a task:
 
-1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (watch/monitor/wait/poll/loop), claude-mem availability, local-review availability (codex plugin present or not).
+1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (`watch`, `monitor`, `wait`, `poll`, or `loop`), claude-mem availability, local-review availability (codex plugin present or not).
 
 2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then invoke `agent-framework:github-reviewer` directly (fix mode or watch mode based on watch keywords). Skip steps 3-11. Handle reviewer return per step 12.
 
