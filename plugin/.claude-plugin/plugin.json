@@ -1,10 +1,10 @@
 {
-  "name": "agent-framework",
+  "name": "hivemind",
   "version": "1.10.1",
-  "description": "Claude Code plugin providing a structured multi-agent framework with orchestrator, planner, coder, designer, local-reviewer, and github-reviewer agents plus workflow skills for git branching, commits, PRs, and code review remediation.",
+  "description": "Claude Code plugin providing a structured multi-agent framework with cerebrate, overlord, drone, changeling, local-reviewer, and github-reviewer agents plus workflow skills for git branching, commits, PRs, and code review remediation.",
   "author": {
     "name": "brenpike"
   },
   "license": "MIT",
-  "repository": "https://github.com/brenpike/agent-framework"
+  "repository": "https://github.com/brenpike/hivemind"
 }
