@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Dead documentation reference in `CLAUDE.md`.** The "Fleet execution" section cited `docs/fleet-prd.md`, which does not exist; removed the dead bullet (ADR-0007 is already referenced in the same section).
+- **Overlord brood route could fail spawn-brood preflight.** The overlord's brood route (step 3a) now generates `fleet_id` and normalizes the planner's `Strains` plan-artifact field into spawn-brood's required `streams` input array before dispatch, closing a gap where a real fleet route could exit at spawn-brood preflight on missing `streams`/`fleet_id`.
 
 ## [2.3.1] - 2026-05-23
 
