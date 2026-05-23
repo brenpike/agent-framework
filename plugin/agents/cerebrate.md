@@ -10,6 +10,7 @@ tools:
   - WebSearch
   - WebFetch
   - Skill
+  - ToolSearch
   - mcp__plugin_claude-mem_mcp-search__*
   - Bash(git status *)
   - Bash(git branch)
@@ -76,6 +77,8 @@ When absent: if `claude-mem: absent` in session facts, or the `mcp__plugin_claud
 3. `mcp__plugin_claude-mem_mcp-search__get_observations` — pull full detail for the relevant ids.
 
 `mcp__plugin_claude-mem_mcp-search__smart_outline` is available for structural lookups. All these tools are read-only. Look for prior plans, user decisions/constraints, known risks, failed approaches. If no relevant results, continue without memory.
+
+In deferred-tool environments the `mcp__plugin_claude-mem_mcp-search__*` tools are not directly callable until materialized. If a memory tool returns `No such tool available`, first call `ToolSearch` with `select:mcp__plugin_claude-mem_mcp-search__<tool>` (e.g. `select:mcp__plugin_claude-mem_mcp-search__search`) to load its schema, then invoke it. If `ToolSearch` itself is unavailable and the MCP tools are not directly callable, treat memory as absent and skip cleanly — do not fall back to Bash, JSON-RPC, or sqlite. In eager-load environments the tools are callable directly and this step is a no-op.
 
 The `claude-mem:mem-search` skill is optional/legacy documentation only — the MCP tools above are the memory-access path; do not depend on the skill to read memory.
 
