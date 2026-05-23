@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.2.0] - 2026-05-23
+
+### Added
+
+- cerebrate now reads claude-mem cross-session memory directly via the MCP search tool (`mcp__plugin_claude-mem_mcp-search__*`) instead of the docs-only `claude-mem:mem-search` skill.
+- `setup-project` now provisions claude-mem's `CLAUDE_CODE_PATH` in `~/.claude-mem/settings.json` (gated: only when `claude_mem=yes`, claude-mem installed, and the value is currently empty) so its background worker can locate the `claude` binary.
+
 ## [2.1.0] - 2026-05-23
 
 ### Changed

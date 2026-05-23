@@ -57,7 +57,7 @@ Once configured, the overlord is the session default agent. All skills are avail
 
 ## Recommended companion plugins
 
-- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `claude-mem:mem-search` skill referenced by the cerebrate for cross-session memory and continuity. Install separately as a Claude Code plugin. Hivemind works without it; if installed, planning invokes `claude-mem:mem-search` before every plan unless the repo has zero commits or the user explicitly opts out.
+- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides optional cross-session memory and continuity. Install separately as a Claude Code plugin. Hivemind works without it; if installed, the cerebrate reads claude-mem memory directly via the MCP search tool (`mcp__plugin_claude-mem_mcp-search__*`) before every plan unless the repo has zero commits or the user explicitly opts out. Writes happen through claude-mem's automatic capture (there is no write MCP tool).
 
 - [`codex`](https://github.com/openai/codex-plugin-cc) — provides local and GitHub-integrated Codex code review. Install and configure with:
   ```text
