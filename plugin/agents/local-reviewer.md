@@ -77,10 +77,10 @@ ledger_path: <path>
 
    1. **Shrinking yield:** Across passes the loop surfaces strictly fewer low-severity, non-actionable findings AND/OR strictly lower max severity, with no remaining actionable finding — the substrate is spreading less ground each pass. A drop in count that still leaves an actionable finding open is NOT shrinking yield; that finding must be fixed/escalated/surfaced first.
    2. **Style drift:** Findings become increasingly subjective or style-level — low severity, no security/contract/architecture impact.
-   3. **Re-litigation:** New findings merely re-litigate tradeoffs already accepted in a prior iteration. Compare title and line-range against ledger entries already marked resolved/accepted; matching subject matter on already-settled ground is re-litigation, not new ground.
+   3. **Re-litigation:** New findings merely re-litigate tradeoffs already settled in a prior iteration. Compare title and line-range against prior-iteration ledger entries — those marked `fixed`, plus any earlier-iteration finding on the same subject/line-range that was not re-surfaced as actionable; matching subject matter on that already-settled ground is re-litigation, not new ground.
    4. **Non-converging churn:** Findings count churns without trending toward zero across 2+ iterations.
 
-   Distinguish re-litigation from genuine progress. Oscillating counts (e.g. 3 -> 1 -> 3) are NOT stagnation when the re-growth is genuinely new substantive findings — different subject matter, different files/line-ranges, or higher severity than the settled set. Only count it toward signal 3/4 when the re-grown findings re-open subject matter the ledger shows was already accepted. When in doubt that findings are genuinely new and substantive, do NOT fire — proceed to advance the iteration (step 10).
+   Distinguish re-litigation from genuine progress. Oscillating counts (e.g. 3 -> 1 -> 3) are NOT stagnation when the re-growth is genuinely new substantive findings — different subject matter, different files/line-ranges, or higher severity than the settled set. Only count it toward signal 3/4 when the re-grown findings re-open subject matter the ledger shows was already settled. When in doubt that findings are genuinely new and substantive, do NOT fire — proceed to advance the iteration (step 10).
 
    When the pattern holds and all guards pass: persist the ledger and return `diminishing-returns` with `signals_observed` (which of the four), `latest_severity_max`, `findings_open`, and `recommendation_text`.
 
