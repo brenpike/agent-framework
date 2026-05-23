@@ -1,6 +1,6 @@
 # Workflow
 
-Branch, commit, and PR conventions. Loaded by cerebrate only.
+Branch, commit, and PR conventions. Loaded by overlord only.
 
 ## Branch Taxonomy
 
@@ -70,14 +70,14 @@ PR content must include:
 
 ## Fleet Execution
 
-When the overlord determines that work decomposes into multiple independent streams with minimal file-scope overlap, it may recommend `delivery: fleet`. The cerebrate confirms with the user before dispatching.
+When the cerebrate determines that work decomposes into multiple independent streams with minimal file-scope overlap, it may recommend `delivery: fleet`. The overlord confirms with the user before dispatching.
 
-In fleet mode, the cerebrate enters coordinator mode:
+In fleet mode, the overlord enters coordinator mode:
 1. Invokes `hivemind:spawn-brood` to spawn child sessions
 2. Monitors via `hivemind:brood-status` on demand
 3. Reports aggregate status when all streams complete
 
-Each child session is a standard cerebrate running a full pipeline. Children have no fleet awareness. The "one plan = one branch = one PR" invariant holds per child session.
+Each child session is a standard overlord running a full pipeline. Children have no fleet awareness. The "one plan = one branch = one PR" invariant holds per child session.
 
 Fleet-plan is a distinct artifact from plan artifact. Fleet-plans contain stream-level descriptions and scope boundaries. Plan artifacts contain implementation steps (STEP-NNN).
 

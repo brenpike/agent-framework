@@ -4,7 +4,7 @@ Canonical terms used across agents. When any rule uses a term defined here, this
 
 ## Agents
 
-Allowed agents: `cerebrate`, `overlord`, `drone`, `changeling`, `local-reviewer`, `github-reviewer`. No other agent may be called, invented, or used as a fallback.
+Allowed agents: `overlord`, `cerebrate`, `drone`, `changeling`, `local-reviewer`, `github-reviewer`. No other agent may be called, invented, or used as a fallback.
 
 ## Unsafe Git State
 
@@ -35,16 +35,16 @@ Execute every command listed in the project's `CLAUDE.md` validation section. No
 
 ## Fleet
 
-A set of parallel cerebrate sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the coordinator via `hivemind:spawn-brood`.
+A set of parallel overlord sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the coordinator via `hivemind:spawn-brood`.
 
 ## Coordinator Mode
 
-The cerebrate execution mode entered when a fleet-plan is dispatched. The cerebrate remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the fleet lifecycle. Coordinator mode responsibilities: dispatch, monitor, on-demand help, final report.
+The overlord execution mode entered when a fleet-plan is dispatched. The overlord remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the fleet lifecycle. Coordinator mode responsibilities: dispatch, monitor, on-demand help, final report.
 
 ## Fleet-Plan
 
-The overlord's output artifact when work decomposes into multiple independent streams. Contains stream-level descriptions and scope boundaries, not step-level detail. Distinct from a plan artifact — fleet-plans do not contain STEP-NNN entries.
+The cerebrate's output artifact when work decomposes into multiple independent streams. Contains stream-level descriptions and scope boundaries, not step-level detail. Distinct from a plan artifact — fleet-plans do not contain STEP-NNN entries.
 
 ## Stream
 
-One independent unit of work within a fleet-plan, assigned to a single child cerebrate session. Each stream has its own worktree, branch, pipeline execution, and PR.
+One independent unit of work within a fleet-plan, assigned to a single child overlord session. Each stream has its own worktree, branch, pipeline execution, and PR.

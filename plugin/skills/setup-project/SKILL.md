@@ -1,6 +1,6 @@
 ---
 name: setup-project
-description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the cerebrate becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.hivemind/` is excluded from git via `.gitignore`.
+description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the overlord becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.hivemind/` is excluded from git via `.gitignore`.
 allowed-tools:
   - Read
   - Write
@@ -32,7 +32,7 @@ After:
 
 # Setup Project
 
-Apply the hivemind plugin's required project settings to `.claude/settings.json` so the cerebrate becomes the session default agent.
+Apply the hivemind plugin's required project settings to `.claude/settings.json` so the overlord becomes the session default agent.
 
 This skill is the user-invoked alternative to manually editing `.claude/settings.json` per the README. It is not auto-invoked by the plugin; the user must explicitly request it.
 
@@ -63,7 +63,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 4. If `.claude/settings.json` exists, read it; otherwise treat existing settings as `{}`.
 5. Merge required keys, preserving every existing key the user already had:
    - `enabledPlugins["hivemind@brenpike"]` = `true`
-   - `agent` = `"hivemind:cerebrate"`
+   - `agent` = `"hivemind:overlord"`
    - if `caveman` = `yes`: `enabledPlugins["caveman@caveman"]` = `true`
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
    - if `codex` = `yes`: `enabledPlugins["codex@openai-codex"]` = `true`
