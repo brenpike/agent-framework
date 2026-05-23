@@ -43,20 +43,6 @@
       "Monitor"
     ]
   },
-  "enabledPlugins": {
-    "agent-framework@brenpike": true,
-    "caveman@caveman": true,
-    "claude-mem@thedotmack": true,
-    "codex@openai-codex": true
-  },
-  "agent": "agent-framework:orchestrator",
-  "pluginConfigs": {
-    "caveman@caveman": {
-      "options": {
-        "defaultLevel": "ultra"
-      }
-    }
-  },
   "hooks": {
     "SubagentStart": [
       {
@@ -68,5 +54,19 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "caveman@caveman": true,
+    "claude-mem@thedotmack": true,
+    "codex@openai-codex": true,
+    "hivemind@brenpike": true
+  },
+  "agent": "hivemind:cerebrate",
+  "pluginConfigs": {
+    "caveman@caveman": {
+      "options": {
+        "defaultLevel": "ultra"
+      }
+    }
   }
 }
