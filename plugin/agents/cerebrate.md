@@ -10,6 +10,7 @@ tools:
   - WebSearch
   - WebFetch
   - Skill
+  - ToolSearch
   - mcp__plugin_claude-mem_mcp-search__*
   - Bash(git status *)
   - Bash(git branch)
@@ -69,7 +70,15 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 
 When delegation includes `Memory context:`, use it directly — do not search memory again.
 
-When absent: if `claude-mem: absent` in session facts, or the `mcp__plugin_claude-mem_mcp-search__*` tools are not registered in this session, skip memory cleanly — do not error, do not hard-require it. Otherwise call the claude-mem MCP search tools directly via the 3-layer workflow:
+When absent, resolve memory access in this exact order:
+
+1. If `claude-mem: absent` in session facts → memory is truly off; skip cleanly. Do not error, do not hard-require it, do not fall back to Bash, JSON-RPC, or sqlite.
+2. Otherwise (claude-mem present, or no `claude-mem` session fact either way) → attempt to use the `mcp__plugin_claude-mem_mcp-search__*` tools. In eager-load environments they are directly callable and you proceed straight to the 3-layer workflow below. In deferred-tool environments their schemas are not materialized until loaded — this is NOT the same as absent, so do not classify it as absent yet. Before treating any memory tool as unavailable, call `ToolSearch` with `select:mcp__plugin_claude-mem_mcp-search__<tool>` (e.g. `select:mcp__plugin_claude-mem_mcp-search__search`) to materialize its schema, then invoke it. If a direct call returns `No such tool available`, that is the deferred-loader signal — run the same `ToolSearch` materialization, then retry the call.
+3. Only treat memory as absent and skip cleanly if `ToolSearch` itself is unavailable and the MCP tools are not directly callable. Even then, do not fall back to Bash, JSON-RPC, or sqlite.
+
+Never classify present-but-deferred MCP tools as absent before attempting `ToolSearch`. In eager-load environments the materialization step is a harmless no-op.
+
+3-layer workflow (once the tools are callable):
 
 1. `mcp__plugin_claude-mem_mcp-search__search` — find candidate observations matching the task.
 2. `mcp__plugin_claude-mem_mcp-search__timeline` — order/contextualize the candidates.
