@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.0.0] - 2026-05-23
+
+### Changed
+
+- **BREAKING — swapped the `cerebrate` and `overlord` agent names/roles** for StarCraft-canon fidelity. The control-plane/coordinator agent is now `hivemind:overlord`; the read-only planner is now `hivemind:cerebrate`. Each agent's behavior is unchanged — only the names swapped. Rationale and rejected alternatives: ADR-0008.
+
+  **Migration:** change `.claude/settings.json` `"agent": "hivemind:cerebrate"` to `"agent": "hivemind:overlord"`.
+
 ## [1.10.2] - 2026-05-23
 
 ### Changed
