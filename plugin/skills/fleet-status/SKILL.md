@@ -47,7 +47,7 @@ This is an **interactive skill** — it produces user-visible text output.
       Non-empty output = exists.
    c. Check PR state:
       ```bash
-      gh pr list --head <branch> --json number,state --jq '.[0] // empty'
+      gh pr list --head <branch> --state all --json number,state --jq '.[0] // empty'
       ```
       If `gh` fails (not authenticated, rate-limited, etc.), report PR status as "unknown".
    d. Derive status from observables:

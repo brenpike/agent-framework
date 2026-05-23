@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(git worktree *)
   - Bash(cp *)
   - Bash(mkdir -p *)
+  - Bash(command -v *)
   - Bash(printf *)
   - Bash(sleep *)
   - Bash(git branch *)
@@ -63,9 +64,10 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
       ```
    b. Discover the tmux session name from `tmux list-sessions` after the spawn command returns. The session name corresponds to the most recently created session associated with the branch.
    c. Wait for session ready — poll with `tmux capture-pane -t <session> -p` checking for a prompt indicator, timeout after 30 seconds. Poll every 2 seconds. If timeout: mark stream as `status: failed`, continue with remaining streams.
-   d. Inject task description:
+   d. Inject task description (escape to prevent shell interpolation):
       ```bash
-      tmux send-keys -t <session_name> "<description>" Enter
+      escaped_desc=$(printf '%q' "<description>")
+      tmux send-keys -t <session_name> "$escaped_desc" Enter
       ```
    e. Record stream data: worktree path (from `git worktree list`), tmux session name, `status: running`.
 
