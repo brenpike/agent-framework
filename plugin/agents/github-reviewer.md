@@ -1,7 +1,7 @@
 ---
 name: github-reviewer
 description: Own post-PR GitHub review feedback — detect, classify, fix simple issues, push, reply, and resolve threads. Fix mode (one-shot) or watch mode (Monitor polling).
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools:
   - Read
   - Write

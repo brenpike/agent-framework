@@ -1,7 +1,7 @@
 ---
 name: local-reviewer
 description: Own the pre-PR iterative Codex review loop — invoke review, classify findings, fix simple issues, detect break-fix cycles, and return terminal exit state to the orchestrator.
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools:
   - Read
   - Write

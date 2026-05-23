@@ -1,7 +1,7 @@
 ---
 name: overlord
 description: Create implementation plans by researching the codebase, identifying risks and edge cases, assigning explicit file scopes, and recommending delivery shape.
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools:
   - Read
   - Glob
