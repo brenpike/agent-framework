@@ -10,6 +10,7 @@ tools:
   - WebSearch
   - WebFetch
   - Skill
+  - mcp__plugin_claude-mem_mcp-search__*
   - Bash(git status *)
   - Bash(git branch)
   - Bash(git branch --list*)
@@ -62,11 +63,21 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 - assign work to any agent except `drone` or `changeling`
 - use vague file scopes — every step needs exact paths
 - rely on memory for file paths, signatures, imports, config values, dependency versions, or branch state — inspect at runtime
-- invoke any skill other than `claude-mem:mem-search`
+- invoke any skill; memory comes from the `mcp__plugin_claude-mem_mcp-search__*` tools, not a skill (`claude-mem:mem-search` is optional legacy documentation only)
 
 ## Memory Handling
 
-When delegation includes `Memory context:`, use it directly — do not re-invoke mem-search. When absent: if `claude-mem: absent` in session facts, skip; otherwise invoke `claude-mem:mem-search`. Look for prior plans, user decisions/constraints, known risks, failed approaches. If no relevant results, continue without memory.
+When delegation includes `Memory context:`, use it directly — do not search memory again.
+
+When absent: if `claude-mem: absent` in session facts, or the `mcp__plugin_claude-mem_mcp-search__*` tools are not registered in this session, skip memory cleanly — do not error, do not hard-require it. Otherwise call the claude-mem MCP search tools directly via the 3-layer workflow:
+
+1. `mcp__plugin_claude-mem_mcp-search__search` — find candidate observations matching the task.
+2. `mcp__plugin_claude-mem_mcp-search__timeline` — order/contextualize the candidates.
+3. `mcp__plugin_claude-mem_mcp-search__get_observations` — pull full detail for the relevant ids.
+
+`mcp__plugin_claude-mem_mcp-search__smart_outline` is available for structural lookups. All these tools are read-only. Look for prior plans, user decisions/constraints, known risks, failed approaches. If no relevant results, continue without memory.
+
+The `claude-mem:mem-search` skill is optional/legacy documentation only — the MCP tools above are the memory-access path; do not depend on the skill to read memory.
 
 ## Research Rules
 
