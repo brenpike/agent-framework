@@ -467,5 +467,8 @@ nupkgs/
 .claude/agent-memory/*
 .claude/agent-memory/
 
+# Claude Code worktree sessions
+.claude/worktrees/
+
 # agent-framework runtime orchestration artifacts (ephemeral by default)
 .agent-framework/
