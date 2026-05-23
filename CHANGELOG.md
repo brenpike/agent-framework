@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Aligned multi-session vocabulary to the CONTEXT.md canonical glossary: Brood (not fleet), Strain (not stream), Hatchery (not coordinator mode).** Renamed the `definitions.md` glossary sections (`Fleet`→`Brood`, `Stream`→`Strain`, `Coordinator Mode`→`Hatchery`) and aligned consumer prose across `overlord.md`, `workflow.md`, `spawn-brood`, and `brood-status`. Machine/data tokens have been fully migrated to canonical names: `delivery: fleet`→`delivery: brood`, `streams`→`strains`, `fleet_id`→`brood_id`, `coordinator_session`→`hatchery_session`, manifest path `.hivemind/fleet/manifest.yaml`→`.hivemind/brood/manifest.yaml`, and proper names **Fleet-Plan**→**Brood-Plan** and **Fleet Manifest**→**Brood Manifest**. The migration is now complete — no fleet/stream tokens remain except deprecated-term notes and user-facing alternate triggers. `brood-status` user-facing output labels updated (`Fleet:`→`Brood:`, `Stream`→`Strain`).
+- **Brood manifest runtime path moved from `.hivemind/fleet/manifest.yaml` to `.hivemind/brood/manifest.yaml`.** A brood dispatched before upgrading to this version writes the old path; after upgrading, `brood-status` reads only the new path and will not display that pre-upgrade brood (its tmux sessions and worktrees remain live and recoverable via `git worktree list` / `tmux ls`). Finish or re-dispatch in-flight broods across the upgrade. The manifest is ephemeral, gitignored runtime state.
 
 ### Fixed
 
