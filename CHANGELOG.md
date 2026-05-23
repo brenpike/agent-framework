@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.4.1] - 2026-05-23
+
+### Fixed
+
+- **cerebrate no longer treats claude-mem as required in environments that have `ToolSearch` but no claude-mem.** The memory-handling gate previously only skipped cleanly when `ToolSearch` itself was unavailable, so a session without claude-mem installed (and no `claude-mem: absent` session fact) but with `ToolSearch` present would loop on failing `mcp__plugin_claude-mem_mcp-search__*` calls instead of proceeding without memory. The gate now classifies memory as absent — skipping cleanly with no error and no Bash/JSON-RPC/sqlite fallback — whenever `ToolSearch` finds no matching claude-mem MCP tool or the post-materialization retry still returns `No such tool available`, restoring the optional-memory contract.
+
 ## [2.4.0] - 2026-05-23
 
 ### Added
