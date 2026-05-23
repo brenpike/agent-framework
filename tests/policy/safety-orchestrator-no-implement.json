@@ -1,17 +1,17 @@
 {
   "rule": "Orchestrator cannot implement",
   "source": {
-    "file": "plugin/agents/orchestrator.md",
+    "file": "plugin/agents/cerebrate.md",
     "pattern": "Never use Write/Edit or Bash to implement product/application changes"
   },
   "consumers": [
     {
-      "file": "plugin/agents/orchestrator.md",
+      "file": "plugin/agents/cerebrate.md",
       "pattern": "Write",
       "absent": true
     },
     {
-      "file": "plugin/agents/orchestrator.md",
+      "file": "plugin/agents/cerebrate.md",
       "pattern": "Edit",
       "absent": true
     }

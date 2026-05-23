@@ -6,15 +6,15 @@
   },
   "consumers": [
     {
-      "file": "plugin/agents/planner.md",
+      "file": "plugin/agents/overlord.md",
       "pattern": "Otherwise return blocked"
     },
     {
-      "file": "plugin/agents/coder.md",
+      "file": "plugin/agents/drone.md",
       "pattern": "Stop and report blocked when"
     },
     {
-      "file": "plugin/agents/designer.md",
+      "file": "plugin/agents/changeling.md",
       "pattern": "Stop and report blocked when"
     }
   ]

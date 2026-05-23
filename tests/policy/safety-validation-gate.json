@@ -6,11 +6,11 @@
   },
   "consumers": [
     {
-      "file": "plugin/agents/orchestrator.md",
+      "file": "plugin/agents/cerebrate.md",
       "pattern": "Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)"
     },
     {
-      "file": "plugin/agents/coder.md",
+      "file": "plugin/agents/drone.md",
       "pattern": "run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)"
     },
     {

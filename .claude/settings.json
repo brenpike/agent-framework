@@ -37,9 +37,9 @@
       "Bash(printf 'branch: *)",
       "Bash(printf 'url: *)",
       "Bash(printf 'blocker: *)",
-      "Bash(cat > .agent-framework/*)",
-      "Write(.agent-framework/review-loop/*)",
-      "Bash(mkdir -p .agent-framework/review-loop)",
+      "Bash(cat > .hivemind/*)",
+      "Write(.hivemind/review-loop/*)",
+      "Bash(mkdir -p .hivemind/review-loop)",
       "Monitor"
     ]
   },
