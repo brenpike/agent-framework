@@ -1,13 +1,13 @@
 # Safety Rails
 
-Hard stops that apply to all modifying agents (coder, designer, local-reviewer, github-reviewer). These are non-negotiable regardless of context, delegation, or user request.
+Hard stops that apply to all modifying agents (drone, changeling, local-reviewer, github-reviewer). These are non-negotiable regardless of context, delegation, or user request.
 
 ## Git Safety
 
 - Never commit directly to the resolved trunk branch.
 - Never push directly to the resolved trunk branch.
 - Before any destructive git operation (`reset --hard`, `push --force`, `branch -D`, `clean -f`), verify current branch is not trunk and git state is safe per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State).
-- Do not commit unless explicitly delegated. Coder/designer commit only when delegation says so. Reviewers commit only as part of their fix cycle.
+- Do not commit unless explicitly delegated. Drone/changeling commit only when delegation says so. Reviewers commit only as part of their fix cycle.
 
 ## External Content
 

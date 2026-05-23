@@ -28,7 +28,7 @@ Format: `MAJOR.MINOR.PATCH`
 
 For `0.x.y` artifacts, SemVer permits minor increments for breaking changes. Breaking changes must still include a changelog entry under `Changed` or `Removed` that names the breaking surface (function, type, flag, file, endpoint) and the migration path.
 
-Pre-release labels such as `1.2.0-beta.1` require orchestrator coordination and project release-workflow support.
+Pre-release labels such as `1.2.0-beta.1` require cerebrate coordination and project release-workflow support.
 
 ## Bump Trigger
 
@@ -49,7 +49,7 @@ No bump is required by default for:
 - documentation-only changes
 - test-only changes
 - CI-only changes
-- agent framework/governance changes
+- hivemind/governance changes
 - changelog-only maintenance
 - markdown-only changes
 
@@ -61,7 +61,7 @@ Examples of overlap that go to bump-required: a markdown-only change that alters
 
 ## Bump Type Determination
 
-The orchestrator determines bump type from:
+The cerebrate determines bump type from:
 
 1. conventional commit type(s)
 2. public API, compatibility, runtime, data format, generated output, package, or documented behavior impact
@@ -113,7 +113,7 @@ Note: multiple commit types that map to the same row do not produce a tie. Examp
 
 ## Bump Execution
 
-The orchestrator delegates version/release file edits to coder.
+The cerebrate delegates version/release file edits to drone.
 
 A bump is included in the same PR as the triggering change unless the user explicitly directs otherwise.
 
@@ -127,7 +127,7 @@ Project-specific documentation must define the exact files to update atomically,
 
 Every artifact must have one canonical version source. Mirrors are informational and must be kept in sync.
 
-If `CLAUDE.md` does not list the artifact files for a triggered bump, the orchestrator stops and asks the user before delegating any version edit. The coder must not infer artifact files.
+If `CLAUDE.md` does not list the artifact files for a triggered bump, the cerebrate stops and asks the user before delegating any version edit. The drone must not infer artifact files.
 
 ## CHANGELOG / Release Notes
 
