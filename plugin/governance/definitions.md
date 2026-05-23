@@ -32,3 +32,19 @@ A failure is transient if and only if its root cause is: HTTP 5xx, HTTP 429, TCP
 ## Validation Procedure
 
 Execute every command listed in the project's `CLAUDE.md` validation section. No duration cap. If a command cannot run, return Blocked naming the command and reason. If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so.
+
+## Fleet
+
+A set of parallel orchestrator sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the coordinator via `agent-framework:fleet-dispatch`.
+
+## Coordinator Mode
+
+The orchestrator execution mode entered when a fleet-plan is dispatched. The orchestrator remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the fleet lifecycle. Coordinator mode responsibilities: dispatch, monitor, on-demand help, final report.
+
+## Fleet-Plan
+
+The planner's output artifact when work decomposes into multiple independent streams. Contains stream-level descriptions and scope boundaries, not step-level detail. Distinct from a plan artifact — fleet-plans do not contain STEP-NNN entries.
+
+## Stream
+
+One independent unit of work within a fleet-plan, assigned to a single child orchestrator session. Each stream has its own worktree, branch, pipeline execution, and PR.

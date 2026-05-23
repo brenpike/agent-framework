@@ -67,3 +67,18 @@ PR content must include:
 - Merge strategy: squash
 - Review: at least one human approval required
 - PR target: resolved trunk branch
+
+## Fleet Execution
+
+When the planner determines that work decomposes into multiple independent streams with minimal file-scope overlap, it may recommend `delivery: fleet`. The orchestrator confirms with the user before dispatching.
+
+In fleet mode, the orchestrator enters coordinator mode:
+1. Invokes `agent-framework:fleet-dispatch` to spawn child sessions
+2. Monitors via `agent-framework:fleet-status` on demand
+3. Reports aggregate status when all streams complete
+
+Each child session is a standard orchestrator running a full pipeline. Children have no fleet awareness. The "one plan = one branch = one PR" invariant holds per child session.
+
+Fleet-plan is a distinct artifact from plan artifact. Fleet-plans contain stream-level descriptions and scope boundaries. Plan artifacts contain implementation steps (STEP-NNN).
+
+Version bumps, merge conflicts, and PR ordering are handled independently by each child, same as parallel developers on a team.
