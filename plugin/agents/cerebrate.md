@@ -79,7 +79,7 @@ When absent, resolve memory access in this exact order:
    - `ToolSearch` is available but returns no result matching `mcp__plugin_claude-mem_mcp-search__*`, OR
    - the post-materialization retry still returns `No such tool available`.
 
-Deferred vs. absent: a tool is deferred (not absent) only when `ToolSearch` returns a matching schema that successfully materializes and the subsequent call succeeds. All other outcomes — no matching schema, or retry still fails — classify as absent.
+Deferred vs. absent vs. failing: a tool is deferred (not absent) only when `ToolSearch` returns a matching schema that successfully materializes and the subsequent call succeeds. Classify as absent ONLY on the three explicit absence signals enumerated above (no matching `ToolSearch` result, `ToolSearch` unavailable with no directly callable MCP tool, or retry returning `No such tool available`). Do NOT classify as absent when a matching schema materializes but the call then fails for any other reason (auth, timeout, MCP server crash, malformed response, or any non-`No such tool available` error) — that is an operational dependency failure, not absence: apply the Research Rules retry-once-if-transient rule per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Transient Failure), and if it is not transient or the retry still fails, return blocked or surface the failure rather than skipping memory.
 
 3-layer workflow (once the tools are callable):
 
