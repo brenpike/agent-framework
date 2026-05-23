@@ -154,16 +154,16 @@ Versioning:
 - Release files likely needed: [files|none|unknown]
 
 Delivery:
-- delivery: [single|multi|fleet]
+- delivery: [single|multi|brood]
 - Shape: [single-plan|multi-plan]   # kept for open-plan-pr consumer; multi-plan == sequential multi-PR
 - Branch/PR: [recommendation]
 - Worktrees: [yes|no] — [brief reason]
-- Strains: [omit unless delivery: fleet]
+- Strains: [omit unless delivery: brood]
     - name: [strain-name]
       description: [what this strain delivers]
       branch: [intended branch]
-- overlap_risk: [low|medium|high]      # required when delivery: fleet
-- overlap_details: [text]              # required when delivery: fleet
+- overlap_risk: [low|medium|high]      # required when delivery: brood
+- overlap_details: [text]              # required when delivery: brood
 
 Open questions:
 - [question]
@@ -172,4 +172,4 @@ Open questions:
 
 ### Finalization Gate
 
-Do not finalize until every step has: one owner, exact file scope. Full output additionally requires: `Depends on`, full versioning block, delivery block. When the delivery block sets `delivery: fleet` it must also carry `Strains`, `overlap_risk`, and `overlap_details`. Every step with a `STEP-NNN` identifier is a phase boundary for the orchestrator.
+Do not finalize until every step has: one owner, exact file scope. Full output additionally requires: `Depends on`, full versioning block, delivery block. When the delivery block sets `delivery: brood` it must also carry `Strains`, `overlap_risk`, and `overlap_details`. Every step with a `STEP-NNN` identifier is a phase boundary for the orchestrator.

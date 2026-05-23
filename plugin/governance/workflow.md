@@ -70,7 +70,7 @@ PR content must include:
 
 ## Brood Execution
 
-When the cerebrate determines that work decomposes into multiple independent strains with minimal file-scope overlap, it may recommend `delivery: fleet`. The overlord confirms with the user before dispatching.
+When the cerebrate determines that work decomposes into multiple independent strains with minimal file-scope overlap, it may recommend `delivery: brood`. The overlord confirms with the user before dispatching.
 
 In brood mode, the overlord enters hatchery (coordinator) mode:
 1. Invokes `hivemind:spawn-brood` to spawn child sessions
@@ -79,6 +79,6 @@ In brood mode, the overlord enters hatchery (coordinator) mode:
 
 Each child session is a standard overlord running a full pipeline. Children have no brood awareness. The "one plan = one branch = one PR" invariant holds per child session.
 
-Fleet-Plan is a distinct artifact from plan artifact. Fleet-Plans contain strain-level descriptions and scope boundaries. Plan artifacts contain implementation steps (STEP-NNN).
+Brood-Plan is a distinct artifact from plan artifact. Brood-Plans contain strain-level descriptions and scope boundaries. Plan artifacts contain implementation steps (STEP-NNN).
 
 Version bumps, merge conflicts, and PR ordering are handled independently by each child, same as parallel developers on a team.

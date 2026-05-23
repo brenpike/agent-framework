@@ -17,16 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **cerebrate's Delivery block can now emit the brood-plan shape the overlord routes on.** Added a `delivery: [single|multi|fleet]` field plus a `Strains` block (name/description/branch) and `overlap_risk`/`overlap_details` fields, emitted when `delivery: fleet`. Previously cerebrate only produced `Shape: [single-plan|multi-plan]`, so it could not express the parallel-brood delivery shape that the overlord's brood-route (step 3a/3b) consumes. The existing `Shape:` line is retained for backward compatibility with the `open-plan-pr` consumer.
+- **cerebrate's Delivery block can now emit the brood-plan shape the overlord routes on.** Added a `delivery: [single|multi|brood]` field plus a `Strains` block (name/description/branch) and `overlap_risk`/`overlap_details` fields, emitted when `delivery: brood`. Previously cerebrate only produced `Shape: [single-plan|multi-plan]`, so it could not express the parallel-brood delivery shape that the overlord's brood-route (step 3a/3b) consumes. The existing `Shape:` line is retained for backward compatibility with the `open-plan-pr` consumer.
 
 ### Changed
 
-- **Aligned multi-session vocabulary to the CONTEXT.md canonical glossary: Brood (not fleet), Strain (not stream), Hatchery (not coordinator mode).** Renamed the `definitions.md` glossary sections (`Fleet`→`Brood`, `Stream`→`Strain`, `Coordinator Mode`→`Hatchery`) and aligned consumer prose across `overlord.md`, `workflow.md`, `spawn-brood`, and `brood-status`. Machine/data tokens are deliberately preserved: the `delivery: fleet` routing key, the `streams` input/manifest key, `fleet_id`, and the `.hivemind/fleet/manifest.yaml` path are unchanged, as are the proper names **Fleet-Plan** and **Fleet Manifest**. `brood-status` user-facing output labels updated (`Fleet:`→`Brood:`, `Stream`→`Strain`).
+- **Aligned multi-session vocabulary to the CONTEXT.md canonical glossary: Brood (not fleet), Strain (not stream), Hatchery (not coordinator mode).** Renamed the `definitions.md` glossary sections (`Fleet`→`Brood`, `Stream`→`Strain`, `Coordinator Mode`→`Hatchery`) and aligned consumer prose across `overlord.md`, `workflow.md`, `spawn-brood`, and `brood-status`. Machine/data tokens have been fully migrated to canonical names: `delivery: fleet`→`delivery: brood`, `streams`→`strains`, `fleet_id`→`brood_id`, `coordinator_session`→`hatchery_session`, manifest path `.hivemind/fleet/manifest.yaml`→`.hivemind/brood/manifest.yaml`, and proper names **Fleet-Plan**→**Brood-Plan** and **Fleet Manifest**→**Brood Manifest**. The migration is now complete — no fleet/stream tokens remain except deprecated-term notes and user-facing alternate triggers. `brood-status` user-facing output labels updated (`Fleet:`→`Brood:`, `Stream`→`Strain`).
 
 ### Fixed
 
 - **Dead documentation reference in `CLAUDE.md`.** The "Fleet execution" section cited `docs/fleet-prd.md`, which does not exist; removed the dead bullet (ADR-0007 is already referenced in the same section).
-- **Overlord brood route could fail spawn-brood preflight.** The overlord's brood route (step 3a) now generates `fleet_id` and normalizes the planner's `Strains` plan-artifact field into spawn-brood's required `streams` input array before dispatch, closing a gap where a real fleet route could exit at spawn-brood preflight on missing `streams`/`fleet_id`.
+- **Overlord brood route could fail spawn-brood preflight.** The overlord's brood route (step 3a) now generates `brood_id` and normalizes the planner's `Strains` plan-artifact field into spawn-brood's required `strains` input array before dispatch, closing a gap where a real brood route could exit at spawn-brood preflight on missing `strains`/`brood_id`.
 
 ## [2.3.1] - 2026-05-23
 

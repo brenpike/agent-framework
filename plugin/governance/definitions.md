@@ -36,18 +36,18 @@ Execute every command listed in the project's `CLAUDE.md` validation section. No
 ## Brood
 
 A set of parallel overlord sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the overlord in hatchery mode via `hivemind:spawn-brood`.
-_Alias_: fleet
+_Avoid_: fleet
 
 ## Hatchery
 
-The overlord execution mode entered when a fleet-plan is dispatched; the overlord remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+The overlord execution mode entered when a brood-plan is dispatched; the overlord remains on trunk in the main checkout, owns the brood manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
 _Alias_: coordinator mode
 
-## Fleet-Plan
+## Brood-Plan
 
-The cerebrate's output artifact when work decomposes into multiple independent strains. Contains strain-level descriptions and scope boundaries, not step-level detail. Distinct from a plan artifact — fleet-plans do not contain STEP-NNN entries.
+The cerebrate's output artifact when work decomposes into multiple independent strains. Contains strain-level descriptions and scope boundaries, not step-level detail. Distinct from a plan artifact — brood-plans do not contain STEP-NNN entries.
 
 ## Strain
 
-One independent unit of work within a fleet-plan, assigned to a single child overlord session. Each strain has its own worktree, branch, pipeline execution, and PR.
-_Alias_: stream
+One independent unit of work within a brood-plan, assigned to a single child overlord session. Each strain has its own worktree, branch, pipeline execution, and PR.
+_Avoid_: stream

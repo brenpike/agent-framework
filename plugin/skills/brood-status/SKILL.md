@@ -1,6 +1,6 @@
 ---
 name: brood-status
-description: Check status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "fleet status", "check brood", "brood progress", "how's the brood".
+description: Check status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "check brood", "brood-status", "brood progress", "how's the brood", "fleet status".
 allowed-tools:
   - Bash(tmux *)
   - Bash(git worktree *)
@@ -31,7 +31,7 @@ This is an **interactive skill** — it produces user-visible text output.
       ```bash
       git worktree list | head -1 | awk '{print $1}'
       ```
-   c. Read the manifest from `<main_checkout>/.hivemind/fleet/manifest.yaml`.
+   c. Read the manifest from `<main_checkout>/.hivemind/brood/manifest.yaml`.
    d. If no manifest exists, report "No active brood found." and stop.
 
 2. **Probe each strain.** For each strain in the manifest:
@@ -61,7 +61,7 @@ This is an **interactive skill** — it produces user-visible text output.
 
 3. **Present formatted status table.**
    ```
-   Brood: <fleet_id>
+   Brood: <brood_id>
    Overlap risk: <overlap_risk>
 
    | Strain | Branch | Session | PR | Status |
