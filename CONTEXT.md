@@ -155,6 +155,11 @@ The detected oscillation where fixing one finding reintroduces a previously fixe
 _Alias_: break-fix-break cycle
 _Avoid_: regression loop, flip-flop
 
+**Creep Stagnation**:
+The detected pattern where the adaptation cycle yields diminishing returns across 2+ iterations — the loop spreads but gains no new ground. Recognized from the fix ledger by one or more signals: shrinking yield (fewer findings and/or lower max severity each pass), style drift (findings trending subjective/low-severity with no security/contract/architecture impact), re-litigation of already-accepted tradeoffs, or non-converging churn. Unlike Mutation Decay, this is an ADVISORY early exit (`diminishing-returns`), not a mandatory stop: the local-reviewer recommends ending the loop and returns the decision to the overlord/Overmind. Guarded — never fires while a critical/high finding is open, and never at or after the iteration ceiling (`max-iterations-reached` wins there).
+_Alias_: diminishing-returns exit
+_Avoid_: decay (reserved for Mutation Decay), regression loop, flip-flop
+
 **Fix Ledger**:
 The persisted YAML artifact (`.hivemind/review-loop/fix-ledger.yaml`) tracking finding status across adaptation cycle iterations; status transitions: open → fixing → fixed/regressed, fixed → cycling.
 _Avoid_: review log, finding tracker
@@ -251,6 +256,7 @@ _Avoid_: fleet config, fleet state, registry
 - A **Working Branch** maps to exactly one **Directive** and one PR
 - An **Adaptation Cycle** (review loop) may produce zero or more **Remediation** cycles
 - A **Mutation Decay** (break-fix-break cycle) terminates an **Adaptation Cycle** with mandatory **Flare** (escalation)
+- **Creep Stagnation** (diminishing-returns exit) ends an **Adaptation Cycle** advisorily — the local-reviewer recommends stopping; the **Overlord** surfaces the choice to the **Overmind**. Checked only after the **Mutation Decay** check clears, never with a critical/high finding open, and never at the iteration ceiling
 - A **Bump Trigger** fires at most one version increment per PR
 - Each agent loads specific **Governance Docs** per its `Load and follow` list
 - A **Bioform** is the collective genus; each **Overlord**, **Cerebrate**, **Drone**, and **Changeling** is a bioform
