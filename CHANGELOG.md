@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.0.0] - 2026-05-22
+
+### Added
+
+- Fleet parallel execution — spawn-brood and brood-status skills for running multiple orchestrator sessions in parallel via git worktrees and tmux
+- Coordinator mode — cerebrate enters hatchery mode after dispatching a brood, monitors via brood-status
+- Fleet governance definitions — Fleet, Coordinator Mode, Fleet-Plan, Stream added to definitions.md
+- Fleet execution section in workflow.md
+
+### Changed
+
+- **BREAKING:** Full rebrand from `agent-framework` to `Hivemind` — plugin name, install path (`hivemind@brenpike`), all namespaced references (`hivemind:` prefix)
+- **BREAKING:** Agent renames — orchestrator → cerebrate, planner → overlord, coder → drone, designer → changeling
+- **BREAKING:** Skill renames — checkpoint-commit → molt, fleet-dispatch → spawn-brood, fleet-status → brood-status, local-codex-review → adaptation-cycle
+- **BREAKING:** Runtime data directory `.agent-framework/` → `.hivemind/`
+- **BREAKING:** Consumers must reinstall as `hivemind@brenpike` and update `settings.json` `enabledPlugins` and `agent` keys
+- README rewritten with Hivemind branding, bioforms table, lifecycle diagram, brood mode documentation
+
 ## [1.10.1] - 2026-05-21
 
 ### Changed
