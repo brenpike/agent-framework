@@ -7,18 +7,18 @@ Domain glossary for the hivemind Claude Code plugin — a multi-agent system tha
 ### Agents
 
 **Overmind**:
-The user — supreme intelligence that gives directives to the swarm. Not an agent; the human operator whose intent drives all cerebrate activity.
+The user — supreme intelligence that gives directives to the swarm. Not an agent; the human operator whose intent drives all overlord activity.
 _Avoid_: admin, operator, client
 
-**Cerebrate**:
-The control-plane agent — session-level commander that owns task intake, spawn sequencing, branch/PR decisions, version bump detection, and review routing. Directs work but never implements. Multiple cerebrates operate in a brood, each commanding its own strain.
-_Alias_: orchestrator
-_Avoid_: coordinator, dispatcher, controller, queen, prime
-
 **Overlord**:
-A read-only agent that scans the problem territory and produces a psionic map with file scopes, step sequencing, and risk assessment before execution begins. Provides vision and intelligence — reports back but does not modify.
-_Alias_: planner
-_Avoid_: architect, analyst, scout
+The control-plane agent — session-level orchestrator and psionic relay. Routes the Overmind's directives, consults the cerebrate for the plan, then distributes execution: owns task intake, spawn sequencing, branch/PR decisions, version bump detection, and review routing. Directs and executes work but never implements. Multiple overlords operate in a brood, each coordinating its own strain.
+_Alias_: orchestrator
+_Avoid_: planner, strategist, dispatcher, controller
+
+**Cerebrate**:
+The read-only strategist — the brain of the swarm. Scans the problem territory and produces the psionic map (file scopes, step sequencing, risk assessment) before execution begins. Originates the plan and intelligence the swarm executes; reports back but never modifies.
+_Alias_: planner, architect
+_Avoid_: orchestrator, coordinator, analyst, scout
 
 **Drone**:
 A modifying agent — builder caste that implements code changes within an explicitly assigned file scope.
@@ -31,15 +31,15 @@ _Alias_: designer
 _Avoid_: UI agent, stylist
 
 **Local-Reviewer**:
-The agent that runs pre-PR Codex review in a loop, classifies findings, and reports terminal results to the cerebrate before the PR is opened.
+The agent that runs pre-PR Codex review in a loop, classifies findings, and reports terminal results to the overlord before the PR is opened.
 _Avoid_: linter, pre-check
 
 **GitHub-Reviewer**:
-The agent that monitors or processes post-PR review feedback, classifies comments, and reports terminal results to the cerebrate.
+The agent that monitors or processes post-PR review feedback, classifies comments, and reports terminal results to the overlord.
 _Avoid_: PR bot, review handler
 
 **Bioform**:
-The four primary agent archetypes in the swarm — cerebrate, overlord, drone, and changeling. Reviewer agents (local-reviewer, github-reviewer) are operational composites that delegate to bioforms, not distinct castes themselves.
+The four primary agent archetypes in the swarm — overlord, cerebrate, drone, and changeling. Reviewer agents (local-reviewer, github-reviewer) are operational composites that delegate to bioforms, not distinct castes themselves.
 _Avoid_: agent type, role, archetype
 
 **Swarm**:
@@ -53,7 +53,7 @@ A single spawn round-trip: one worker agent receives a step, executes, and repor
 _Avoid_: stage, iteration (when meaning a sequential plan step)
 
 **Spawn**:
-A structured message from cerebrate to a specialist agent, creating an agent instance with an embedded purpose — containing task objective, file scope, step ID, and completion criteria.
+A structured message from overlord to a specialist agent, creating an agent instance with an embedded purpose — containing task objective, file scope, step ID, and completion criteria.
 _Alias_: delegation
 _Avoid_: assignment, dispatch, handoff (which has a different meaning)
 
@@ -73,16 +73,16 @@ _Alias_: checkpoint commit
 _Avoid_: save, snapshot
 
 **Step**:
-The overlord's unit of work within a psionic map, identified as `STEP-NNN`. Each step specifies file scope, assigned bioform type (drone or changeling), and completion criteria. Corresponds 1:1 with a phase during execution; reflex tasks have no steps.
-_Avoid_: phase (which is the cerebrate's execution unit), task, item
+The cerebrate's unit of work within a psionic map, identified as `STEP-NNN`. Each step specifies file scope, assigned bioform type (drone or changeling), and completion criteria. Corresponds 1:1 with a phase during execution; reflex tasks have no steps.
+_Avoid_: phase (which is the overlord's execution unit), task, item
 
 **Psionic Map**:
-The overlord's output document containing steps, file scopes, decisions, risks, and assumptions — the psychic scan of the problem territory. Required before execution begins for non-trivial tasks.
+The cerebrate's output document containing steps, file scopes, decisions, risks, and assumptions — the psychic scan of the problem territory. Required before execution begins for non-trivial tasks.
 _Alias_: plan artifact
 _Avoid_: spec, design doc, blueprint
 
 **Reflex**:
-An instinctive response that bypasses the overlord when all reflex conditions are met: one owner, one known file, trivial change, clear branch classification, no version impact, no review remediation.
+An instinctive response that bypasses the cerebrate when all reflex conditions are met: one owner, one known file, trivial change, clear branch classification, no version impact, no review remediation.
 _Alias_: trivial fast path (TFP)
 _Avoid_: quick path, shortcut
 
@@ -105,11 +105,11 @@ The set of project-declared commands (from CLAUDE.md) that must pass before a ph
 _Avoid_: tests, checks (which is broader)
 
 **Verification**:
-The cerebrate's post-phase acceptance checks — scope compliance, report schema conformance, and git state safety. Performed after every phase, independent of project-declared validation commands.
+The overlord's post-phase acceptance checks — scope compliance, report schema conformance, and git state safety. Performed after every phase, independent of project-declared validation commands.
 _Avoid_: validation (which means running project-declared commands), review
 
 **Flare**:
-An urgent signal from any agent back to the cerebrate when a condition is encountered that cannot be safely resolved. The mandatory stop-and-report action.
+An urgent signal from any agent back to the overlord when a condition is encountered that cannot be safely resolved. The mandatory stop-and-report action.
 _Alias_: escalation
 _Avoid_: error, block (which has a different meaning)
 
@@ -142,12 +142,12 @@ _Avoid_: pre-check, setup
 ### Review
 
 **Adaptation Cycle**:
-The iterative cycle where a reviewer agent invokes Codex, classifies findings, fixes simple issues directly (≤2 files), flares complex ones to the cerebrate, validates, and repeats until stable or a stop condition fires.
+The iterative cycle where a reviewer agent invokes Codex, classifies findings, fixes simple issues directly (≤2 files), flares complex ones to the overlord, validates, and repeats until stable or a stop condition fires.
 _Alias_: review loop
 _Avoid_: review cycle (ambiguous with remediation cycle), feedback loop
 
 **Remediation**:
-The act of addressing a review finding: classify, fix directly (≤2 files) or flare to cerebrate, validate, checkpoint-commit, push.
+The act of addressing a review finding: classify, fix directly (≤2 files) or flare to overlord, validate, checkpoint-commit, push.
 _Avoid_: resolution, fix (too generic)
 
 **Mutation Decay**:
@@ -220,21 +220,21 @@ _Avoid_: phase report, agent output, result
 ### Brood (fleet)
 
 **Brood**:
-A set of parallel cerebrate sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the cerebrate in hatchery mode via brood-dispatch.
+A set of parallel overlord sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the overlord in hatchery mode via brood-dispatch.
 _Alias_: fleet
 _Avoid_: cluster, swarm, pool
 
 **Hatchery**:
-The cerebrate execution mode entered when a fleet-plan is dispatched; the cerebrate remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+The overlord execution mode entered when a fleet-plan is dispatched; the overlord remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
 _Alias_: coordinator mode
 _Avoid_: manager mode, supervisor mode
 
 **Fleet-Plan**:
-The overlord's output artifact when work decomposes into multiple independent strains. Contains strain-level descriptions and scope boundaries, not step-level detail. Each strain becomes a separate child cerebrate session with its own full pipeline.
+The cerebrate's output artifact when work decomposes into multiple independent strains. Contains strain-level descriptions and scope boundaries, not step-level detail. Each strain becomes a separate child overlord session with its own full pipeline.
 _Avoid_: multi-plan (which means sequential PRs, not parallel), meta-plan
 
 **Strain**:
-One independent unit of work within a fleet-plan, assigned to a single child cerebrate session. Each strain has its own worktree, branch, pipeline execution, and PR.
+One independent unit of work within a fleet-plan, assigned to a single child overlord session. Each strain has its own worktree, branch, pipeline execution, and PR.
 _Alias_: stream
 _Avoid_: task (too generic), work item, lane
 
@@ -244,7 +244,7 @@ _Avoid_: fleet config, fleet state, registry
 
 ## Relationships
 
-- A **Cerebrate** (orchestrator) spawns exactly one **Overlord**, **Drone**, **Changeling**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
+- An **Overlord** (orchestrator) spawns exactly one **Cerebrate**, **Drone**, **Changeling**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
 - A **Psionic Map** (plan artifact) contains one or more steps (`STEP-NNN`), each assigned to exactly one **Drone** or **Changeling**
 - A **Spawn** (delegation) targets exactly one **Step** (`STEP-NNN`) from the **Psionic Map**, or a single task when the **Reflex** (trivial fast path) applies
 - A **Phase** produces exactly one **Essence** (handoff) on success
@@ -253,10 +253,10 @@ _Avoid_: fleet config, fleet state, registry
 - A **Mutation Decay** (break-fix-break cycle) terminates an **Adaptation Cycle** with mandatory **Flare** (escalation)
 - A **Bump Trigger** fires at most one version increment per PR
 - Each agent loads specific **Governance Docs** per its `Load and follow` list
-- A **Bioform** is the collective genus; each **Cerebrate**, **Overlord**, **Drone**, and **Changeling** is a bioform
+- A **Bioform** is the collective genus; each **Overlord**, **Cerebrate**, **Drone**, and **Changeling** is a bioform
 - **Trunk Freshness** is a sub-check within **Git Preflight**, gating **Working Branch** creation
 - The **Swarm** is the whole; a **Brood** is a tactical subgroup of the **Swarm**
-- The canon command hierarchy maps to hivemind: **Overmind** (user) → **Cerebrate** (session commander) → **Overlord** (intelligence/planning) → **Drone**/**Changeling** (implementation)
+- hivemind maps StarCraft canon by cognitive function, not command rank: the **Overmind** (user) issues directives; the **Overlord** (orchestrator) is the psionic relay those directives flow through — it consults the **Cerebrate** for the plan and distributes execution to **Drone**/**Changeling**; the **Cerebrate** (strategist) is the brain that originates the plan the swarm executes. (Canon: cerebrates planned campaigns; overlords served operationally, distributing strategy.)
 
 - A **Fix Ledger** persists across iterations of an **Adaptation Cycle**, tracking finding status from open through fixed or cycling
 - The **Destructive Fix Gate** overrides normal **Remediation** flow, requiring human approval before commit
@@ -268,38 +268,38 @@ _Avoid_: fleet config, fleet state, registry
 
 - A **Brood** (fleet) contains one or more **Strains** (streams), each running in a separate git worktree
 - A **Fleet-Plan** produces exactly one **Strain** per independent work bucket
-- Each **Strain** maps to exactly one child **Cerebrate** session, one **Working Branch**, and one PR
-- A **Hatchery** (coordinator mode) cerebrate dispatches one **Brood** and monitors via the **Fleet Manifest**
+- Each **Strain** maps to exactly one child **Overlord** session, one **Working Branch**, and one PR
+- A **Hatchery** (coordinator mode) overlord dispatches one **Brood** and monitors via the **Fleet Manifest**
 - A **Fleet-Plan** is distinct from a **Psionic Map**: fleet-plans contain strain descriptions, psionic maps contain steps (`STEP-NNN`)
 
 - A completed phase produces **Essence** consumed by the next phase's **Spawn**
-- A **Flare** terminates a phase and returns control to the **Cerebrate**
-- A **Reflex** bypasses the **Overlord** entirely — **Cerebrate** spawns directly
+- A **Flare** terminates a phase and returns control to the **Overlord**
+- A **Reflex** bypasses the **Cerebrate** entirely — **Overlord** spawns directly
 - An **Adaptation Cycle** may trigger **Mutation Decay**, forcing a **Flare**
 
 ## Example dialogue
 
-> **Dev:** "This is a one-line typo fix in a governance doc — do I still need the **Overlord** (planner)?"
-> **Domain expert:** "Check the **Reflex** (trivial fast path) conditions. If they all pass — one owner, one known file, trivial change, clear **Branch Classification**, no version impact, not **Remediation** — the **Cerebrate** skips the **Overlord** and spawns a **Drone** directly."
+> **Dev:** "This is a one-line typo fix in a governance doc — do I still need the **Cerebrate** (planner)?"
+> **Domain expert:** "Check the **Reflex** (trivial fast path) conditions. If they all pass — one owner, one known file, trivial change, clear **Branch Classification**, no version impact, not **Remediation** — the **Overlord** skips the **Cerebrate** and spawns a **Drone** directly."
 
 > **Dev:** "The **Adaptation Cycle** (review loop) keeps flipping between two states — what happens?"
-> **Domain expert:** "That's **Mutation Decay** (break-fix-break). When 2-of-3 signals fire (line-range overlap, git revert, N-2 oscillation), the cycle stops and the **Cerebrate** flares to the user. No more automatic **Remediation** until a human decides."
+> **Domain expert:** "That's **Mutation Decay** (break-fix-break). When 2-of-3 signals fire (line-range overlap, git revert, N-2 oscillation), the cycle stops and the **Overlord** flares to the user. No more automatic **Remediation** until a human decides."
 
 > **Dev:** "The **GitHub-Reviewer** is in **Watch Mode** and found a fix that removes an auth check — does it apply it?"
 > **Domain expert:** "No. That hits the **Destructive Fix Gate** — category 1, removing authentication. The reviewer returns blocked and surfaces the proposed change for human approval before committing."
 
 > **Dev:** "I have three independent features to build — should I use a brood (fleet)?"
-> **Domain expert:** "If the **Overlord** confirms they decompose into independent **Strains** (streams) with minimal file overlap, yes. The **Cerebrate** will present the **Fleet-Plan** for your confirmation, then enter **Hatchery** (coordinator mode) to dispatch each **Strain** as a separate session via **spawn-brood**. Each child session runs a full pipeline independently — same as any solo task."
+> **Domain expert:** "If the **Cerebrate** confirms they decompose into independent **Strains** (streams) with minimal file overlap, yes. The **Overlord** will present the **Fleet-Plan** for your confirmation, then enter **Hatchery** (coordinator mode) to dispatch each **Strain** as a separate session via **spawn-brood**. Each child session runs a full pipeline independently — same as any solo task."
 
-> **Dev:** "The **Overlord** produced a psionic map with 5 **Steps** — does the **Cerebrate** execute them all at once?"
-> **Domain expert:** "No. Each **Step** becomes one **Phase** — a single **Spawn** round-trip to a **Drone** or **Changeling**. The **Cerebrate** runs them sequentially: spawn, wait for **Essence**, **Verify** (scope compliance, report schema, git safety), **Molt** the progress, then spawn the next. The **Overmind** (you) only hears about it if something flares."
+> **Dev:** "The **Cerebrate** produced a psionic map with 5 **Steps** — does the **Overlord** execute them all at once?"
+> **Domain expert:** "No. Each **Step** becomes one **Phase** — a single **Spawn** round-trip to a **Drone** or **Changeling**. The **Overlord** runs them sequentially: spawn, wait for **Essence**, **Verify** (scope compliance, report schema, git safety), **Molt** the progress, then spawn the next. The **Overmind** (you) only hears about it if something flares."
 
 > **Dev:** "What's the difference between the **Swarm** and a **Brood**?"
-> **Domain expert:** "The **Swarm** is the whole — every **Bioform** and operational composite acting as one governed system. A **Brood** is a tactical subgroup: multiple **Cerebrates** running independent **Strains** in parallel worktrees. One **Swarm**, many possible **Broods**."
+> **Domain expert:** "The **Swarm** is the whole — every **Bioform** and operational composite acting as one governed system. A **Brood** is a tactical subgroup: multiple **Overlords** running independent **Strains** in parallel worktrees. One **Swarm**, many possible **Broods**."
 
 ## Flagged ambiguities
 
-- "phase" vs "step" — resolved and promoted to glossary terms: **Step** is the overlord's unit of work (`STEP-NNN`); **Phase** is the cerebrate's unit of execution (one spawn round-trip). They correspond 1:1 for planned work; reflex tasks have a single phase with no step.
-- "essence" vs "spawn" — resolved: **Spawn** (delegation) flows downward (cerebrate to worker); **Essence** (handoff) flows upward/forward (worker report stored for future phases).
+- "phase" vs "step" — resolved and promoted to glossary terms: **Step** is the cerebrate's unit of work (`STEP-NNN`); **Phase** is the overlord's unit of execution (one spawn round-trip). They correspond 1:1 for planned work; reflex tasks have a single phase with no step.
+- "essence" vs "spawn" — resolved: **Spawn** (delegation) flows downward (overlord to worker); **Essence** (handoff) flows upward/forward (worker report stored for future phases).
 - "scope" — resolved: always means file scope (the explicit file list in a spawn), never task scope or project scope.
-- "validation" vs "verification" — resolved and promoted to glossary terms: **Validation** means running declared project commands; **Verification** means the cerebrate's post-phase acceptance checks (scope compliance, report schema conformance, git state safety).
+- "validation" vs "verification" — resolved and promoted to glossary terms: **Validation** means running declared project commands; **Verification** means the overlord's post-phase acceptance checks (scope compliance, report schema conformance, git state safety).
