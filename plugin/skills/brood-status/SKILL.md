@@ -1,6 +1,6 @@
 ---
 name: brood-status
-description: Check status of all active brood sessions. Reports per-stream tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "fleet status", "check brood", "brood progress", "how's the brood".
+description: Check status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "fleet status", "check brood", "brood progress", "how's the brood".
 allowed-tools:
   - Bash(tmux *)
   - Bash(git worktree *)
@@ -61,10 +61,10 @@ This is an **interactive skill** — it produces user-visible text output.
 
 3. **Present formatted status table.**
    ```
-   Fleet: <fleet_id>
+   Brood: <fleet_id>
    Overlap risk: <overlap_risk>
 
-   | Stream | Branch | Session | PR | Status |
+   | Strain | Branch | Session | PR | Status |
    |--------|--------|---------|-------|--------|
    | <name> | <branch> | alive/dead | #N / — | <derived status> |
    ```

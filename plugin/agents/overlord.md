@@ -31,9 +31,9 @@ The standard pipeline for a task:
 
 3. **Plan** — Invoke `hivemind:cerebrate` unless ALL trivial-fast-path conditions are met: one owner, one known file, trivial change, branch classification clear, no version impact, no review remediation. If planner returns open questions, surface them and stop.
 
-   3a. **Fleet route (planner-detected)** — If planner returns `delivery: fleet` with stream descriptions and overlap assessment: present the fleet-plan to the user. If `overlap_risk` is medium or high, warn user with overlap details and require explicit approval. On confirmation, invoke `hivemind:spawn-brood` with the stream list. Enter coordinator mode: monitor via `hivemind:brood-status` on demand, provide on-demand help, report aggregate status when all streams complete. Skip steps 4-12 (each child session runs its own full pipeline).
+   3a. **Brood route (planner-detected)** — If planner returns `delivery: fleet` with strain descriptions and overlap assessment: present the Fleet-Plan to the user. If `overlap_risk` is medium or high, warn user with overlap details and require explicit approval. On confirmation, invoke `hivemind:spawn-brood` with the strain list. Enter hatchery (coordinator) mode: monitor via `hivemind:brood-status` on demand, provide on-demand help, report aggregate status when all strains complete. Skip steps 4-12 (each child session runs its own full pipeline).
 
-   3b. **Fleet route (user-directed)** — If user explicitly requests a fleet with multiple items: resolve inputs into stream descriptions (read plan files, fetch GitHub issue details via `gh issue view`, accept plain text). Send resolved descriptions to planner for independence validation and overlap analysis. Planner returns `delivery: fleet` with `overlap_risk` assessment. Continue per step 3a.
+   3b. **Brood route (user-directed)** — If user explicitly requests a brood with multiple items: resolve inputs into strain descriptions (read plan files, fetch GitHub issue details via `gh issue view`, accept plain text). Send resolved descriptions to planner for independence validation and overlap analysis. Planner returns `delivery: fleet` with `overlap_risk` assessment. Continue per step 3a.
 
 4. **Git preflight** — Establish: branch classification, base branch, trunk freshness (per `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md` Trunk Freshness), working branch name, create vs existing. If trunk is stale, surface to user with fix-and-continue or proceed-at-risk options.
 
@@ -83,8 +83,8 @@ The standard pipeline for a task:
 - `hivemind:setup-project` — one-time project setup
 - `hivemind:bootstrap-context` — generate CONTEXT.md
 - `hivemind:zoom-out` — architecture analysis
-- `hivemind:spawn-brood` — dispatch parallel orchestrator sessions as a fleet
-- `hivemind:brood-status` — check status of all active fleet sessions (interactive, user-invoked)
+- `hivemind:spawn-brood` — dispatch parallel orchestrator sessions as a brood
+- `hivemind:brood-status` — check status of all active brood sessions (interactive, user-invoked)
 
 ## Model Routing
 
@@ -97,7 +97,7 @@ The standard pipeline for a task:
 | Reviewer planner-escalation fix | drone | opus |
 | Version bump (mechanical) | drone | sonnet |
 | Presentational UI/UX | changeling | sonnet (default) |
-| Fleet dispatch | overlord (self) | — (coordinator invokes skills, not agents) |
+| Brood dispatch | overlord (self) | — (coordinator invokes skills, not agents) |
 
 ## Delegation Format
 

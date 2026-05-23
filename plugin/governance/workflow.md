@@ -68,17 +68,17 @@ PR content must include:
 - Review: at least one human approval required
 - PR target: resolved trunk branch
 
-## Fleet Execution
+## Brood Execution
 
-When the cerebrate determines that work decomposes into multiple independent streams with minimal file-scope overlap, it may recommend `delivery: fleet`. The overlord confirms with the user before dispatching.
+When the cerebrate determines that work decomposes into multiple independent strains with minimal file-scope overlap, it may recommend `delivery: fleet`. The overlord confirms with the user before dispatching.
 
-In fleet mode, the overlord enters coordinator mode:
+In brood mode, the overlord enters hatchery (coordinator) mode:
 1. Invokes `hivemind:spawn-brood` to spawn child sessions
 2. Monitors via `hivemind:brood-status` on demand
-3. Reports aggregate status when all streams complete
+3. Reports aggregate status when all strains complete
 
-Each child session is a standard overlord running a full pipeline. Children have no fleet awareness. The "one plan = one branch = one PR" invariant holds per child session.
+Each child session is a standard overlord running a full pipeline. Children have no brood awareness. The "one plan = one branch = one PR" invariant holds per child session.
 
-Fleet-plan is a distinct artifact from plan artifact. Fleet-plans contain stream-level descriptions and scope boundaries. Plan artifacts contain implementation steps (STEP-NNN).
+Fleet-Plan is a distinct artifact from plan artifact. Fleet-Plans contain strain-level descriptions and scope boundaries. Plan artifacts contain implementation steps (STEP-NNN).
 
 Version bumps, merge conflicts, and PR ordering are handled independently by each child, same as parallel developers on a team.
