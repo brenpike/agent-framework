@@ -11,9 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Renamed the cerebrate's output artifact from **psionic map** to **directive** (canon: the cerebrate encodes strategic intent; the overlord relays it). Glossary and README vocabulary only — no runtime behavior change.
-
 ### Fixed
+
+## [2.1.0] - 2026-05-23
+
+### Changed
+
+- Renamed the cerebrate's output artifact from **psionic map** to **directive** (canon: the cerebrate encodes strategic intent; the overlord relays it). Glossary and README vocabulary only — no runtime behavior change.
+- **`local-reviewer` now performs an adversarial Codex review.** `hivemind:adaptation-cycle` was switched from the Codex `review` subcommand to the native `adversarial-review` subcommand. Adversarial is now the only local review mode — plain `review` is no longer used.
+- **`adaptation-cycle` output parser rewritten to the adversarial render grammar.** Header is now `# Codex Adversarial Review`; finding lines follow the pattern `- [critical|high|medium|low] title (file:line)`; verdict is an explicit `Verdict:` line (previously inferred). Normalized finding severity vocabulary changed from `P0`–`P4` codes to the words `critical|high|medium|low`. `local-reviewer` classification and high-severity-rejection logic updated to the severity-word vocabulary.
+- **Local review now requires a Codex CLI providing the `adversarial-review` subcommand** (codex-companion ≥ 1.0.4). When the codex plugin is absent, local review is still skipped gracefully as before.
 
 ## [2.0.0] - 2026-05-23
 

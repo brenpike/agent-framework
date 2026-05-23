@@ -54,10 +54,10 @@ The output is the absolute path to the script. If the output is empty, `codex-pl
 **Review invocation** — Run with the Bash tool's `timeout` parameter set to `600000` (10 minutes) to prevent hanging on unresponsive Codex processes:
 
 ```bash
-node "<codexScript>" review --base "<base>" --wait
+node "<codexScript>" adversarial-review --base "<base>" --wait
 ```
 
-where `<codexScript>` is the path from path-discovery output and `<base>` is the validated base ref. The exit code of this command is the Bash tool's exit code. If the Bash tool returns a timeout error, the review exceeded 10 minutes. The command writes rendered text to stdout. Do not add `--json`.
+where `<codexScript>` is the path from path-discovery output and `<base>` is the validated base ref. No focus-text argument is passed. The exit code of this command is the Bash tool's exit code. If the Bash tool returns a timeout error, the review exceeded 10 minutes. The command writes rendered text to stdout. Do not add `--json`.
 
 ## Output Schema and Normalized Findings
 
@@ -72,8 +72,8 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
 5. Check exit code first:
    - If the Bash tool returns a timeout error: `printf 'blocker: review timed out' >&2; exit 1`.
    - Any other non-zero: `printf 'blocker: review CLI failed\nexit_code: %s\nstderr: %s' "$code" "$stderr" >&2; exit 1`.
-6. Validate stdout: if empty or does not begin with `# Codex Review`: `printf 'blocker: unexpected output shape\nraw_excerpt: %.200s' "$stdout" >&2; exit 1`.
-7. Parse stdout as rendered text per the Output Schema parsing rules in `${CLAUDE_PLUGIN_ROOT}/skills/adaptation-cycle/references/output-schema.md`.
+6. Validate stdout: if empty or does not begin with `# Codex Adversarial Review`: `printf 'blocker: unexpected output shape\nraw_excerpt: %.200s' "$stdout" >&2; exit 1`. Also treat the JSON-parse-failure and validation-error renders as unexpected output shape, NOT as findings: if stdout contains `Codex did not return valid structured JSON.` or `Codex returned JSON with an unexpected review shape.` (equivalently, a `- Parse error:` or `- Validation error:` bullet is present), `printf 'blocker: unexpected output shape\nraw_excerpt: %.200s' "$stdout" >&2; exit 1`. Do not parse these renders as findings.
+7. Parse stdout as rendered text per the Output Schema parsing rules in `${CLAUDE_PLUGIN_ROOT}/skills/adaptation-cycle/references/output-schema.md`. The `- Parse error:` and `- Validation error:` bullets are never findings.
 8. Normalize findings: for each finding, compute a stable `id` as the SHA-256 hex digest of `file + line_start + line_end + title` (concatenated as strings, UTF-8). Use args-based invocation to avoid shell-quoting issues:
    ```bash
    node -e "const c=require('crypto');const h=c.createHash('sha256');h.update(process.argv[1]+process.argv[2]+process.argv[3]+process.argv[4]);console.log(h.digest('hex'))" "$file" "$line_start" "$line_end" "$title"
