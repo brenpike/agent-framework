@@ -84,8 +84,8 @@ The overlord resolves and passes these. The skill does not resolve them on its o
    overlap_risk: <overlap_risk>
    overlap_details: "<overlap_details>"
    streams:
-     - name: "<stream-name>"
-       description: "<stream description>"
+     - name: "<strain-name>"
+       description: "<strain description>"
        worktree_path: "<absolute path to worktree>"
        branch: "<branch name>"
        tmux_session: "<tmux session name>"
@@ -104,7 +104,7 @@ The overlord resolves and passes these. The skill does not resolve them on its o
      ```
    - If any strains failed: write brood manifest with failed strains marked `status: failed`, emit details on stderr, and exit 1.
      ```bash
-     printf 'blocker: %d of %d streams failed to spawn\nmanifest: %s\n' "<failed_count>" "<total_count>" "$(pwd)/.hivemind/fleet/manifest.yaml" >&2; exit 1
+     printf 'blocker: %d of %d strains failed to spawn\nmanifest: %s\n' "<failed_count>" "<total_count>" "$(pwd)/.hivemind/fleet/manifest.yaml" >&2; exit 1
      ```
 
 ## Failure Modes
