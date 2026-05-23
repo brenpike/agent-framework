@@ -4,7 +4,7 @@
 
 Repository-level guidance for external AI reviewers such as Codex.
 
-This repository is the source for the `agent-framework` Claude Code plugin and its marketplace manifest. External reviewers consult this file when reviewing pull requests in this repo.
+This repository is the source for the `hivemind` Claude Code plugin and its marketplace manifest. External reviewers consult this file when reviewing pull requests in this repo.
 
 Codex is an external pull request reviewer, not an internal Claude Code subagent. It must not push commits, change branches, open or close PRs, request re-review, resolve review threads, or modify files. It must leave review comments only.
 

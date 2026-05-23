@@ -14,7 +14,7 @@ shell: bash
 
 # Brood Status
 
-Check the status of all active brood sessions. Reports per-stream tmux session state, branch existence, and PR status from external observables.
+Check the status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables.
 
 This is an **interactive skill** — it produces user-visible text output.
 
@@ -34,7 +34,7 @@ This is an **interactive skill** — it produces user-visible text output.
    c. Read the manifest from `<main_checkout>/.hivemind/fleet/manifest.yaml`.
    d. If no manifest exists, report "No active brood found." and stop.
 
-2. **Probe each stream.** For each stream in the manifest:
+2. **Probe each strain.** For each strain in the manifest:
    a. Check tmux session alive:
       ```bash
       tmux has-session -t <tmux_session> 2>/dev/null
@@ -71,7 +71,7 @@ This is an **interactive skill** — it produces user-visible text output.
 
 4. **Summary line.**
    ```
-   N of M streams complete. X running. Y blocked/failed.
+   N of M strains complete. X running. Y blocked/failed.
    ```
 
 ## Do Not

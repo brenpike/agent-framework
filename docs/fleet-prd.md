@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-The agent-framework orchestrator currently executes one task pipeline at a time. When a user has multiple independent features or work streams, they must execute them sequentially — each going through the full plan → implement → review → PR cycle before the next can begin. This is inefficient when the work streams have minimal file overlap and could safely proceed in parallel.
+The hivemind cerebrate currently executes one task pipeline at a time. When a user has multiple independent features or work streams, they must execute them sequentially — each going through the full plan → implement → review → PR cycle before the next can begin. This is inefficient when the work streams have minimal file overlap and could safely proceed in parallel.
 
 ## Solution Overview
 
@@ -105,7 +105,7 @@ As a user, I want merge conflicts between parallel streams to be handled natural
 **Rationale:** Existing create-working-branch skill works as-is — detects branch already exists and confirms. No skill modifications needed.
 
 ### AD-11: Fleet Manifest Location
-**Decision:** `.agent-framework/fleet/manifest.yaml` in main checkout.
+**Decision:** `.hivemind/fleet/manifest.yaml` in main checkout.
 **Rationale:** Coordinator stays on trunk in main checkout — direct access. Children don't need to find it. fleet-status from child tabs resolves main checkout via `git worktree list`.
 
 ### AD-12: Config Propagation

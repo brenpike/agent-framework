@@ -89,7 +89,7 @@ This policy applies to:
 - All agents that fetch or consume external content:
   - `hivemind:local-reviewer`
   - `hivemind:github-reviewer`
-  - `hivemind:local-codex-review` (skill invoked by local-reviewer)
+  - `hivemind:adaptation-cycle` (skill invoked by local-reviewer)
 - All agents that receive delegations containing external content:
   - cerebrate
   - `hivemind:drone`

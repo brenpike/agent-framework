@@ -6,11 +6,11 @@
   },
   "consumers": [
     {
-      "file": "plugin/agents/orchestrator.md",
+      "file": "plugin/agents/cerebrate.md",
       "pattern": "Never begin implementation before git preflight is established"
     },
     {
-      "file": "plugin/skills/checkpoint-commit/SKILL.md",
+      "file": "plugin/skills/molt/SKILL.md",
       "pattern": "the branch that must not be committed to directly"
     }
   ]

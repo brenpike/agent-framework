@@ -6,11 +6,11 @@
   },
   "consumers": [
     {
-      "file": "plugin/agents/orchestrator.md",
+      "file": "plugin/agents/cerebrate.md",
       "pattern": "with exact file scope"
     },
     {
-      "file": "plugin/agents/coder.md",
+      "file": "plugin/agents/drone.md",
       "pattern": "You implement only within explicitly assigned file scope"
     }
   ]

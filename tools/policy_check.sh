@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Policy linter for the agent-framework plugin.
+# Policy linter for the hivemind plugin.
 #
 # Runs structural and content checks against plugin/ files, plus safety
 # regression fixtures (tests/policy/) and compatibility fixtures (tests/plugin/).
@@ -247,10 +247,10 @@ REQUIRED_FILES=(
     'plugin/governance/security-policy.md'
     'plugin/governance/versioning.md'
     'plugin/governance/workflow.md'
-    'plugin/agents/orchestrator.md'
-    'plugin/agents/planner.md'
-    'plugin/agents/coder.md'
-    'plugin/agents/designer.md'
+    'plugin/agents/cerebrate.md'
+    'plugin/agents/overlord.md'
+    'plugin/agents/drone.md'
+    'plugin/agents/changeling.md'
 )
 
 check2_found=false
@@ -275,7 +275,7 @@ fi
 echo ''
 echo '=== CHECK 3: Skill names exist ==='
 
-AGENT_NAMES=('orchestrator' 'planner' 'coder' 'designer' 'local-reviewer' 'github-reviewer')
+AGENT_NAMES=('cerebrate' 'overlord' 'drone' 'changeling' 'local-reviewer' 'github-reviewer')
 
 # Collect scan sources
 declare -a SCAN_FILES=()
@@ -289,7 +289,7 @@ while IFS= read -r -d '' f; do
     SCAN_FILES+=("$f")
 done < <(find "$PLUGIN_ROOT/governance" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null)
 
-# Extract all agent-framework:* references.
+# Extract all hivemind:* references.
 # skill_refs: associative array mapping skill name -> space-separated source file paths
 # agent_refs: associative array mapping agent name -> space-separated source file paths
 declare -A SKILL_REF_SOURCES=()
@@ -312,7 +312,6 @@ for scan_file in "${SCAN_FILES[@]}"; do
         [[ "$ref_name" == "_shared" ]] && continue
 
         if is_agent_name "$ref_name"; then
-            [[ "$ref_name" == "orchestrator" ]] && continue
             if [[ -z "${AGENT_REF_SOURCES[$ref_name]:-}" ]]; then
                 AGENT_REF_SOURCES[$ref_name]="$scan_file"
             elif [[ "${AGENT_REF_SOURCES[$ref_name]}" != *"$scan_file"* ]]; then
@@ -325,7 +324,7 @@ for scan_file in "${SCAN_FILES[@]}"; do
                 SKILL_REF_SOURCES[$ref_name]="${SKILL_REF_SOURCES[$ref_name]}"$'\n'"$scan_file"
             fi
         fi
-    done < <(echo "$scan_content" | grep -oP 'agent-framework:\K[a-zA-Z0-9_-]+' | sort -u)
+    done < <(echo "$scan_content" | grep -oP 'hivemind:\K[a-zA-Z0-9_-]+' | sort -u)
 done
 
 check3_found=false

@@ -112,7 +112,7 @@ User → Cerebrate → Overlord (decompose/validate) → Fleet-plan
 - Spawns N Claude Code sessions via `claude --worktree <branch_name> --tmux`
 - Injects task via `tmux send-keys`
 - Copies `settings.local.json` to worktrees
-- Writes fleet manifest to `.agent-framework/fleet/manifest.yaml`
+- Writes fleet manifest to `.hivemind/fleet/manifest.yaml`
 - **Owner:** drone
 
 ### STEP-002: `hivemind:brood-status` Skill (new)
@@ -142,7 +142,7 @@ User → Cerebrate → Overlord (decompose/validate) → Fleet-plan
 
 ### STEP-007: Rebrand — Plugin Rename
 - Rename all agent files, skill namespaces, cross-references
-- `agent-framework:` → `hivemind:` everywhere
+- `hivemind:` namespace used everywhere
 - Agent files: `orchestrator.md` → `cerebrate.md`, `planner.md` → `overlord.md`, `coder.md` → `drone.md`, `designer.md` → `changeling.md`
 - Update `plugin.json` name, `marketplace.json`
 - Rewrite README.md with Hivemind branding (use `docs/hivemind-readme-domain-section.md` as input)
