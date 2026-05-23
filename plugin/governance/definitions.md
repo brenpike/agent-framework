@@ -33,18 +33,21 @@ A failure is transient if and only if its root cause is: HTTP 5xx, HTTP 429, TCP
 
 Execute every command listed in the project's `CLAUDE.md` validation section. No duration cap. If a command cannot run, return Blocked naming the command and reason. If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so.
 
-## Fleet
+## Brood
 
-A set of parallel overlord sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the coordinator via `hivemind:spawn-brood`.
+A set of parallel overlord sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the overlord in hatchery mode via `hivemind:spawn-brood`.
+_Alias_: fleet
 
-## Coordinator Mode
+## Hatchery
 
-The overlord execution mode entered when a fleet-plan is dispatched. The overlord remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the fleet lifecycle. Coordinator mode responsibilities: dispatch, monitor, on-demand help, final report.
+The overlord execution mode entered when a fleet-plan is dispatched; the overlord remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+_Alias_: coordinator mode
 
 ## Fleet-Plan
 
-The cerebrate's output artifact when work decomposes into multiple independent streams. Contains stream-level descriptions and scope boundaries, not step-level detail. Distinct from a plan artifact — fleet-plans do not contain STEP-NNN entries.
+The cerebrate's output artifact when work decomposes into multiple independent strains. Contains strain-level descriptions and scope boundaries, not step-level detail. Distinct from a plan artifact — fleet-plans do not contain STEP-NNN entries.
 
-## Stream
+## Strain
 
-One independent unit of work within a fleet-plan, assigned to a single child overlord session. Each stream has its own worktree, branch, pipeline execution, and PR.
+One independent unit of work within a fleet-plan, assigned to a single child overlord session. Each strain has its own worktree, branch, pipeline execution, and PR.
+_Alias_: stream
