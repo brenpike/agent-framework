@@ -132,6 +132,8 @@ All skills are invoked using the namespaced form:
 | `agent-framework:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
 | `agent-framework:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.agent-framework/` to `.gitignore` |
 | `agent-framework:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `agent-framework:coder` context only |
+| `agent-framework:fleet-dispatch` | Dispatch parallel orchestrator sessions — spawns N Claude Code instances in separate git worktrees via tmux |
+| `agent-framework:fleet-status` | Check status of all active fleet sessions — reports per-stream tmux session state, branch existence, and PR status |
 | `agent-framework:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
 
 ## Governance

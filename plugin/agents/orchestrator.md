@@ -31,6 +31,10 @@ The standard pipeline for a task:
 
 3. **Plan** — Invoke `agent-framework:planner` unless ALL trivial-fast-path conditions are met: one owner, one known file, trivial change, branch classification clear, no version impact, no review remediation. If planner returns open questions, surface them and stop.
 
+   3a. **Fleet route (planner-detected)** — If planner returns `delivery: fleet` with stream descriptions and overlap assessment: present the fleet-plan to the user. If `overlap_risk` is medium or high, warn user with overlap details and require explicit approval. On confirmation, invoke `agent-framework:fleet-dispatch` with the stream list. Enter coordinator mode: monitor via `agent-framework:fleet-status` on demand, provide on-demand help, report aggregate status when all streams complete. Skip steps 4-12 (each child session runs its own full pipeline).
+
+   3b. **Fleet route (user-directed)** — If user explicitly requests a fleet with multiple items: resolve inputs into stream descriptions (read plan files, fetch GitHub issue details via `gh issue view`, accept plain text). Send resolved descriptions to planner for independence validation and overlap analysis. Planner returns `delivery: fleet` with `overlap_risk` assessment. Continue per step 3a.
+
 4. **Git preflight** — Establish: branch classification, base branch, trunk freshness (per `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md` Trunk Freshness), working branch name, create vs existing. If trunk is stale, surface to user with fix-and-continue or proceed-at-risk options.
 
 5. **Branch** — Create or confirm working branch via `agent-framework:create-working-branch`.
@@ -78,6 +82,8 @@ The standard pipeline for a task:
 - `agent-framework:setup-project` — one-time project setup
 - `agent-framework:bootstrap-context` — generate CONTEXT.md
 - `agent-framework:zoom-out` — architecture analysis
+- `agent-framework:fleet-dispatch` — dispatch parallel orchestrator sessions as a fleet
+- `agent-framework:fleet-status` — check status of all active fleet sessions (interactive, user-invoked)
 
 ## Model Routing
 
@@ -90,6 +96,7 @@ The standard pipeline for a task:
 | Reviewer planner-escalation fix | coder | opus |
 | Version bump (mechanical) | coder | sonnet |
 | Presentational UI/UX | designer | sonnet (default) |
+| Fleet dispatch | orchestrator (self) | — (coordinator invokes skills, not agents) |
 
 ## Delegation Format
 

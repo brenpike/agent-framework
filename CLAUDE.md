@@ -79,6 +79,17 @@ When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runt
 
 `codex@openai-codex` is optional — the orchestrator uses `codex-plugin-cc` for pre-PR local review via the `local-reviewer` agent (`agent-framework:local-codex-review`). If not installed, the orchestrator skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
 
+## Fleet execution
+
+The plugin supports parallel multi-orchestrator execution via fleet-dispatch and fleet-status skills. Each fleet session runs in its own git worktree as an independent Claude Code instance.
+
+- **Fleet PRD:** `docs/fleet-prd.md` — requirements, architecture decisions, manifest schema
+- **Architecture decision:** `docs/adr/0007-fleet-children-unaware-coordinator-dashboard.md` — children have zero fleet awareness; coordinator is a status dashboard
+- **Fleet manifest:** `.agent-framework/fleet/manifest.yaml` (in main checkout; already gitignored under `.agent-framework/`)
+- **Worktree sessions:** `.claude/worktrees/` (gitignored)
+
+Children are standard orchestrator sessions receiving a task description. No fleet-specific code paths exist in child sessions.
+
 ## Local developer setup
 
 To eliminate permission prompts for the local Codex review flow (`agent-framework:local-codex-review`), add your Codex cache path to `.claude/settings.local.json` (gitignored):
