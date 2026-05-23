@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.10.2] - 2026-05-23
+
+### Changed
+
+- **CONTEXT.md glossary restructured to themed-canonical.** Hivemind terms (cerebrate, overlord, drone, changeling, spawn, essence, psionic map, reflex, flare, adaptation cycle, mutation decay, brood, strain, hatchery) are now the canonical entries; plain-English words (orchestrator, planner, coder, etc.) are listed as accepted aliases rather than deprecated. Relationships and example-dialogue sections merged to a single themed list with no content loss.
+- **`spawn-brood` / `brood-status` skill prose aligned with Hivemind vocabulary** (stream→strain, orchestrator→cerebrate). Brood-manifest schema identifiers (`fleet_id`, `streams`, `.hivemind/fleet/manifest.yaml`) intentionally left unchanged to preserve the cross-file manifest contract.
+- Updated stale references in `AGENTS.md` and the fleet docs from `agent-framework` to `hivemind`.
+
+### Fixed
+
+- **Restored policy-linter validation broken by the rename.** `tools/policy_check.sh` skill/agent reference extraction targeted the dead `agent-framework:` namespace (matched nothing, silently no-op), and `REQUIRED_FILES` / `AGENT_NAMES` still listed the old agent filenames. Re-pointed to `hivemind:` and the renamed agents (cerebrate/overlord/drone/changeling).
+- **Fixed dangling skill reference** in `plugin/governance/security-policy.md` (`hivemind:local-codex-review` → `hivemind:adaptation-cycle`) and a stale `checkpoint-commit` → `molt` consumer path in the no-trunk-commit safety fixture — both surfaced once the linter was repaired.
+- **Corrected dead `.agent-framework/` paths to `.hivemind/`** in `.claude/settings.json` permission allowlist (which gated runtime artifact writes), `CONTEXT.md`, and the fleet docs.
+- Updated 15 test fixtures referencing renamed agent files / old namespace so the golden-path and safety suites validate against current filenames.
+
 ## [1.10.1] - 2026-05-21
 
 ### Changed
