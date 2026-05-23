@@ -9,7 +9,10 @@ allowed-tools:
   - Bash(mkdir -p *)
   - Bash(printf *)
   - Bash(sleep *)
+  - Bash(git branch *)
+  - Bash(git ls-remote *)
   - Read
+shell: bash
 ---
 
 ## Quick Reference

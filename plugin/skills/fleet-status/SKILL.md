@@ -6,8 +6,10 @@ allowed-tools:
   - Bash(git worktree *)
   - Bash(git branch *)
   - Bash(gh pr *)
+  - Bash(git rev-parse *)
   - Bash(cat *)
   - Read
+shell: bash
 ---
 
 # Fleet Status
