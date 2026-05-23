@@ -4,8 +4,8 @@ description: >-
   Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle.
   Use when the user asks to implement X using TDD, write this with TDD, use TDD, TDD this feature,
   red-green-refactor, or test-first. Requires Write and Edit tool access — invoke from
-  `agent-framework:coder` context only. Orchestrators receiving TDD requests must delegate
-  to `agent-framework:coder`, which then invokes this skill.
+  `hivemind:drone` context only. Orchestrators receiving TDD requests must delegate
+  to `hivemind:drone`, which then invokes this skill.
 allowed-tools:
   - Read
   - Write

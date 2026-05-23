@@ -38,7 +38,7 @@ Analyze a project's existing artifacts and generate a populated domain glossary 
 
 ## When to Use
 
-- New project adopting the agent-framework plugin (called by setup-project)
+- New project adopting the hivemind plugin (called by setup-project)
 - Existing project that lacks a CONTEXT.md
 - Existing project where CONTEXT.md needs enrichment with newly discovered terms
 - After significant project changes (new modules, renamed concepts)
@@ -111,7 +111,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 
    ## Flagged ambiguities
 
-   {Any terms that appeared with multiple meanings in the artifacts, or "None detected during bootstrap — use `agent-framework:plan-interrogation` to refine."}
+   {Any terms that appeared with multiple meanings in the artifacts, or "None detected during bootstrap — use `hivemind:plan-interrogation` to refine."}
    ```
 
    **If `multi_context: false` and `mode: update`:**
@@ -175,7 +175,7 @@ terms_added:
 term_sources:
 - [list of artifact files that contributed terms]
 
-recommendation: "Run `agent-framework:plan-interrogation` to refine and expand this glossary."
+recommendation: "Run `hivemind:plan-interrogation` to refine and expand this glossary."
 ```
 
 Use the Worker Report — Blocked schema from `${CLAUDE_PLUGIN_ROOT}/governance/report-format.md` for blocked states.

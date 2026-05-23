@@ -1,6 +1,6 @@
 ---
 name: setup-project
-description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the orchestrator becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.agent-framework/` is excluded from git via `.gitignore`.
+description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the cerebrate becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.hivemind/` is excluded from git via `.gitignore`.
 allowed-tools:
   - Read
   - Write
@@ -26,13 +26,13 @@ After:
 - [ ] Required keys applied to `.claude/settings.json`
 - [ ] Existing keys preserved
 - [ ] Output uses lowercase snake_case field names
-- [ ] `.agent-framework/` entry ensured in `.gitignore`
+- [ ] `.hivemind/` entry ensured in `.gitignore`
 - [ ] If `caveman` = `yes`: `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`, `pluginConfigs` for caveman applied, SubagentStart hook configured
-- [ ] `agent-framework:bootstrap-context` invoked (or skipped in dry_run)
+- [ ] `hivemind:bootstrap-context` invoked (or skipped in dry_run)
 
 # Setup Project
 
-Apply the agent-framework plugin's required project settings to `.claude/settings.json` so the orchestrator becomes the session default agent.
+Apply the hivemind plugin's required project settings to `.claude/settings.json` so the cerebrate becomes the session default agent.
 
 This skill is the user-invoked alternative to manually editing `.claude/settings.json` per the README. It is not auto-invoked by the plugin; the user must explicitly request it.
 
@@ -62,23 +62,23 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 3. If `<project root>/.claude/` does not exist, create it (`mkdir -p`).
 4. If `.claude/settings.json` exists, read it; otherwise treat existing settings as `{}`.
 5. Merge required keys, preserving every existing key the user already had:
-   - `enabledPlugins["agent-framework@brenpike"]` = `true`
-   - `agent` = `"agent-framework:orchestrator"`
+   - `enabledPlugins["hivemind@brenpike"]` = `true`
+   - `agent` = `"hivemind:cerebrate"`
    - if `caveman` = `yes`: `enabledPlugins["caveman@caveman"]` = `true`
    - if `claude_mem` = `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
    - if `codex` = `yes`: `enabledPlugins["codex@openai-codex"]` = `true`
    - if `caveman` = `yes`: `pluginConfigs["caveman@caveman"].options.defaultLevel` = `"ultra"`
    - if `caveman` = `yes`: `hooks.SubagentStart` entry pointing to `.claude/hooks/caveman-ultra-subagent.sh` (see step 10d for hook structure)
 6. If `dry_run` = `yes`:
-   a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.agent-framework/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
+   a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.hivemind/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. If `caveman` = `yes`: determine the `.envrc` action that would be taken: check whether `<project root>/.envrc` exists and whether it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`) (the same check used in step 9b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    c. Print the merged settings JSON, the gitignore action, and (if `caveman` = `yes`) the envrc action together.
    d. Stop without writing any files.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
-8. Ensure `.agent-framework/` is listed in the project's `.gitignore`:
-   a. If `<project root>/.gitignore` does not exist, create it with a single line `.agent-framework/`.
-   b. If `.gitignore` exists, read it. If it already contains `.agent-framework/` as a standalone line (trimmed), report `already present` and skip.
-   c. Otherwise append `.agent-framework/` to the end of the file (prepend a blank line if the file does not end with a newline).
+8. Ensure `.hivemind/` is listed in the project's `.gitignore`:
+   a. If `<project root>/.gitignore` does not exist, create it with a single line `.hivemind/`.
+   b. If `.gitignore` exists, read it. If it already contains `.hivemind/` as a standalone line (trimmed), report `already present` and skip.
+   c. Otherwise append `.hivemind/` to the end of the file (prepend a blank line if the file does not end with a newline).
 9. If `caveman` = `yes`: ensure `.envrc` contains `export CAVEMAN_DEFAULT_MODE=ultra`:
    a. If `<project root>/.envrc` does not exist, create it with a single line `export CAVEMAN_DEFAULT_MODE=ultra`.
    b. If `.envrc` exists, read it. If it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`), report `already present` and skip. Lines starting with `#` (after trimming) are not active.
@@ -118,7 +118,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
        ```
        If already present, report `already present`. If absent, merge it into the settings JSON.
 11. Report which keys were added vs already present.
-12. Invoke `agent-framework:bootstrap-context` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). If `dry_run` = `yes`: skip invocation, report `context_bootstrap: skipped (dry_run)`. The skill has its own skip guard for existing files.
+12. Invoke `hivemind:bootstrap-context` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). If `dry_run` = `yes`: skip invocation, report `context_bootstrap: skipped (dry_run)`. The skill has its own skip guard for existing files.
 
 ## Merge Rules
 
@@ -130,9 +130,9 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5 (except `hooks.SubagentStart` when `caveman` = `yes`, as specified in steps 5 and 10d)
-- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, and files created or modified by invoked skills (`agent-framework:bootstrap-context`)
+- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, and files created or modified by invoked skills (`hivemind:bootstrap-context`)
 - commit, push, or otherwise touch git state
-- invoke skills other than `agent-framework:bootstrap-context`
+- invoke skills other than `hivemind:bootstrap-context`
 - proceed if the project root cannot be resolved
 
 ## Output
@@ -157,7 +157,7 @@ hooks:
 - hooks.SubagentStart in settings.json: added | already present | skipped (caveman not enabled)
 
 keys_applied:
-- enabledPlugins["agent-framework@brenpike"]: added | already present
+- enabledPlugins["hivemind@brenpike"]: added | already present
 - agent: added | already present | unchanged
 - enabledPlugins["caveman@caveman"]: added | already present | not requested
 - enabledPlugins["claude-mem@thedotmack"]: added | already present | not requested

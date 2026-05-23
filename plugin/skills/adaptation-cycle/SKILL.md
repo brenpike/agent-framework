@@ -1,6 +1,6 @@
 ---
-name: local-codex-review
-description: Run a local pre-PR Codex code review via codex-plugin-cc, capture structured output, normalize findings, and return them to the caller. Review-only — does not fix findings. Invoked by local-reviewer agent only.
+name: adaptation-cycle
+description: Run a local pre-PR Codex code review (adaptation cycle) via codex-plugin-cc, capture structured output, normalize findings, and return them to the caller. Review-only — does not fix findings. Invoked by local-reviewer agent only.
 allowed-tools:
   - Read
   - Bash(git status *)
@@ -61,7 +61,7 @@ where `<codexScript>` is the path from path-discovery output and `<base>` is the
 
 ## Output Schema and Normalized Findings
 
-For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT}/skills/local-codex-review/references/output-schema.md`.
+For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT}/skills/adaptation-cycle/references/output-schema.md`.
 
 ## Procedure
 
@@ -73,7 +73,7 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
    - If the Bash tool returns a timeout error: `printf 'blocker: review timed out' >&2; exit 1`.
    - Any other non-zero: `printf 'blocker: review CLI failed\nexit_code: %s\nstderr: %s' "$code" "$stderr" >&2; exit 1`.
 6. Validate stdout: if empty or does not begin with `# Codex Review`: `printf 'blocker: unexpected output shape\nraw_excerpt: %.200s' "$stdout" >&2; exit 1`.
-7. Parse stdout as rendered text per the Output Schema parsing rules in `${CLAUDE_PLUGIN_ROOT}/skills/local-codex-review/references/output-schema.md`.
+7. Parse stdout as rendered text per the Output Schema parsing rules in `${CLAUDE_PLUGIN_ROOT}/skills/adaptation-cycle/references/output-schema.md`.
 8. Normalize findings: for each finding, compute a stable `id` as the SHA-256 hex digest of `file + line_start + line_end + title` (concatenated as strings, UTF-8). Use args-based invocation to avoid shell-quoting issues:
    ```bash
    node -e "const c=require('crypto');const h=c.createHash('sha256');h.update(process.argv[1]+process.argv[2]+process.argv[3]+process.argv[4]);console.log(h.digest('hex'))" "$file" "$line_start" "$line_end" "$title"

@@ -7,7 +7,7 @@ description: >-
   stress-test a plan, challenge a plan, interrogate a plan, red-team a plan, or harden a plan
   against their project's language and documented decisions. Trigger on: "stress-test a plan",
   "challenge plan", "grill me", "interrogate plan", "red team plan", "harden plan",
-  "/agent-framework:plan-interrogation".
+  "/hivemind:plan-interrogation".
 allowed-tools:
   - Read
   - Write

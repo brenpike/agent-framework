@@ -1,6 +1,6 @@
 ---
-name: fleet-dispatch
-description: Dispatch parallel orchestrator sessions. Spawns N Claude Code instances in separate git worktrees via tmux, injects task descriptions, and writes the fleet manifest. Trigger: "dispatch fleet", "spawn brood", "deploy fleet", "parallel sessions".
+name: spawn-brood
+description: Dispatch parallel cerebrate sessions as a brood. Spawns N Claude Code instances in separate git worktrees via tmux, injects task descriptions, and writes the brood manifest. Trigger: "spawn brood", "dispatch fleet", "deploy brood", "parallel sessions".
 allowed-tools:
   - Bash(claude *)
   - Bash(tmux *)
@@ -27,12 +27,12 @@ Before:
 - [ ] No stream branch already exists locally or remotely
 
 After:
-- [ ] Fleet manifest written to `.agent-framework/fleet/manifest.yaml`
+- [ ] Brood manifest written to `.hivemind/fleet/manifest.yaml`
 - [ ] All streams spawned as tmux sessions with worktrees
 - [ ] Config propagated to each worktree
 - [ ] Final action is a Bash tool call (exit 0 = succeeded, exit 1 = blocked)
 
-Dispatch parallel orchestrator sessions as a fleet. Spawns N Claude Code instances in separate git worktrees via tmux, injects task descriptions, and writes the fleet manifest.
+Dispatch parallel cerebrate sessions as a brood. Spawns N Claude Code instances in separate git worktrees via tmux, injects task descriptions, and writes the brood manifest.
 
 ## Required Inputs
 
@@ -54,7 +54,7 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
 
 2. **Create manifest directory.**
    ```bash
-   mkdir -p .agent-framework/fleet
+   mkdir -p .hivemind/fleet
    ```
 
 3. **Spawn each stream.** For each stream in `streams`:
@@ -77,7 +77,7 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
    ```
    Create the `.claude/` directory in the worktree first if it does not exist.
 
-5. **Write fleet manifest** to `.agent-framework/fleet/manifest.yaml` with this schema:
+5. **Write brood manifest** to `.hivemind/fleet/manifest.yaml` with this schema:
    ```yaml
    fleet_id: "<fleet_id>"
    coordinator_session: "<current session identifier>"
@@ -100,11 +100,11 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
 6. **Final Bash tool call.** Emit result and exit:
    - If all streams spawned successfully: emit manifest path on stdout and exit 0.
      ```bash
-     printf 'manifest: %s\n' "$(pwd)/.agent-framework/fleet/manifest.yaml"; exit 0
+     printf 'manifest: %s\n' "$(pwd)/.hivemind/fleet/manifest.yaml"; exit 0
      ```
-   - If any streams failed: write manifest with failed streams marked `status: failed`, emit details on stderr, and exit 1.
+   - If any streams failed: write brood manifest with failed streams marked `status: failed`, emit details on stderr, and exit 1.
      ```bash
-     printf 'blocker: %d of %d streams failed to spawn\nmanifest: %s\n' "<failed_count>" "<total_count>" "$(pwd)/.agent-framework/fleet/manifest.yaml" >&2; exit 1
+     printf 'blocker: %d of %d streams failed to spawn\nmanifest: %s\n' "<failed_count>" "<total_count>" "$(pwd)/.hivemind/fleet/manifest.yaml" >&2; exit 1
      ```
 
 ## Failure Modes
