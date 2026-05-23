@@ -6,7 +6,7 @@
   },
   "consumers": [
     {
-      "file": "plugin/agents/cerebrate.md",
+      "file": "plugin/agents/overlord.md",
       "pattern": "Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)"
     },
     {

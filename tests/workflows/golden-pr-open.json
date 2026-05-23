@@ -5,6 +5,6 @@
     { "state": "Validate", "source": { "file": "plugin/governance/definitions.md", "pattern": "## Validation Procedure" } },
     { "state": "Version Bump", "source": { "file": "plugin/governance/versioning.md", "pattern": "## Bump Trigger" } },
     { "state": "PR", "source": { "file": "plugin/governance/workflow.md", "pattern": "Open PR only when: plan complete, validation passed" } },
-    { "state": "Final Report", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "Result: complete | partial | blocked" } }
+    { "state": "Final Report", "source": { "file": "plugin/agents/overlord.md", "pattern": "Result: complete | partial | blocked" } }
   ]
 }

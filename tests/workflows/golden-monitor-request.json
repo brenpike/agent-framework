@@ -2,7 +2,7 @@
   "workflow": "monitor-request",
   "description": "User request with watch/monitor keywords routes to github-reviewer agent in watch mode",
   "steps": [
-    { "state": "Intake", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "`watch`, `monitor`, `wait`, `poll`, or `loop`" } },
+    { "state": "Intake", "source": { "file": "plugin/agents/overlord.md", "pattern": "`watch`, `monitor`, `wait`, `poll`, or `loop`" } },
     { "state": "Monitor Watch", "source": { "file": "plugin/agents/github-reviewer.md", "pattern": "Start Monitor:" } }
   ]
 }

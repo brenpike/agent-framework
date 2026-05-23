@@ -6,7 +6,7 @@
   },
   "consumers": [
     {
-      "file": "plugin/agents/overlord.md",
+      "file": "plugin/agents/cerebrate.md",
       "pattern": "Otherwise return blocked"
     },
     {

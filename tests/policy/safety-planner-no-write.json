@@ -1,17 +1,17 @@
 {
   "rule": "Planner cannot write files",
   "source": {
-    "file": "plugin/agents/overlord.md",
+    "file": "plugin/agents/cerebrate.md",
     "pattern": "write, edit, create, or delete files"
   },
   "consumers": [
     {
-      "file": "plugin/agents/overlord.md",
+      "file": "plugin/agents/cerebrate.md",
       "pattern": "Write",
       "absent": true
     },
     {
-      "file": "plugin/agents/overlord.md",
+      "file": "plugin/agents/cerebrate.md",
       "pattern": "Edit",
       "absent": true
     }
