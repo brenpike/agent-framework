@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Renamed the cerebrate's output artifact from **psionic map** to **directive** (canon: the cerebrate encodes strategic intent; the overlord relays it). Glossary and README vocabulary only — no runtime behavior change.
+
 ### Fixed
 
 ## [2.0.0] - 2026-05-23

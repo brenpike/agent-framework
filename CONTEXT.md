@@ -7,7 +7,7 @@ Domain glossary for the hivemind Claude Code plugin — a multi-agent system tha
 ### Agents
 
 **Overmind**:
-The user — supreme intelligence that gives directives to the swarm. Not an agent; the human operator whose intent drives all overlord activity.
+The user — the supreme intelligence whose will the swarm enacts. Not an agent; the human operator whose intent drives all overlord activity.
 _Avoid_: admin, operator, client
 
 **Overlord**:
@@ -16,7 +16,7 @@ _Alias_: orchestrator
 _Avoid_: planner, strategist, dispatcher, controller
 
 **Cerebrate**:
-The read-only strategist — the brain of the swarm. Scans the problem territory and produces the psionic map (file scopes, step sequencing, risk assessment) before execution begins. Originates the plan and intelligence the swarm executes; reports back but never modifies.
+The read-only strategist — the brain of the swarm. Scans the problem territory and produces the directive (file scopes, step sequencing, risk assessment) before execution begins. Originates the plan and intelligence the swarm executes; reports back but never modifies.
 _Alias_: planner, architect
 _Avoid_: orchestrator, coordinator, analyst, scout
 
@@ -73,13 +73,13 @@ _Alias_: checkpoint commit
 _Avoid_: save, snapshot
 
 **Step**:
-The cerebrate's unit of work within a psionic map, identified as `STEP-NNN`. Each step specifies file scope, assigned bioform type (drone or changeling), and completion criteria. Corresponds 1:1 with a phase during execution; reflex tasks have no steps.
+The cerebrate's unit of work within a directive, identified as `STEP-NNN`. Each step specifies file scope, assigned bioform type (drone or changeling), and completion criteria. Corresponds 1:1 with a phase during execution; reflex tasks have no steps.
 _Avoid_: phase (which is the overlord's execution unit), task, item
 
-**Psionic Map**:
-The cerebrate's output document containing steps, file scopes, decisions, risks, and assumptions — the psychic scan of the problem territory. Required before execution begins for non-trivial tasks.
-_Alias_: plan artifact
-_Avoid_: spec, design doc, blueprint
+**Directive**:
+The cerebrate's output — the strategic intent the swarm executes, containing steps, file scopes, decisions, risks, and assumptions. The cerebrate originates it; the overlord interprets and relays it to the swarm. Required before execution begins for non-trivial tasks.
+_Alias_: plan artifact, psionic directive
+_Avoid_: map, blueprint, spec, design doc
 
 **Reflex**:
 An instinctive response that bypasses the cerebrate when all reflex conditions are met: one owner, one known file, trivial change, clear branch classification, no version impact, no review remediation.
@@ -116,7 +116,7 @@ _Avoid_: error, block (which has a different meaning)
 ### Git / Delivery
 
 **Working Branch**:
-The non-trunk branch created for a single approved psionic map's implementation and PR.
+The non-trunk branch created for a single approved directive's implementation and PR.
 _Avoid_: feature branch (which is only one classification prefix), dev branch
 
 **Trunk**:
@@ -245,10 +245,10 @@ _Avoid_: fleet config, fleet state, registry
 ## Relationships
 
 - An **Overlord** (orchestrator) spawns exactly one **Cerebrate**, **Drone**, **Changeling**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
-- A **Psionic Map** (plan artifact) contains one or more steps (`STEP-NNN`), each assigned to exactly one **Drone** or **Changeling**
-- A **Spawn** (delegation) targets exactly one **Step** (`STEP-NNN`) from the **Psionic Map**, or a single task when the **Reflex** (trivial fast path) applies
+- A **Directive** (plan artifact) contains one or more steps (`STEP-NNN`), each assigned to exactly one **Drone** or **Changeling**
+- A **Spawn** (delegation) targets exactly one **Step** (`STEP-NNN`) from the **Directive**, or a single task when the **Reflex** (trivial fast path) applies
 - A **Phase** produces exactly one **Essence** (handoff) on success
-- A **Working Branch** maps to exactly one **Psionic Map** and one PR
+- A **Working Branch** maps to exactly one **Directive** and one PR
 - An **Adaptation Cycle** (review loop) may produce zero or more **Remediation** cycles
 - A **Mutation Decay** (break-fix-break cycle) terminates an **Adaptation Cycle** with mandatory **Flare** (escalation)
 - A **Bump Trigger** fires at most one version increment per PR
@@ -256,7 +256,7 @@ _Avoid_: fleet config, fleet state, registry
 - A **Bioform** is the collective genus; each **Overlord**, **Cerebrate**, **Drone**, and **Changeling** is a bioform
 - **Trunk Freshness** is a sub-check within **Git Preflight**, gating **Working Branch** creation
 - The **Swarm** is the whole; a **Brood** is a tactical subgroup of the **Swarm**
-- hivemind maps StarCraft canon by cognitive function, not command rank: the **Overmind** (user) issues directives; the **Overlord** (orchestrator) is the psionic relay those directives flow through — it consults the **Cerebrate** for the plan and distributes execution to **Drone**/**Changeling**; the **Cerebrate** (strategist) is the brain that originates the plan the swarm executes. (Canon: cerebrates planned campaigns; overlords served operationally, distributing strategy.)
+- hivemind maps StarCraft canon by cognitive function, not command rank: the **Overmind** (user) issues the swarm's will; the **Cerebrate** (strategist) is the brain that encodes that will into a **Directive** (strategic intent); the **Overlord** (orchestrator) is the psionic relay that interprets the Directive and distributes execution to **Drone**/**Changeling**. (Canon: cerebrates planned campaigns; overlords served operationally, relaying directives and sustaining swarm cohesion.)
 
 - A **Fix Ledger** persists across iterations of an **Adaptation Cycle**, tracking finding status from open through fixed or cycling
 - The **Destructive Fix Gate** overrides normal **Remediation** flow, requiring human approval before commit
@@ -270,7 +270,7 @@ _Avoid_: fleet config, fleet state, registry
 - A **Fleet-Plan** produces exactly one **Strain** per independent work bucket
 - Each **Strain** maps to exactly one child **Overlord** session, one **Working Branch**, and one PR
 - A **Hatchery** (coordinator mode) overlord dispatches one **Brood** and monitors via the **Fleet Manifest**
-- A **Fleet-Plan** is distinct from a **Psionic Map**: fleet-plans contain strain descriptions, psionic maps contain steps (`STEP-NNN`)
+- A **Fleet-Plan** is distinct from a **Directive**: fleet-plans contain strain descriptions, directives contain steps (`STEP-NNN`)
 
 - A completed phase produces **Essence** consumed by the next phase's **Spawn**
 - A **Flare** terminates a phase and returns control to the **Overlord**
@@ -291,7 +291,7 @@ _Avoid_: fleet config, fleet state, registry
 > **Dev:** "I have three independent features to build — should I use a brood (fleet)?"
 > **Domain expert:** "If the **Cerebrate** confirms they decompose into independent **Strains** (streams) with minimal file overlap, yes. The **Overlord** will present the **Fleet-Plan** for your confirmation, then enter **Hatchery** (coordinator mode) to dispatch each **Strain** as a separate session via **spawn-brood**. Each child session runs a full pipeline independently — same as any solo task."
 
-> **Dev:** "The **Cerebrate** produced a psionic map with 5 **Steps** — does the **Overlord** execute them all at once?"
+> **Dev:** "The **Cerebrate** produced a **Directive** with 5 **Steps** — does the **Overlord** execute them all at once?"
 > **Domain expert:** "No. Each **Step** becomes one **Phase** — a single **Spawn** round-trip to a **Drone** or **Changeling**. The **Overlord** runs them sequentially: spawn, wait for **Essence**, **Verify** (scope compliance, report schema, git safety), **Molt** the progress, then spawn the next. The **Overmind** (you) only hears about it if something flares."
 
 > **Dev:** "What's the difference between the **Swarm** and a **Brood**?"

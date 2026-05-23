@@ -90,20 +90,20 @@ Hivemind coordinates specialized bioforms to plan, build, review, and ship code 
 | Bioform | Role | What it does |
 |---|---|---|
 | :eye: **Overlord** | Orchestrator | The control plane. Routes the Overmind's directives, distributes the cerebrate's plan, owns the git lifecycle, spawns specialists. Never writes code. Your main interface. |
-| :brain: **Cerebrate** | Strategist | Originates the plan. Scans the territory and produces the **psionic map** — the intelligence the swarm executes. Read-only; thinks, never writes. |
+| :brain: **Cerebrate** | Strategist | Originates the plan. Scans the territory and produces the **directive** — the intelligence the swarm executes. Read-only; thinks, never writes. |
 | :hammer: **Drone** | Builder | Builds code within its assigned scope. The workhorse of the swarm. |
 | :performing_arts: **Changeling** | Shaper | Handles UI, styling, and visual presentation. Reshapes how things look and feel. |
 
 ### The Lifecycle
 
 ```
-You --> Overlord --> Cerebrate (plan) --> Psionic Map
+You --> Overlord --> Cerebrate (plan) --> Directive
                  --> Drone/Changeling (build) --> Essence
                  --> Adaptation Cycle (review) --> PR
 ```
 
 1. You give the **overlord** a task
-2. The **cerebrate** scans the territory and returns a **psionic map**
+2. The **cerebrate** scans the territory and returns a **directive**
 3. The overlord **spawns** specialists (**drones** / **changelings**) phase by phase
 4. Each phase produces **essence** — knowledge carried forward
 5. An **adaptation cycle** reviews the work before shipping
