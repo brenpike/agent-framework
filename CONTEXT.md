@@ -6,6 +6,10 @@ Domain glossary for the hivemind Claude Code plugin — a multi-agent system tha
 
 ### Agents
 
+**Overmind**:
+The user — supreme intelligence that gives directives to the swarm. Not an agent; the human operator whose intent drives all cerebrate activity.
+_Avoid_: admin, operator, client
+
 **Cerebrate**:
 The control-plane agent — session-level commander that owns task intake, spawn sequencing, branch/PR decisions, version bump detection, and review routing. Directs work but never implements. Multiple cerebrates operate in a brood, each commanding its own strain.
 _Alias_: orchestrator
@@ -34,6 +38,14 @@ _Avoid_: linter, pre-check
 The agent that monitors or processes post-PR review feedback, classifies comments, and reports terminal results to the cerebrate.
 _Avoid_: PR bot, review handler
 
+**Bioform**:
+The four primary agent archetypes in the swarm — cerebrate, overlord, drone, and changeling. Reviewer agents (local-reviewer, github-reviewer) are operational composites that delegate to bioforms, not distinct castes themselves.
+_Avoid_: agent type, role, archetype
+
+**Swarm**:
+The entire hivemind collective — all bioforms and their operational composites acting as one governed system. The civilization-scale term for the unified agent framework.
+_Avoid_: brood (which is a tactical subgroup), fleet, cluster
+
 ### Execution
 
 **Phase**:
@@ -51,8 +63,18 @@ _Alias_: handoff
 _Avoid_: transfer, relay, spawn
 
 **Checkpoint Commit**:
-A git commit made at a phase boundary or milestone, preserving incremental progress on the working branch. Also called a **molt**.
+A git commit made at a phase boundary or milestone, preserving incremental progress on the working branch.
+_Alias_: molt
 _Avoid_: save point, intermediate commit
+
+**Molt**:
+The act of shedding progress into a checkpoint commit at a phase boundary, milestone, version bump, or review remediation. The skill `hivemind:molt` performs this.
+_Alias_: checkpoint commit
+_Avoid_: save, snapshot
+
+**Step**:
+The overlord's unit of work within a psionic map, identified as `STEP-NNN`. Each step specifies file scope, assigned bioform type (drone or changeling), and completion criteria. Corresponds 1:1 with a phase during execution; reflex tasks have no steps.
+_Avoid_: phase (which is the cerebrate's execution unit), task, item
 
 **Psionic Map**:
 The overlord's output document containing steps, file scopes, decisions, risks, and assumptions — the psychic scan of the problem territory. Required before execution begins for non-trivial tasks.
@@ -82,6 +104,10 @@ _Avoid_: assignment, context, area
 The set of project-declared commands (from CLAUDE.md) that must pass before a phase is accepted.
 _Avoid_: tests, checks (which is broader)
 
+**Verification**:
+The cerebrate's post-phase acceptance checks — scope compliance, report schema conformance, and git state safety. Performed after every phase, independent of project-declared validation commands.
+_Avoid_: validation (which means running project-declared commands), review
+
 **Flare**:
 An urgent signal from any agent back to the cerebrate when a condition is encountered that cannot be safely resolved. The mandatory stop-and-report action.
 _Alias_: escalation
@@ -104,6 +130,10 @@ _Avoid_: branch type, category
 **Bump Trigger**:
 A change to files affecting a published artifact's runtime behavior, public API, compatibility contract, generated output, packaged output, distribution metadata, or documented consumer expectation, requiring a version increment.
 _Avoid_: version trigger, release trigger
+
+**Trunk Freshness**:
+The pre-branch sub-check within Git Preflight verifying trunk is up-to-date with its remote tracking branch before creating a working branch. Staleness triggers a user decision: fix-and-continue or proceed-at-risk.
+_Avoid_: sync check, remote check
 
 **Git Preflight**:
 The set of checks (classification, base branch, trunk freshness, branch name, commit policy, PR target) that must all be defined before implementation begins.
@@ -223,6 +253,10 @@ _Avoid_: fleet config, fleet state, registry
 - A **Mutation Decay** (break-fix-break cycle) terminates an **Adaptation Cycle** with mandatory **Flare** (escalation)
 - A **Bump Trigger** fires at most one version increment per PR
 - Each agent loads specific **Governance Docs** per its `Load and follow` list
+- A **Bioform** is the collective genus; each **Cerebrate**, **Overlord**, **Drone**, and **Changeling** is a bioform
+- **Trunk Freshness** is a sub-check within **Git Preflight**, gating **Working Branch** creation
+- The **Swarm** is the whole; a **Brood** is a tactical subgroup of the **Swarm**
+- The canon command hierarchy maps to hivemind: **Overmind** (user) → **Cerebrate** (session commander) → **Overlord** (intelligence/planning) → **Drone**/**Changeling** (implementation)
 
 - A **Fix Ledger** persists across iterations of an **Adaptation Cycle**, tracking finding status from open through fixed or cycling
 - The **Destructive Fix Gate** overrides normal **Remediation** flow, requiring human approval before commit
@@ -238,7 +272,6 @@ _Avoid_: fleet config, fleet state, registry
 - A **Hatchery** (coordinator mode) cerebrate dispatches one **Brood** and monitors via the **Fleet Manifest**
 - A **Fleet-Plan** is distinct from a **Psionic Map**: fleet-plans contain strain descriptions, psionic maps contain steps (`STEP-NNN`)
 
-- A **Spawn** carries the **Psionic Map**'s step assignment to exactly one specialist agent
 - A completed phase produces **Essence** consumed by the next phase's **Spawn**
 - A **Flare** terminates a phase and returns control to the **Cerebrate**
 - A **Reflex** bypasses the **Overlord** entirely — **Cerebrate** spawns directly
@@ -258,9 +291,15 @@ _Avoid_: fleet config, fleet state, registry
 > **Dev:** "I have three independent features to build — should I use a brood (fleet)?"
 > **Domain expert:** "If the **Overlord** confirms they decompose into independent **Strains** (streams) with minimal file overlap, yes. The **Cerebrate** will present the **Fleet-Plan** for your confirmation, then enter **Hatchery** (coordinator mode) to dispatch each **Strain** as a separate session via **spawn-brood**. Each child session runs a full pipeline independently — same as any solo task."
 
+> **Dev:** "The **Overlord** produced a psionic map with 5 **Steps** — does the **Cerebrate** execute them all at once?"
+> **Domain expert:** "No. Each **Step** becomes one **Phase** — a single **Spawn** round-trip to a **Drone** or **Changeling**. The **Cerebrate** runs them sequentially: spawn, wait for **Essence**, **Verify** (scope compliance, report schema, git safety), **Molt** the progress, then spawn the next. The **Overmind** (you) only hears about it if something flares."
+
+> **Dev:** "What's the difference between the **Swarm** and a **Brood**?"
+> **Domain expert:** "The **Swarm** is the whole — every **Bioform** and operational composite acting as one governed system. A **Brood** is a tactical subgroup: multiple **Cerebrates** running independent **Strains** in parallel worktrees. One **Swarm**, many possible **Broods**."
+
 ## Flagged ambiguities
 
-- "phase" vs "step" — resolved: a **step** is the overlord's unit of work (`STEP-NNN`); a **phase** is the cerebrate's unit of execution (one spawn round-trip). They correspond 1:1 for planned work; reflex tasks have a single phase with no plan step.
+- "phase" vs "step" — resolved and promoted to glossary terms: **Step** is the overlord's unit of work (`STEP-NNN`); **Phase** is the cerebrate's unit of execution (one spawn round-trip). They correspond 1:1 for planned work; reflex tasks have a single phase with no step.
 - "essence" vs "spawn" — resolved: **Spawn** (delegation) flows downward (cerebrate to worker); **Essence** (handoff) flows upward/forward (worker report stored for future phases).
 - "scope" — resolved: always means file scope (the explicit file list in a spawn), never task scope or project scope.
-- "validation" vs "verification" — resolved: **Validation** means running declared project commands; verification means the cerebrate's post-phase acceptance checks (scope compliance, report schema conformance, git state safety).
+- "validation" vs "verification" — resolved and promoted to glossary terms: **Validation** means running declared project commands; **Verification** means the cerebrate's post-phase acceptance checks (scope compliance, report schema conformance, git state safety).
