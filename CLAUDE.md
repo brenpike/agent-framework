@@ -79,16 +79,15 @@ When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runt
 
 `codex@openai-codex` is optional — the overlord uses `codex-plugin-cc` for pre-PR local review via the `local-reviewer` agent (`hivemind:adaptation-cycle`). If not installed, the overlord skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
 
-## Fleet execution
+## Brood execution
 
 The plugin supports parallel multi-overlord execution via spawn-brood and brood-status skills. Each brood session runs in its own git worktree as an independent Claude Code instance.
 
-- **Fleet PRD:** `docs/fleet-prd.md` — requirements, architecture decisions, manifest schema
-- **Architecture decision:** `docs/adr/0007-fleet-children-unaware-coordinator-dashboard.md` — children have zero fleet awareness; coordinator is a status dashboard
-- **Fleet manifest:** `.hivemind/fleet/manifest.yaml` (in main checkout; already gitignored under `.hivemind/`)
+- **Architecture decision:** `docs/adr/0007-fleet-children-unaware-coordinator-dashboard.md` — children have zero brood awareness; coordinator is a status dashboard
+- **Brood manifest:** `.hivemind/brood/manifest.yaml` (in main checkout; already gitignored under `.hivemind/`)
 - **Worktree sessions:** `.claude/worktrees/` (gitignored)
 
-Children are standard overlord sessions receiving a task description. No fleet-specific code paths exist in child sessions.
+Children are standard overlord sessions receiving a task description. No brood-specific code paths exist in child sessions.
 
 ## Local developer setup
 

@@ -222,30 +222,28 @@ _Avoid_: intent-driven rules, soft governance
 The YAML artifact produced by a modifying agent at phase completion, in one of three schemas: complete (with decisions, risks, and essence fields), blocked (with stage, blocker, and next), or trivial (minimal for single-file changes).
 _Avoid_: phase report, agent output, result
 
-### Brood (fleet)
+### Brood
 
 **Brood**:
 A set of parallel overlord sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the overlord in hatchery mode via brood-dispatch.
-_Alias_: fleet
-_Avoid_: cluster, swarm, pool
+_Avoid_: fleet, cluster, swarm, pool
 
 **Hatchery**:
-The overlord execution mode entered when a fleet-plan is dispatched; the overlord remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+The overlord execution mode entered when a brood-plan is dispatched; the overlord remains on trunk in the main checkout, owns the brood manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
 _Alias_: coordinator mode
 _Avoid_: manager mode, supervisor mode
 
-**Fleet-Plan**:
+**Brood-Plan**:
 The cerebrate's output artifact when work decomposes into multiple independent strains. Contains strain-level descriptions and scope boundaries, not step-level detail. Each strain becomes a separate child overlord session with its own full pipeline.
 _Avoid_: multi-plan (which means sequential PRs, not parallel), meta-plan
 
 **Strain**:
-One independent unit of work within a fleet-plan, assigned to a single child overlord session. Each strain has its own worktree, branch, pipeline execution, and PR.
-_Alias_: stream
-_Avoid_: task (too generic), work item, lane
+One independent unit of work within a brood-plan, assigned to a single child overlord session. Each strain has its own worktree, branch, pipeline execution, and PR.
+_Avoid_: stream, task (too generic), work item, lane
 
-**Fleet Manifest**:
-The YAML file at `.hivemind/fleet/manifest.yaml` in the main checkout, tracking active brood sessions, their worktree paths, branches, tmux sessions, and status.
-_Avoid_: fleet config, fleet state, registry
+**Brood Manifest**:
+The YAML file at `.hivemind/brood/manifest.yaml` in the main checkout, tracking active brood sessions, their worktree paths, branches, tmux sessions, and status.
+_Avoid_: brood config, brood state, registry
 
 ## Relationships
 
@@ -272,11 +270,11 @@ _Avoid_: fleet config, fleet state, registry
 - **Intent-Based Governance** defines which rules remain mechanical (**Unsafe Git State**, **Destructive Fix Gate**, **External Content Boundary**, report schemas) vs intent-described
 - An **Unsafe Git State** blocks all modifying agent operations until resolved
 
-- A **Brood** (fleet) contains one or more **Strains** (streams), each running in a separate git worktree
-- A **Fleet-Plan** produces exactly one **Strain** per independent work bucket
+- A **Brood** contains one or more **Strains**, each running in a separate git worktree
+- A **Brood-Plan** produces exactly one **Strain** per independent work bucket
 - Each **Strain** maps to exactly one child **Overlord** session, one **Working Branch**, and one PR
-- A **Hatchery** (coordinator mode) overlord dispatches one **Brood** and monitors via the **Fleet Manifest**
-- A **Fleet-Plan** is distinct from a **Directive**: fleet-plans contain strain descriptions, directives contain steps (`STEP-NNN`)
+- A **Hatchery** (coordinator mode) overlord dispatches one **Brood** and monitors via the **Brood Manifest**
+- A **Brood-Plan** is distinct from a **Directive**: brood-plans contain strain descriptions, directives contain steps (`STEP-NNN`)
 
 - A completed phase produces **Essence** consumed by the next phase's **Spawn**
 - A **Flare** terminates a phase and returns control to the **Overlord**
@@ -294,8 +292,8 @@ _Avoid_: fleet config, fleet state, registry
 > **Dev:** "The **GitHub-Reviewer** is in **Watch Mode** and found a fix that removes an auth check — does it apply it?"
 > **Domain expert:** "No. That hits the **Destructive Fix Gate** — category 1, removing authentication. The reviewer returns blocked and surfaces the proposed change for human approval before committing."
 
-> **Dev:** "I have three independent features to build — should I use a brood (fleet)?"
-> **Domain expert:** "If the **Cerebrate** confirms they decompose into independent **Strains** (streams) with minimal file overlap, yes. The **Overlord** will present the **Fleet-Plan** for your confirmation, then enter **Hatchery** (coordinator mode) to dispatch each **Strain** as a separate session via **spawn-brood**. Each child session runs a full pipeline independently — same as any solo task."
+> **Dev:** "I have three independent features to build — should I use a brood?"
+> **Domain expert:** "If the **Cerebrate** confirms they decompose into independent **Strains** with minimal file overlap, yes. The **Overlord** will present the **Brood-Plan** for your confirmation, then enter **Hatchery** (coordinator mode) to dispatch each **Strain** as a separate session via **spawn-brood**. Each child session runs a full pipeline independently — same as any solo task."
 
 > **Dev:** "The **Cerebrate** produced a **Directive** with 5 **Steps** — does the **Overlord** execute them all at once?"
 > **Domain expert:** "No. Each **Step** becomes one **Phase** — a single **Spawn** round-trip to a **Drone** or **Changeling**. The **Overlord** runs them sequentially: spawn, wait for **Essence**, **Verify** (scope compliance, report schema, git safety), **Molt** the progress, then spawn the next. The **Overmind** (you) only hears about it if something flares."

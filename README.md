@@ -140,7 +140,7 @@ Every themed term maps to a plain concept. You don't need to learn the language 
 | You can say... | Or say... | Same thing |
 |---|---|---|
 | "checkpoint commit" | "molt" | Save progress at a phase boundary |
-| "dispatch a fleet" | "spawn a brood" | Run parallel sessions |
+| "spawn a brood" | "dispatch a fleet" | Run parallel sessions |
 | "what's the status" | "brood status" | Check progress across sessions |
 | "plan this" | "send the cerebrate" | Get a plan before building |
 
@@ -198,7 +198,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.hivemind/` to `.gitignore` |
 | `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `hivemind:drone` context only |
 | `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
-| `hivemind:brood-status` | Check status of all active brood sessions — reports per-stream tmux session state, branch existence, and PR status |
+| `hivemind:brood-status` | Check status of all active brood sessions — reports per-strain tmux session state, branch existence, and PR status |
 | `hivemind:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
 
 ## Governance
