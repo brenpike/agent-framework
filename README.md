@@ -21,18 +21,18 @@ As of v1.0.0, PowerShell and native Windows support have been removed. All toolc
 
 ## Per-project setup
 
-1. Enable the plugin and set the cerebrate as the session default agent in `.claude/settings.json`:
+1. Enable the plugin and set the overlord as the session default agent in `.claude/settings.json`:
 
 ```json
 {
   "enabledPlugins": {
     "hivemind@brenpike": true
   },
-  "agent": "hivemind:cerebrate"
+  "agent": "hivemind:overlord"
 }
 ```
 
-The `agent` key sets the default agent for the project session. Without it, Claude Code starts with the default agent and the cerebrate is only reachable on-demand via the Agent tool — bypassing the workflow guarantees.
+The `agent` key sets the default agent for the project session. Without it, Claude Code starts with the default agent and the overlord is only reachable on-demand via the Agent tool — bypassing the workflow guarantees.
 
 Or run the setup skill once to apply the required keys automatically:
 
@@ -40,7 +40,7 @@ Or run the setup skill once to apply the required keys automatically:
 /hivemind:setup-project
 ```
 
-The setup skill also adds `.hivemind/` to your project's `.gitignore`. This directory is created at runtime by the cerebrate for ephemeral plans, handoffs, and checkpoints — it should not be committed. If you prefer manual setup, add `.hivemind/` to your project's `.gitignore` directly.
+The setup skill also adds `.hivemind/` to your project's `.gitignore`. This directory is created at runtime by the overlord for ephemeral plans, handoffs, and checkpoints — it should not be committed. If you prefer manual setup, add `.hivemind/` to your project's `.gitignore` directly.
 
 2. Create `CLAUDE.md` with project-specific details:
    - Build/test commands
@@ -53,11 +53,11 @@ The setup skill also adds `.hivemind/` to your project's `.gitignore`. This dire
    - Severity definitions
    - Project-specific conventions for reviewers
 
-Once configured, the cerebrate is the session default agent. All skills are available namespaced as `hivemind:<skill-name>`.
+Once configured, the overlord is the session default agent. All skills are available namespaced as `hivemind:<skill-name>`.
 
 ## Recommended companion plugins
 
-- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `claude-mem:mem-search` skill referenced by the overlord for cross-session memory and continuity. Install separately as a Claude Code plugin. Hivemind works without it; if installed, planning invokes `claude-mem:mem-search` before every plan unless the repo has zero commits or the user explicitly opts out.
+- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides the optional `claude-mem:mem-search` skill referenced by the cerebrate for cross-session memory and continuity. Install separately as a Claude Code plugin. Hivemind works without it; if installed, planning invokes `claude-mem:mem-search` before every plan unless the repo has zero commits or the user explicitly opts out.
 
 - [`codex`](https://github.com/openai/codex-plugin-cc) — provides local and GitHub-integrated Codex code review. Install and configure with:
   ```text
@@ -89,32 +89,32 @@ Hivemind coordinates specialized bioforms to plan, build, review, and ship code 
 
 | Bioform | Role | What it does |
 |---|---|---|
-| :brain: **Cerebrate** | Commander | The control plane. Directs the swarm, manages git lifecycle, never writes code. Your main interface. |
-| :eye: **Overlord** | Scanner | Scouts the problem space. Returns a **psionic map** — the plan of attack. Read-only; reports but never modifies. |
+| :eye: **Overlord** | Orchestrator | The control plane. Routes the Overmind's directives, distributes the cerebrate's plan, owns the git lifecycle, spawns specialists. Never writes code. Your main interface. |
+| :brain: **Cerebrate** | Strategist | Originates the plan. Scans the territory and produces the **psionic map** — the intelligence the swarm executes. Read-only; thinks, never writes. |
 | :hammer: **Drone** | Builder | Builds code within its assigned scope. The workhorse of the swarm. |
 | :performing_arts: **Changeling** | Shaper | Handles UI, styling, and visual presentation. Reshapes how things look and feel. |
 
 ### The Lifecycle
 
 ```
-You --> Cerebrate --> Overlord (scout) --> Psionic Map
+You --> Overlord --> Cerebrate (plan) --> Psionic Map
                  --> Drone/Changeling (build) --> Essence
                  --> Adaptation Cycle (review) --> PR
 ```
 
-1. You give the **cerebrate** a task
-2. The **overlord** scans the territory and returns a **psionic map**
-3. The cerebrate **spawns** specialists (**drones** / **changelings**) phase by phase
+1. You give the **overlord** a task
+2. The **cerebrate** scans the territory and returns a **psionic map**
+3. The overlord **spawns** specialists (**drones** / **changelings**) phase by phase
 4. Each phase produces **essence** — knowledge carried forward
 5. An **adaptation cycle** reviews the work before shipping
 6. A PR is opened when the swarm stabilizes
 
 ### Brood Mode — Parallel Execution
 
-When the work is big enough, the cerebrate can split it into independent **strains** and dispatch a **brood** — multiple parallel sessions, each running its own full lifecycle in a separate git worktree.
+When the work is big enough, the overlord can split it into independent **strains** and dispatch a **brood** — multiple parallel sessions, each running its own full lifecycle in a separate git worktree.
 
 ```
-You --> Cerebrate --> Overlord (decompose)
+You --> Overlord --> Cerebrate (decompose)
                  --> "3 independent strains detected. Deploy brood?"
                  --> Yes --> Hatchery mode
                            --> Strain A (tmux tab) --> own branch, own PR
@@ -122,14 +122,14 @@ You --> Cerebrate --> Overlord (decompose)
                            --> Strain C (tmux tab) --> own branch, own PR
 ```
 
-The cerebrate enters **hatchery** mode — monitoring the brood from home base while each strain evolves independently.
+The overlord enters **hatchery** mode — monitoring the brood from home base while each strain evolves independently.
 
 ### Signals
 
 | Signal | Meaning |
 |---|---|
-| :fire: **Flare** | Urgent — agent hit something it can't resolve alone. Cerebrate stops and asks you. |
-| :zap: **Reflex** | Simple task — cerebrate skips the overlord and spawns a drone directly. |
+| :fire: **Flare** | Urgent — agent hit something it can't resolve alone. Overlord stops and asks you. |
+| :zap: **Reflex** | Simple task — overlord skips the cerebrate and spawns a drone directly. |
 | :dna: **Mutation Decay** | Two fixes are fighting each other. Swarm stops. You decide. |
 | :arrows_counterclockwise: **Adaptation Cycle** | Review in progress — the swarm is stabilizing before shipping. |
 
@@ -142,7 +142,7 @@ Every themed term maps to a plain concept. You don't need to learn the language 
 | "checkpoint commit" | "molt" | Save progress at a phase boundary |
 | "dispatch a fleet" | "spawn a brood" | Run parallel sessions |
 | "what's the status" | "brood status" | Check progress across sessions |
-| "plan this" | "send the overlord" | Get a plan before building |
+| "plan this" | "send the cerebrate" | Get a plan before building |
 
 The theme is for fun. The framework works with or without it.
 
@@ -154,7 +154,7 @@ The theme is for fun. The framework works with or without it.
 plugin/                     # plugin root — everything Claude Code loads lives here
   .claude-plugin/
     plugin.json             # plugin manifest
-  agents/                   # agent definitions (cerebrate, overlord, drone, changeling, local-reviewer, github-reviewer)
+  agents/                   # agent definitions (overlord, cerebrate, drone, changeling, local-reviewer, github-reviewer)
   skills/                   # skill definitions (incl. _shared/ helpers)
   governance/               # runtime governance docs loaded via ${CLAUDE_PLUGIN_ROOT}/governance/
 docs/
@@ -176,8 +176,8 @@ README.md
 
 | Agent | Role |
 |---|---|
-| `hivemind:cerebrate` | Default agent. Coordinates all work, owns git workflow, branch/PR decisions, versioning decisions, and external review routing. |
-| `hivemind:overlord` | Research and implementation planning. Read-only — no file writes. |
+| `hivemind:overlord` | Default agent. Coordinates all work, owns git workflow, branch/PR decisions, versioning decisions, and external review routing. |
+| `hivemind:cerebrate` | Research and implementation planning. Read-only — no file writes. |
 | `hivemind:drone` | Implementation within explicitly assigned file scope. |
 | `hivemind:changeling` | Presentational UI/UX work within explicitly assigned file scope. |
 | `hivemind:local-reviewer` | Pre-PR iterative Codex review with self-owning fix delegation at sonnet tier. |
@@ -197,7 +197,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
 | `hivemind:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.hivemind/` to `.gitignore` |
 | `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `hivemind:drone` context only |
-| `hivemind:spawn-brood` | Dispatch parallel cerebrate sessions — spawns N Claude Code instances in separate git worktrees via tmux |
+| `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
 | `hivemind:brood-status` | Check status of all active brood sessions — reports per-stream tmux session state, branch existence, and PR status |
 | `hivemind:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
 
@@ -208,7 +208,7 @@ Reference documentation in `plugin/governance/`:
 | File | Contents |
 |---|---|
 | `definitions.md` | Canonical vocabulary, authority matrix, agent roles, and cross-agent constraints |
-| `workflow.md` | Branch taxonomy, naming rules, commit and PR policy, cerebrate workflow |
+| `workflow.md` | Branch taxonomy, naming rules, commit and PR policy, overlord workflow |
 | `safety-rails.md` | Hard-stop rules, security constraints, secret-handling, and escalation triggers |
 | `report-format.md` | Phase-closing report schemas, handoff formats, and step-delta structure |
 | `versioning.md` | SemVer rules, bump triggers, changelog and tag policy |
@@ -221,7 +221,7 @@ Governance docs are plugin runtime data — agents load them via `${CLAUDE_PLUGI
 The following agent frontmatter fields are not supported by the Claude Code plugin system and are omitted from plugin agent definitions:
 
 - `mcpServers` — configure MCP servers at the project or global level instead
-- `permissionMode` — read-only enforcement is achieved by limiting the overlord's `tools` frontmatter to read-only commands; see the overlord's `tools` list in `plugin/agents/overlord.md`
+- `permissionMode` — read-only enforcement is achieved by limiting the cerebrate's `tools` frontmatter to read-only commands; see the cerebrate's `tools` list in `plugin/agents/cerebrate.md`
 
 ## License
 

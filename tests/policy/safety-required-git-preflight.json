@@ -1,7 +1,7 @@
 {
   "rule": "Required git preflight",
   "source": {
-    "file": "plugin/agents/cerebrate.md",
+    "file": "plugin/agents/overlord.md",
     "pattern": "Never begin implementation before git preflight is established"
   },
   "consumers": [

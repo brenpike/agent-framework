@@ -2,10 +2,10 @@
   "workflow": "review-remediation",
   "description": "Post-PR review feedback classification and remediation via github-reviewer agent",
   "steps": [
-    { "state": "PR", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "invoke `hivemind:github-reviewer`" } },
+    { "state": "PR", "source": { "file": "plugin/agents/overlord.md", "pattern": "invoke `hivemind:github-reviewer`" } },
     { "state": "External Review", "source": { "file": "plugin/agents/github-reviewer.md", "pattern": "Classify and route" } },
-    { "state": "Remediation", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "planner-escalation" } },
+    { "state": "Remediation", "source": { "file": "plugin/agents/overlord.md", "pattern": "planner-escalation" } },
     { "state": "Checkpoint Commit", "source": { "file": "plugin/governance/workflow.md", "pattern": "## Commit Messages" } },
-    { "state": "Final Report", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "Result: complete | partial | blocked" } }
+    { "state": "Final Report", "source": { "file": "plugin/agents/overlord.md", "pattern": "Result: complete | partial | blocked" } }
   ]
 }

@@ -61,7 +61,7 @@
     "codex@openai-codex": true,
     "hivemind@brenpike": true
   },
-  "agent": "hivemind:cerebrate",
+  "agent": "hivemind:overlord",
   "pluginConfigs": {
     "caveman@caveman": {
       "options": {

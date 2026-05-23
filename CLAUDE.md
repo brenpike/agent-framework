@@ -4,7 +4,7 @@ Guidance for Claude Code instances working **on this repo** (not consuming the p
 
 ## What this repo is
 
-Source for the `hivemind` Claude Code plugin + a single-plugin marketplace pointing at it. Plugin defines four agents (cerebrate, overlord, drone, changeling) and ten skills; governance docs are plugin **runtime data** loaded by agents, not just human reference.
+Source for the `hivemind` Claude Code plugin + a single-plugin marketplace pointing at it. Plugin defines four agents (overlord, cerebrate, drone, changeling) and ten skills; governance docs are plugin **runtime data** loaded by agents, not just human reference.
 
 ## Repository layout
 
@@ -12,7 +12,7 @@ Source for the `hivemind` Claude Code plugin + a single-plugin marketplace point
 .claude-plugin/marketplace.json   # marketplace manifest at repo root → source: ./plugin
 plugin/                           # plugin root (resolves to ${CLAUDE_PLUGIN_ROOT})
   .claude-plugin/plugin.json      # plugin manifest (name, version)
-  agents/{cerebrate,overlord,drone,changeling}.md
+  agents/{overlord,cerebrate,drone,changeling}.md
   skills/<skill-name>/SKILL.md
   skills/_shared/                 # cross-skill helper docs (e.g. GraphQL ops)
   governance/                     # *.md loaded by agents at runtime
@@ -27,7 +27,7 @@ Anything the runtime loads must live under `plugin/`.
 ## Editing rules specific to this repo
 
 - **Path refs across plugin files MUST use `${CLAUDE_PLUGIN_ROOT}/...`.** Bare `governance/foo.md` or `agents/foo.md` paths break when consumers install the plugin. Grep for bare paths before merging.
-- **Agent frontmatter limits:** Claude Code plugin system does not honor `mcpServers` or `permissionMode` in agent frontmatter. Read-only enforcement on overlord is done by restricting `tools:` list, not by `permissionMode`. Don't re-add these fields.
+- **Agent frontmatter limits:** Claude Code plugin system does not honor `mcpServers` or `permissionMode` in agent frontmatter. Read-only enforcement on cerebrate is done by restricting `tools:` list, not by `permissionMode`. Don't re-add these fields.
 - **Skills are namespaced as `hivemind:<skill>`** when consumed. Internal cross-references in skill/agent bodies should use the namespaced form so docs match runtime behavior.
 - **Governance docs are load-bearing.** Renaming a section header inside `plugin/governance/*.md` may break agent rules that reference that header by name (e.g. `(Required Git Preflight)`, `(Definitions → Trivial change)`). Search for header references before renaming.
 
@@ -37,7 +37,7 @@ Single source of truth: `plugin/.claude-plugin/plugin.json` `"version"`. Bump tr
 
 ## Branching / PR workflow
 
-This repo dogfoods its own plugin's workflow. Authoritative rules: `plugin/governance/workflow.md`, `plugin/governance/definitions.md`. When working here, follow them — cerebrate → working branch → checkpoint commits → PR → Codex review.
+This repo dogfoods its own plugin's workflow. Authoritative rules: `plugin/governance/workflow.md`, `plugin/governance/definitions.md`. When working here, follow them — overlord → working branch → checkpoint commits → PR → Codex review.
 
 Default branches:
 - Trunk / PR base: `main`
@@ -75,20 +75,20 @@ When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runt
 
 ## Companion plugins referenced
 
-`claude-mem:mem-search` is optional — overlord uses it when present, skips when absent. Do not hard-require it from any agent or skill.
+`claude-mem:mem-search` is optional — cerebrate uses it when present, skips when absent. Do not hard-require it from any agent or skill.
 
-`codex@openai-codex` is optional — the cerebrate uses `codex-plugin-cc` for pre-PR local review via the `local-reviewer` agent (`hivemind:adaptation-cycle`). If not installed, the cerebrate skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
+`codex@openai-codex` is optional — the overlord uses `codex-plugin-cc` for pre-PR local review via the `local-reviewer` agent (`hivemind:adaptation-cycle`). If not installed, the overlord skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
 
 ## Fleet execution
 
-The plugin supports parallel multi-cerebrate execution via spawn-brood and brood-status skills. Each brood session runs in its own git worktree as an independent Claude Code instance.
+The plugin supports parallel multi-overlord execution via spawn-brood and brood-status skills. Each brood session runs in its own git worktree as an independent Claude Code instance.
 
 - **Fleet PRD:** `docs/fleet-prd.md` — requirements, architecture decisions, manifest schema
 - **Architecture decision:** `docs/adr/0007-fleet-children-unaware-coordinator-dashboard.md` — children have zero fleet awareness; coordinator is a status dashboard
 - **Fleet manifest:** `.hivemind/fleet/manifest.yaml` (in main checkout; already gitignored under `.hivemind/`)
 - **Worktree sessions:** `.claude/worktrees/` (gitignored)
 
-Children are standard cerebrate sessions receiving a task description. No fleet-specific code paths exist in child sessions.
+Children are standard overlord sessions receiving a task description. No fleet-specific code paths exist in child sessions.
 
 ## Local developer setup
 

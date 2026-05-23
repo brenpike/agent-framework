@@ -2,14 +2,14 @@
   "workflow": "feature",
   "description": "Multi-file feature with planner invocation",
   "steps": [
-    { "state": "Intake", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "Classify the task" } },
-    { "state": "Plan", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "hivemind:overlord" } },
-    { "state": "Git Preflight", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "Never begin implementation before git preflight is established" } },
+    { "state": "Intake", "source": { "file": "plugin/agents/overlord.md", "pattern": "Classify the task" } },
+    { "state": "Plan", "source": { "file": "plugin/agents/overlord.md", "pattern": "hivemind:cerebrate" } },
+    { "state": "Git Preflight", "source": { "file": "plugin/agents/overlord.md", "pattern": "Never begin implementation before git preflight is established" } },
     { "state": "Branch", "source": { "file": "plugin/governance/workflow.md", "pattern": "## Branch Naming" } },
-    { "state": "Implement", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "## Delegation Format" } },
+    { "state": "Implement", "source": { "file": "plugin/agents/overlord.md", "pattern": "## Delegation Format" } },
     { "state": "Validate", "source": { "file": "plugin/governance/definitions.md", "pattern": "## Validation Procedure" } },
     { "state": "Checkpoint Commit", "source": { "file": "plugin/governance/workflow.md", "pattern": "## Commit Messages" } },
     { "state": "PR", "source": { "file": "plugin/governance/workflow.md", "pattern": "Open PR only when: plan complete, validation passed" } },
-    { "state": "Final Report", "source": { "file": "plugin/agents/cerebrate.md", "pattern": "Result: complete | partial | blocked" } }
+    { "state": "Final Report", "source": { "file": "plugin/agents/overlord.md", "pattern": "Result: complete | partial | blocked" } }
   ]
 }
