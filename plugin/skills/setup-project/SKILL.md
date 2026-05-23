@@ -75,8 +75,9 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 6. If `dry_run` = `yes`:
    a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.hivemind/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. If `caveman` = `yes`: determine the `.envrc` action that would be taken: check whether `<project root>/.envrc` exists and whether it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`) (the same check used in step 9b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
-   c. Print the merged settings JSON, the gitignore action, and (if `caveman` = `yes`) the envrc action together.
-   d. Stop without writing any files.
+   c. If `claude_mem` = `yes`: determine the `claude_mem_path` action that would be taken by applying the same checks as steps 11b–11e, without writing: one of `would-set <resolved-path>` (when `~/.claude-mem/settings.json` exists, is valid JSON, has a missing/empty `CLAUDE_CODE_PATH`, and a `claude` binary resolves), `already set` (key already non-empty), `skipped (claude-mem not installed)` (file absent), `skipped (malformed json)` (file not valid JSON), or `skipped (claude binary not found)` (no `claude` binary resolves).
+   d. Print the merged settings JSON, the gitignore action, (if `caveman` = `yes`) the envrc action, and (if `claude_mem` = `yes`) the claude_mem action together.
+   e. Stop without writing any files.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
 8. Ensure `.hivemind/` is listed in the project's `.gitignore`:
    a. If `<project root>/.gitignore` does not exist, create it with a single line `.hivemind/`.
@@ -126,9 +127,8 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
     c. Read `~/.claude-mem/settings.json`. If it is not valid JSON, do not crash or clobber it: report `claude_mem_path: skipped (malformed json)` in `issues` and continue without writing.
     d. Inspect the `CLAUDE_CODE_PATH` key. If it is present with any non-empty string value, report `claude_mem_path: already set` and write NOTHING — never overwrite a user-provided value, even if that value points to a now-invalid path. Only act when `CLAUDE_CODE_PATH` is missing or an empty string.
     e. Resolve the `claude` binary path DYNAMICALLY in this order, taking the first that resolves: (1) `command -v claude`; (2) fallback `~/.local/bin/claude` (verify with `test -x`); (3) fallback `~/.claude/local/claude` (verify with `test -x`). Never hard-code a home directory path — expand `~` at runtime. If `command -v claude` resolves to a shell alias or function rather than a real executable, prefer the path it reports if it is an executable file; otherwise continue to the fallbacks. If none resolve, report `claude_mem_path: skipped (claude binary not found)` and write NOTHING.
-    f. If `dry_run` = `yes`: report the intended action only (`would-set <resolved-path>` when a path resolved, or `already set`, or the relevant skip) and write NOTHING.
-    g. Otherwise set ONLY the `CLAUDE_CODE_PATH` key to the resolved path, preserving every other key in `~/.claude-mem/settings.json`. Write with two-space indentation and a trailing newline. Report `claude_mem_path: set`.
-    h. After setting the path, the claude-mem background worker must be restarted to load the new value. Do NOT auto-restart it (keep this step side-effect-light). PRINT a manual follow-up instruction telling the user to restart the claude-mem worker (e.g. via claude-mem's worker restart) or note that it will pick up the new value on the next session.
+    f. Otherwise set ONLY the `CLAUDE_CODE_PATH` key to the resolved path, preserving every other key in `~/.claude-mem/settings.json`. Write with two-space indentation and a trailing newline. Report `claude_mem_path: set`.
+    g. After setting the path, the claude-mem background worker must be restarted to load the new value. Do NOT auto-restart it (keep this step side-effect-light). PRINT a manual follow-up instruction telling the user to restart the claude-mem worker (e.g. via claude-mem's worker restart) or note that it will pick up the new value on the next session.
 12. Report which keys were added vs already present.
 13. Invoke `hivemind:bootstrap-context` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). If `dry_run` = `yes`: skip invocation, report `context_bootstrap: skipped (dry_run)`. The skill has its own skip guard for existing files.
 
@@ -170,7 +170,7 @@ hooks:
 - hooks.SubagentStart in settings.json: added | already present | skipped (caveman not enabled)
 
 claude_mem_path:
-- ~/.claude-mem/settings.json CLAUDE_CODE_PATH: set | already set | skipped (claude-mem not installed) | skipped (claude binary not found) | skipped (malformed json) | would-set | skipped (dry_run) | skipped (claude_mem not enabled)
+- ~/.claude-mem/settings.json CLAUDE_CODE_PATH: set | already set | skipped (claude-mem not installed) | skipped (claude binary not found) | skipped (malformed json) | would-set | skipped (claude_mem not enabled)
 
 keys_applied:
 - enabledPlugins["hivemind@brenpike"]: added | already present
