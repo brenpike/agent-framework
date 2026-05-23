@@ -49,7 +49,7 @@ The standard pipeline for a task:
    - `clean` with no fix commits: proceed to PR.
    - `clean` with fix commits: re-run version bump check (step 7).
    - `max-iterations-reached`: surface choices to user (continue, push now, stop).
-   - `diminishing-returns`: ADVISORY — surface the reviewer's recommendation and observed signals (`signals_observed`, `latest_severity_max`, `findings_open`) to the user with explicit choices (continue iterating, push now, stop). With the corrected guard, `diminishing-returns` only fires when every open finding is non-actionable noise, so 'push now' does not ship unresolved auto-fixable work. The user/overlord decides; this is not a forced stop.
+   - `diminishing-returns`: ADVISORY — surface the reviewer's recommendation and observed signals (`signals_observed`, `latest_severity_max`, `findings_open`) to the user with explicit choices (continue iterating, push now, stop). With the corrected guard, `diminishing-returns` only fires when every open finding is non-actionable noise, so 'push now' does not ship unresolved auto-fixable work. If `fix_commits_exist: true`, first re-run the version bump check (step 7) before presenting or honoring 'push now' — the reviewer may have checkpointed fixes this exit, same as `clean` with fix commits. The user/overlord decides; this is not a forced stop.
    - `break-fix-break`: surface conflict summary.
    - `injection-suspect`: surface finding details.
    - `planner-escalation`: delegate planner for remediation plan, then coder/designer to implement, verify, validate, checkpoint, re-invoke local-reviewer with `resume_from_ledger`.
