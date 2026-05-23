@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.3.1] - 2026-05-23
+
+### Fixed
+
+- **cerebrate could not call claude-mem MCP tools in ToolSearch deferred-tool environments.** Its restricted `tools:` list granted `mcp__plugin_claude-mem_mcp-search__*` but lacked the `ToolSearch` loader, so the deferred MCP tool schemas never materialized and every call returned `No such tool available`. cerebrate is now granted `ToolSearch` and instructed to materialize the deferred `mcp__plugin_claude-mem_mcp-search__*` tools before use; the step is a harmless no-op in eager-load environments.
+
 ## [2.3.0] - 2026-05-23
 
 ### Added
