@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.3.0] - 2026-05-23
+
+### Added
+
+- **`diminishing-returns` advisory exit reason (Creep Stagnation) for the local review loop.** The `local-reviewer` agent now emits `exit_reason: diminishing-returns` when successive review iterations surface only low-severity, non-actionable findings with no material improvement — indicating the loop has reached a point of diminishing returns rather than a hard correctness failure. This exit is advisory: when the local-reviewer returns `diminishing-returns`, the overlord surfaces the recommendation and observed signals to the user with explicit choices (continue iterating, push now, stop) — the user or overlord decides whether to proceed. This is distinct from the mandatory `break-fix-break` (Mutation Decay) stop: `break-fix-break` halts because continuing would regress the diff and requires the overlord to surface the cycle to the user before continuing; `diminishing-returns` signals the loop has plateaued but leaves the next step to the user's judgment.
+
 ## [2.2.0] - 2026-05-23
 
 ### Added
