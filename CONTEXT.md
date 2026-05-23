@@ -1,59 +1,67 @@
-# Agent Framework
+# Hivemind
 
-Domain glossary for the agent-framework Claude Code plugin — a multi-agent system that orchestrates planning, implementation, review, and delivery through governed specialist agents.
+Domain glossary for the hivemind Claude Code plugin — a multi-agent system that orchestrates planning, implementation, review, and delivery through governed specialist agents.
 
 ## Language
 
 ### Agents
 
-**Orchestrator**:
-The control-plane agent that owns task intake, delegation sequencing, branch/PR decisions, version bump detection, and review routing.
-_Avoid_: coordinator, dispatcher, controller
+**Cerebrate**:
+The control-plane agent — session-level commander that owns task intake, spawn sequencing, branch/PR decisions, version bump detection, and review routing. Directs work but never implements. Multiple cerebrates operate in a brood, each commanding its own strain.
+_Alias_: orchestrator
+_Avoid_: coordinator, dispatcher, controller, queen, prime
 
-**Planner**:
-A read-only agent that produces a plan artifact with file scopes, step sequencing, and risk assessment before execution begins.
-_Avoid_: architect, analyst
+**Overlord**:
+A read-only agent that scans the problem territory and produces a psionic map with file scopes, step sequencing, and risk assessment before execution begins. Provides vision and intelligence — reports back but does not modify.
+_Alias_: planner
+_Avoid_: architect, analyst, scout
 
-**Coder**:
-A modifying agent that implements code changes within an explicitly assigned file scope.
-_Avoid_: developer, implementer
+**Drone**:
+A modifying agent — builder caste that implements code changes within an explicitly assigned file scope.
+_Alias_: coder
+_Avoid_: developer, implementer, worker
 
-**Designer**:
-A modifying agent that owns presentational markup, styling, and static accessibility within an explicitly assigned file scope.
+**Changeling**:
+A modifying agent — shapeshifter that owns presentational markup, styling, and static accessibility within an explicitly assigned file scope. Reshapes visual form, presentation, and UI.
+_Alias_: designer
 _Avoid_: UI agent, stylist
 
 **Local-Reviewer**:
-The agent that runs pre-PR Codex review in a loop, classifies findings, and reports terminal results to the orchestrator before the PR is opened.
+The agent that runs pre-PR Codex review in a loop, classifies findings, and reports terminal results to the cerebrate before the PR is opened.
 _Avoid_: linter, pre-check
 
 **GitHub-Reviewer**:
-The agent that monitors or processes post-PR review feedback, classifies comments, and reports terminal results to the orchestrator.
+The agent that monitors or processes post-PR review feedback, classifies comments, and reports terminal results to the cerebrate.
 _Avoid_: PR bot, review handler
 
 ### Execution
 
 **Phase**:
-A single delegation round-trip: one worker agent receives a step, executes, and reports back.
+A single spawn round-trip: one worker agent receives a step, executes, and reports back.
 _Avoid_: stage, iteration (when meaning a sequential plan step)
 
-**Delegation**:
-A structured message from orchestrator to a worker agent, containing task objective, file scope, step ID, and completion criteria.
+**Spawn**:
+A structured message from cerebrate to a specialist agent, creating an agent instance with an embedded purpose — containing task objective, file scope, step ID, and completion criteria.
+_Alias_: delegation
 _Avoid_: assignment, dispatch, handoff (which has a different meaning)
 
-**Handoff**:
-The durable artifact (worker report) stored at phase completion that enables the next phase to reconstruct context.
-_Avoid_: transfer, relay, delegation
+**Essence**:
+The distilled knowledge artifact (worker report) produced at phase completion and passed forward to enable the next phase to reconstruct context.
+_Alias_: handoff
+_Avoid_: transfer, relay, spawn
 
 **Checkpoint Commit**:
-A git commit made at a phase boundary or milestone, preserving incremental progress on the working branch.
+A git commit made at a phase boundary or milestone, preserving incremental progress on the working branch. Also called a **molt**.
 _Avoid_: save point, intermediate commit
 
-**Plan Artifact**:
-The planner's output document containing steps, file scopes, decisions, risks, and assumptions; required before execution begins for non-trivial tasks.
+**Psionic Map**:
+The overlord's output document containing steps, file scopes, decisions, risks, and assumptions — the psychic scan of the problem territory. Required before execution begins for non-trivial tasks.
+_Alias_: plan artifact
 _Avoid_: spec, design doc, blueprint
 
-**Trivial Fast Path (TFP)**:
-The bypass route that skips planner delegation when all TFP conditions are met: one owner, one known file, trivial change, clear branch classification, no version impact, no review remediation.
+**Reflex**:
+An instinctive response that bypasses the overlord when all reflex conditions are met: one owner, one known file, trivial change, clear branch classification, no version impact, no review remediation.
+_Alias_: trivial fast path (TFP)
 _Avoid_: quick path, shortcut
 
 **Session Facts**:
@@ -67,21 +75,22 @@ A markdown file under `plugin/governance/` loaded by agents at runtime as bindin
 _Avoid_: reference doc, guide, spec
 
 **Scope**:
-The explicit list of files a modifying agent is permitted to touch during a delegation.
+The explicit list of files a modifying agent is permitted to touch during a spawn.
 _Avoid_: assignment, context, area
 
 **Validation**:
 The set of project-declared commands (from CLAUDE.md) that must pass before a phase is accepted.
 _Avoid_: tests, checks (which is broader)
 
-**Escalation**:
-The mandatory stop-and-report action when an agent encounters a condition it cannot safely resolve.
+**Flare**:
+An urgent signal from any agent back to the cerebrate when a condition is encountered that cannot be safely resolved. The mandatory stop-and-report action.
+_Alias_: escalation
 _Avoid_: error, block (which has a different meaning)
 
 ### Git / Delivery
 
 **Working Branch**:
-The non-trunk branch created for a single approved plan's implementation and PR.
+The non-trunk branch created for a single approved psionic map's implementation and PR.
 _Avoid_: feature branch (which is only one classification prefix), dev branch
 
 **Trunk**:
@@ -102,20 +111,22 @@ _Avoid_: pre-check, setup
 
 ### Review
 
-**Review Loop**:
-The iterative cycle where a reviewer agent invokes Codex, classifies findings, fixes simple issues directly (≤2 files), escalates complex ones, validates, and repeats until clean or a stop condition fires.
+**Adaptation Cycle**:
+The iterative cycle where a reviewer agent invokes Codex, classifies findings, fixes simple issues directly (≤2 files), flares complex ones to the cerebrate, validates, and repeats until stable or a stop condition fires.
+_Alias_: review loop
 _Avoid_: review cycle (ambiguous with remediation cycle), feedback loop
 
 **Remediation**:
-The act of addressing a review finding: classify, fix directly (≤2 files) or escalate to orchestrator, validate, checkpoint-commit, push.
+The act of addressing a review finding: classify, fix directly (≤2 files) or flare to cerebrate, validate, checkpoint-commit, push.
 _Avoid_: resolution, fix (too generic)
 
-**Break-Fix-Break Cycle**:
-The detected oscillation where fixing one finding reintroduces a previously fixed finding (2-of-3 signal match), forcing a mandatory stop.
+**Mutation Decay**:
+The detected oscillation where fixing one finding reintroduces a previously fixed finding (2-of-3 signal match), indicating unstable evolution. Forces a mandatory stop.
+_Alias_: break-fix-break cycle
 _Avoid_: regression loop, flip-flop
 
 **Fix Ledger**:
-The persisted YAML artifact (`.agent-framework/review-loop/fix-ledger.yaml`) tracking finding status across review loop iterations; status transitions: open → fixing → fixed/regressed, fixed → cycling.
+The persisted YAML artifact (`.hivemind/review-loop/fix-ledger.yaml`) tracking finding status across adaptation cycle iterations; status transitions: open → fixing → fixed/regressed, fixed → cycling.
 _Avoid_: review log, finding tracker
 
 **Fix Mode**:
@@ -129,7 +140,7 @@ _Avoid_: polling mode, monitor mode, continuous mode
 ### Plugin Structure
 
 **Skill**:
-A namespaced executable procedure (`agent-framework:<name>`) invoked by agents via the Skill tool, with its own SKILL.md defining trigger conditions and behavior.
+A namespaced executable procedure (`hivemind:<name>`) invoked by agents via the Skill tool, with its own SKILL.md defining trigger conditions and behavior.
 _Avoid_: command, action, tool
 
 **Governance**:
@@ -173,102 +184,60 @@ The architectural approach (ADR-0006) replacing exhaustive mechanical rules with
 _Avoid_: intent-driven rules, soft governance
 
 **Worker Report**:
-The YAML artifact produced by a modifying agent at phase completion, in one of three schemas: complete (with decisions, risks, and handoff fields), blocked (with stage, blocker, and next), or trivial (minimal for single-file changes).
+The YAML artifact produced by a modifying agent at phase completion, in one of three schemas: complete (with decisions, risks, and essence fields), blocked (with stage, blocker, and next), or trivial (minimal for single-file changes).
 _Avoid_: phase report, agent output, result
 
-### Fleet
+### Brood (fleet)
 
-**Fleet**:
-A set of parallel orchestrator sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the coordinator via fleet-dispatch.
+**Brood**:
+A set of parallel cerebrate sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the cerebrate in hatchery mode via brood-dispatch.
+_Alias_: fleet
 _Avoid_: cluster, swarm, pool
 
-**Coordinator Mode**:
-The orchestrator execution mode entered when a fleet-plan is dispatched; the orchestrator remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the fleet lifecycle.
+**Hatchery**:
+The cerebrate execution mode entered when a fleet-plan is dispatched; the cerebrate remains on trunk in the main checkout, owns the fleet manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+_Alias_: coordinator mode
 _Avoid_: manager mode, supervisor mode
 
 **Fleet-Plan**:
-The planner's output artifact when work decomposes into multiple independent streams. Contains stream-level descriptions and scope boundaries, not step-level detail. Each stream becomes a separate child orchestrator session with its own full pipeline.
+The overlord's output artifact when work decomposes into multiple independent strains. Contains strain-level descriptions and scope boundaries, not step-level detail. Each strain becomes a separate child cerebrate session with its own full pipeline.
 _Avoid_: multi-plan (which means sequential PRs, not parallel), meta-plan
 
-**Stream**:
-One independent unit of work within a fleet-plan, assigned to a single child orchestrator session. Each stream has its own worktree, branch, pipeline execution, and PR.
+**Strain**:
+One independent unit of work within a fleet-plan, assigned to a single child cerebrate session. Each strain has its own worktree, branch, pipeline execution, and PR.
+_Alias_: stream
 _Avoid_: task (too generic), work item, lane
 
 **Fleet Manifest**:
-The YAML file at `.agent-framework/fleet/manifest.yaml` in the main checkout, tracking active fleet sessions, their worktree paths, branches, tmux sessions, and status.
+The YAML file at `.hivemind/fleet/manifest.yaml` in the main checkout, tracking active brood sessions, their worktree paths, branches, tmux sessions, and status.
 _Avoid_: fleet config, fleet state, registry
-
-**Cerebrate**:
-The Hivemind term for the orchestrator agent. Session-level commander that directs work but never implements. Multiple cerebrates operate in a brood, each commanding its own strain.
-_Avoid_: orchestrator (deprecated external name), queen, prime
-
-**Overlord**:
-The Hivemind term for the planner agent. Provides vision and intelligence by scanning the problem territory. Read-only — reports back but does not modify.
-_Avoid_: planner (deprecated external name), scout
-
-**Drone**:
-The Hivemind term for the coder agent. Builder caste that constructs code within assigned scope.
-_Avoid_: coder (deprecated external name), worker
-
-**Changeling**:
-The Hivemind term for the designer agent. Shapeshifter that reshapes visual form, presentation, and UI within assigned scope.
-_Avoid_: designer (deprecated external name)
-
-**Spawn**:
-The Hivemind term for delegation. The act of creating an agent instance with an embedded purpose — a structured message from cerebrate to a specialist agent containing task objective, file scope, and completion criteria.
-_Avoid_: delegation (deprecated external name), assignment, dispatch
-
-**Essence**:
-The Hivemind term for handoff. The distilled knowledge artifact produced at phase completion and passed forward to enable the next phase to reconstruct context.
-_Avoid_: handoff (deprecated external name), transfer, relay
-
-**Psionic Map**:
-The Hivemind term for plan artifact. The overlord's output document containing steps, file scopes, decisions, risks, and assumptions — the psychic scan of the problem territory.
-_Avoid_: plan artifact (deprecated external name), spec, blueprint
-
-**Flare**:
-The Hivemind term for escalation. An urgent signal from any agent back to the cerebrate when a condition is encountered that cannot be safely resolved.
-_Avoid_: escalation (deprecated external name), error, block
-
-**Reflex**:
-The Hivemind term for trivial fast path. An instinctive response that bypasses the overlord when all reflex conditions are met — one owner, one known file, trivial change, clear classification, no version impact, no remediation.
-_Avoid_: trivial fast path (deprecated external name), shortcut, quick path
-
-**Adaptation Cycle**:
-The Hivemind term for review loop. The iterative cycle where a reviewer invokes review tooling, classifies findings, adapts (fixes simple issues), and repeats until stable or a stop condition fires.
-_Avoid_: review loop (deprecated external name), feedback loop
-
-**Mutation Decay**:
-The Hivemind term for break-fix-break cycle. The detected oscillation where adapting to one finding reintroduces a previously fixed finding, indicating unstable evolution. Forces a mandatory stop.
-_Avoid_: break-fix-break cycle (deprecated external name), regression loop
 
 ## Relationships
 
-- An **Orchestrator** delegates to exactly one **Planner**, **Coder**, **Designer**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
-- A **Plan Artifact** contains one or more steps (`STEP-NNN`), each assigned to exactly one **Coder** or **Designer**
-- A **Delegation** targets exactly one **Step** (`STEP-NNN`) from the **Plan Artifact**, or a single task when the **Trivial Fast Path** applies
-- A **Phase** produces exactly one **Handoff** on success
-- A **Working Branch** maps to exactly one **Plan Artifact** and one PR
-- A **Review Loop** may produce zero or more **Remediation** cycles
-- A **Break-Fix-Break Cycle** terminates a **Review Loop** with mandatory **Escalation**
+- A **Cerebrate** (orchestrator) spawns exactly one **Overlord**, **Drone**, **Changeling**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
+- A **Psionic Map** (plan artifact) contains one or more steps (`STEP-NNN`), each assigned to exactly one **Drone** or **Changeling**
+- A **Spawn** (delegation) targets exactly one **Step** (`STEP-NNN`) from the **Psionic Map**, or a single task when the **Reflex** (trivial fast path) applies
+- A **Phase** produces exactly one **Essence** (handoff) on success
+- A **Working Branch** maps to exactly one **Psionic Map** and one PR
+- An **Adaptation Cycle** (review loop) may produce zero or more **Remediation** cycles
+- A **Mutation Decay** (break-fix-break cycle) terminates an **Adaptation Cycle** with mandatory **Flare** (escalation)
 - A **Bump Trigger** fires at most one version increment per PR
 - Each agent loads specific **Governance Docs** per its `Load and follow` list
 
-- A **Fix Ledger** persists across iterations of a **Review Loop**, tracking finding status from open through fixed or cycling
+- A **Fix Ledger** persists across iterations of an **Adaptation Cycle**, tracking finding status from open through fixed or cycling
 - The **Destructive Fix Gate** overrides normal **Remediation** flow, requiring human approval before commit
 - A **Fix Mode** invocation processes existing unresolved feedback in a single **Remediation** pass
 - A **Watch Mode** invocation produces zero or more **Remediation** cycles, bounded by `max_remediation_cycles`
-- A **Worker Report** is the structured output of every **Phase**, consumed as input to a **Handoff**
+- A **Worker Report** is the structured output of every **Phase**, consumed as input to an **Essence**
 - **Intent-Based Governance** defines which rules remain mechanical (**Unsafe Git State**, **Destructive Fix Gate**, **External Content Boundary**, report schemas) vs intent-described
 - An **Unsafe Git State** blocks all modifying agent operations until resolved
 
-- A **Fleet** contains one or more **Streams**, each running in a separate git worktree
-- A **Fleet-Plan** produces exactly one **Stream** per independent work bucket
-- Each **Stream** maps to exactly one child **Orchestrator** session, one **Working Branch**, and one PR
-- A **Coordinator Mode** orchestrator dispatches one **Fleet** and monitors via the **Fleet Manifest**
-- A **Fleet-Plan** is distinct from a **Plan Artifact**: fleet-plans contain stream descriptions, plan artifacts contain steps (`STEP-NNN`)
+- A **Brood** (fleet) contains one or more **Strains** (streams), each running in a separate git worktree
+- A **Fleet-Plan** produces exactly one **Strain** per independent work bucket
+- Each **Strain** maps to exactly one child **Cerebrate** session, one **Working Branch**, and one PR
+- A **Hatchery** (coordinator mode) cerebrate dispatches one **Brood** and monitors via the **Fleet Manifest**
+- A **Fleet-Plan** is distinct from a **Psionic Map**: fleet-plans contain strain descriptions, psionic maps contain steps (`STEP-NNN`)
 
-- A **Cerebrate** spawns **Drones**, **Changelings**, **Overlords**, and reviewers via **Spawn**
 - A **Spawn** carries the **Psionic Map**'s step assignment to exactly one specialist agent
 - A completed phase produces **Essence** consumed by the next phase's **Spawn**
 - A **Flare** terminates a phase and returns control to the **Cerebrate**
@@ -277,21 +246,21 @@ _Avoid_: break-fix-break cycle (deprecated external name), regression loop
 
 ## Example dialogue
 
-> **Dev:** "This is a one-line typo fix in a governance doc — do I still need the **Planner**?"
-> **Domain expert:** "Check the **Trivial Fast Path** conditions. If they all pass — one owner, one known file, trivial change, clear **Branch Classification**, no version impact, not **Remediation** — the **Orchestrator** skips the **Planner** and delegates directly to a **Coder**."
+> **Dev:** "This is a one-line typo fix in a governance doc — do I still need the **Overlord** (planner)?"
+> **Domain expert:** "Check the **Reflex** (trivial fast path) conditions. If they all pass — one owner, one known file, trivial change, clear **Branch Classification**, no version impact, not **Remediation** — the **Cerebrate** skips the **Overlord** and spawns a **Drone** directly."
 
-> **Dev:** "The **Review Loop** keeps flipping between two states — what happens?"
-> **Domain expert:** "That's a **Break-Fix-Break Cycle**. When 2-of-3 signals fire (line-range overlap, git revert, N-2 oscillation), the loop stops and the **Orchestrator** escalates to the user. No more automatic **Remediation** until a human decides."
+> **Dev:** "The **Adaptation Cycle** (review loop) keeps flipping between two states — what happens?"
+> **Domain expert:** "That's **Mutation Decay** (break-fix-break). When 2-of-3 signals fire (line-range overlap, git revert, N-2 oscillation), the cycle stops and the **Cerebrate** flares to the user. No more automatic **Remediation** until a human decides."
 
 > **Dev:** "The **GitHub-Reviewer** is in **Watch Mode** and found a fix that removes an auth check — does it apply it?"
 > **Domain expert:** "No. That hits the **Destructive Fix Gate** — category 1, removing authentication. The reviewer returns blocked and surfaces the proposed change for human approval before committing."
 
-> **Dev:** "I have three independent features to build — should I use a fleet?"
-> **Domain expert:** "If the **Planner** confirms they decompose into independent **Streams** with minimal file overlap, yes. The **Orchestrator** will present the **Fleet-Plan** for your confirmation, then enter **Coordinator Mode** to dispatch each **Stream** as a separate session via **fleet-dispatch**. Each child session runs a full pipeline independently — same as any solo task."
+> **Dev:** "I have three independent features to build — should I use a brood (fleet)?"
+> **Domain expert:** "If the **Overlord** confirms they decompose into independent **Strains** (streams) with minimal file overlap, yes. The **Cerebrate** will present the **Fleet-Plan** for your confirmation, then enter **Hatchery** (coordinator mode) to dispatch each **Strain** as a separate session via **spawn-brood**. Each child session runs a full pipeline independently — same as any solo task."
 
 ## Flagged ambiguities
 
-- "phase" vs "step" — resolved: a **step** is the planner's unit of work (`STEP-NNN`); a **phase** is the orchestrator's unit of execution (one delegation round-trip). They correspond 1:1 for planned work; trivial fast path tasks have a single phase with no plan step.
-- "handoff" vs "delegation" — resolved: **Delegation** flows downward (orchestrator to worker); **Handoff** flows upward/forward (worker report stored for future phases).
-- "scope" — resolved: always means file scope (the explicit file list in a delegation), never task scope or project scope.
-- "validation" vs "verification" — resolved: **Validation** means running declared project commands; verification means the orchestrator's post-phase acceptance checks (scope compliance, report schema conformance, git state safety).
+- "phase" vs "step" — resolved: a **step** is the overlord's unit of work (`STEP-NNN`); a **phase** is the cerebrate's unit of execution (one spawn round-trip). They correspond 1:1 for planned work; reflex tasks have a single phase with no plan step.
+- "essence" vs "spawn" — resolved: **Spawn** (delegation) flows downward (cerebrate to worker); **Essence** (handoff) flows upward/forward (worker report stored for future phases).
+- "scope" — resolved: always means file scope (the explicit file list in a spawn), never task scope or project scope.
+- "validation" vs "verification" — resolved: **Validation** means running declared project commands; verification means the cerebrate's post-phase acceptance checks (scope compliance, report schema conformance, git state safety).

@@ -23,7 +23,7 @@ New pipeline skill that spawns N parallel orchestrator sessions. Behavior:
    b. Wait for tmux session ready
    c. Inject stream description via `tmux send-keys -t <session_name> "<description>" Enter`
 3. Copy `.claude/settings.local.json` to each worktree's `.claude/` directory (if source exists)
-4. Write fleet manifest to `.agent-framework/fleet/manifest.yaml`
+4. Write fleet manifest to `.hivemind/fleet/manifest.yaml`
 5. Return manifest data to orchestrator (exit 0 with YAML on stdout)
 
 Inputs:
@@ -44,7 +44,7 @@ Allowed tools: `Bash(claude *)`, `Bash(tmux *)`, `Bash(git worktree *)`, `Bash(c
 User-invocable skill that reads the fleet manifest and reports status. Behavior:
 
 1. Locate fleet manifest:
-   a. If in main checkout: read `.agent-framework/fleet/manifest.yaml`
+   a. If in main checkout: read `.hivemind/fleet/manifest.yaml`
    b. If in worktree: resolve main checkout via `git worktree list | head -1`, read manifest from there
 2. For each stream in manifest:
    a. Check tmux session alive: `tmux has-session -t <session_name>`
@@ -67,8 +67,8 @@ Add section after "## Framework Defaults":
 When the planner determines that work decomposes into multiple independent streams with minimal file-scope overlap, it may recommend `delivery: fleet`. The orchestrator confirms with the user before dispatching.
 
 In fleet mode, the orchestrator enters coordinator mode:
-1. Invokes `agent-framework:fleet-dispatch` to spawn child sessions
-2. Monitors via `agent-framework:fleet-status` on demand
+1. Invokes `hivemind:spawn-brood` to spawn child sessions
+2. Monitors via `hivemind:brood-status` on demand
 3. Reports aggregate status when all streams complete
 
 Each child session is a standard orchestrator running a full pipeline. Children have no fleet awareness. The "one plan = one branch = one PR" invariant holds per child session.
@@ -87,7 +87,7 @@ Add after "## Validation Procedure":
 ```markdown
 ## Fleet
 
-A set of parallel orchestrator sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the coordinator via `agent-framework:fleet-dispatch`.
+A set of parallel orchestrator sessions working on independent tasks in the same repository, each in its own git worktree. Spawned by the coordinator via `hivemind:spawn-brood`.
 
 ## Coordinator Mode
 
@@ -108,16 +108,16 @@ One independent unit of work within a fleet-plan, assigned to a single child orc
 
 Changes:
 
-1. Add `agent-framework:fleet-dispatch` and `agent-framework:fleet-status` to the Skills section
+1. Add `hivemind:spawn-brood` and `hivemind:brood-status` to the Skills section
 2. Add fleet initiation routes to "The Workflow" section, after step 3 (Plan):
 
 ```markdown
-3a. **Fleet route (planner-detected)** — If planner returns `delivery: fleet` with stream descriptions and overlap assessment: present the fleet-plan to the user. If `overlap_risk` is medium or high, warn user with overlap details and require explicit approval. On confirmation, invoke `agent-framework:fleet-dispatch` with the stream list. Enter coordinator mode.
+3a. **Fleet route (planner-detected)** — If planner returns `delivery: fleet` with stream descriptions and overlap assessment: present the fleet-plan to the user. If `overlap_risk` is medium or high, warn user with overlap details and require explicit approval. On confirmation, invoke `hivemind:spawn-brood` with the stream list. Enter coordinator mode.
 
 3b. **Fleet route (user-directed)** — If user explicitly requests a fleet with multiple items: resolve inputs into stream descriptions (read plan files, fetch GitHub issue details, accept plain text). Send resolved descriptions to planner for independence validation and overlap analysis. Planner returns `delivery: fleet` with `overlap_risk` assessment. Continue per step 3a.
 ```
 
-In both routes, coordinator mode means: monitor via `agent-framework:fleet-status` on demand, provide on-demand help (rebases, etc.), and report aggregate status when all streams complete. Skip steps 4-12 (each child session runs its own full pipeline).
+In both routes, coordinator mode means: monitor via `hivemind:brood-status` on demand, provide on-demand help (rebases, etc.), and report aggregate status when all streams complete. Skip steps 4-12 (each child session runs its own full pipeline).
 
 3. Add to Model Routing table:
 
