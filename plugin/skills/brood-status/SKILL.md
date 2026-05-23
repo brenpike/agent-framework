@@ -1,6 +1,6 @@
 ---
-name: fleet-status
-description: Check status of all active fleet sessions. Reports per-stream tmux session state, branch existence, and PR status from external observables. Trigger: "fleet status", "brood status", "check fleet", "fleet progress", "how's the fleet".
+name: brood-status
+description: Check status of all active brood sessions. Reports per-stream tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "fleet status", "check brood", "brood progress", "how's the brood".
 allowed-tools:
   - Bash(tmux *)
   - Bash(git worktree *)
@@ -12,15 +12,15 @@ allowed-tools:
 shell: bash
 ---
 
-# Fleet Status
+# Brood Status
 
-Check the status of all active fleet sessions. Reports per-stream tmux session state, branch existence, and PR status from external observables.
+Check the status of all active brood sessions. Reports per-stream tmux session state, branch existence, and PR status from external observables.
 
 This is an **interactive skill** — it produces user-visible text output.
 
 ## Procedure
 
-1. **Locate fleet manifest.**
+1. **Locate brood manifest.**
    a. Determine if the current checkout is the main checkout or a worktree:
       ```bash
       git rev-parse --git-common-dir
@@ -31,8 +31,8 @@ This is an **interactive skill** — it produces user-visible text output.
       ```bash
       git worktree list | head -1 | awk '{print $1}'
       ```
-   c. Read the manifest from `<main_checkout>/.agent-framework/fleet/manifest.yaml`.
-   d. If no manifest exists, report "No active fleet found." and stop.
+   c. Read the manifest from `<main_checkout>/.hivemind/fleet/manifest.yaml`.
+   d. If no manifest exists, report "No active brood found." and stop.
 
 2. **Probe each stream.** For each stream in the manifest:
    a. Check tmux session alive:
@@ -76,7 +76,7 @@ This is an **interactive skill** — it produces user-visible text output.
 
 ## Do Not
 
-- Write to the fleet manifest — this skill is read-only
+- Write to the brood manifest — this skill is read-only
 - Commit, push, or open a PR
 - Modify any files
 - Kill or restart tmux sessions

@@ -470,5 +470,5 @@ nupkgs/
 # Claude Code worktree sessions
 .claude/worktrees/
 
-# agent-framework runtime orchestration artifacts (ephemeral by default)
-.agent-framework/
+# hivemind runtime orchestration artifacts (ephemeral by default)
+.hivemind/

@@ -1,5 +1,5 @@
 ---
-name: designer
+name: changeling
 description: Handle presentational UI/UX work, design tokens, layout, accessibility presentation, and visual states within explicitly assigned file scope.
 model: claude-sonnet-4-6
 tools:
