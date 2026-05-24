@@ -16,6 +16,7 @@ Resolvable pull request review threads are GraphQL objects. Do not try to resolv
 - [Reply to Review Thread](#reply-to-review-thread) — mutation to post a reply to an existing review thread
 - [Resolve Review Thread](#resolve-review-thread) — mutation to mark a review thread as resolved
 - [Author Filtering](#author-filtering) — rules for scoping feedback to specific reviewer identities
+- [Codex Approval Detection](#codex-approval-detection) — `THUMBS_UP` reaction query that signals Codex approval
 
 ## Shell and Parsing Rules
 
@@ -177,6 +178,8 @@ All queries must apply both filters before yielding results as actionable feedba
 
 The Fetch Review Threads (unresolved summary output) and Fetch Top-Level PR Comments templates apply both filters inline. The Fetch Reviews and Fetch Thread Comments (Paginated) templates return raw nodes — consuming agents must apply both filters to their results before yielding as actionable feedback. For Fetch Reviews, also filter to `state` values `CHANGES_REQUESTED` or `COMMENTED`.
 
+An `APPROVED` review state is NOT how Codex signals approval — Codex never files an `APPROVED` review. Codex approval is a `THUMBS_UP` reaction on the PR object (see [Codex Approval Detection](#codex-approval-detection)).
+
 ## Reply to Review Thread
 
 ```bash
@@ -211,4 +214,21 @@ mutation($threadId: ID!) {
 
 ## Author Filtering
 
-When `reviewer_filter` is `codex-only`, include only comments from the Codex reviewer identity. If identity is unclear, ask the user before processing.
+When `reviewer_filter` is `codex-only`, include only comments from the Codex reviewer identity. The Codex reviewer's canonical login base is `chatgpt-codex-connector`. Inside `reactions` nodes the login carries a `[bot]` suffix (`chatgpt-codex-connector[bot]`); match by stripping a trailing `[bot]` and comparing equal to `chatgpt-codex-connector`. If identity is unclear, ask the user before processing.
+
+## Codex Approval Detection
+
+Codex signals approval via a `THUMBS_UP` reaction on the PR object (not an `APPROVED` review). Detect it with:
+
+```bash
+gh api graphql -f owner="OWNER" -f repo="REPO" -F pr=123 -f query='
+query($owner: String!, $repo: String!, $pr: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reactions(first: 50, content: THUMBS_UP) { nodes { user { login } } }
+    }
+  }
+}'
+```
+
+A reactor matches Codex when its login, with a trailing `[bot]` stripped, equals `chatgpt-codex-connector`. Codex approval is terminal for the github-reviewer ONLY when no unresolved non-self actionable items remain. The 👀 `eyes` reaction means "still running" — never treat it as approval (the `content: THUMBS_UP` filter already excludes it).

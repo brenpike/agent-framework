@@ -56,6 +56,9 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           url
         }
       }
+      reactions(first: 50, content: THUMBS_UP) {
+        nodes { user { login } }
+      }
     }
   }
 }' --jq '
@@ -76,7 +79,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
    | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
    | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
    | select(.author.login != $self)
-   | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
+   | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)"),
+  (.data.repository.pullRequest.reactions.nodes[]
+   | (.user.login // "") as $rl
+   | select(($rl | sub("\\[bot\\]$"; "")) == "chatgpt-codex-connector")
+   | "CODEX_APPROVED=\($rl)")
 ' 2>"/tmp/af_poll_err_$$")
   if [ $? -ne 0 ]; then
     fail_count=$((fail_count + 1))
