@@ -45,10 +45,16 @@ Default branches:
 
 ## Validation
 
-No build or test suite. "Validation" for changes here is:
+No compiler or code-coverage suite — this is a Markdown plugin. CI (`.github/workflows/policy-check.yml`) runs on every PR and push to `main` and enforces three gates:
+
+1. **JSON manifests parse** — both `plugin/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`. Local equivalent: `jq . <path> > /dev/null`.
+2. **Prose/contract linter** — `bash tools/policy_check.sh --strict`. Validates `plugin/` files against fixtures in `tests/policy/`, `tests/plugin/`, and `tests/workflows/`, and checks that `${CLAUDE_PLUGIN_ROOT}/...` path refs resolve. Advisory by default; `--strict` fails on any finding not in `tests/policy/policy-lint-allowlist.json`. Bare-path invariant enforced here (`CHECK8`).
+3. **Report-format linter** — `bash tools/validate_reports.sh --batch tests/reports/`. Validates agent report fixtures against report format contracts.
+
+Local pre-merge:
 
 1. JSON manifests parse: `jq . plugin/.claude-plugin/plugin.json > /dev/null` and `jq . .claude-plugin/marketplace.json > /dev/null`.
-2. No bare path refs introduced — `grep -rE '\b(agents|skills|governance)/' plugin/` should only return `${CLAUDE_PLUGIN_ROOT}/...` lines or `_shared/` references; flag anything else.
+2. No bare path refs introduced — `grep -rE '\b(agents|skills|governance)/' plugin/` should only return `${CLAUDE_PLUGIN_ROOT}/...` lines or `_shared/` references; flag anything else. Enforced in CI by `tools/policy_check.sh` (`CHECK8`).
 3. Smoke install in a scratch Claude Code session before publishing breaking layout changes:
    ```text
    /plugin marketplace add <local-path-or-git-url>
