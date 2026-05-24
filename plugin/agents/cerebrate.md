@@ -10,7 +10,6 @@ tools:
   - WebSearch
   - WebFetch
   - Skill
-  - ToolSearch
   - mcp__plugin_claude-mem_mcp-search__search
   - mcp__plugin_claude-mem_mcp-search__timeline
   - mcp__plugin_claude-mem_mcp-search__get_observations
@@ -76,13 +75,10 @@ When delegation includes `Memory context:`, use it directly — do not search me
 When absent, resolve memory access in this exact order:
 
 1. If `claude-mem: absent` in session facts → memory is truly off; skip cleanly. Do not error, do not hard-require it, do not fall back to Bash, JSON-RPC, or sqlite.
-2. Otherwise (no `claude-mem` session fact, or `claude-mem: present`) → attempt to use the concrete memory tools (`mcp__plugin_claude-mem_mcp-search__search`, `mcp__plugin_claude-mem_mcp-search__timeline`, `mcp__plugin_claude-mem_mcp-search__get_observations`, `mcp__plugin_claude-mem_mcp-search__smart_outline`). In eager-load environments they are directly callable and you proceed straight to the 3-layer workflow below. In deferred-tool environments their schemas are not materialized until loaded — this is NOT the same as absent, so do not classify it as absent yet. Before treating any memory tool as unavailable, call `ToolSearch` with `select:mcp__plugin_claude-mem_mcp-search__<tool>` (e.g. `select:mcp__plugin_claude-mem_mcp-search__search`) to materialize its schema, then invoke it. If a direct call returns `No such tool available`, that is the deferred-loader signal — run the same `ToolSearch` materialization, then retry the call.
-3. Treat memory as absent and skip cleanly — with no error and no Bash/JSON-RPC/sqlite fallback — when ANY of the following is true:
-   - `ToolSearch` itself is unavailable and the MCP tools are not directly callable, OR
-   - `ToolSearch` is available but returns no result matching `mcp__plugin_claude-mem_mcp-search__*`, OR
-   - the post-materialization retry still returns `No such tool available`.
+2. Otherwise (no `claude-mem` session fact, or `claude-mem: present`) → call the concrete memory tools directly (`mcp__plugin_claude-mem_mcp-search__search`, `mcp__plugin_claude-mem_mcp-search__timeline`, `mcp__plugin_claude-mem_mcp-search__get_observations`, `mcp__plugin_claude-mem_mcp-search__smart_outline`). They are directly callable, so proceed straight to the 3-layer workflow below.
+3. Treat memory as absent and skip cleanly — with no error and no Bash/JSON-RPC/sqlite fallback — when a direct call to a memory tool returns `No such tool available` (the tool is not granted / claude-mem is not installed).
 
-Deferred vs. absent vs. failing: a tool is deferred (not absent) only when `ToolSearch` returns a matching schema that successfully materializes and the subsequent call succeeds. Classify as absent ONLY on the three explicit absence signals enumerated above (no matching `ToolSearch` result, `ToolSearch` unavailable with no directly callable MCP tool, or retry returning `No such tool available`). Do NOT classify as absent when a matching schema materializes but the call then fails for any other reason (auth, timeout, MCP server crash, malformed response, or any non-`No such tool available` error) — that is an operational dependency failure, not absence: apply the Research Rules retry-once-if-transient rule per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Transient Failure), and if it is not transient or the retry still fails, return blocked or surface the failure rather than skipping memory.
+Absent vs. failing: a `No such tool available` return is absence — skip cleanly. ANY other call failure (auth, timeout, MCP server crash, malformed response, or any non-`No such tool available` error) is an operational dependency failure, NOT absence: apply the Research Rules retry-once-if-transient rule per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Transient Failure), and if it is not transient or the retry still fails, return blocked or surface the failure rather than skipping memory.
 
 3-layer workflow (once the tools are callable):
 

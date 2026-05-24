@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.5.2] - 2026-05-23
+
+### Changed
+
+- **cerebrate's memory-handling no longer carries the obsolete ToolSearch deferred-loader path.** A live probe on plugin 2.5.1 confirmed the four concrete `mcp__plugin_claude-mem_mcp-search__*` tools are directly callable on first try, so the `ToolSearch` grant and the deferred-tool/materialization recovery prose were dead. Removed `ToolSearch` from cerebrate's `tools:` allowlist and collapsed the memory absence-classification block to a two-way model — `No such tool available` means absent (skip cleanly); any other failure routes through the Transient Failure retry rule rather than skipping memory.
+
 ## [2.5.1] - 2026-05-23
 
 ### Fixed
