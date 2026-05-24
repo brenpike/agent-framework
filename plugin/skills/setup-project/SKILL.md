@@ -80,7 +80,6 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
      Bash(tail *)
      Bash(ls *)
      Bash(cat *)
-     Bash(find *)
      Bash(wc *)
      Bash(sort *)
      Bash(uniq *)
