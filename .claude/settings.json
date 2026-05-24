@@ -43,7 +43,6 @@
       "Bash(tail *)",
       "Bash(ls *)",
       "Bash(wc *)",
-      "Bash(sort *)",
       "Bash(uniq *)",
       "Bash(git ls-files *)",
       "Bash(git tag)",
