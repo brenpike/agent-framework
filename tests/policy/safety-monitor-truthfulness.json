@@ -7,7 +7,7 @@
   "consumers": [
     {
       "file": "plugin/agents/overlord.md",
-      "pattern": "claim monitoring is active unless Monitor (or an equivalent real background trigger) returned a non-error response"
+      "pattern": "claim monitoring is active for a returned github-reviewer run"
     }
   ]
 }
