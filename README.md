@@ -48,7 +48,7 @@ The setup skill also adds `.hivemind/` to your project's `.gitignore`. This dire
 /hivemind:setup-project seed_allowlist=yes
 ```
 
-The seeded entries cover read-helper Bash commands (e.g. `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`) and scoped git read subcommands (`git tag` is list-only). They are appended-if-absent — existing entries are never overwritten or removed. `printf` routing rules are intentionally **not** granted — a `Bash(printf 'X: *)` rule permits a redirect-write tail (`printf 'X: ...' > file`), an unacceptable auto-approved file-write surface; pipeline skills emit routing data under their own `allowed-tools`. Broad `echo`/`printf`/`cat`, `node`, `Edit`, and `Write` are also not auto-approved; those require explicit per-project decisions.
+The seeded entries cover read-helper Bash commands (e.g. `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`) and scoped git read subcommands (`git tag` is list-only). They are appended-if-absent — existing entries are never overwritten or removed. `printf` routing rules are intentionally **not** granted — a `Bash(printf 'X: *)` rule permits a redirect-write tail (`printf 'X: ...' > file`), an unacceptable auto-approved file-write surface; pipeline skills currently emit routing data via their own `allowed-tools` `Bash(printf *)` grants (a known surface tracked separately for tightening). Broad `echo`/`printf`/`cat`, `node`, `Edit`, and `Write` are also not auto-approved; those require explicit per-project decisions.
 
 For prompt-free local Codex review (`hivemind:adaptation-cycle`), add your Codex cache path to the project's `.claude/settings.json` (or the gitignored `.claude/settings.local.json`):
 
