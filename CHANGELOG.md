@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [2.6.1] - 2026-05-24
 
 ### Changed
 
-### Fixed
+- **Shell-output-discipline directive de-duplicated.** The inline `Shell Output Discipline` prose that PR #122 added to the five agent files (cerebrate, local-reviewer, drone, overlord, github-reviewer) has been consolidated into a single canonical `## Shell Output Discipline` section in `governance/definitions.md`; the agents now reference it instead of carrying inline copies.
 
 ## [2.6.0] - 2026-05-23
 
