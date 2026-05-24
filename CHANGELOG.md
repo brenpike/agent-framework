@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-05-24
+
+### Added
+
+- **`Bash Command Discipline` governance directive.** A new canonical `## Bash Command Discipline` section in `governance/definitions.md` operationalizes command SHAPE for permission economy: prefer Read/Grep/Glob over Bash for reading/searching; issue one atomic command per Bash call instead of chaining with `&&`/`||`/`;`/`|` to batch or narrate; redirect only to `/dev/null` or in-cwd paths (never out-of-cwd like `/tmp`); and never bury an unlisted command (`rm`, `mv`, `chmod`, `find`, `for`/`while` loops) inside a chain with allowlisted commands. The overlord, drone, cerebrate, local-reviewer, and github-reviewer agents now reference it. Closes the gap left by Shell Output Discipline (decorative output) and ADR 0010 (permission-engine behavior) — neither operationalized command shape. cerebrate's previously-inline Bash-shape prose is consolidated into the canonical section (DRY).
+
 ## [2.6.1] - 2026-05-24
 
 ### Changed
