@@ -56,9 +56,6 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           url
         }
       }
-      reactions(first: 50, content: THUMBS_UP) {
-        nodes { user { login } }
-      }
     }
   }
 }' --jq '
@@ -79,11 +76,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
    | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
    | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
    | select(.author.login != $self)
-   | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)"),
-  (.data.repository.pullRequest.reactions.nodes[]
-   | (.user.login // "") as $rl
-   | select(($rl | sub("\\[bot\\]$"; "")) == "chatgpt-codex-connector")
-   | "CODEX_APPROVED=\($rl)")
+   | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
 ' 2>"/tmp/af_poll_err_$$")
   if [ $? -ne 0 ]; then
     fail_count=$((fail_count + 1))
@@ -100,6 +93,14 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     exit 0
   fi
   echo "$output"
+  # Detect Codex approval via 👍 reaction. Use --paginate for complete coverage
+  # of the reactions connection (a bounded first-N slice can miss the bot's
+  # reaction when a PR has many reactions, leaving watch to run until timeout).
+  codex_approved=$(gh api --paginate "repos/OWNER/REPO/issues/PR_NUMBER/reactions" \
+    --jq '.[] | select(.content == "+1") | ((.user.login // "") | sub("\\[bot\\]$"; "")) | select(. == "chatgpt-codex-connector") | "CODEX_APPROVED=\(.)"' 2>/dev/null)
+  if [ -n "$codex_approved" ]; then
+    printf '%s\n' "$codex_approved" | head -1
+  fi
   # Poll PR status checks for failures
   required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
   check_output=$(gh pr checks PR_NUMBER --repo OWNER/REPO --json name,state,bucket,link,description --jq '.[] | select(.bucket == "fail") | "CHECK_FAIL=\(.name | gsub("[\\t\\n\\r]"; " "))\tSTATE=\(.state)\tBUCKET=\(.bucket)\tLINK=\((.link // "") | gsub("[\\t\\n\\r]"; " "))\tDESC=\((.description // "") | gsub("[\\t\\n\\r]"; " "))"' 2>>"/tmp/af_poll_err_$$")

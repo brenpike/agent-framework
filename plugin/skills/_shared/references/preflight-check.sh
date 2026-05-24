@@ -41,9 +41,6 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           url
         }
       }
-      reactions(first: 50, content: THUMBS_UP) {
-        nodes { user { login } }
-      }
     }
   }
 }' --jq '
@@ -64,16 +61,21 @@ query($owner: String!, $repo: String!, $pr: Int!) {
    | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
    | select(.body != null and (.body | gsub("[[:space:]]+"; "") != ""))
    | select(.author.login != $self)
-   | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)"),
-  (.data.repository.pullRequest.reactions.nodes[]
-   | (.user.login // "") as $rl
-   | select(($rl | sub("\\[bot\\]$"; "")) == "chatgpt-codex-connector")
-   | "CODEX_APPROVED=\($rl)")
+   | "REVIEW=\(.id) AUTHOR=\(.author.login) STATE=\(.state) URL=\(.url)")
 '
 
 graphql_status=$?
 if [ "$graphql_status" -ne 0 ]; then
   exit "$graphql_status"
+fi
+
+# Detect Codex approval via 👍 reaction. Use --paginate for complete coverage
+# of the reactions connection (a bounded first-N slice can miss the bot's
+# reaction when a PR has many reactions, leaving watch to run until timeout).
+codex_approved=$(gh api --paginate "repos/OWNER/REPO/issues/PR_NUMBER/reactions" \
+  --jq '.[] | select(.content == "+1") | ((.user.login // "") | sub("\\[bot\\]$"; "")) | select(. == "chatgpt-codex-connector") | "CODEX_APPROVED=\(.)"' 2>/dev/null)
+if [ -n "$codex_approved" ]; then
+  printf '%s\n' "$codex_approved" | head -1
 fi
 
 # gh pr checks exit codes: 0=passed, 1=failed (captured), 8=pending, other=error
