@@ -40,7 +40,23 @@
       "Bash(cat > .hivemind/*)",
       "Write(.hivemind/review-loop/*)",
       "Bash(mkdir -p .hivemind/review-loop)",
-      "Monitor"
+      "Monitor",
+      "Bash(jq *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(find *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(echo *)",
+      "Bash(printf *)",
+      "Bash(git ls-files *)",
+      "Bash(git switch *)",
+      "Bash(git tag *)",
+      "Bash(git grep *)",
+      "Bash(git stash *)"
     ]
   },
   "hooks": {
