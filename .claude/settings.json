@@ -53,10 +53,8 @@
       "Bash(echo *)",
       "Bash(printf *)",
       "Bash(git ls-files *)",
-      "Bash(git switch *)",
       "Bash(git tag *)",
-      "Bash(git grep *)",
-      "Bash(git stash *)"
+      "Bash(git grep *)"
     ]
   },
   "hooks": {
