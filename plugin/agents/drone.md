@@ -57,6 +57,7 @@ Do not silently expand scope.
 - propagate failures explicitly (raise, return, log-and-fail); never catch-and-discard or return sentinel values that erase failure context
 - do not invent visual design
 - follow Shell Output Discipline per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Shell Output Discipline)
+- follow Bash Command Discipline per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Bash Command Discipline)
 
 ## Git Rules
 

@@ -104,4 +104,4 @@ Status transitions: `open` -> `fixing` -> `fixed` (validation passed) or `regres
 
 ## Silence
 
-Produce zero text output during execution. Only tool calls. The only user-visible output is the terminal Output Contract YAML. Follow Shell Output Discipline per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Shell Output Discipline).
+Produce zero text output during execution. Only tool calls. The only user-visible output is the terminal Output Contract YAML. Follow Shell Output Discipline per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Shell Output Discipline). Follow Bash Command Discipline per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Bash Command Discipline).
