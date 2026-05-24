@@ -57,7 +57,7 @@ Once configured, the overlord is the session default agent. All skills are avail
 
 ## Recommended companion plugins
 
-- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides optional cross-session memory and continuity. Install separately as a Claude Code plugin. Hivemind works without it; if installed, the cerebrate reads claude-mem memory directly via the MCP search tool (`mcp__plugin_claude-mem_mcp-search__*`) before every plan unless the repo has zero commits or the user explicitly opts out. Writes happen through claude-mem's automatic capture (there is no write MCP tool).
+- [`claude-mem`](https://github.com/thedotmack/claude-mem) — provides optional cross-session memory and continuity. Install separately as a Claude Code plugin. Hivemind works without it; if installed, the cerebrate reads claude-mem memory directly via the MCP search tool (`mcp__plugin_claude-mem_mcp-search__*`) before every plan unless the repo has zero commits or the user explicitly opts out. Writes happen through claude-mem's automatic capture (there is no write MCP tool). `uvx` (from [Astral's `uv`](https://astral.sh/uv)) is an optional dependency of claude-mem that enables its semantic (vector/Chroma) search backend; without it, claude-mem falls back to keyword search and MCP tools remain fully callable. Install with `curl -LsSf https://astral.sh/uv/install.sh | sh`; diagnostics at `~/.claude-mem/logs/` (look for `CHROMA_MCP` entries).
 
 - [`codex`](https://github.com/openai/codex-plugin-cc) — provides local and GitHub-integrated Codex code review. Install and configure with:
   ```text
