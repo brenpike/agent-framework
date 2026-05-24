@@ -56,6 +56,7 @@ Do not silently expand scope.
 - comments only for: docstrings, `INVARIANT:` prefixed non-obvious invariants, external spec/RFC citations
 - propagate failures explicitly (raise, return, log-and-fail); never catch-and-discard or return sentinel values that erase failure context
 - do not invent visual design
+- do not emit `echo` / `printf` status banners or wrap commands in compound Bash pipelines purely for narration — they trigger permission prompts and produce no implementation value; use direct tool calls (Read, Edit, Write, Grep) instead
 
 ## Git Rules
 

@@ -56,6 +56,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 - `caveman`: `yes`|`no` (default `no`) — also enable `caveman@caveman`, configure `pluginConfigs`, set up `.envrc`, and install the SubagentStart hook for caveman ultra mode
 - `claude_mem`: `yes`|`no` (default `no`) — also enable `claude-mem@thedotmack` if the user has installed that plugin
 - `codex`: `yes`|`no` (default `no`) — also enable `codex@openai-codex` if the user has installed that plugin
+- `seed_allowlist`: `yes`|`no` (default `no`) — also merge a recommended least-privilege `permissions.allow` template into the project `.claude/settings.json`. When omitted (default `no`), `permissions.allow` is left untouched and existing behavior is unchanged. Union/append-if-absent only: never overwrites, removes, or reorders the user's existing `permissions.allow` entries
 - `dry_run`: `yes`|`no` (default `no`) — print proposed settings, do not write
 
 ## Procedure
@@ -72,12 +73,34 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    - if `codex` = `yes`: `enabledPlugins["codex@openai-codex"]` = `true`
    - if `caveman` = `yes`: `pluginConfigs["caveman@caveman"].options.defaultLevel` = `"ultra"`
    - if `caveman` = `yes`: `hooks.SubagentStart` entry pointing to `.claude/hooks/caveman-ultra-subagent.sh` (see step 10d for hook structure)
+   - if `seed_allowlist` = `yes`: merge the recommended least-privilege template below into `permissions.allow` using union/append-if-absent semantics (see Merge Rules) — append only rules not already present, preserving the user's existing entries and their order. The frozen template rule set (mirror exactly; do not add, drop, or reword entries):
+     ```
+     Bash(jq *)
+     Bash(head *)
+     Bash(tail *)
+     Bash(ls *)
+     Bash(cat *)
+     Bash(find *)
+     Bash(wc *)
+     Bash(sort *)
+     Bash(uniq *)
+     Bash(echo *)
+     Bash(printf *)
+     Bash(git ls-files *)
+     Bash(git tag *)
+     Bash(git grep *)
+     Bash(git stash list)
+     Bash(git stash show *)
+     Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
+     ```
+     The codex-companion rule uses the literal placeholder path `/path/to/.claude/plugins/cache/openai-codex/codex/*`; the consumer must replace `/path/to/` with their own home directory path after setup. Do NOT seed `acceptEdits` mode, `Edit`, or `Write` into consumer settings.
 6. If `dry_run` = `yes`:
    a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.hivemind/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. If `caveman` = `yes`: determine the `.envrc` action that would be taken: check whether `<project root>/.envrc` exists and whether it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`) (the same check used in step 9b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    c. If `claude_mem` = `yes`: determine the `claude_mem_path` action that would be taken by applying the same checks as steps 11b–11e, without writing: one of `would-set <resolved-path>` (when `~/.claude-mem/settings.json` exists, is valid JSON, has a missing/empty `CLAUDE_CODE_PATH`, and a `claude` binary resolves), `already set` (key already non-empty), `skipped (claude-mem not installed)` (file absent), `skipped (malformed json)` (file not valid JSON), or `skipped (claude binary not found)` (no `claude` binary resolves).
-   d. Print the merged settings JSON, the gitignore action, (if `caveman` = `yes`) the envrc action, and (if `claude_mem` = `yes`) the claude_mem action together.
-   e. Stop without writing any files.
+   d. If `seed_allowlist` = `yes`: determine the `permissions.allow` additions that would be made by applying the same union/append-if-absent check as step 5 and Merge Rules, without writing: for each template rule, classify it as `would-add` (not currently in `permissions.allow`) or `already present`. The merged settings JSON printed in step 6e already reflects these additions; additionally list the would-add vs already-present rules explicitly.
+   e. Print the merged settings JSON, the gitignore action, (if `caveman` = `yes`) the envrc action, (if `claude_mem` = `yes`) the claude_mem action, and (if `seed_allowlist` = `yes`) the allowlist would-add / already-present breakdown together.
+   f. Stop without writing any files.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
 8. Ensure `.hivemind/` is listed in the project's `.gitignore`:
    a. If `<project root>/.gitignore` does not exist, create it with a single line `.hivemind/`.
@@ -138,10 +161,11 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 - Do not remove or reorder existing entries.
 - If a required key already has the correct value, report it as `already present`, not `added`.
 - If a required key has a conflicting value (e.g., `agent` set to a different agent), stop blocked and report the conflict. Do not overwrite without explicit user approval.
+- `permissions.allow` (when `seed_allowlist` = `yes`) merges as an array union, append-if-absent: keep every existing entry in its original order, then append each template rule whose exact string is not already in the array. Never overwrite, remove, dedupe, or reorder the user's existing entries. A template rule already present is reported as `already present`, not `added`. If `permissions.allow` is absent, create it containing only the template rules (in template order). If `permissions` exists without `allow`, add the `allow` array while preserving other `permissions` keys.
 
 ## Do Not
 
-- write any key not listed in step 5 (except `hooks.SubagentStart` when `caveman` = `yes`, as specified in steps 5 and 10d)
+- write any key not listed in step 5 (except `hooks.SubagentStart` when `caveman` = `yes`, as specified in steps 5 and 10d; and `permissions.allow` ONLY when `seed_allowlist` = `yes`, as specified in step 5)
 - modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, and files created or modified by invoked skills (`hivemind:bootstrap-context`)
 - modify `~/.claude-mem/settings.json` beyond setting its single `CLAUDE_CODE_PATH` key (and only when `claude_mem` = `yes`, the file already exists, the key is empty/missing, and a `claude` binary resolves, per step 11); never overwrite an existing non-empty `CLAUDE_CODE_PATH`, and never touch any other key in that file
 - commit, push, or otherwise touch git state
@@ -179,6 +203,11 @@ keys_applied:
 - enabledPlugins["claude-mem@thedotmack"]: added | already present | not requested
 - enabledPlugins["codex@openai-codex"]: added | already present | not requested
 - pluginConfigs["caveman@caveman"]: added | already present | not requested
+
+permissions_allow:
+- [rule string]: added | already present | would-add (dry_run)
+- not requested
+# one line per template rule when seed_allowlist = yes; `not requested` when seed_allowlist = no
 
 dry_run: yes | no
 

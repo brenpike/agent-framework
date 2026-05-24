@@ -104,4 +104,4 @@ Status transitions: `open` -> `fixing` -> `fixed` (validation passed) or `regres
 
 ## Silence
 
-Produce zero text output during execution. Only tool calls. The only user-visible output is the terminal Output Contract YAML.
+Produce zero text output during execution. Only tool calls. The only user-visible output is the terminal Output Contract YAML. Do not emit `echo` / `printf` status banners, progress markers, or any scaffolding command — they produce no fix or analysis, only trigger permission prompts. Use direct tool calls instead.
