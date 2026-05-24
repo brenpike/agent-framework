@@ -11,7 +11,10 @@ tools:
   - WebFetch
   - Skill
   - ToolSearch
-  - mcp__plugin_claude-mem_mcp-search__*
+  - mcp__plugin_claude-mem_mcp-search__search
+  - mcp__plugin_claude-mem_mcp-search__timeline
+  - mcp__plugin_claude-mem_mcp-search__get_observations
+  - mcp__plugin_claude-mem_mcp-search__smart_outline
   - Bash(git status *)
   - Bash(git branch)
   - Bash(git branch --list*)
@@ -64,7 +67,7 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 - assign work to any agent except `drone` or `changeling`
 - use vague file scopes — every step needs exact paths
 - rely on memory for file paths, signatures, imports, config values, dependency versions, or branch state — inspect at runtime
-- invoke any skill; memory comes from the `mcp__plugin_claude-mem_mcp-search__*` tools, not a skill (`claude-mem:mem-search` is optional legacy documentation only)
+- invoke any skill; memory comes from the concrete `mcp__plugin_claude-mem_mcp-search__search`, `mcp__plugin_claude-mem_mcp-search__timeline`, `mcp__plugin_claude-mem_mcp-search__get_observations`, and `mcp__plugin_claude-mem_mcp-search__smart_outline` tools, not a skill (`claude-mem:mem-search` is optional legacy documentation only)
 
 ## Memory Handling
 
@@ -73,7 +76,7 @@ When delegation includes `Memory context:`, use it directly — do not search me
 When absent, resolve memory access in this exact order:
 
 1. If `claude-mem: absent` in session facts → memory is truly off; skip cleanly. Do not error, do not hard-require it, do not fall back to Bash, JSON-RPC, or sqlite.
-2. Otherwise (no `claude-mem` session fact, or `claude-mem: present`) → attempt to use the `mcp__plugin_claude-mem_mcp-search__*` tools. In eager-load environments they are directly callable and you proceed straight to the 3-layer workflow below. In deferred-tool environments their schemas are not materialized until loaded — this is NOT the same as absent, so do not classify it as absent yet. Before treating any memory tool as unavailable, call `ToolSearch` with `select:mcp__plugin_claude-mem_mcp-search__<tool>` (e.g. `select:mcp__plugin_claude-mem_mcp-search__search`) to materialize its schema, then invoke it. If a direct call returns `No such tool available`, that is the deferred-loader signal — run the same `ToolSearch` materialization, then retry the call.
+2. Otherwise (no `claude-mem` session fact, or `claude-mem: present`) → attempt to use the concrete memory tools (`mcp__plugin_claude-mem_mcp-search__search`, `mcp__plugin_claude-mem_mcp-search__timeline`, `mcp__plugin_claude-mem_mcp-search__get_observations`, `mcp__plugin_claude-mem_mcp-search__smart_outline`). In eager-load environments they are directly callable and you proceed straight to the 3-layer workflow below. In deferred-tool environments their schemas are not materialized until loaded — this is NOT the same as absent, so do not classify it as absent yet. Before treating any memory tool as unavailable, call `ToolSearch` with `select:mcp__plugin_claude-mem_mcp-search__<tool>` (e.g. `select:mcp__plugin_claude-mem_mcp-search__search`) to materialize its schema, then invoke it. If a direct call returns `No such tool available`, that is the deferred-loader signal — run the same `ToolSearch` materialization, then retry the call.
 3. Treat memory as absent and skip cleanly — with no error and no Bash/JSON-RPC/sqlite fallback — when ANY of the following is true:
    - `ToolSearch` itself is unavailable and the MCP tools are not directly callable, OR
    - `ToolSearch` is available but returns no result matching `mcp__plugin_claude-mem_mcp-search__*`, OR

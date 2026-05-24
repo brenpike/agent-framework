@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.5.1] - 2026-05-23
+
+### Fixed
+
+- **cerebrate can now actually call claude-mem MCP search tools.** Its frontmatter `tools:` allowlist granted claude-mem via the wildcard `mcp__plugin_claude-mem_mcp-search__*`, which does not materialize through the ToolSearch deferred-tool path — every `search`/`get_observations` call errored `No such tool available`, leaving the planner unable to query memory (it received only hook-injected observation titles). The grant is now four explicit concrete tool names (`__search`, `__timeline`, `__get_observations`, `__smart_outline`) in `plugin/agents/cerebrate.md`, restoring queryable memory access from cerebrate's restricted allowlist.
+
 ## [2.4.1] - 2026-05-23
 
 ### Fixed
