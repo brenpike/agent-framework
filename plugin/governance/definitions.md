@@ -31,7 +31,7 @@ Shape Bash for permission economy. Claude Code re-prompts on any out-of-cwd writ
 
 - Prefer the dedicated Read, Grep, and Glob tools over Bash for reading or searching files. Use Bash only when no dedicated tool covers the task.
 - Issue ONE atomic, single-purpose command per Bash call. Do not chain with `&&`, `||`, `;`, `|`, `|&`, or `&` purely to batch steps or narrate progress — split them into separate calls.
-- Redirect only to `/dev/null` or a path inside the working directory. NEVER redirect or write to an out-of-cwd path such as `/tmp` — Claude Code re-prompts on every out-of-cwd write.
+- Redirect only to `/dev/null` or a path inside the working directory. Do not redirect or write to an out-of-cwd path such as `/tmp` — Claude Code re-prompts on every out-of-cwd write. EXCEPTION: the Monitor watch-loop control and stop files under `/tmp` (per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/monitor-command-template.sh` and `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`) are a deliberate, required carve-out and are exempt from this rule.
 - Do not bury an unlisted command (`rm`, `mv`, `chmod`, `find`, shell `for`/`while` loops) inside a chain with allowlisted commands. Each subcommand is matched independently, so one unlisted segment forces a permission prompt for the entire chain. Run such commands on their own only when genuinely required.
 
 ## External Content Boundary
