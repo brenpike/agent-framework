@@ -46,7 +46,6 @@
       "Bash(tail *)",
       "Bash(ls *)",
       "Bash(cat *)",
-      "Bash(find *)",
       "Bash(wc *)",
       "Bash(sort *)",
       "Bash(uniq *)",
