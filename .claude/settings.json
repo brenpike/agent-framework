@@ -45,14 +45,13 @@
       "Bash(head *)",
       "Bash(tail *)",
       "Bash(ls *)",
-      "Bash(cat *)",
       "Bash(wc *)",
       "Bash(sort *)",
       "Bash(uniq *)",
-      "Bash(echo *)",
-      "Bash(printf *)",
       "Bash(git ls-files *)",
-      "Bash(git tag *)",
+      "Bash(git tag)",
+      "Bash(git tag -l*)",
+      "Bash(git tag --list*)",
       "Bash(git grep *)"
     ]
   },
