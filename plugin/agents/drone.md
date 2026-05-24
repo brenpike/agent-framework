@@ -56,7 +56,7 @@ Do not silently expand scope.
 - comments only for: docstrings, `INVARIANT:` prefixed non-obvious invariants, external spec/RFC citations
 - propagate failures explicitly (raise, return, log-and-fail); never catch-and-discard or return sentinel values that erase failure context
 - do not invent visual design
-- do not emit `echo` / `printf` status banners or wrap commands in compound Bash pipelines purely for narration — they trigger permission prompts and produce no implementation value; use direct tool calls (Read, Edit, Write, Grep) instead
+- do not emit decorative or scaffolding shell output: no section-banner echos (`echo "=== X ==="`, `echo "---HEAD---"`), no progress/status narration (`echo "plugin.json OK"`, `echo "done"`), no terse status tokens (`echo "JSON valid"`), and no commands wrapped in compound Bash pipelines purely for narration. Do not frame command output with echo separators — rely on the tool's own output; use direct tool calls (Read, Edit, Write, Grep) instead. They trigger permission prompts and produce no implementation value. (Load-bearing `printf` routing-data emissions required by pipeline skills, e.g. `printf 'branch: ...'`, are exempt; only DECORATIVE/NARRATION echo/printf is forbidden.)
 
 ## Git Rules
 

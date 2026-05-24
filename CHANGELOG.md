@@ -17,11 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`setup-project` `seed_allowlist` option.** When `seed_allowlist=yes` is passed, the skill union-merges a recommended least-privilege `permissions.allow` template into the project's `.claude/settings.json` (append-if-absent — existing entries are never overwritten or removed). Includes read-helper Bash commands, scoped git read subcommands, and `echo`/`printf`. `node`, `Edit`, and `Write` are intentionally excluded from the auto-seeded list for safety.
+- **`setup-project` `seed_allowlist` option.** When `seed_allowlist=yes` is passed, the skill union-merges a recommended least-privilege `permissions.allow` template into the project's `.claude/settings.json` (append-if-absent — existing entries are never overwritten or removed). Includes read-helper Bash commands, scoped git read subcommands (`git tag` list-only), and three narrow routing-data `printf` rules (`printf 'branch:`/`'url:`/`'blocker:`) for the pipeline skills' structured output. Broad `echo`/`printf`/`cat` are intentionally excluded — each permits `… > file` redirection writes — as are `node`, `Edit`, and `Write`.
 
 ### Changed
 
-- **cerebrate, local-reviewer, and drone agent guidance now discourages `echo`/`printf` status banners and narration-only compound Bash pipelines.** These patterns generate unnecessary permission-elevation prompts without producing actionable output.
+- **overlord, cerebrate, local-reviewer, drone, and github-reviewer agent guidance now forbids decorative/scaffolding shell output.** Section-banner echos (`echo "=== X ==="`), progress/status narration (`echo "done"`, `echo "JSON valid"`), and narration-only compound Bash pipelines are suppressed in favor of the tool's own output. A log analysis found these patterns drive the overwhelming majority of gratuitous `echo`/`printf` permission prompts without producing actionable output. Load-bearing `printf` routing-data emissions required by the pipeline skills remain exempt.
 
 ## [2.5.2] - 2026-05-23
 

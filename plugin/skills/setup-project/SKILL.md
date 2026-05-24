@@ -79,20 +79,22 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
      Bash(head *)
      Bash(tail *)
      Bash(ls *)
-     Bash(cat *)
      Bash(wc *)
      Bash(sort *)
      Bash(uniq *)
-     Bash(echo *)
-     Bash(printf *)
      Bash(git ls-files *)
-     Bash(git tag *)
      Bash(git grep *)
+     Bash(git tag)
+     Bash(git tag -l*)
+     Bash(git tag --list*)
      Bash(git stash list)
      Bash(git stash show *)
+     Bash(printf 'branch: *)
+     Bash(printf 'url: *)
+     Bash(printf 'blocker: *)
      Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
      ```
-     The codex-companion rule uses the literal placeholder path `/path/to/.claude/plugins/cache/openai-codex/codex/*`; the consumer must replace `/path/to/` with their own home directory path after setup. Do NOT seed `acceptEdits` mode, `Edit`, or `Write` into consumer settings.
+     The template grants read-helper Bash commands, scoped git read subcommands (`git tag` is list-only via the three `git tag` / `git tag -l*` / `git tag --list*` forms — never broad `git tag *`, which would permit creating tags), and three narrow routing-data `printf` rules. The `printf 'branch: *` / `printf 'url: *` / `printf 'blocker: *` rules are the load-bearing routing-data contract emissions used by the pipeline skills (`molt`, `create-working-branch`, `open-plan-pr`, `adaptation-cycle`); they are scoped to those literal prefixes so they do not open a broad redirect-write surface. Broad `Bash(echo *)`, `Bash(printf *)`, and `Bash(cat *)` are intentionally NOT seeded: each permits `… > file` redirection writes, and a log analysis showed the echo/printf permission prompts they would cover are overwhelmingly gratuitous banner/progress/status scaffolding that the agent prose now suppresses rather than emits. The codex-companion rule uses the literal placeholder path `/path/to/.claude/plugins/cache/openai-codex/codex/*`; the consumer must replace `/path/to/` with their own home directory path after setup. Do NOT seed `acceptEdits` mode, `Edit`, or `Write` into consumer settings.
 6. If `dry_run` = `yes`:
    a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.hivemind/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. If `caveman` = `yes`: determine the `.envrc` action that would be taken: check whether `<project root>/.envrc` exists and whether it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`) (the same check used in step 9b); set the action to `would-create`, `would-append`, or `already-present` accordingly.

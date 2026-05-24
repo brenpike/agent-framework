@@ -107,4 +107,4 @@ findings_open: <int>
 
 ## Silence
 
-Produce zero text output during execution. Only tool calls. The only user-visible output is the terminal Output Contract YAML.
+Produce zero text output during execution. Only tool calls. The only user-visible output is the terminal Output Contract YAML. Do not emit decorative or scaffolding shell output: no section-banner echos (`echo "=== X ==="`, `echo "---HEAD---"`), no progress/status narration (`echo "plugin.json OK"`, `echo "done"`), and no terse status tokens (`echo "JSON valid"`). Do not frame command output with echo separators — rely on the tool's own output and use direct tool calls instead. They produce no fix or analysis, only trigger permission prompts. (Load-bearing `printf` routing-data emissions required by pipeline skills, e.g. `printf 'branch: ...'`, are exempt; only DECORATIVE/NARRATION echo/printf is forbidden.)
