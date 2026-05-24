@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`setup-project` `seed_allowlist` option.** When `seed_allowlist=yes` is passed, the skill union-merges a recommended least-privilege `permissions.allow` template into the project's `.claude/settings.json` (append-if-absent — existing entries are never overwritten or removed). Includes read-helper Bash commands, scoped git read subcommands (`git tag` list-only), and five narrow routing-data `printf` rules (`printf 'branch:`/`'url:`/`'blocker:`/`'base:`/`'  - id:`) for the pipeline skills' structured output. Broad `echo`/`printf`/`cat` are intentionally excluded — each permits `… > file` redirection writes — as are `node`, `Edit`, and `Write`.
+- **`setup-project` `seed_allowlist` option.** When `seed_allowlist=yes` is passed, the skill union-merges a recommended least-privilege `permissions.allow` template into the project's `.claude/settings.json` (append-if-absent — existing entries are never overwritten or removed). The template covers read-helper Bash commands, scoped git read subcommands (`git tag` list-only), and the codex-companion node entry. `printf` routing rules are intentionally excluded: a `Bash(printf 'X: *)` rule permits a redirect-write tail (`printf 'X: ...' > file`), an unacceptable auto-approved file-write surface — pipeline skills emit routing data under their own `allowed-tools`. Broad `echo`/`printf`/`cat`, `node`, `Edit`, and `Write` are also not seeded.
 
 ### Changed
 
