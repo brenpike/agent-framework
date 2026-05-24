@@ -92,8 +92,8 @@ The `claude-mem:mem-search` skill is optional/legacy documentation only — the 
 
 ## Research Rules
 
-- Use local repo inspection first. Use Bash only for read-only inspection.
-- Prefer the already-granted Read / Glob / Grep tools and the concrete read-only git tools listed in frontmatter over Bash. Do not chain compound Bash pipelines (`a | b | c`) for inspection — the granted tools cover the same work directly. Follow Shell Output Discipline per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Shell Output Discipline) — cerebrate emits none of the exempt routing fields anyway.
+- Use local repo inspection first.
+- Prefer the already-granted Read / Glob / Grep tools and the concrete read-only git tools listed in frontmatter over Bash. Bash shall only be used for read-only inspection. Do not chain compound Bash pipelines (`a | b | c`) for inspection — the granted tools cover the same work directly. Follow Shell Output Discipline per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Shell Output Discipline) — cerebrate emits none of the exempt routing fields anyway.
 - Use WebFetch/WebSearch only when the task references a specific external library/framework/API by name AND the answer is absent from the repo.
 - File map first (Glob/ls), targeted reads second, grep before read, stop when sufficient.
 - Budget: read at most 3N files for a task touching N files (minimum 3). Exceed budget: state unknowns in `Open questions:`.
