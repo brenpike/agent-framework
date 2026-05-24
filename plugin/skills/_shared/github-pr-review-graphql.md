@@ -20,7 +20,7 @@ Resolvable pull request review threads are GraphQL objects. Do not try to resolv
 
 ## Shell and Parsing Rules
 
-Use `gh --jq` only. No standalone `jq`, `python3`, `python`, `node`, or PowerShell. No `/tmp/` for data processing (Monitor control files excepted). If `gh --jq` cannot produce the required value, return `blocked`.
+Use `gh --jq` only. No standalone `jq`, `python3`, `python`, `node`, or PowerShell. No `/tmp/` for data processing (**the Monitor watch-loop's temporary files — control, stop, and error/scratch — excepted**). If `gh --jq` cannot produce the required value, return `blocked`.
 
 ## Pagination Requirement
 
