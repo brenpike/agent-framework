@@ -518,7 +518,7 @@ while IFS= read -r -d '' md_file; do
             check8_found=true
             add_finding 'CHECK8' "$md_file" "$line_num" \
                 "Bare path ref (missing \${CLAUDE_PLUGIN_ROOT}/ prefix): $bare_ref"
-        done < <(echo "$stripped" | grep -oP '(^|[^A-Za-z0-9_./-])\K(agents|skills|governance)/[A-Za-z0-9_-]+\.(md|sh|json)' || true)
+        done < <(echo "$stripped" | grep -oP '(^|[^A-Za-z0-9_./-])\K(agents|skills|governance)/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.(md|sh|json)' || true)
     done < "$md_file"
 done < <(find "$PLUGIN_ROOT" -name '*.md' -type f -print0)
 
