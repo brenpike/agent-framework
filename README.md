@@ -42,6 +42,22 @@ Or run the setup skill once to apply the required keys automatically:
 
 The setup skill also adds `.hivemind/` to your project's `.gitignore`. This directory is created at runtime by the overlord for ephemeral plans, handoffs, and checkpoints — it should not be committed. If you prefer manual setup, add `.hivemind/` to your project's `.gitignore` directly.
 
+**Optional: seed a least-privilege permission allowlist.** Pass `seed_allowlist=yes` to pre-populate a recommended set of `permissions.allow` entries in `.claude/settings.json`:
+
+```text
+/hivemind:setup-project seed_allowlist=yes
+```
+
+The seeded entries cover read/output helper Bash commands (`echo`, `printf`, `cat`, `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`) and scoped git read subcommands (`git tag` is list-only). They are appended-if-absent — existing entries are never overwritten or removed. `echo`/`printf`/`cat`/`sort` **are** included: Claude Code re-prompts (ask/deny) on any command that writes or redirects to a path outside the session working directory (only `> /dev/null` is exempt) and splits compound commands (`&&`/`||`/`;`/`|`/newline), requiring each subcommand to match a rule independently — so granting them does not create an arbitrary-file-write vector (`echo evil > /etc/passwd`, `printf x > ~/.bashrc`, `cmd && rm -rf y` all re-prompt). The only silent write any of these helpers permits is bounded to the working directory, identical to `jq`/`head`/`tail`/`ls`/`wc`/`uniq`. `node`, `Edit`, and `Write` are not auto-approved; those require explicit per-project decisions.
+
+For prompt-free local Codex review (`hivemind:adaptation-cycle`), add your Codex cache path to the project's `.claude/settings.json` (or the gitignored `.claude/settings.local.json`):
+
+```json
+"Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)"
+```
+
+Replace `/path/to/` with your actual home directory path. The `codex/*` wildcard covers all Codex CLI entry points so the entry does not need updating when Codex is upgraded.
+
 2. Create `CLAUDE.md` with project-specific details:
    - Build/test commands
    - Package names and version file paths

@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.6.0] - 2026-05-23
+
+### Added
+
+- **`setup-project` `seed_allowlist` option.** When `seed_allowlist=yes` is passed, the skill union-merges a recommended least-privilege `permissions.allow` template into the project's `.claude/settings.json` (append-if-absent — existing entries are never overwritten or removed). The template covers read/output helper Bash commands (`echo`, `printf`, `cat`, `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`), scoped git read subcommands (`git tag` list-only, plus `git ls-files`/`git grep`/`git stash list`/`git stash show`), and the codex-companion node path. `echo`/`printf`/`cat`/`sort` are safe to auto-approve because Claude Code re-prompts on any write/redirect to a path outside the working directory and splits compound commands, so each subcommand must match a rule independently — the only silent write any granted helper permits is bounded to the working directory, uniformly across all of them. `node`, `Edit`, and `Write` are not seeded.
+- **ADR 0010** documents the permission-allowlist posture and the empirically established Claude Code permission-engine behavior (out-of-cwd write/redirect re-prompt, compound-command splitting) that justifies it.
+
+### Changed
+
+- **overlord, cerebrate, local-reviewer, drone, and github-reviewer agent guidance now forbids decorative/scaffolding shell output.** Section-banner echos (`echo "=== X ==="`), progress/status narration (`echo "done"`, `echo "JSON valid"`), and narration-only compound Bash pipelines are suppressed in favor of the tool's own output. A log analysis found these patterns drive the overwhelming majority of gratuitous `echo`/`printf` permission prompts without producing actionable output. Load-bearing `printf` routing-data emissions required by the pipeline skills remain exempt.
+
 ## [2.5.2] - 2026-05-23
 
 ### Changed
