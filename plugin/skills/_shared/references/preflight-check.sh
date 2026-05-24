@@ -69,6 +69,15 @@ if [ "$graphql_status" -ne 0 ]; then
   exit "$graphql_status"
 fi
 
+# Detect Codex approval via 👍 reaction. Use --paginate for complete coverage
+# of the reactions connection (a bounded first-N slice can miss the bot's
+# reaction when a PR has many reactions, leaving watch to run until timeout).
+codex_approved=$(gh api --paginate "repos/OWNER/REPO/issues/PR_NUMBER/reactions" \
+  --jq '.[] | select(.content == "+1") | ((.user.login // "") | sub("\\[bot\\]$"; "")) | select(. == "chatgpt-codex-connector") | "CODEX_APPROVED=\(.)"' 2>/dev/null)
+if [ -n "$codex_approved" ]; then
+  printf '%s\n' "$codex_approved" | head -1
+fi
+
 # gh pr checks exit codes: 0=passed, 1=failed (captured), 8=pending, other=error
 required_checks=$(gh pr checks PR_NUMBER --repo OWNER/REPO --required --json name --jq '.[].name' 2>/dev/null)
 check_stderr_file=$(mktemp)

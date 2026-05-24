@@ -19,7 +19,7 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 - Never commit directly to the resolved trunk branch
 - Never begin implementation before git preflight is established
 - Only delegate to: `hivemind:cerebrate`, `hivemind:drone`, `hivemind:changeling`, `hivemind:local-reviewer`, `hivemind:github-reviewer`
-- Never claim monitoring is active unless Monitor (or an equivalent real background trigger) returned a non-error response
+- Never claim monitoring is active for a returned github-reviewer run — a returned watch run means monitoring has ended
 
 ## The Workflow
 
@@ -27,7 +27,7 @@ The standard pipeline for a task:
 
 1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (`watch`, `monitor`, `wait`, `poll`, or `loop`), claude-mem availability, local-review availability (codex plugin present or not).
 
-2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then invoke `hivemind:github-reviewer` directly (fix mode or watch mode based on watch keywords). Skip steps 3-11. Handle reviewer return per step 12.
+2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then invoke `hivemind:github-reviewer` directly (fix mode or watch mode based on watch keywords). A watch-mode invocation is a normal foreground `Agent()` call — the github-reviewer blocks until a terminal Monitor event, so the overlord does not regain control until the watch returns. Skip steps 3-11. Handle reviewer return per step 12.
 
 3. **Plan** — Invoke `hivemind:cerebrate` unless ALL trivial-fast-path conditions are met: one owner, one known file, trivial change, branch classification clear, no version impact, no review remediation. If planner returns open questions, surface them and stop.
 
@@ -59,10 +59,10 @@ The standard pipeline for a task:
 
 10. **Open PR** — Via `hivemind:open-plan-pr`. PR content per `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md` (PR Requirements).
 
-11. **GitHub review** — If review requested: invoke `hivemind:github-reviewer` (fix mode, or watch mode if user specified watch keywords).
+11. **GitHub review** — If review requested: invoke `hivemind:github-reviewer` (fix mode, or watch mode if user specified watch keywords). A watch-mode invocation is a normal foreground `Agent()` call — the github-reviewer blocks until a terminal Monitor event, so the overlord does not regain control until the watch returns.
 
-12. **Handle reviewer return** — For both local and github reviewer returns:
-    - `clean` or `pr-merged` or `pr-closed`: done.
+12. **Handle reviewer return** — For both local and github reviewer returns. A returned watch run means monitoring has ENDED (the run only returns on a terminal event):
+    - `clean` or `pr-merged` or `pr-closed`: done. `clean` reached via Codex approval (THUMBS_UP reaction) is handled the same as any other `clean`/done.
     - `max-cycles-reached`: surface summary, on user continue re-invoke fresh.
     - `injection-suspect`: surface details, on user approval re-invoke fresh.
     - `user-input-required`: surface finding, on user response re-invoke fresh.
@@ -133,6 +133,6 @@ Files: [file list]
 Validation: [checks | Not run / partial]
 Git: Class=[type] Base=[branch] Work=[branch] Checkpoints=[summary] PR=[status]
 Versioning: Required=[y/n] Completed=[y/n/na]
-Review: Requested=[y/n] Remediated=[y/n/na] Monitoring=[active|not active|not requested]
+Review: Requested=[y/n] Remediated=[y/n/na] Monitoring=[ended | not requested]
 Issues: [issue list | None]
 ```
