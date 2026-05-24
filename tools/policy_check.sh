@@ -494,6 +494,41 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+# ── CHECK 8: No bare governance/agents/skills path refs ────────────────────
+
+echo ''
+echo '=== CHECK 8: No bare governance/agents/skills path refs ==='
+
+check8_found=false
+while IFS= read -r -d '' md_file; do
+    line_num=0
+    while IFS= read -r textline || [[ -n "$textline" ]]; do
+        line_num=$((line_num + 1))
+        # Strip every correct ${CLAUDE_PLUGIN_ROOT}/<path> token first so its
+        # inner governance|agents|skills segment cannot trigger a false match.
+        stripped="$(echo "$textline" | sed -E 's#\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9_./{}-]+##g')"
+        # Flag any residual bare ref that carries a filename suffix. The suffix
+        # requirement keeps generic prose like "the governance/ layer" clean.
+        while IFS= read -r bare_ref; do
+            [[ -z "$bare_ref" ]] && continue
+            # INVARIANT: skills/_shared/ refs are an allowed bare exception per CLAUDE.md.
+            if [[ "$bare_ref" == skills/_shared/* ]]; then
+                continue
+            fi
+            check8_found=true
+            add_finding 'CHECK8' "$md_file" "$line_num" \
+                "Bare path ref (missing \${CLAUDE_PLUGIN_ROOT}/ prefix): $bare_ref"
+        done < <(echo "$stripped" | grep -oP '(^|[^A-Za-z0-9_./-])\K(agents|skills|governance)/[A-Za-z0-9_-]+\.(md|sh|json)' || true)
+    done < "$md_file"
+done < <(find "$PLUGIN_ROOT" -name '*.md' -type f -print0)
+
+if [[ "$check8_found" == false ]]; then
+    echo '[PASS] Check 8: No bare governance/agents/skills path refs'
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''
