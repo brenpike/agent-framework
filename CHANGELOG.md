@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.6.0] - 2026-05-23
+
+### Added
+
+- **`setup-project` `seed_allowlist` option.** When `seed_allowlist=yes` is passed, the skill union-merges a recommended least-privilege `permissions.allow` template into the project's `.claude/settings.json` (append-if-absent — existing entries are never overwritten or removed). Includes read-helper Bash commands, scoped git read subcommands, and `echo`/`printf`. `node`, `Edit`, and `Write` are intentionally excluded from the auto-seeded list for safety.
+
+### Changed
+
+- **cerebrate, local-reviewer, and drone agent guidance now discourages `echo`/`printf` status banners and narration-only compound Bash pipelines.** These patterns generate unnecessary permission-elevation prompts without producing actionable output.
+
 ## [2.5.2] - 2026-05-23
 
 ### Changed
