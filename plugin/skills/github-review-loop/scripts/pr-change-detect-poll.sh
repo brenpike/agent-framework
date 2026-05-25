@@ -25,7 +25,9 @@
 #   CHANGED          a non-terminal delta in the scalar snapshot (wake reviewer)
 #   STATE=MERGED     PR merged (terminal)
 #   STATE=CLOSED     PR closed unmerged (terminal)
-#   CODEX_APPROVED   Codex 👍 newly present (skill confirms via reviewer)
+#   CODEX_APPROVED   Codex 👍 newly present, OR already present at the baseline
+#                    poll (skill confirms via reviewer; terminal clean only if
+#                    nothing actionable remains)
 #   WATCH_TIMEOUT    max_watch_duration elapsed (terminal)
 #   POLL_ERROR       repeated query failure (terminal; skill returns blocked)
 #
@@ -225,7 +227,17 @@ while true; do
   fi
 
   if [ "$have_baseline" -eq 0 ]; then
-    # First successful poll establishes the baseline; emit nothing.
+    # First successful poll establishes the baseline; emit nothing for the
+    # generic count/state scalars (they are the baseline, not a delta). EXCEPT a
+    # pre-existing Codex 👍: if the PR already carries approval when monitoring
+    # starts, the emit-on-change diff would never surface it (it is baseline
+    # state, not a delta), so the loop could idle to WATCH_TIMEOUT instead of
+    # terminating clean after a confirmation pass. Emit CODEX_APPROVED once at
+    # baseline so the skill runs the same confirmation pass it would for a
+    # newly-present 👍 (terminal clean ONLY if nothing actionable remains — D14).
+    if [ "$cur_codex" = "true" ]; then
+      echo "CODEX_APPROVED"
+    fi
     have_baseline=1
   else
     # Codex 👍 newly present is its own marker (the skill runs a confirmation

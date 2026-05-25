@@ -95,11 +95,11 @@ feed it into a functional pipe (`tail -f | grep`, etc.).
 
 Each emitted line is a minimal marker. Act on it:
 
-- `CHANGED` → wake `hivemind:github-reviewer` fix mode (target = all unresolved)
-  to fetch, classify, and remediate the change. Handle its return per
-  Reviewer-return handling.
+- `CHANGED` → wake `hivemind:github-reviewer` fix mode (no `target` — full pass
+  over unresolved feedback) to fetch, classify, and remediate the change. Handle
+  its return per Reviewer-return handling.
 - `CODEX_APPROVED` → Codex 👍 newly present. Do NOT terminate immediately. Wake
-  the reviewer for a confirmation fetch+classify pass (target = all unresolved).
+  the reviewer for a confirmation fetch+classify pass (no `target` — full pass).
   Terminal `clean` ONLY if the reviewer reports nothing actionable remains; if
   actionable items remain, process them and KEEP WATCHING. Use only the latest
   poll's approval — a stale prior 👍 must never short-circuit later pushback.
@@ -146,7 +146,9 @@ pr: <pr>
 working_branch: <working_branch>
 base: <base>
 reviewer_filter: <reviewer_filter>   # pass the skill input through so the reviewer scopes feedback to the requested identities
-target: all unresolved   # omit a specific target = full pass over unresolved feedback
+# target is OMITTED: the reviewer's Fix Mode Input defines target as a comment
+# URL/ID and treats an ABSENT target as the full pass over unresolved feedback.
+# Do not pass a sentinel string — omitting target is the documented full-pass signal.
 ```
 
 The reviewer owns ALL GitHub interpretation and remediation: deep GraphQL fetch of
