@@ -8,7 +8,9 @@ github-reviewer watch mode must poll a PR and remediate review feedback until a 
 
 **Decision:** github-reviewer owns the Monitor and runs watch mode as a foreground-blocking watch — it does not emit its Output Contract until a terminal Monitor event (merged, closed, timeout, max cycles, deferred escalation, injection-suspect, or Codex approval). An empty/clean poll never ends the watch. The overlord invokes it as a normal foreground `Agent()` call and cannot regain control or claim active monitoring until it returns terminal; a returned watch run means monitoring has ended.
 
-**Status:** accepted — 2026-05-23
+**Status:** superseded by ADR-0011 — 2026-05-24
+
+> The foreground-blocking watch was right in INTENT — keep the agent in the loop until a terminal event — but mis-placed in a subagent, where Monitor does not survive the agent's return (the contradiction this ADR itself notes). ADR-0011 relocates the loop to a main-session `hivemind:github-review-loop` skill executed by the overlord, where Monitor actually works.
 
 ## Considered Options
 

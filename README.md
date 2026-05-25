@@ -82,7 +82,7 @@ Once configured, the overlord is the session default agent. All skills are avail
   /reload-plugins
   /codex:setup
   ```
-  When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `hivemind:adaptation-cycle`) and post-PR review automation via the `github-reviewer` agent (a self-owning agent that handles monitoring, feedback classification, fix delegation, and thread resolution). The framework works without it; if not installed, local review steps are skipped gracefully.
+  When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `hivemind:adaptation-cycle`) and post-PR review automation via the `hivemind:github-review-loop` skill (which watches the PR and dispatches the stateless fix-mode `github-reviewer` agent to handle feedback classification, fixes, and thread resolution). The framework works without it; if not installed, local review steps are skipped gracefully.
 
 - [`caveman`](https://github.com/caveman/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
   ```json
@@ -197,7 +197,7 @@ README.md
 | `hivemind:drone` | Implementation within explicitly assigned file scope. |
 | `hivemind:changeling` | Presentational UI/UX work within explicitly assigned file scope. |
 | `hivemind:local-reviewer` | Pre-PR iterative Codex review with self-owning fix delegation at sonnet tier. |
-| `hivemind:github-reviewer` | Post-PR review monitoring, feedback classification, fix delegation, push, and thread resolution. |
+| `hivemind:github-reviewer` | Stateless fix-mode worker: deep-fetches and classifies post-PR feedback, applies fixes, pushes, and resolves threads. The `hivemind:github-review-loop` skill does the monitoring. |
 
 ## Skills
 
@@ -209,6 +209,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:molt` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `hivemind:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `hivemind:adaptation-cycle` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `hivemind:local-reviewer` |
+| `hivemind:github-review-loop` | Watch a PR in the main session and dispatch the fix-mode `github-reviewer` per actionable event — owns the post-PR review loop |
 | `hivemind:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `hivemind:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
 | `hivemind:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.hivemind/` to `.gitignore` |
