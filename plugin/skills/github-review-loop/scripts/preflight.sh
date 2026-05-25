@@ -13,21 +13,25 @@
 # Emits labeled results on stdout for the skill to read directly. No /tmp. No
 # stop-file. On any failure it prints a PREFLIGHT_ERROR line and exits non-zero.
 #
-# Placeholders substituted by the skill before running:
-#   PR_REF          PR number or URL
-#   WORKING_BRANCH  expected working branch
-#   BASE_BRANCH     expected base branch (PR target)
+# Positional arguments supplied by the skill at invocation:
+#   $1  PR_REF          PR number or URL
+#   $2  WORKING_BRANCH  expected working branch
+#   $3  BASE_BRANCH     expected base branch (PR target)
 
 set -u
-
-PR_REF="PR_REF"
-WORKING_BRANCH="WORKING_BRANCH"
-BASE_BRANCH="BASE_BRANCH"
 
 fail() {
   echo "PREFLIGHT_ERROR=$1"
   exit 1
 }
+
+PR_REF="${1:-}"
+WORKING_BRANCH="${2:-}"
+BASE_BRANCH="${3:-}"
+
+[ -n "$PR_REF" ] || fail "missing required argument: PR_REF (\$1)"
+[ -n "$WORKING_BRANCH" ] || fail "missing required argument: WORKING_BRANCH (\$2)"
+[ -n "$BASE_BRANCH" ] || fail "missing required argument: BASE_BRANCH (\$3)"
 
 # Resolve PR number, state, and base via gh's own --jq (no standalone jq).
 pr_number=$(gh pr view "$PR_REF" --json number --jq '.number' 2>/dev/null) \
@@ -36,17 +40,20 @@ pr_state=$(gh pr view "$PR_REF" --json state --jq '.state' 2>/dev/null) \
   || fail "could not resolve PR state"
 pr_base=$(gh pr view "$PR_REF" --json baseRefName --jq '.baseRefName' 2>/dev/null) \
   || fail "could not resolve PR base"
-owner=$(gh pr view "$PR_REF" --json headRepositoryOwner --jq '.headRepositoryOwner.login' 2>/dev/null)
-repo=$(gh pr view "$PR_REF" --json headRepository --jq '.headRepository.name' 2>/dev/null)
 
-# Fall back to the base repository's owner/name when the head is the same repo
-# (the common case for non-fork PRs, where headRepositoryOwner may be empty).
-if [ -z "${owner:-}" ] || [ -z "${repo:-}" ]; then
-  repo_nwo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null) \
-    || fail "could not resolve owner/repo"
-  owner="${repo_nwo%%/*}"
-  repo="${repo_nwo#*/}"
-fi
+# The PR and its review threads live in the BASE repository regardless of the
+# head (fork or same-repo), so resolve owner/repo from the base repository
+# unconditionally. gh builds the PR `url` from the base repository where the PR
+# lives; parse owner/repo from that canonical path.
+pr_url=$(gh pr view "$PR_REF" --json url --jq '.url' 2>/dev/null) \
+  || fail "could not resolve base repo owner/name"
+[ -n "$pr_url" ] || fail "could not resolve base repo owner/name"
+url_path="${pr_url#https://github.com/}"
+owner="${url_path%%/*}"
+url_rest="${url_path#*/}"
+repo="${url_rest%%/*}"
+[ -n "$owner" ] && [ -n "$repo" ] && [ "$owner" != "$pr_url" ] \
+  || fail "could not resolve base repo owner/name"
 
 [ "$pr_state" = "OPEN" ] || fail "PR is not OPEN (state=$pr_state)"
 

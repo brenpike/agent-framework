@@ -14,8 +14,8 @@ allowed-tools:
   - Read
   - Monitor
   - Agent(hivemind:github-reviewer)
-  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/preflight.sh)
-  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/preflight.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh *)
 shell: bash
 ---
 
@@ -58,7 +58,8 @@ spawns the reviewer (only the top-level orchestrator can — ADR-0005).
 ### 1. Preflight
 
 Run `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/preflight.sh`,
-substituting `PR_REF`, `WORKING_BRANCH`, `BASE_BRANCH`. It resolves PR number,
+passing `pr`, `working_branch`, `base` as positional arguments, in that order.
+It resolves PR number,
 owner, repo, OPEN state, the current branch (must equal `working_branch`), base,
 and `SELF_LOGIN`, and emits labeled `KEY=VALUE` lines. If it exits non-zero (any
 `PREFLIGHT_ERROR=` line), stop and return a terminal report with
@@ -77,9 +78,15 @@ non-terminal (`clean`) cycle-0 return do you arm the Monitor.
 ### 3. Arm the Monitor
 
 Arm a Monitor in the main session on
-`${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh`,
-substituting `OWNER`, `REPO`, `PR_NUMBER`, `MAX_WATCH_DEFAULT` (= `max_watch_duration`),
-`POLL_INTERVAL_DEFAULT` (= `poll_interval`). The poll runs its loop in the
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh <OWNER> <REPO> <PR_NUMBER> <max_watch_duration> <poll_interval>
+```
+
+where `<OWNER>`, `<REPO>`, `<PR_NUMBER>` are the concrete values resolved from
+preflight output and `<max_watch_duration>`, `<poll_interval>` are the skill
+inputs, all passed as positional arguments in that order. The Monitor command
+STRING carries the resolved arguments inline. The poll runs its loop in the
 background and emits a line ONLY on a real delta or terminal state; idle polls are
 silent and cost zero model tokens. Read the poll's emitted lines directly — never
 feed it into a functional pipe (`tail -f | grep`, etc.).
@@ -230,7 +237,8 @@ the required follow-up under `Next action`.
 
 ## Bash and shell discipline
 
-The two scripts are predefined and exact — substitute placeholders only; do not
-reconstruct them. Follow Shell Output Discipline and Bash Command Discipline per
+The two scripts are predefined and exact — pass the documented positional
+arguments; do not otherwise modify or reconstruct the script bodies. Follow Shell
+Output Discipline and Bash Command Discipline per
 `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`. The poll and preflight use no
 `/tmp`, no stop-file, and no functional pipe feeding Monitor.

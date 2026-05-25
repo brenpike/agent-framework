@@ -9,8 +9,9 @@
 #
 # Contract:
 #   - Each iteration computes a CHEAP SCALAR snapshot covering all four event
-#     classes (no bodies): PR state; comment+review+unresolved-thread COUNTS;
-#     check ROLLUP status; Codex 👍 PRESENT bool.
+#     classes (no bodies): PR state; comment+review COUNTS plus reviewThreads
+#     totalCount; check ROLLUP status; Codex 👍 PRESENT bool (via paginated REST
+#     reactions).
 #   - It DIFFS the snapshot in bash against the previous iteration and emits a
 #     single minimal marker line ONLY on a real delta or a terminal state.
 #   - A no-change iteration emits NOTHING (silent) → Monitor feeds nothing back
@@ -27,16 +28,34 @@
 #   WATCH_TIMEOUT    max_watch_duration elapsed (terminal)
 #   POLL_ERROR       repeated query failure (terminal; skill returns blocked)
 #
-# Placeholders substituted by the skill before arming:
-#   OWNER, REPO, PR_NUMBER, MAX_WATCH_DEFAULT (seconds), POLL_INTERVAL_DEFAULT (seconds)
+# Positional arguments supplied by the skill when arming Monitor (all required;
+# the skill/overlord layer resolves defaults and passes concrete values):
+#   $1  OWNER                   base-repo owner
+#   $2  REPO                    base-repo name
+#   $3  PR_NUMBER               integer PR number
+#   $4  MAX_WATCH_SECONDS       integer seconds before WATCH_TIMEOUT
+#   $5  POLL_INTERVAL_SECONDS   integer seconds between polls
 
 set -u
 
-OWNER="OWNER"
-REPO="REPO"
-PR_NUMBER=PR_NUMBER
-MAX_WATCH_SECONDS=MAX_WATCH_DEFAULT      # substitute integer seconds (default: 3600)
-POLL_INTERVAL_SECONDS=POLL_INTERVAL_DEFAULT  # substitute integer seconds (default: 60)
+OWNER="${1:-}"
+REPO="${2:-}"
+PR_NUMBER="${3:-}"
+MAX_WATCH_SECONDS="${4:-}"
+POLL_INTERVAL_SECONDS="${5:-}"
+
+# Validate inputs before any arithmetic or gh binding. Empty OWNER/REPO or a
+# non-integer numeric arg would otherwise abort under set -u or corrupt the
+# GraphQL Int binding / the $(( )) deadline math.
+poll_fail() {
+  echo "POLL_ERROR"
+  exit 1
+}
+[ -n "$OWNER" ] || poll_fail
+[ -n "$REPO" ] || poll_fail
+case "$PR_NUMBER" in ''|*[!0-9]*) poll_fail ;; esac
+case "$MAX_WATCH_SECONDS" in ''|*[!0-9]*) poll_fail ;; esac
+case "$POLL_INTERVAL_SECONDS" in ''|*[!0-9]*) poll_fail ;; esac
 
 deadline=$(($(date +%s) + MAX_WATCH_SECONDS))
 fail_count=0
@@ -44,7 +63,7 @@ fail_count=0
 # Previous-snapshot scalars. Empty until the first successful poll establishes
 # the baseline; the baseline poll itself emits no CHANGED marker.
 prev_state=""
-prev_unresolved=""
+prev_threads=""
 prev_comments=""
 prev_reviews=""
 prev_rollup=""
@@ -52,7 +71,11 @@ prev_codex=""
 have_baseline=0
 
 # compute_snapshot: fills the global scalar variables from a single GraphQL
-# query plus a checks rollup read. Returns 0 on success, non-zero on failure.
+# query (state + comment/review/reviewThreads totalCount + checks rollup) plus a
+# paginated REST reactions read for the Codex 👍 bool. Returns 0 on success,
+# non-zero on failure of EITHER call. reviewThreads is tracked by totalCount: any
+# new/changed thread bumps the count → CHANGED fires → the reviewer does the real
+# unresolved-vs-resolved classification on wake (thin poll, no interpretation).
 # Writes diagnostic stderr to /dev/null (never /tmp).
 compute_snapshot() {
   local raw
@@ -63,9 +86,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       state
       comments { totalCount }
       reviews { totalCount }
-      reviewThreads(first: 100) {
-        nodes { isResolved }
-      }
+      reviewThreads { totalCount }
       commits(last: 1) {
         nodes {
           commit {
@@ -73,20 +94,30 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           }
         }
       }
-      reactions(content: THUMBS_UP, first: 100) {
-        nodes { user { login } }
-      }
     }
   }
 }' --jq '
     .data.repository.pullRequest as $pr |
     "STATE=" + $pr.state,
-    "UNRESOLVED=" + (([$pr.reviewThreads.nodes[] | select(.isResolved == false)] | length) | tostring),
+    "THREADS=" + ($pr.reviewThreads.totalCount | tostring),
     "COMMENTS=" + ($pr.comments.totalCount | tostring),
     "REVIEWS=" + ($pr.reviews.totalCount | tostring),
-    "ROLLUP=" + (($pr.commits.nodes[0].commit.statusCheckRollup.state) // "NONE"),
-    "CODEX=" + (([$pr.reactions.nodes[] | (.user.login // "") | sub("\\[bot\\]$"; "") | select(. == "chatgpt-codex-connector")] | length > 0) | tostring)
+    "ROLLUP=" + (($pr.commits.nodes[0].commit.statusCheckRollup.state) // "NONE")
   ' 2>/dev/null) || return 1
+
+  # Codex 👍 via the paginated REST reactions endpoint. The --jq filter emits the
+  # matching login ONCE per Codex +1 reaction and nothing otherwise; gh may apply
+  # --jq per page, so aggregate to a bool in bash (non-empty output = present).
+  # This avoids a 100-node GraphQL blind spot and the per-page slurp pitfall.
+  local codex_logins
+  codex_logins=$(gh api --paginate "repos/$OWNER/$REPO/issues/$PR_NUMBER/reactions" \
+    --jq '.[] | select(.content == "+1") | ((.user.login // "") | sub("\\[bot\\]$"; "")) | select(. == "chatgpt-codex-connector")' \
+    2>/dev/null) || return 1
+  if [ -n "$codex_logins" ]; then
+    cur_codex="true"
+  else
+    cur_codex="false"
+  fi
 
   # Parse the labeled scalar lines into globals. Read stdout directly — no pipe
   # into Monitor; this is internal parsing of a captured string.
@@ -94,11 +125,10 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   while IFS= read -r line; do
     case "$line" in
       STATE=*) cur_state="${line#STATE=}" ;;
-      UNRESOLVED=*) cur_unresolved="${line#UNRESOLVED=}" ;;
+      THREADS=*) cur_threads="${line#THREADS=}" ;;
       COMMENTS=*) cur_comments="${line#COMMENTS=}" ;;
       REVIEWS=*) cur_reviews="${line#REVIEWS=}" ;;
       ROLLUP=*) cur_rollup="${line#ROLLUP=}" ;;
-      CODEX=*) cur_codex="${line#CODEX=}" ;;
     esac
   done <<EOF
 $raw
@@ -115,7 +145,7 @@ while true; do
     exit 0
   fi
 
-  cur_state=""; cur_unresolved=""; cur_comments=""
+  cur_state=""; cur_threads=""; cur_comments=""
   cur_reviews=""; cur_rollup=""; cur_codex=""
 
   if ! compute_snapshot; then
@@ -148,7 +178,7 @@ while true; do
     if [ "$cur_codex" = "true" ] && [ "$prev_codex" != "true" ]; then
       echo "CODEX_APPROVED"
     elif [ "$cur_state" != "$prev_state" ] \
-      || [ "$cur_unresolved" != "$prev_unresolved" ] \
+      || [ "$cur_threads" != "$prev_threads" ] \
       || [ "$cur_comments" != "$prev_comments" ] \
       || [ "$cur_reviews" != "$prev_reviews" ] \
       || [ "$cur_rollup" != "$prev_rollup" ]; then
@@ -158,7 +188,7 @@ while true; do
   fi
 
   prev_state="$cur_state"
-  prev_unresolved="$cur_unresolved"
+  prev_threads="$cur_threads"
   prev_comments="$cur_comments"
   prev_reviews="$cur_reviews"
   prev_rollup="$cur_rollup"
