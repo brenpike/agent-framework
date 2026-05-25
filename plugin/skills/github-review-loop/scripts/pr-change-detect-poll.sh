@@ -152,7 +152,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
     "ROLLUP=" + (($rollup.state) // "NONE"),
     "CHECKS=" + (
       (($rollup.contexts.totalCount) // 0 | tostring) + ":" +
-      ([$rollup.contexts.nodes[]
+      ([(($rollup.contexts.nodes) // [])[]
         | if .__typename == "CheckRun"
           then (.name // "") + "|" + (.status // "") + "|" + (.conclusion // "")
           else (.context // "") + "|" + (.state // "")
