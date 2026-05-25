@@ -8,14 +8,14 @@ PR:
 
 Watch:
 - Mode: Monitor
-- Monitoring: active
+- Monitoring: stopped
 - Parser: gh --jq
 - Cycles: 2
 - Seen comments: 3
 - New actionable comments: 1
 
 Routed:
-- address-github-pr-feedback: 1
+- github-reviewer: 1
 
 Stopped because:
 - All actionable comments remediated

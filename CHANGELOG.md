@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-05-24
+
+### Added
+
+- **`github-review-loop` skill.** New main-session skill that owns the PR watch loop end-to-end. Executed by the overlord (required by ADR-0005 — only the top-level orchestrator can spawn agents), it arms a Monitor-based change-detect poll in the main session (the only context where Monitor re-triggers across turns), dispatches `hivemind:github-reviewer` in fix-mode per actionable event, and manages loop lifecycle (cycle counting, terminal conditions, escalation surfacing). A thin predefined poll script (`scripts/pr-change-detect-poll.sh`) snapshots four scalar signals — PR state, comment/review/thread counts, check-run rollup, and Codex-approval presence — and emits a line only on a real delta, so idle polls cost zero model tokens. Inherits the watch Output Contract verbatim (relocated from github-reviewer): `exit_reason: clean | pr-merged | pr-closed | max-cycles-reached | planner-escalation | blocked | injection-suspect | high-severity-rejection | user-input-required`, plus `cycles_completed / findings_resolved / findings_open`. Always performs a full fix pass over pre-existing feedback (D13) before entering the change-detect loop.
+- **`plugin/references/` directory.** New plugin-level reference location for documents consumed by both agents and skills. Replaces `plugin/skills/_shared/`. Contains `github-pr-review-graphql.md` (deep GitHub GraphQL fetch/mutation reference for github-reviewer) and `fix-ledger-schema.md` (local-reviewer fix-ledger schema).
+- **ADR-0011** (`docs/adr/0011-skill-owned-review-loop.md`): documents the decision to place the Monitor-based review loop in a main-session skill executed by the overlord, making github-reviewer a stateless fix-mode worker. Supersedes ADR-0009.
+
+### Changed
+
+- **`github-reviewer` is now a stateless fix-mode-only worker.** All watch-mode lifecycle logic (Monitor arming, poll loop, cycle management, stop-file handling) removed from the agent. The agent's sole responsibility is: receive a fix-mode dispatch, perform a full GraphQL fetch + classify + fix + push + reply + resolve pass, and return a structured fix Output Contract to the skill. The Monitor tool moved from `github-reviewer` to the `overlord` (the overlord executes the skill in its tool context and must hold the Monitor grant; net effect: Monitor MOVES github-reviewer → overlord, not deleted).
+- **`plugin/skills/_shared/` deleted; references relocated to `plugin/references/`.** `github-pr-review-graphql.md` and `fix-ledger-schema.md` moved to the new `plugin/references/` top-level directory. All cross-references updated to `${CLAUDE_PLUGIN_ROOT}/references/...` paths. `local-reviewer.md` and `github-reviewer.md` re-pointed accordingly.
+- **Bash Command Discipline `/tmp` and `|` carve-outs removed from `governance/definitions.md`.** Both `/tmp`-exception sentences and the functional-pipeline `|` exception removed. The reshaped thin poll reads command stdout directly; no `tail -f | grep` pipe feeding Monitor remains.
+- **ADR-0009 marked superseded by ADR-0011.** ADR-0004 and ADR-0001 amended to reflect the Monitor tool move and the new CI-verification path (the github-review-loop skill's next poll is the canonical CI re-run verification path).
+- **`CONTEXT.md` glossary updated.** "Watch Mode" retired as a github-reviewer concept; "GitHub Review Loop" added as the main-session skill; "Adaptation Cycle" / "review loop" (bare) clarified as the local pre-PR Codex cycle distinct from the GitHub Review Loop.
+
+### Removed
+
+- **`github-reviewer` WATCH MODE removed.** The watch-mode path (Monitor-in-subagent) was architecturally broken from inception: Monitor is a main-session cross-turn primitive; a subagent runs exactly one turn and returns, orphaning any armed Monitor. Forensic analysis of 16 github-reviewer invocations (11 watch, 5 fix) confirmed 0 of 11 watch runs ever blocked or ran a second poll — every watch run returned after cycle-0 while narrating "Monitor armed / I will not return." The `/tmp` stop-file machinery (`af_watch_stop`, `af_poll_err`) was entirely dead across all runs. Fix mode is and was the only working path.
+
+  **Migration:** requests to watch or monitor a PR now route to the `hivemind:github-review-loop` skill (invoked by the overlord) instead of github-reviewer watch mode. This is not a breaking change to working behavior — watch mode was broken-from-inception and never produced a successful watch run.
+
 ## [2.7.0] - 2026-05-24
 
 ### Added

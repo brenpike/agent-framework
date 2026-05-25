@@ -1,8 +1,8 @@
 {
   "workflow": "monitor-request",
-  "description": "User request with watch/monitor keywords routes to github-reviewer agent in watch mode",
+  "description": "User request with watch/monitor keywords routes to the github-review-loop skill, which arms the main-session Monitor on its thin change-detect poll",
   "steps": [
     { "state": "Intake", "source": { "file": "plugin/agents/overlord.md", "pattern": "`watch`, `monitor`, `wait`, `poll`, or `loop`" } },
-    { "state": "Monitor Watch", "source": { "file": "plugin/agents/github-reviewer.md", "pattern": "Start Monitor:" } }
+    { "state": "Monitor Arm", "source": { "file": "plugin/skills/github-review-loop/SKILL.md", "pattern": "skills/github-review-loop/scripts/pr-change-detect-poll.sh" } }
   ]
 }

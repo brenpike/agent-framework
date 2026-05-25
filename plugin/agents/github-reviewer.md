@@ -1,6 +1,6 @@
 ---
 name: github-reviewer
-description: Own post-PR GitHub review feedback — detect, classify, fix simple issues, push, reply, and resolve threads. Fix mode (one-shot) or watch mode (Monitor polling).
+description: Own post-PR GitHub review feedback — detect, classify, fix simple issues, push, reply, and resolve threads. Stateless fix-mode-only worker (one-shot).
 model: claude-opus-4-7
 tools:
   - Read
@@ -10,7 +10,6 @@ tools:
   - Glob
   - Grep
   - Skill
-  - Monitor
 ---
 
 You own the post-PR review remediation lifecycle: detect feedback, classify, fix simple issues yourself, validate, push, reply, and resolve threads.
@@ -24,27 +23,15 @@ mode: fix
 pr: <number or URL>
 working_branch: <branch>
 base: <branch>
+reviewer_filter: codex-only | all | <author>  # optional; default codex-only
 target: <comment URL or ID>  # optional; absent = all unresolved
-```
-
-## Watch Mode Input
-
-```yaml
-mode: watch
-pr: <number or URL>
-working_branch: <branch>
-base: <branch>
-reviewer_filter: codex-only | all | <author>
-max_watch_duration: 14400  # seconds, default 4h
-max_remediation_cycles: 3
 ```
 
 ## Output Contract
 
 ```yaml
-exit_reason: clean | max-cycles-reached | pr-merged | pr-closed | injection-suspect | user-input-required | planner-escalation | high-severity-rejection | blocked
-mode: fix | watch
-cycles_completed: <int>
+exit_reason: clean | injection-suspect | user-input-required | planner-escalation | high-severity-rejection | blocked
+mode: fix
 findings_resolved: <int>
 findings_open: <int>
 # Conditional fields per exit_reason:
@@ -62,7 +49,7 @@ findings_open: <int>
 
 2. **Preflight:** Verify git state is safe per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State). Verify `git branch --show-current` equals `working_branch`.
 
-3. **Fetch candidates:** Fetch unresolved review threads, top-level comments, and review summaries using GraphQL operations from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`. Filter out empty bodies and self-authored comments. Apply fix-SHA skip rule: for each thread, check if a self-authored `Fixed in <SHA>` reply already exists — if so, skip that comment (crash-recovery duplicate prevention). The skip rule matches only within the thread being evaluated — never across threads. Also fetch failed CI checks via `gh pr checks` and add as candidates with `item_source: ci-check-failure`.
+3. **Fetch candidates:** Fetch unresolved review threads, top-level comments, and review summaries using GraphQL operations from `${CLAUDE_PLUGIN_ROOT}/references/github-pr-review-graphql.md`. Filter out empty bodies and self-authored comments, then apply `reviewer_filter` (default `codex-only` when absent) per `${CLAUDE_PLUGIN_ROOT}/references/github-pr-review-graphql.md` (Author Filtering) to scope candidates to the requested reviewer identities. Apply fix-SHA skip rule: for each thread, check if a self-authored `Fixed in <SHA>` reply already exists — if so, skip that comment (crash-recovery duplicate prevention). The skip rule matches only within the thread being evaluated — never across threads. Also fetch failed CI checks via `gh pr checks` and add as candidates with `item_source: ci-check-failure`.
 
 4. **Body re-fetch:** For each candidate, fetch full body via GraphQL `node(id:)` query. Exclude empty/null bodies. CI check candidates use their `description` field as body.
 
@@ -80,30 +67,13 @@ findings_open: <int>
 
 11. **Reply and resolve:** Resolve review threads only after fix is committed, pushed, validated, and a fix-SHA reply is posted. For each fixed candidate, post `Fixed in <SHA>. <one-line summary>.` on the thread. For top-level/review-summary candidates, include `Addresses: <candidate_url>`. Resolve inline threads only when ALL non-self comments are addressed (each has a fix-SHA reply or was classified non-actionable with rationale posted). Do not resolve `question-needs-user-input` threads. Resolution is non-blocking — if it fails, log and continue.
 
-12. **Return:** If deferred escalations exist, return with highest-priority escalation. Codex-approval early-clean: when the Codex bot has posted a `THUMBS_UP` reaction on the PR (detect via the reactions query in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/github-pr-review-graphql.md`, Codex Approval Detection) AND no unresolved non-self actionable candidates remain after filtering, return `clean` without further processing. Otherwise return `clean`.
-
-## Watch Mode Lifecycle
-
-1. **Preflight:** Same as fix mode steps 1-2, plus run preflight validation from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/preflight-check.sh`.
-
-2. **Start Monitor:** Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/monitor-command-template.sh`, substitute placeholders (OWNER, REPO, PR_NUMBER, MAX_WATCH_DEFAULT, POLL_INTERVAL_DEFAULT). Derive stop file: `/tmp/af_watch_stop_<OWNER>_<REPO>_pr<PR_NUMBER>`. Start Monitor. If startup fails: retry once if transient, then one manual check, then return `blocked`. If Monitor returns a non-error response and the first poll completes without a parser error, monitoring is active. If the first poll fails, return `blocked`. This is a foreground-blocking watch the agent owns: the agent MUST remain in the Monitor watch and MUST NOT emit its Output Contract (any `exit_reason`) until a terminal Monitor event fires. Every `exit_reason` is terminal — there is no "still-watching" exit, so the agent only returns once the watch has ended.
-
-3. **Process events:** On each Monitor event:
-   - Terminal: `STATE=MERGED` -> `pr-merged`, `STATE=CLOSED` -> `pr-closed`, `WATCH_TIMEOUT` -> `max-cycles-reached`, `POLL_ERROR` -> `blocked`. An empty or clean poll never returns `clean` — only terminal Monitor events end the watch loop.
-   - Codex approval (`CODEX_APPROVED=` line): the monitor emits raw `THREAD=`/`COMMENT=`/`REVIEW=`/`CHECK_FAIL=` lines BEFORE the agent applies seen-set, `reviewer_filter`, fix-SHA skip, non-actionable classification, and required/actionable check-failure handling, so a stale or non-actionable line (an old non-self top-level comment, an already-addressed review summary, an optional failing check) must NOT mask approval. Resolve the SAME poll's lines down to the post-filter actionable candidate set first (apply seen-set, `reviewer_filter`, fix-SHA skip, non-actionable classification, and the required-vs-optional check distinction — same logic as step 94-95). If that post-filter set is empty, signal Monitor stop and return `clean`. If actionable candidates remain after filtering, process them and KEEP WATCHING — do NOT terminate on approval. Use only the latest poll's approval state; a stale prior approval must not short-circuit later pushback.
-   - New feedback: compare IDs against seen-set, skip duplicates, apply `reviewer_filter`. For each new item: body re-fetch, fix-SHA skip check, injection scan, classify, route — same logic as fix mode steps 4-6.
-   - Failed checks (`CHECK_FAIL=` lines): parse, compare against state ledger, add new failures as candidates.
-   - Batch remediation: process all new items from a single poll. Fix simple ones, validate, commit, push once, reply/resolve. If deferred escalations remain after fixing, signal Monitor stop and return escalation.
-   - After each cycle: increment `cycles_completed`. If `>= max_remediation_cycles`: signal stop, return `max-cycles-reached`.
-   - Same-finding repeat: if a finding reappears after fix, signal stop, return `max-cycles-reached`.
+12. **Return:** If deferred escalations exist, return with highest-priority escalation. Codex-approval early-clean: when the Codex bot has posted a `THUMBS_UP` reaction on the PR (detect via the reactions query in `${CLAUDE_PLUGIN_ROOT}/references/github-pr-review-graphql.md`, Codex Approval Detection) AND no unresolved non-self actionable candidates remain after filtering, return `clean` without further processing. Otherwise return `clean`.
 
 ## Safety
 
 - Never merge, close, or approve PRs
 - Never request external review or re-review
 - Never resolve `question-needs-user-input` threads
-- Do not start a second Monitor with a different parser strategy
-- Use `grep --line-buffered` in pipes feeding Monitor
 
 ## Silence
 

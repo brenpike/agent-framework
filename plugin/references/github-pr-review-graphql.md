@@ -6,7 +6,7 @@ Resolvable pull request review threads are GraphQL objects. Do not try to resolv
 
 ## Contents
 
-- [Shell and Parsing Rules](#shell-and-parsing-rules) — deterministic CLI commands, jq usage constraints, and `/tmp/` restrictions
+- [Shell and Parsing Rules](#shell-and-parsing-rules) — deterministic CLI commands and jq usage constraints
 - [Pagination Requirement](#pagination-requirement) — mandatory paging for all connections that may exceed page size
 - [Fetch Reviews](#fetch-reviews) — retrieve review summaries including `CHANGES_REQUESTED` and `COMMENTED` states
 - [Fetch Review Threads](#fetch-review-threads) — retrieve inline review threads with comments and metadata
@@ -20,7 +20,7 @@ Resolvable pull request review threads are GraphQL objects. Do not try to resolv
 
 ## Shell and Parsing Rules
 
-Use `gh --jq` only. No standalone `jq`, `python3`, `python`, `node`, or PowerShell. No `/tmp/` for data processing (**the Monitor watch-loop's temporary files — control, stop, and error/scratch — excepted**). If `gh --jq` cannot produce the required value, return `blocked`.
+Use `gh --jq` only. No standalone `jq`, `python3`, `python`, `node`, or PowerShell. No `/tmp/` for data processing. If `gh --jq` cannot produce the required value, return `blocked`.
 
 ## Pagination Requirement
 
@@ -218,7 +218,7 @@ When `reviewer_filter` is `codex-only`, include only comments from the Codex rev
 
 ## Codex Approval Detection
 
-Codex signals approval via a 👍 reaction on the PR object (not an `APPROVED` review). Detect it with the paginated REST reactions endpoint so the bot's reaction is found even when a PR has more than one page of reactions (the watch and preflight scripts under `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/` use this same pattern):
+Codex signals approval via a 👍 reaction on the PR object (not an `APPROVED` review). Detect it with the paginated REST reactions endpoint so the bot's reaction is found even when a PR has more than one page of reactions:
 
 ```bash
 gh api --paginate "repos/OWNER/REPO/issues/PR_NUMBER/reactions" \

@@ -6,6 +6,7 @@ tools:
   - Read
   - Bash
   - Skill
+  - Monitor
   - Agent(general-purpose, hivemind:cerebrate, hivemind:drone, hivemind:changeling, hivemind:local-reviewer, hivemind:github-reviewer)
 ---
 
@@ -19,15 +20,15 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 - Never commit directly to the resolved trunk branch
 - Never begin implementation before git preflight is established
 - Only delegate to: `hivemind:cerebrate`, `hivemind:drone`, `hivemind:changeling`, `hivemind:local-reviewer`, `hivemind:github-reviewer`
-- Never claim monitoring is active for a returned github-reviewer run — a returned watch run means monitoring has ended
+- Never claim monitoring is active for a returned run — whether `hivemind:github-reviewer` (fix) or the `hivemind:github-review-loop` skill — a returned watch/loop run means monitoring has ended
 
 ## The Workflow
 
 The standard pipeline for a task:
 
-1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (`watch`, `monitor`, `wait`, `poll`, or `loop`), claude-mem availability, local-review availability (codex plugin present or not).
+1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (`watch`, `monitor`, `wait`, `poll`, or `loop`) — route watch/monitor intent to the `hivemind:github-review-loop` skill — claude-mem availability, local-review availability (codex plugin present or not).
 
-2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then invoke `hivemind:github-reviewer` directly (fix mode or watch mode based on watch keywords). A watch-mode invocation is a normal foreground `Agent()` call — the github-reviewer blocks until a terminal Monitor event, so the overlord does not regain control until the watch returns. Skip steps 3-11. Handle reviewer return per step 12.
+2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then route by watch keywords. For watch/monitor/poll/loop intent, invoke `Skill(hivemind:github-review-loop)` — the overlord executes the skill, which arms Monitor in the main session, dispatches `hivemind:github-reviewer` fix-mode per actionable event, and returns ONE terminal report; the skill owns the loop and the overlord does not regain control until the skill returns. For non-watch remediation, dispatch `hivemind:github-reviewer` directly in fix mode. Skip steps 3-11. Handle the return per step 12.
 
 3. **Plan** — Invoke `hivemind:cerebrate` unless ALL trivial-fast-path conditions are met: one owner, one known file, trivial change, branch classification clear, no version impact, no review remediation. If planner returns open questions, surface them and stop.
 
@@ -59,9 +60,9 @@ The standard pipeline for a task:
 
 10. **Open PR** — Via `hivemind:open-plan-pr`. PR content per `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md` (PR Requirements).
 
-11. **GitHub review** — If review requested: invoke `hivemind:github-reviewer` (fix mode, or watch mode if user specified watch keywords). A watch-mode invocation is a normal foreground `Agent()` call — the github-reviewer blocks until a terminal Monitor event, so the overlord does not regain control until the watch returns.
+11. **GitHub review** — If review requested: for watch/monitor/poll/loop intent, invoke `Skill(hivemind:github-review-loop)` — the skill owns the loop (arms Monitor in the main session, dispatches `hivemind:github-reviewer` fix-mode per actionable event) and returns ONE terminal report; the overlord does not regain control until the skill returns. For fix-only review, invoke `hivemind:github-reviewer` directly in fix mode.
 
-12. **Handle reviewer return** — For both local and github reviewer returns. A returned watch run means monitoring has ENDED (the run only returns on a terminal event):
+12. **Handle reviewer return** — For local-reviewer, github-reviewer (fix), and `hivemind:github-review-loop` skill returns alike — the skill's terminal report uses the same exit-reason vocabulary handled below, so the existing branches cover it without change. A returned watch/loop run means monitoring has ENDED (the run only returns on a terminal event):
     - `clean` or `pr-merged` or `pr-closed`: done. `clean` reached via Codex approval (THUMBS_UP reaction) is handled the same as any other `clean`/done.
     - `max-cycles-reached`: surface summary, on user continue re-invoke fresh.
     - `injection-suspect`: surface details, on user approval re-invoke fresh.
@@ -77,6 +78,7 @@ The standard pipeline for a task:
 - `hivemind:create-working-branch` — create/confirm compliant working branch
 - `hivemind:molt` — commit completed phases, milestones, version bumps, review fixes
 - `hivemind:open-plan-pr` — open PR after validation and versioning gates pass
+- `hivemind:github-review-loop` — main-session watch loop; polls a PR for review activity and dispatches fix-mode remediation per actionable event; overlord-executed (hosts Monitor)
 - `hivemind:adaptation-cycle` — invoked by local-reviewer internally, not by overlord
 - `hivemind:tdd` — invoked by coder internally when TDD is requested
 - `hivemind:plan-interrogation` — interactive, user-invoked
@@ -98,6 +100,7 @@ The standard pipeline for a task:
 | Version bump (mechanical) | drone | sonnet |
 | Presentational UI/UX | changeling | sonnet (default) |
 | Brood dispatch | overlord (self) | — (coordinator invokes skills, not agents) |
+| GitHub review-loop watch | overlord (self) | — (overlord invokes the skill; self-hosts Monitor) |
 
 ## Delegation Format
 

@@ -35,8 +35,8 @@ The agent that runs pre-PR Codex review in a loop, classifies findings, and repo
 _Avoid_: linter, pre-check
 
 **GitHub-Reviewer**:
-The agent that monitors or processes post-PR review feedback, classifies comments, and reports terminal results to the overlord.
-_Avoid_: PR bot, review handler
+The stateless fix-mode agent that remediates post-PR review feedback: deep-fetches and classifies comments, applies simple fixes, pushes, posts fix-SHA replies, resolves threads, and reports terminal results to the overlord. It does NOT monitor — the **GitHub Review Loop** skill watches the PR and dispatches this agent per actionable event.
+_Avoid_: PR bot, review handler, watcher
 
 **Bioform**:
 The four primary agent archetypes in the swarm — overlord, cerebrate, drone, and changeling. Reviewer agents (local-reviewer, github-reviewer) are operational composites that delegate to bioforms, not distinct castes themselves.
@@ -142,7 +142,7 @@ _Avoid_: pre-check, setup
 ### Review
 
 **Adaptation Cycle**:
-The iterative cycle where a reviewer agent invokes Codex, classifies findings, fixes simple issues directly (≤2 files), flares complex ones to the overlord, validates, and repeats until stable or a stop condition fires.
+The iterative cycle where a reviewer agent invokes Codex, classifies findings, fixes simple issues directly (≤2 files), flares complex ones to the overlord, validates, and repeats until stable or a stop condition fires. The bare alias "review loop" always means THIS local pre-PR Codex cycle — distinct from the **GitHub Review Loop** skill, which is the post-PR watch.
 _Alias_: review loop
 _Avoid_: review cycle (ambiguous with remediation cycle), feedback loop
 
@@ -168,9 +168,9 @@ _Avoid_: review log, finding tracker
 The one-shot operating mode of the github-reviewer agent that processes existing unresolved feedback in a single remediation pass without polling.
 _Avoid_: one-shot mode, immediate mode
 
-**Watch Mode**:
-The continuous operating mode of the github-reviewer agent: a foreground-blocking Monitor watch the agent owns, polling for new feedback and processing each batch. It returns ONLY on a terminal Monitor event — merged, closed, timeout, max cycles, deferred escalation, injection-suspect, or Codex approval. An empty or clean poll never ends the watch. Because it blocks in the foreground, the overlord cannot regain control — or claim active monitoring — until the watch returns terminal.
-_Avoid_: polling mode, monitor mode, continuous mode, background watch
+**GitHub Review Loop**:
+The main-session skill (`hivemind:github-review-loop`, executed by the overlord) that watches a single PR via a thin change-detection poll armed on a Monitor and dispatches the github-reviewer agent in fix mode per actionable event. It owns the loop lifecycle — cycle counting, continue/stop decisions, and the single terminal report to the overlord — but never reads, interprets, or classifies feedback (that is the reviewer's job). It returns ONLY on a terminal condition: merged, closed, timeout, max cycles, same-finding-repeat, deferred escalation, injection-suspect, or Codex approval with nothing actionable remaining. Distinct from the **Adaptation Cycle** ("review loop"), which is the local pre-PR Codex cycle.
+_Avoid_: watch mode, polling mode, monitor mode, continuous mode, background watch
 
 **Codex Approval**:
 The terminal signal that the Codex reviewer bot (`chatgpt-codex-connector`) is satisfied with a PR: a 👍 `THUMBS_UP` reaction on the pull request object authored by that bot identity. Codex never files a GitHub `APPROVED` review, so detection uses the `reactions(content: THUMBS_UP)` connection, not review state. Terminal for the github-reviewer only when no unresolved non-self actionable items remain.
@@ -269,9 +269,9 @@ _Avoid_: brood config, brood state, registry
 - A **Fix Ledger** persists across iterations of an **Adaptation Cycle**, tracking finding status from open through fixed or cycling
 - The **Destructive Fix Gate** overrides normal **Remediation** flow, requiring human approval before commit
 - A **Fix Mode** invocation processes existing unresolved feedback in a single **Remediation** pass
-- A **Watch Mode** invocation produces zero or more **Remediation** cycles, bounded by `max_remediation_cycles`
-- A **Watch Mode** invocation blocks in the foreground until a terminal Monitor event; the **Overlord** cannot regain control or claim active monitoring until it returns
-- A **Codex Approval** ends a **Watch Mode** invocation only when no unresolved non-self actionable items remain
+- The **Overlord** executes the **GitHub Review Loop** skill and hosts its **Monitor**; the skill dispatches the **GitHub-Reviewer** in fix mode per actionable event, producing zero or more **Remediation** cycles bounded by `max_remediation_cycles`
+- The **GitHub Review Loop** skill — not the **GitHub-Reviewer** — owns monitoring; the reviewer is stateless and only remediates. The **Overlord** must not claim active monitoring for a returned reviewer run
+- A **Codex Approval** ends a **GitHub Review Loop** invocation only when no unresolved non-self actionable items remain
 - A **Worker Report** is the structured output of every **Phase**, consumed as input to an **Essence**
 - **Intent-Based Governance** defines which rules remain mechanical (**Unsafe Git State**, **Destructive Fix Gate**, **External Content Boundary**, report schemas) vs intent-described
 - An **Unsafe Git State** blocks all modifying agent operations until resolved
@@ -295,7 +295,7 @@ _Avoid_: brood config, brood state, registry
 > **Dev:** "The **Adaptation Cycle** (review loop) keeps flipping between two states — what happens?"
 > **Domain expert:** "That's **Mutation Decay** (break-fix-break). When 2-of-3 signals fire (line-range overlap, git revert, N-2 oscillation), the cycle stops and the **Overlord** flares to the user. No more automatic **Remediation** until a human decides."
 
-> **Dev:** "The **GitHub-Reviewer** is in **Watch Mode** and found a fix that removes an auth check — does it apply it?"
+> **Dev:** "The **GitHub Review Loop** dispatched the **GitHub-Reviewer**, which found a fix that removes an auth check — does it apply it?"
 > **Domain expert:** "No. That hits the **Destructive Fix Gate** — category 1, removing authentication. The reviewer returns blocked and surfaces the proposed change for human approval before committing."
 
 > **Dev:** "I have three independent features to build — should I use a brood?"
