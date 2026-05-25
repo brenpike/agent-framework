@@ -1,0 +1,23 @@
+{
+  "name": "hivemind CI-parity toolchain",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-20.04",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "upgradePackages": true
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "timonwong.shellcheck",
+        "redhat.vscode-yaml"
+      ]
+    }
+  }
+}

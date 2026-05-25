@@ -90,6 +90,32 @@ Once configured, the overlord is the session default agent. All skills are avail
   "pluginConfigs": { "caveman@caveman": { "options": { "defaultLevel": "ultra" } } }
   ```
 
+## Dev container
+
+This repo ships a `.devcontainer/` that provisions a **CI-parity toolchain** so contributors can run the full validation suite locally — in GitHub Codespaces or in VS Code Dev Containers (Dev Containers: Reopen in Container) — and dogfood the plugin. The base image is Ubuntu (Debian/Ubuntu family is mandatory: the policy linter uses GNU `grep -P` and `perl`, which Alpine/BusyBox lack).
+
+**Auto-provisioned** by `.devcontainer/postCreate.sh`:
+
+- Validation toolchain — `jq`, `gh`, Node 20, `python3`, `perl`, GNU `grep`, `git` (verified at startup; the script hard-fails if any are missing).
+- CLI tools via npm global — Claude Code CLI (`@anthropic-ai/claude-code`), Codex CLI (`@openai/codex`), `claude-mem`.
+- `uv` / `uvx` (Astral) via the official install script — claude-mem's optional vector-search backend.
+- `tmux` via apt — terminal multiplexer used by the `hivemind:spawn-brood` / `hivemind:brood-status` skills.
+- `bun` via the official installer (`bun.sh/install`) — fast JS runtime required by `claude-mem`.
+- A **CI-parity smoke test** that runs the exact three gates from `.github/workflows/policy-check.yml`: the `python3` JSON-manifest parse, `tools/policy_check.sh --strict`, and `tools/validate_reports.sh --batch tests/reports/`. A green run means the branch will pass CI (it also trips on CRLF line endings, which have corrupted these linters before).
+
+**Stays manual** — installing the Claude Code *plugins* requires an authenticated `claude` CLI, which a fresh container does not have. `postCreate.sh` registers the marketplaces (no auth needed) and prints the exact install commands to run once you have signed in:
+
+```text
+claude plugin install hivemind@brenpike
+claude plugin install codex@openai-codex
+claude plugin install claude-mem@claude-mem
+/codex:setup
+```
+
+The optional npm installs are wrapped so a single failure (for example in an offline/locked-down Codespace) prints a warning but does not abort — only the CI-parity gates are must-pass. The script is idempotent: re-running `bash .devcontainer/postCreate.sh` is safe.
+
+The Codex cache permission grant is seeded into the **gitignored** `.claude/settings.local.json` (never the tracked `.claude/settings.json`), using the container's own `$HOME`, so the local Codex review flow runs prompt-free. The grant is merged without clobbering existing entries.
+
 ## After cloning a project that uses this plugin
 
 ```text
