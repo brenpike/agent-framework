@@ -31,9 +31,7 @@
       "Bash(gh pr list *)",
       "Bash(gh pr checkout *)",
       "Bash(gh repo view *)",
-      "Bash(grep -n *)",
-      "Bash(grep -rn *)",
-      "Bash(grep -rE *)",
+      "Bash(grep *)",
       "Bash(cat > .hivemind/*)",
       "Write(.hivemind/review-loop/*)",
       "Bash(mkdir -p .hivemind/review-loop)",
@@ -49,10 +47,14 @@
       "Bash(cat *)",
       "Bash(sort *)",
       "Bash(git ls-files *)",
+      "Bash(git ls-tree *)",
       "Bash(git tag)",
       "Bash(git tag -l*)",
       "Bash(git tag --list*)",
-      "Bash(git grep *)"
+      "Bash(git grep *)",
+      "Bash(bash tools/policy_check.sh*)",
+      "Bash(bash tools/validate_reports.sh*)",
+      "Bash(bash -n *)"
     ]
   },
   "hooks": {

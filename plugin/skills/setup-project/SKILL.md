@@ -78,6 +78,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
      Bash(echo *)
      Bash(printf *)
      Bash(cat *)
+     Bash(grep *)
      Bash(jq *)
      Bash(head *)
      Bash(tail *)
@@ -86,6 +87,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
      Bash(sort *)
      Bash(uniq *)
      Bash(git ls-files *)
+     Bash(git ls-tree *)
      Bash(git grep *)
      Bash(git tag)
      Bash(git tag -l*)
@@ -94,7 +96,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
      Bash(git stash show *)
      Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
      ```
-     The template grants read/output helper Bash commands (`echo`, `printf`, `cat`, `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`), scoped git read subcommands (`git tag` is list-only via the three `git tag` / `git tag -l*` / `git tag --list*` forms — never broad `git tag *`, which would permit creating tags), and the codex-companion node entry. These read/output helpers are safe to auto-approve because Claude Code re-prompts (ask/deny) on any command that writes or redirects to a path OUTSIDE the session working directory (only `> /dev/null` is exempt) and splits compound commands (`&&`/`||`/`;`/`|`/newline), requiring each subcommand to match a rule independently. Granting `Bash(echo *)`/`Bash(printf *)`/`Bash(cat *)`/`Bash(sort *)` therefore does NOT create an arbitrary-file-write vector — `echo evil > /etc/passwd`, `printf x > ~/.bashrc`, `sort -o /etc/x`, and `cmd && rm -rf y` all re-prompt. The only silent write any granted helper permits is into the working directory, which is a uniform, bounded surface identical for `jq`/`head`/`tail`/`ls`/`wc`/`uniq` as for `echo`/`printf`/`cat`/`sort`. Pipeline skills (`molt`, `create-working-branch`, `open-plan-pr`, `adaptation-cycle`) also grant `Bash(printf *)` via their own `allowed-tools` for routing-data output — safe for the same reason. The codex-companion rule uses the literal placeholder path `/path/to/.claude/plugins/cache/openai-codex/codex/*`; the consumer must replace `/path/to/` with their own home directory path after setup. Do NOT seed `acceptEdits` mode, `Edit`, or `Write` into consumer settings.
+     The template grants read/output helper Bash commands (`echo`, `printf`, `cat`, `grep`, `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`), scoped git read subcommands (`git ls-files *`, `git ls-tree *` — both read-only object/working-tree listers; `git tag` is list-only via the three `git tag` / `git tag -l*` / `git tag --list*` forms — never broad `git tag *`, which would permit creating tags), and the codex-companion node entry. These read/output helpers are safe to auto-approve because Claude Code re-prompts (ask/deny) on any command that writes or redirects to a path OUTSIDE the session working directory (only `> /dev/null` is exempt) and splits compound commands (`&&`/`||`/`;`/`|`/newline), requiring each subcommand to match a rule independently. Granting `Bash(echo *)`/`Bash(printf *)`/`Bash(cat *)`/`Bash(sort *)` therefore does NOT create an arbitrary-file-write vector — `echo evil > /etc/passwd`, `printf x > ~/.bashrc`, `sort -o /etc/x`, and `cmd && rm -rf y` all re-prompt. The only silent write any granted helper permits is into the working directory, which is a uniform, bounded surface identical for `jq`/`head`/`tail`/`ls`/`wc`/`uniq`/`grep` as for `echo`/`printf`/`cat`/`sort`. Pipeline skills (`molt`, `create-working-branch`, `open-plan-pr`, `adaptation-cycle`) also grant `Bash(printf *)` via their own `allowed-tools` for routing-data output — safe for the same reason. The codex-companion rule uses the literal placeholder path `/path/to/.claude/plugins/cache/openai-codex/codex/*`; the consumer must replace `/path/to/` with their own home directory path after setup. Do NOT seed `acceptEdits` mode, `Edit`, or `Write` into consumer settings.
 6. If `dry_run` = `yes`:
    a. Determine the `.gitignore` action that would be taken: check whether `<project root>/.gitignore` exists and whether it contains `.hivemind/` as a standalone trimmed line (the same check used in step 8b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
    b. If `caveman` = `yes`: determine the `.envrc` action that would be taken: check whether `<project root>/.envrc` exists and whether it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`) (the same check used in step 9b); set the action to `would-create`, `would-append`, or `already-present` accordingly.
