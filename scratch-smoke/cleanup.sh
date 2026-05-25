@@ -4,9 +4,11 @@
 
 remove_temp() {
   dir=$1
-  # planted defect: unquoted $dir + no empty/unset guard.
-  # If $dir is empty/unset this becomes `rm -rf /*`; spaces word-split.
-  rm -rf $dir/*
+  if [ -z "$dir" ]; then
+    echo "remove_temp: refusing to run with empty directory argument" >&2
+    return 1
+  fi
+  rm -rf -- "$dir"/*
 }
 
 remove_temp "$1"
