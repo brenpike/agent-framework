@@ -39,6 +39,20 @@ try_step() {
     fi
 }
 
+# ── (0) Ensure hard-required apt tools ──────────────────────────────────────
+# jq and perl are HARD-REQUIRED: gate (1) below hard-fails if either is absent,
+# and seed_codex_grant also calls jq directly.  Install them before the gate so
+# a fresh container never aborts on a missing-tool that apt can supply.
+#
+# Idempotency: skip the apt round-trip when both tools are already on PATH.
+# Failure handling: if apt fails the script aborts here (set -euo pipefail);
+# gate (1) would catch a truly-missing tool anyway, but failing early is
+# clearer.  Do NOT suppress apt errors — a silent failure masks the root cause.
+if ! command -v jq > /dev/null 2>&1 || ! command -v perl > /dev/null 2>&1; then
+    sudo apt-get update -qq
+    sudo apt-get install -y jq perl
+fi
+
 # ── (1) Verify validation toolchain ─────────────────────────────────────────
 
 echo ''

@@ -96,7 +96,7 @@ This repo ships a `.devcontainer/` that provisions a **CI-parity toolchain** so 
 
 **Auto-provisioned** by `.devcontainer/postCreate.sh`:
 
-- Validation toolchain — `jq`, `gh`, Node 20, `python3`, `perl`, GNU `grep`, `git` (verified at startup; the script hard-fails if any are missing).
+- Validation toolchain — `jq` and `perl` are explicitly installed via apt before any gate runs (idempotent: skipped if already present); `gh`, Node 20, `python3`, GNU `grep`, and `git` are verified at startup and the script hard-fails if any are missing.
 - CLI tools via npm global — Claude Code CLI (`@anthropic-ai/claude-code`), Codex CLI (`@openai/codex`), `claude-mem`.
 - `uv` / `uvx` (Astral) via the official install script — claude-mem's optional vector-search backend.
 - `tmux` via apt — terminal multiplexer used by the `hivemind:spawn-brood` / `hivemind:brood-status` skills.
