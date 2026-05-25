@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-05-25
+
+### Added
+
+- `Bash(grep *)` added to the `setup-project` `seed_allowlist` template (read-only; eliminates grep flag-variant permission prompts).
+- `Bash(git ls-tree *)` added to the `setup-project` `seed_allowlist` template (read-only git object lister).
+
 ## [2.8.1] - 2026-05-25
 
 ### Changed
