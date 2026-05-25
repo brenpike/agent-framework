@@ -2,10 +2,13 @@
 #
 # Dev-container provisioning for the hivemind plugin source repo.
 #
-# Goal: a CI-parity toolchain. The three smoke-test gates at the end mirror
-# .github/workflows/policy-check.yml exactly, so a green run here means the
-# branch will pass CI (and acts as a CRLF tripwire — the linters break on
-# CRLF line endings).
+# Goal: a CI-parity toolchain. The three smoke-test gates at the end run the
+# same three checks as .github/workflows/policy-check.yml, so a green run here
+# is a strong best-effort signal that the branch will pass CI. It is not an
+# absolute guarantee: CI runs on `ubuntu-latest` while this container pins
+# `ubuntu-20.04`, so coreutils/grep/perl/python versions can differ between the
+# two. The gates also act as a CRLF tripwire — the linters break on CRLF line
+# endings.
 #
 # Structure:
 #   (1) verify the validation toolchain is present (hard fail if missing)

@@ -101,7 +101,7 @@ This repo ships a `.devcontainer/` that provisions a **CI-parity toolchain** so 
 - `uv` / `uvx` (Astral) via the official install script — claude-mem's optional vector-search backend.
 - `tmux` via apt — terminal multiplexer used by the `hivemind:spawn-brood` / `hivemind:brood-status` skills.
 - `bun` via the official installer (`bun.sh/install`) — fast JS runtime required by `claude-mem`.
-- A **CI-parity smoke test** that runs the exact three gates from `.github/workflows/policy-check.yml`: the `python3` JSON-manifest parse, `tools/policy_check.sh --strict`, and `tools/validate_reports.sh --batch tests/reports/`. A green run means the branch will pass CI (it also trips on CRLF line endings, which have corrupted these linters before).
+- A **CI-parity smoke test** that runs the same three gates as `.github/workflows/policy-check.yml`: the `python3` JSON-manifest parse, `tools/policy_check.sh --strict`, and `tools/validate_reports.sh --batch tests/reports/`. A green run is a strong best-effort signal that the branch will pass CI — not an absolute guarantee, since CI runs on `ubuntu-latest` while this container pins `ubuntu-20.04` (coreutils/grep/perl/python versions can differ). It also trips on CRLF line endings, which have corrupted these linters before.
 
 **Stays manual** — installing the Claude Code *plugins* requires an authenticated `claude` CLI, which a fresh container does not have. `postCreate.sh` registers the marketplaces (no auth needed) and prints the exact install commands to run once you have signed in:
 
