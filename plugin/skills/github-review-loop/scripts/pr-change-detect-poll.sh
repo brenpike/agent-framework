@@ -10,8 +10,9 @@
 # Contract:
 #   - Each iteration computes a CHEAP SCALAR snapshot covering all four event
 #     classes (no bodies): PR state; comment+review COUNTS plus reviewThreads
-#     totalCount; check ROLLUP status; Codex 👍 PRESENT bool (via paginated REST
-#     reactions).
+#     totalCount (uncapped) AND a paginated unresolved-thread count (isResolved
+#     booleans only, no bodies); check ROLLUP status; Codex 👍 PRESENT bool (via
+#     paginated REST reactions).
 #   - It DIFFS the snapshot in bash against the previous iteration and emits a
 #     single minimal marker line ONLY on a real delta or a terminal state.
 #   - A no-change iteration emits NOTHING (silent) → Monitor feeds nothing back
@@ -68,25 +69,44 @@ prev_comments=""
 prev_reviews=""
 prev_rollup=""
 prev_codex=""
+prev_unresolved=""
 have_baseline=0
 
-# compute_snapshot: fills the global scalar variables from a single GraphQL
-# query (state + comment/review/reviewThreads totalCount + checks rollup) plus a
-# paginated REST reactions read for the Codex 👍 bool. Returns 0 on success,
-# non-zero on failure of EITHER call. reviewThreads is tracked by totalCount: any
-# new/changed thread bumps the count → CHANGED fires → the reviewer does the real
-# unresolved-vs-resolved classification on wake (thin poll, no interpretation).
-# Writes diagnostic stderr to /dev/null (never /tmp).
+# compute_snapshot: fills the global scalar variables from a paginated GraphQL
+# query (state + comment/review/reviewThreads totalCount + reviewThreads
+# isResolved booleans + checks rollup) plus a paginated REST reactions read for
+# the Codex 👍 bool. Returns 0 on success, non-zero on failure of ANY page or
+# the reactions call. reviewThreads is tracked two ways: totalCount detects any
+# new/changed thread (incl. a newly-added already-resolved one), and a paginated
+# unresolved count (isResolved==false across ALL pages, booleans only — no
+# bodies) detects resolution toggles incl. re-opened threads. Either delta fires
+# CHANGED; the reviewer still does the full body-level classification on wake
+# (thin poll, no interpretation). Writes diagnostic stderr to /dev/null (never /tmp).
 compute_snapshot() {
-  local raw
-  raw=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f query='
-query($owner: String!, $repo: String!, $pr: Int!) {
+  local unresolved_count=0
+  local cursor=""
+  local has_next="true"
+  local raw line
+
+  # Walk EVERY reviewThreads page. The cursor lives in the same query that
+  # returns state/counts/rollup, so page 0 (no `after`) carries those scalars
+  # and each page contributes isResolved BOOLEANS ONLY (no bodies — preserves
+  # the thin-poll no-bodies invariant). totalCount is page-invariant, so it is
+  # read from page 0 only; later pages must not clobber the page-0 scalars.
+  while [ "$has_next" = "true" ]; do
+    if [ -z "$cursor" ]; then
+      raw=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f query='
+query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
       state
       comments { totalCount }
       reviews { totalCount }
-      reviewThreads { totalCount }
+      reviewThreads(first: 100, after: $after) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes { isResolved }
+      }
       commits(last: 1) {
         nodes {
           commit {
@@ -102,8 +122,54 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     "THREADS=" + ($pr.reviewThreads.totalCount | tostring),
     "COMMENTS=" + ($pr.comments.totalCount | tostring),
     "REVIEWS=" + ($pr.reviews.totalCount | tostring),
-    "ROLLUP=" + (($pr.commits.nodes[0].commit.statusCheckRollup.state) // "NONE")
+    "ROLLUP=" + (($pr.commits.nodes[0].commit.statusCheckRollup.state) // "NONE"),
+    "HASNEXT=" + ($pr.reviewThreads.pageInfo.hasNextPage | tostring),
+    "CURSOR=" + ($pr.reviewThreads.pageInfo.endCursor // ""),
+    ($pr.reviewThreads.nodes[] | select(.isResolved == false) | "UNRESOLVED")
   ' 2>/dev/null) || return 1
+    else
+      raw=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f after="$cursor" -f query='
+query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { isResolved }
+      }
+    }
+  }
+}' --jq '
+    .data.repository.pullRequest.reviewThreads as $rt |
+    "HASNEXT=" + ($rt.pageInfo.hasNextPage | tostring),
+    "CURSOR=" + ($rt.pageInfo.endCursor // ""),
+    ($rt.nodes[] | select(.isResolved == false) | "UNRESOLVED")
+  ' 2>/dev/null) || return 1
+    fi
+
+    # Reset per-page pagination signals; an empty endCursor leaves cursor empty.
+    has_next="false"
+    cursor=""
+
+    # Parse the labeled lines. Page-0 scalar lines (STATE/THREADS/COMMENTS/
+    # REVIEWS/ROLLUP) appear only on page 0; HASNEXT/CURSOR appear every page;
+    # one UNRESOLVED line per unresolved node on the current page. Read the
+    # captured string directly — no pipe into Monitor.
+    while IFS= read -r line; do
+      case "$line" in
+        STATE=*) cur_state="${line#STATE=}" ;;
+        THREADS=*) cur_threads="${line#THREADS=}" ;;
+        COMMENTS=*) cur_comments="${line#COMMENTS=}" ;;
+        REVIEWS=*) cur_reviews="${line#REVIEWS=}" ;;
+        ROLLUP=*) cur_rollup="${line#ROLLUP=}" ;;
+        HASNEXT=*) has_next="${line#HASNEXT=}" ;;
+        CURSOR=*) cursor="${line#CURSOR=}" ;;
+        UNRESOLVED) unresolved_count=$((unresolved_count + 1)) ;;
+      esac
+    done <<EOF
+$raw
+EOF
+  done
+  cur_unresolved="$unresolved_count"
 
   # Codex 👍 via the paginated REST reactions endpoint. The --jq filter emits the
   # matching login ONCE per Codex +1 reaction and nothing otherwise; gh may apply
@@ -119,21 +185,6 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     cur_codex="false"
   fi
 
-  # Parse the labeled scalar lines into globals. Read stdout directly — no pipe
-  # into Monitor; this is internal parsing of a captured string.
-  local line
-  while IFS= read -r line; do
-    case "$line" in
-      STATE=*) cur_state="${line#STATE=}" ;;
-      THREADS=*) cur_threads="${line#THREADS=}" ;;
-      COMMENTS=*) cur_comments="${line#COMMENTS=}" ;;
-      REVIEWS=*) cur_reviews="${line#REVIEWS=}" ;;
-      ROLLUP=*) cur_rollup="${line#ROLLUP=}" ;;
-    esac
-  done <<EOF
-$raw
-EOF
-
   # A well-formed snapshot always carries a non-empty PR state.
   [ -n "${cur_state:-}" ] || return 1
   return 0
@@ -146,7 +197,7 @@ while true; do
   fi
 
   cur_state=""; cur_threads=""; cur_comments=""
-  cur_reviews=""; cur_rollup=""; cur_codex=""
+  cur_reviews=""; cur_rollup=""; cur_codex=""; cur_unresolved=""
 
   if ! compute_snapshot; then
     fail_count=$((fail_count + 1))
@@ -181,7 +232,8 @@ while true; do
       || [ "$cur_threads" != "$prev_threads" ] \
       || [ "$cur_comments" != "$prev_comments" ] \
       || [ "$cur_reviews" != "$prev_reviews" ] \
-      || [ "$cur_rollup" != "$prev_rollup" ]; then
+      || [ "$cur_rollup" != "$prev_rollup" ] \
+      || [ "$cur_unresolved" != "$prev_unresolved" ]; then
       echo "CHANGED"
     fi
     # No-change iteration: emit nothing.
@@ -193,6 +245,7 @@ while true; do
   prev_reviews="$cur_reviews"
   prev_rollup="$cur_rollup"
   prev_codex="$cur_codex"
+  prev_unresolved="$cur_unresolved"
 
   sleep "$POLL_INTERVAL_SECONDS"
 done
