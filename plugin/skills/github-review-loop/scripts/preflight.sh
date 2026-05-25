@@ -44,15 +44,18 @@ pr_base=$(gh pr view "$PR_REF" --json baseRefName --jq '.baseRefName' 2>/dev/nul
 # The PR and its review threads live in the BASE repository regardless of the
 # head (fork or same-repo), so resolve owner/repo from the base repository
 # unconditionally. gh builds the PR `url` from the base repository where the PR
-# lives; parse owner/repo from that canonical path.
+# lives; parse owner/repo from that canonical path. Strip scheme and host
+# generically (not a fixed github.com prefix) so this also works against GHES
+# and other gh hosts.
 pr_url=$(gh pr view "$PR_REF" --json url --jq '.url' 2>/dev/null) \
   || fail "could not resolve base repo owner/name"
 [ -n "$pr_url" ] || fail "could not resolve base repo owner/name"
-url_path="${pr_url#https://github.com/}"
+url_noscheme="${pr_url#*://}"           # drop scheme (https://, http://)
+url_path="${url_noscheme#*/}"           # drop host segment, leaving owner/repo/...
 owner="${url_path%%/*}"
 url_rest="${url_path#*/}"
 repo="${url_rest%%/*}"
-[ -n "$owner" ] && [ -n "$repo" ] && [ "$owner" != "$pr_url" ] \
+[ -n "$owner" ] && [ -n "$repo" ] && [ "$owner" != "$url_path" ] \
   || fail "could not resolve base repo owner/name"
 
 [ "$pr_state" = "OPEN" ] || fail "PR is not OPEN (state=$pr_state)"

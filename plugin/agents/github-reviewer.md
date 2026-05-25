@@ -23,6 +23,7 @@ mode: fix
 pr: <number or URL>
 working_branch: <branch>
 base: <branch>
+reviewer_filter: codex-only | all | <author>  # optional; default codex-only
 target: <comment URL or ID>  # optional; absent = all unresolved
 ```
 
@@ -48,7 +49,7 @@ findings_open: <int>
 
 2. **Preflight:** Verify git state is safe per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State). Verify `git branch --show-current` equals `working_branch`.
 
-3. **Fetch candidates:** Fetch unresolved review threads, top-level comments, and review summaries using GraphQL operations from `${CLAUDE_PLUGIN_ROOT}/references/github-pr-review-graphql.md`. Filter out empty bodies and self-authored comments. Apply fix-SHA skip rule: for each thread, check if a self-authored `Fixed in <SHA>` reply already exists — if so, skip that comment (crash-recovery duplicate prevention). The skip rule matches only within the thread being evaluated — never across threads. Also fetch failed CI checks via `gh pr checks` and add as candidates with `item_source: ci-check-failure`.
+3. **Fetch candidates:** Fetch unresolved review threads, top-level comments, and review summaries using GraphQL operations from `${CLAUDE_PLUGIN_ROOT}/references/github-pr-review-graphql.md`. Filter out empty bodies and self-authored comments, then apply `reviewer_filter` (default `codex-only` when absent) per `${CLAUDE_PLUGIN_ROOT}/references/github-pr-review-graphql.md` (Author Filtering) to scope candidates to the requested reviewer identities. Apply fix-SHA skip rule: for each thread, check if a self-authored `Fixed in <SHA>` reply already exists — if so, skip that comment (crash-recovery duplicate prevention). The skip rule matches only within the thread being evaluated — never across threads. Also fetch failed CI checks via `gh pr checks` and add as candidates with `item_source: ci-check-failure`.
 
 4. **Body re-fetch:** For each candidate, fetch full body via GraphQL `node(id:)` query. Exclude empty/null bodies. CI check candidates use their `description` field as body.
 

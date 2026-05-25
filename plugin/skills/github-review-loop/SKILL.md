@@ -145,6 +145,7 @@ mode: fix
 pr: <pr>
 working_branch: <working_branch>
 base: <base>
+reviewer_filter: <reviewer_filter>   # pass the skill input through so the reviewer scopes feedback to the requested identities
 target: all unresolved   # omit a specific target = full pass over unresolved feedback
 ```
 
