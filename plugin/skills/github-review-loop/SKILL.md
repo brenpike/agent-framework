@@ -8,7 +8,14 @@ description: >-
   keep handling Codex review until merge/approval. Executed by the overlord only —
   the loop must run in the main session, where Monitor survives subagent
   dispatches and the orchestrator can spawn the reviewer (per ADR-0005). The
-  overlord supplies the Monitor, Agent, and Bash tools; the skill holds none.
+  overlord supplies the tools at runtime; the skill declares its permitted
+  surface via allowed-tools.
+allowed-tools:
+  - Read
+  - Monitor
+  - Agent(hivemind:github-reviewer)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/preflight.sh)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh)
 shell: bash
 ---
 

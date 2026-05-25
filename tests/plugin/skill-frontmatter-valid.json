@@ -3,6 +3,5 @@
   "type": "frontmatter-all-files",
   "dir": "plugin/skills/",
   "glob": "*/SKILL.md",
-  "exclude": "_shared",
   "required": ["name", "description", "allowed-tools", "shell"]
 }

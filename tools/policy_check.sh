@@ -284,7 +284,7 @@ while IFS= read -r -d '' f; do
 done < <(find "$PLUGIN_ROOT/agents" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null)
 while IFS= read -r -d '' f; do
     SCAN_FILES+=("$f")
-done < <(find "$PLUGIN_ROOT/skills" -name 'SKILL.md' -type f -print0 2>/dev/null | grep -zv '/_shared/')
+done < <(find "$PLUGIN_ROOT/skills" -name 'SKILL.md' -type f -print0 2>/dev/null)
 while IFS= read -r -d '' f; do
     SCAN_FILES+=("$f")
 done < <(find "$PLUGIN_ROOT/governance" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null)
@@ -309,7 +309,6 @@ for scan_file in "${SCAN_FILES[@]}"; do
     scan_content="$(<"$scan_file")"
     while IFS= read -r ref_name; do
         [[ -z "$ref_name" ]] && continue
-        [[ "$ref_name" == "_shared" ]] && continue
 
         if is_agent_name "$ref_name"; then
             if [[ -z "${AGENT_REF_SOURCES[$ref_name]:-}" ]]; then
@@ -471,10 +470,6 @@ check7_found=false
 skill_file_count=0
 
 while IFS= read -r -d '' skill_file; do
-    # INVARIANT: _shared is not a skill directory.
-    if echo "$skill_file" | grep -q '/_shared/'; then
-        continue
-    fi
     skill_file_count=$((skill_file_count + 1))
 
     fm_content="$(get_frontmatter "$skill_file")"
@@ -511,10 +506,6 @@ while IFS= read -r -d '' md_file; do
         # requirement keeps generic prose like "the governance/ layer" clean.
         while IFS= read -r bare_ref; do
             [[ -z "$bare_ref" ]] && continue
-            # INVARIANT: skills/_shared/ refs are an allowed bare exception per CLAUDE.md.
-            if [[ "$bare_ref" == skills/_shared/* ]]; then
-                continue
-            fi
             check8_found=true
             add_finding 'CHECK8' "$md_file" "$line_num" \
                 "Bare path ref (missing \${CLAUDE_PLUGIN_ROOT}/ prefix): $bare_ref"

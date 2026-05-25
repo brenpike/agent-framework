@@ -12,6 +12,8 @@
 # - For PR output (open-plan-pr): required fields including PR URL
 # - For address-pr-feedback: required fields with sub-field groups
 # - For watch-pr-feedback: required fields with sub-field groups
+#   (owned by the github-review-loop skill's terminal report, not the
+#    github-reviewer agent; a returned run reports Monitoring: stopped)
 # - Unknown type: diagnostic and fail
 #
 # Run against a single file or in batch mode against all .txt files in
@@ -110,6 +112,9 @@ ADDRESS_FEEDBACK_SUB_FIELDS=(
 ADDRESS_FEEDBACK_LIST_SECTIONS=("Changed" "Validated" "Issues")
 
 # ── watch-pr-feedback Constants ──────────────────────────────────────────
+# Required fields of the github-review-loop skill's terminal report (the skill
+# owns the watch loop and emits this report; the github-reviewer agent no longer
+# does). A returned run is no longer monitoring, so Monitoring reports `stopped`.
 
 WATCH_FEEDBACK_SUB_FIELDS=(
     "PR|Number|State|Branch|Target"

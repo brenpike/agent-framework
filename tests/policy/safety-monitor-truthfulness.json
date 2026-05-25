@@ -1,13 +1,13 @@
 {
   "rule": "Monitor truthfulness",
   "source": {
-    "file": "plugin/agents/github-reviewer.md",
-    "pattern": "If Monitor returns a non-error response and the first poll completes without a parser error, monitoring is active"
+    "file": "plugin/skills/github-review-loop/SKILL.md",
+    "pattern": "Never claim the watch is still active in a returned report"
   },
   "consumers": [
     {
       "file": "plugin/agents/overlord.md",
-      "pattern": "claim monitoring is active for a returned github-reviewer run"
+      "pattern": "Never claim monitoring is active for a returned run"
     }
   ]
 }
