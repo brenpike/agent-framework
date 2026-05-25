@@ -24,7 +24,7 @@ Use `gh --jq` only. No standalone `jq`, `python3`, `python`, `node`, or PowerShe
 
 ## Pagination Requirement
 
-Page all connections via `-F after="CURSOR"` using `endCursor` from `pageInfo`. Omit `-F after` on first page. Nested connections (e.g., thread comments) require per-item queries with the item's `id`.
+Page all connections via `-F after="CURSOR"` using `endCursor` from `pageInfo`. Omit `-F after` on first page. Nested connections (e.g., thread comments) require per-item queries with the item's `id`. This requirement governs the reviewer's deep body-level fetch (reviews, review threads, thread comments, top-level comments) and the Codex approval reactions lookup — NOT the `github-review-loop` thin poll, which is deliberately coarse (scalar `totalCount`s only, no connection walking) per plan D5; citing this section to justify adding cursor walks to the poll is out of scope.
 
 ## Fetch Reviews
 
