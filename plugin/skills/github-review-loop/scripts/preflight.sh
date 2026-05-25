@@ -60,6 +60,14 @@ repo="${url_rest%%/*}"
 
 [ "$pr_state" = "OPEN" ] || fail "PR is not OPEN (state=$pr_state)"
 
+# Guard against a retargeted PR: the resolved base must match the expected
+# BASE_BRANCH the skill was invoked with. A mismatch means the PR target moved
+# (e.g. retargeted off the working branch's intended base), so remediation and
+# terminal reporting would run under stale branch assumptions. Stop as blocked
+# before dispatching the reviewer.
+[ "$pr_base" = "$BASE_BRANCH" ] \
+  || fail "PR base '$pr_base' does not match expected base_branch '$BASE_BRANCH'"
+
 self_login=$(gh api user --jq '.login' 2>/dev/null) \
   || fail "could not resolve SELF_LOGIN"
 

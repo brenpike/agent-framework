@@ -57,6 +57,10 @@ poll_fail() {
 case "$PR_NUMBER" in ''|*[!0-9]*) poll_fail ;; esac
 case "$MAX_WATCH_SECONDS" in ''|*[!0-9]*) poll_fail ;; esac
 case "$POLL_INTERVAL_SECONDS" in ''|*[!0-9]*) poll_fail ;; esac
+# Reject a zero (or otherwise non-positive) poll interval: `sleep 0` would make
+# the loop re-poll immediately and hammer gh api until timeout, risking rate
+# limits. Require at least one second between polls before entering the loop.
+[ "$POLL_INTERVAL_SECONDS" -ge 1 ] || poll_fail
 
 deadline=$(($(date +%s) + MAX_WATCH_SECONDS))
 fail_count=0
