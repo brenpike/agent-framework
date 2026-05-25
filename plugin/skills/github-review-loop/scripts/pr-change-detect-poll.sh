@@ -216,7 +216,14 @@ EOF
   # page fetch failure returns 1 so the two-failure→POLL_ERROR guard sees it; no
   # partial snapshot is fingerprinted on a mid-pagination failure.
   while [ "$check_has_next" = "true" ]; do
-    craw=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f after="$check_cursor" -f query='
+    # GitHub GraphQL connection cursors are opaque server-issued tokens; an empty
+    # string is NOT a valid cursor and is not the same as null. Mirror the
+    # reviewThreads walk: OMIT `after` entirely on page 0 (check_cursor empty),
+    # and bind it only once a real endCursor is in hand. Passing -f after="" on
+    # page 0 would risk a GraphQL cursor-decode rejection → compute_snapshot
+    # fails → POLL_ERROR for normal PRs.
+    if [ -z "$check_cursor" ]; then
+      craw=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f query='
 query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
@@ -252,6 +259,44 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
         else "CHECK=" + (.context // "") + "|" + (.state // "")
         end)
   ' 2>/dev/null) || return 1
+    else
+      craw=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f after="$check_cursor" -f query='
+query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              state
+              contexts(first: 100, after: $after) {
+                totalCount
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  __typename
+                  ... on CheckRun { name status conclusion }
+                  ... on StatusContext { context state }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}' --jq '
+    (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup) as $rollup |
+    ($rollup.contexts) as $ctx |
+    "CHECKTOTAL=" + (($ctx.totalCount) // 0 | tostring),
+    "CHECKHASNEXT=" + (($ctx.pageInfo.hasNextPage) // false | tostring),
+    "CHECKCURSOR=" + (($ctx.pageInfo.endCursor) // ""),
+    ((($ctx.nodes) // [])[]
+      | if .__typename == "CheckRun"
+        then "CHECK=" + (.name // "") + "|" + (.status // "") + "|" + (.conclusion // "")
+        else "CHECK=" + (.context // "") + "|" + (.state // "")
+        end)
+  ' 2>/dev/null) || return 1
+    fi
 
     # Reset per-page pagination signals; an empty endCursor leaves cursor empty.
     check_has_next="false"
