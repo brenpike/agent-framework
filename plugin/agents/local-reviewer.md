@@ -48,7 +48,7 @@ ledger_path: <path>
 
 ## The Loop
 
-1. **Initialize:** Validate inputs (base, working_branch, trunk). Check git state is safe. If `resume_from_ledger`: read and continue from persisted state. Otherwise: initialize empty ledger per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/fix-ledger-schema.md`. Set iteration to 1.
+1. **Initialize:** Validate inputs (base, working_branch, trunk). Check git state is safe. If `resume_from_ledger`: read and continue from persisted state. Otherwise: initialize empty ledger per `${CLAUDE_PLUGIN_ROOT}/references/fix-ledger-schema.md`. Set iteration to 1.
 
 2. **Check ceiling:** If `iteration > max_iterations`: persist ledger, return `max-iterations-reached`.
 
@@ -90,7 +90,7 @@ ledger_path: <path>
 
 Path: `.hivemind/review-loop/fix-ledger.yaml`
 
-Schema per `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/fix-ledger-schema.md`. Write the ledger after every status change and before every terminal return. On `resume_from_ledger`: read and continue from persisted state.
+Schema per `${CLAUDE_PLUGIN_ROOT}/references/fix-ledger-schema.md`. Write the ledger after every status change and before every terminal return. On `resume_from_ledger`: read and continue from persisted state.
 
 Status transitions: `open` -> `fixing` -> `fixed` (validation passed) or `regressed` (validation failed). `fixed` -> `cycling` (reappears after fix, break-fix signal).
 

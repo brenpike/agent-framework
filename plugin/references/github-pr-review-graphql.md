@@ -218,7 +218,7 @@ When `reviewer_filter` is `codex-only`, include only comments from the Codex rev
 
 ## Codex Approval Detection
 
-Codex signals approval via a 👍 reaction on the PR object (not an `APPROVED` review). Detect it with the paginated REST reactions endpoint so the bot's reaction is found even when a PR has more than one page of reactions (the watch and preflight scripts under `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/` use this same pattern):
+Codex signals approval via a 👍 reaction on the PR object (not an `APPROVED` review). Detect it with the paginated REST reactions endpoint so the bot's reaction is found even when a PR has more than one page of reactions (the watch and preflight scripts under `${CLAUDE_PLUGIN_ROOT}/references/` use this same pattern):
 
 ```bash
 gh api --paginate "repos/OWNER/REPO/issues/PR_NUMBER/reactions" \
