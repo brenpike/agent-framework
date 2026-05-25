@@ -2,7 +2,7 @@
 
 **Status:** accepted — 2026-05-24
 
-The hivemind workflow generated excessive permission-elevation prompts. A log study of 162 session transcripts (2,440 tool calls) found ~1,023 default-mode would-prompts; the single largest source was decorative `echo` banners. This ADR captures the least-privilege allowlist posture we adopted to reduce them and — load-bearing — the empirically established Claude Code permission-engine behavior that justifies it, so a false premise that drove ~6 review iterations of churn does not get re-litigated.
+The hivemind workflow generated excessive permission-elevation prompts. A log study of 162 session transcripts (2,440 tool calls) found ~1,023 default-mode would-prompts; the single largest source was decorative `echo` banners (see **Amendment — 2026-05-25**: this attribution was later corrected). This ADR captures the least-privilege allowlist posture we adopted to reduce them and — load-bearing — the empirically established Claude Code permission-engine behavior that justifies it, so a false premise that drove ~6 review iterations of churn does not get re-litigated.
 
 ## Context
 
@@ -24,8 +24,8 @@ CONSEQUENCE: a `Bash(cmd *)` read/output-helper grant is NOT an arbitrary-file-w
 
 ## Decision — allowlist posture
 
-1. GRANT read/output helpers: `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`, `cat`, `echo`, `printf`.
-2. GRANT scoped git reads: `git ls-files`, `git grep`, `git tag` (list-only forms: bare, `-l*`, `--list*`), `git stash list`, `git stash show *`.
+1. GRANT read/output helpers: `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`, `cat`, `echo`, `printf`, `grep` (read-only; `Bash(grep *)` supersedes the narrow `grep -n`/`-rn`/`-rE` forms — see **Amendment — 2026-05-25**).
+2. GRANT scoped git reads: `git ls-files`, `git grep`, `git ls-tree` (read-only object lister), `git tag` (list-only forms: bare, `-l*`, `--list*`), `git stash list`, `git stash show *`.
 3. EXCLUDE — for GENUINE reasons, NOT the debunked one:
    - `Bash(node *)` — arbitrary code execution.
    - `Edit` / `Write` / `acceptEdits` — broad unprompted write.
@@ -51,3 +51,12 @@ CONSEQUENCE: a `Bash(cmd *)` read/output-helper grant is NOT an arbitrary-file-w
 - Materially fewer permission prompts, plus a documented rationale that prevents re-litigating the false premise (it recurred across multiple review iterations).
 - The in-cwd redirect-overwrite is an ACCEPTED, bounded surface, uniform across all Bash grants. Defense relies on CC's out-of-cwd re-prompt and on deny rules — not on omitting read/output helpers.
 - A future redesign of routing-data emission (non-shell / exact-match invocation) remains OPTIONAL; it is not required for safety.
+
+## Amendment — 2026-05-25
+
+This amendment refines the DIAGNOSIS recorded above. It does not rewrite the accepted record: the False-premise narrative, the engine Findings, the Considered Options, and the Consequences all stand. A 2026-05-25 24h log study (93 Bash calls) corrected the root-cause attribution and a remediation shipped accordingly.
+
+- **Corrected attribution.** The 2026-05-24 framing that "decorative `echo` banners are the single largest source" of permission prompts was a misattribution. `echo` was ALREADY allowlisted, so banner echos never triggered a prompt on their own — the banner is a CORRELATED SYMPTOM, not the cause. Decision #4's agent-prose suppression lever therefore could not reduce the prompts and is SUPERSEDED for that purpose.
+- **Actual mechanism.** COMPOUND-COMMAND BATCHING. CC splits a compound command (`&&` / `||` / `;` / `|` / newline) and matches each subcommand independently; one unlisted segment forces a prompt for the whole chain. 51 of 61 (84%) banner-decorated commands contained such an unlisted chain-mate. Measured unlisted triggers: `grep` flag near-misses (`grep -c`, `grep -v`, `grep -E`, `grep -nE`, `grep -rln`, `grep -rEn` — the seed had only `grep -n` / `grep -rn` / `grep -rE`), `git ls-tree`, and repo validation invocations (`bash tools/policy_check.sh`, `bash tools/validate_reports.sh`, `bash -n`).
+- **Remediation (shipped v2.8.2 / PR #132).** Static allowlist widening only: added `Bash(grep *)` and `Bash(git ls-tree *)` (both read-only) to the seed. Repo-local `bash ...` validation grants were kept OUT of the consumer seed. No hook, no new behavioral prose.
+- **Engine model unchanged.** The engine facts in the Findings section remain valid and load-bearing — the out-of-cwd write/redirect re-prompt and the compound-command split behavior are exactly what this amendment leans on. `grep` and `git ls-tree` are read-only and safe for the same engine reasons; the debunked "redirect-write tail" premise stays debunked.
