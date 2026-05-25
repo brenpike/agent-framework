@@ -197,6 +197,7 @@ install_plugins() {
     claude plugin marketplace add https://github.com/brenpike/hivemind.git || true
     claude plugin marketplace add https://github.com/openai/codex-plugin-cc.git || true
     claude plugin marketplace add thedotmack/claude-mem || true
+    claude plugin marketplace add https://github.com/caveman/caveman || true
 
     cat <<'EOF'
   Marketplaces registered. To finish plugin setup, run these inside Claude Code
@@ -206,12 +207,40 @@ install_plugins() {
     claude plugin install codex@openai-codex
     claude plugin install claude-mem@claude-mem
     /codex:setup
-
-  The caveman plugin (caveman@caveman) is enabled via .claude/settings.json
-  per the README; install/enable it the same way once authenticated.
 EOF
 }
 try_step "Claude Code plugin marketplaces + install guidance" install_plugins
+
+# ── Caveman plugin enable ─────────────────────────────────────────────────────
+# caveman@caveman is enabled by default in this container. Marketplace add
+# (above) requires no auth. Enabling via enabledPlugins in the GITIGNORED
+# settings.local.json also requires no auth — it is purely local config.
+# pluginConfigs sets the default output level to ultra to match framework
+# agent expectations. Merge without clobbering existing entries.
+seed_caveman_enable() {
+    local settings='.claude/settings.local.json'
+
+    mkdir -p .claude
+    if [[ ! -f "$settings" ]]; then
+        echo '{"permissions":{"allow":[]}}' > "$settings"
+    fi
+
+    # Idempotent: skip if caveman@caveman is already in enabledPlugins.
+    if jq -e '(.enabledPlugins // {}) | has("caveman@caveman")' \
+        "$settings" > /dev/null 2>&1; then
+        echo "  caveman@caveman already enabled, skipping"
+        return 0
+    fi
+
+    local tmp
+    tmp="$(mktemp)"
+    jq '
+      .enabledPlugins = ((.enabledPlugins // {}) + {"caveman@caveman": true}) |
+      .pluginConfigs  = ((.pluginConfigs  // {}) + {"caveman@caveman": {"options": {"defaultLevel": "ultra"}}})
+    ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+    echo "  Enabled caveman@caveman (ultra) in .claude/settings.local.json"
+}
+try_step "Caveman plugin enable (.claude/settings.local.json)" seed_caveman_enable
 
 # ── (3) CI-parity smoke test (hard fail) ─────────────────────────────────────
 # These three steps mirror .github/workflows/policy-check.yml exactly. The
