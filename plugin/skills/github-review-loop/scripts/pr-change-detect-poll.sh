@@ -11,8 +11,11 @@
 #   - Each iteration computes a CHEAP SCALAR snapshot covering all four event
 #     classes (no bodies): PR state; comment+review COUNTS plus reviewThreads
 #     totalCount (uncapped) AND a paginated unresolved-thread count (isResolved
-#     booleans only, no bodies); check ROLLUP status; Codex 👍 PRESENT bool (via
-#     paginated REST reactions).
+#     booleans only, no bodies); check ROLLUP status AND a check-IDENTITY
+#     fingerprint (count + sorted-name/state digest of the rollup contexts, no
+#     logs/bodies) so a changed check SET or per-check state wakes remediation
+#     even when the aggregate rollup string is unchanged; Codex 👍 PRESENT bool
+#     (via paginated REST reactions).
 #   - It DIFFS the snapshot in bash against the previous iteration and emits a
 #     single minimal marker line ONLY on a real delta or a terminal state.
 #   - A no-change iteration emits NOTHING (silent) → Monitor feeds nothing back
@@ -74,20 +77,27 @@ prev_threads=""
 prev_comments=""
 prev_reviews=""
 prev_rollup=""
+prev_checks=""
 prev_codex=""
 prev_unresolved=""
 have_baseline=0
 
 # compute_snapshot: fills the global scalar variables from a paginated GraphQL
 # query (state + comment/review/reviewThreads totalCount + reviewThreads
-# isResolved booleans + checks rollup) plus a paginated REST reactions read for
-# the Codex 👍 bool. Returns 0 on success, non-zero on failure of ANY page or
-# the reactions call. reviewThreads is tracked two ways: totalCount detects any
-# new/changed thread (incl. a newly-added already-resolved one), and a paginated
-# unresolved count (isResolved==false across ALL pages, booleans only — no
-# bodies) detects resolution toggles incl. re-opened threads. Either delta fires
-# CHANGED; the reviewer still does the full body-level classification on wake
-# (thin poll, no interpretation). Writes diagnostic stderr to /dev/null (never /tmp).
+# isResolved booleans + checks rollup + checks identity fingerprint) plus a
+# paginated REST reactions read for the Codex 👍 bool. Returns 0 on success,
+# non-zero on failure of ANY page or the reactions call. reviewThreads is tracked
+# two ways: totalCount detects any new/changed thread (incl. a newly-added
+# already-resolved one), and a paginated unresolved count (isResolved==false
+# across ALL pages, booleans only — no bodies) detects resolution toggles incl.
+# re-opened threads. CI is likewise tracked two ways: the aggregate rollup state
+# AND a cheap check-IDENTITY fingerprint (count of rollup contexts + a sorted
+# digest of per-context name/state pairs, NO logs/bodies) so a changed check SET
+# or a per-check state shift wakes remediation even when the aggregate rollup
+# string is unchanged (same defect class as totalCount-vs-resolution for
+# threads). Either delta fires CHANGED; the reviewer still does the full
+# body-level classification on wake (thin poll, no interpretation). Writes
+# diagnostic stderr to /dev/null (never /tmp).
 compute_snapshot() {
   local unresolved_count=0
   local cursor=""
@@ -116,7 +126,17 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
       commits(last: 1) {
         nodes {
           commit {
-            statusCheckRollup { state }
+            statusCheckRollup {
+              state
+              contexts(first: 100) {
+                totalCount
+                nodes {
+                  __typename
+                  ... on CheckRun { name status conclusion }
+                  ... on StatusContext { context state }
+                }
+              }
+            }
           }
         }
       }
@@ -124,11 +144,21 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
   }
 }' --jq '
     .data.repository.pullRequest as $pr |
+    ($pr.commits.nodes[0].commit.statusCheckRollup) as $rollup |
     "STATE=" + $pr.state,
     "THREADS=" + ($pr.reviewThreads.totalCount | tostring),
     "COMMENTS=" + ($pr.comments.totalCount | tostring),
     "REVIEWS=" + ($pr.reviews.totalCount | tostring),
-    "ROLLUP=" + (($pr.commits.nodes[0].commit.statusCheckRollup.state) // "NONE"),
+    "ROLLUP=" + (($rollup.state) // "NONE"),
+    "CHECKS=" + (
+      (($rollup.contexts.totalCount) // 0 | tostring) + ":" +
+      ([$rollup.contexts.nodes[]
+        | if .__typename == "CheckRun"
+          then (.name // "") + "|" + (.status // "") + "|" + (.conclusion // "")
+          else (.context // "") + "|" + (.state // "")
+          end]
+       | sort | join(";"))
+    ),
     "HASNEXT=" + ($pr.reviewThreads.pageInfo.hasNextPage | tostring),
     "CURSOR=" + ($pr.reviewThreads.pageInfo.endCursor // ""),
     ($pr.reviewThreads.nodes[] | select(.isResolved == false) | "UNRESOLVED")
@@ -167,6 +197,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
         COMMENTS=*) cur_comments="${line#COMMENTS=}" ;;
         REVIEWS=*) cur_reviews="${line#REVIEWS=}" ;;
         ROLLUP=*) cur_rollup="${line#ROLLUP=}" ;;
+        CHECKS=*) cur_checks="${line#CHECKS=}" ;;
         HASNEXT=*) has_next="${line#HASNEXT=}" ;;
         CURSOR=*) cursor="${line#CURSOR=}" ;;
         UNRESOLVED) unresolved_count=$((unresolved_count + 1)) ;;
@@ -203,7 +234,7 @@ while true; do
   fi
 
   cur_state=""; cur_threads=""; cur_comments=""
-  cur_reviews=""; cur_rollup=""; cur_codex=""; cur_unresolved=""
+  cur_reviews=""; cur_rollup=""; cur_checks=""; cur_codex=""; cur_unresolved=""
 
   if ! compute_snapshot; then
     fail_count=$((fail_count + 1))
@@ -249,6 +280,7 @@ while true; do
       || [ "$cur_comments" != "$prev_comments" ] \
       || [ "$cur_reviews" != "$prev_reviews" ] \
       || [ "$cur_rollup" != "$prev_rollup" ] \
+      || [ "$cur_checks" != "$prev_checks" ] \
       || [ "$cur_unresolved" != "$prev_unresolved" ]; then
       echo "CHANGED"
     fi
@@ -260,6 +292,7 @@ while true; do
   prev_comments="$cur_comments"
   prev_reviews="$cur_reviews"
   prev_rollup="$cur_rollup"
+  prev_checks="$cur_checks"
   prev_codex="$cur_codex"
   prev_unresolved="$cur_unresolved"
 
