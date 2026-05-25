@@ -6,8 +6,10 @@ This dev container provisions a **CI-parity toolchain** so contributors can run 
 
 - The exact validation toolchain used by `.github/workflows/policy-check.yml`, so a green local run is a strong signal the branch will pass CI.
 - All CLI dependencies for hivemind plugin development: Claude Code CLI, Codex CLI, claude-mem, bun, uv/uvx, tmux.
-- Caveman plugin enabled by default (no auth required).
-- A seeded `.claude/settings.local.json` with the Codex cache permission grant and caveman enabled.
+- Plugin marketplaces registered (no auth required): hivemind, codex, claude-mem, caveman.
+- A seeded `.claude/settings.local.json` with the Codex cache permission grant for this container's `$HOME`.
+
+Plugin **enablement** (caveman, codex, claude-mem) and plugin **configuration** (SubagentStart hook, pluginConfigs, .envrc, permissions allowlist) are handled by `hivemind:setup-project` — the canonical path — not by postCreate. See [Configure the plugins](#configure-the-plugins-one-time-in-claude-code) below.
 
 The base image is Ubuntu 20.04. A Debian/Ubuntu family image is mandatory: the policy linter requires GNU `grep -P` and `perl`, which Alpine/BusyBox lack. CI runs on `ubuntu-latest`, so minor coreutils/grep/perl/python version differences between the two are possible — the smoke test is a best-effort signal, not an absolute guarantee.
 
@@ -74,13 +76,9 @@ Registers the following marketplaces via `claude plugin marketplace add` (no aut
 - `thedotmack/claude-mem`
 - `https://github.com/caveman/caveman`
 
-**Step 2 — Caveman enabled by default (soft fail)**
-
-Writes `enabledPlugins` and `pluginConfigs` for `caveman@caveman` (ultra mode) into the gitignored `.claude/settings.local.json` using a jq-merge that does not clobber existing entries. No auth required — this is purely local config.
-
 **Step 2 — Codex cache permission grant seeded (soft fail)**
 
-Writes the Codex cache Bash grant for the container's `$HOME` into `.claude/settings.local.json` so the local Codex review flow (`hivemind:adaptation-cycle`) runs prompt-free. Merged without clobbering.
+Writes the Codex cache Bash grant for the container's `$HOME` into `.claude/settings.local.json` so the local Codex review flow (`hivemind:adaptation-cycle`) runs prompt-free. Merged without clobbering existing entries.
 
 **Step 3 — CI-parity smoke test (hard fail if any gate fails)**
 
@@ -95,24 +93,61 @@ bash ./tools/validate_reports.sh --batch tests/reports/
 
 A green run here is a strong best-effort signal the branch will pass CI.
 
-## What stays manual (requires `claude` CLI auth)
+## Configure the plugins (one-time, in Claude Code)
 
-`claude plugin install` requires an authenticated `claude` CLI. A fresh container does not have one. After signing in inside Claude Code (run `claude` and follow the login prompt), run:
+Plugin enablement and configuration require an authenticated `claude` CLI session. postCreate handles OS/CLI tooling, marketplace registration, and the container-real-path Codex grant; everything below is done once inside Claude Code.
+
+**Division of labor:**
+- `postCreate.sh` — OS tooling, npm CLIs, marketplace registration, container-real-path Codex grant in `.claude/settings.local.json` (gitignored)
+- `hivemind:setup-project` — plugin enablement (`enabledPlugins`), plugin config (`pluginConfigs`), SubagentStart hook, `.envrc`, permissions allowlist; writes to `.claude/settings.json` (tracked in this repo)
+
+### Bootstrap order
+
+**1. Authenticate and launch Claude Code**
+
+```bash
+claude
+```
+
+Follow the login prompt. In a **local Dev Container**, also run `gh auth login` in the container terminal before this step (Codespaces pre-auths `gh` via `GITHUB_TOKEN`).
+
+**2. Enable the hivemind plugin**
+
+This is the one prerequisite `setup-project` cannot do for itself — it is a skill that runs inside hivemind:
 
 ```text
 claude plugin install hivemind@brenpike
 claude plugin install codex@openai-codex
 claude plugin install claude-mem@claude-mem
+```
+
+> When developing from a local source checkout, you can also install hivemind from the local path instead of the registry. See the Install section of the root README.
+
+**3. Run setup-project**
+
+This is the canonical step that writes all plugin configuration — caveman enablement, the caveman ultra SubagentStart hook, `pluginConfigs`, `.envrc`, and the recommended permissions allowlist:
+
+```text
+/hivemind:setup-project caveman=yes codex=yes claude_mem=yes seed_allowlist=yes
+```
+
+What it writes to `.claude/settings.json` (tracked):
+- `enabledPlugins["hivemind@brenpike"]`, `enabledPlugins["caveman@caveman"]`, `enabledPlugins["codex@openai-codex"]`, `enabledPlugins["claude-mem@thedotmack"]`
+- `pluginConfigs["caveman@caveman"].options.defaultLevel = "ultra"`
+- `hooks.SubagentStart` entry pointing to `.claude/hooks/caveman-ultra-subagent.sh`
+- `permissions.allow` — merged recommended least-privilege allowlist (read/output helpers + scoped git reads)
+
+What it writes outside `.claude/settings.json`:
+- `.envrc` — `export CAVEMAN_DEFAULT_MODE=ultra`
+- `.claude/hooks/caveman-ultra-subagent.sh` — the SubagentStart hook script
+
+All merges are append-if-absent: existing entries are never overwritten.
+
+**4. Wire up Codex review**
+
+```text
 /codex:setup
 ```
-
-In a **local Dev Container**: you must also authenticate `gh` separately:
-
-```bash
-gh auth login
-```
-
-In **Codespaces** this is not needed — `GITHUB_TOKEN` is pre-injected.
 
 ## Running the validation suite manually
 
@@ -134,12 +169,13 @@ All three must pass before opening a PR.
 
 ## `.claude/settings.local.json`
 
-This file is gitignored and per-contributor. `postCreate.sh` seeds two entries into it:
+This file is gitignored and per-contributor. `postCreate.sh` seeds one entry into it:
 
 - **Codex cache Bash grant** — allows the local Codex review flow to run without permission prompts, scoped to the container's `$HOME`.
-- **Caveman enable** — `enabledPlugins: { "caveman@caveman": true }` and `pluginConfigs: { "caveman@caveman": { "options": { "defaultLevel": "ultra" } } }`.
 
 The seed is a jq-merge: it appends entries that are absent and never overwrites entries that are already present. Re-running the script is safe.
+
+Note: caveman enablement (`enabledPlugins`, `pluginConfigs`) is no longer seeded here by postCreate. It is written to the tracked `.claude/settings.json` by `hivemind:setup-project caveman=yes`.
 
 ## Troubleshooting
 
@@ -153,10 +189,10 @@ All install steps are idempotent. Re-running is safe and will skip already-insta
 
 **Soft-fail install warnings:**
 
-Optional installs (npm globals, uv, bun, tmux, marketplace registration, caveman enable) print `[warn]` on failure but do not abort. The CI-parity smoke test gates are the must-pass part. Common causes in offline or locked-down Codespaces:
+Optional installs (npm globals, uv, bun, tmux, marketplace registration, Codex grant) print `[warn]` on failure but do not abort. The CI-parity smoke test gates are the must-pass part. Common causes in offline or locked-down Codespaces:
 
 - Network access blocked — npm/curl installs fail silently; the toolchain verification and JSON/linter gates still run.
-- `claude` CLI not yet installed — marketplace-add and caveman-enable steps are skipped; the smoke test still runs.
+- `claude` CLI not yet installed — marketplace-add and Codex grant steps are skipped; the smoke test still runs.
 
 **Ubuntu-20.04 vs CI `ubuntu-latest` caveat:**
 
@@ -164,4 +200,4 @@ CI runs on `ubuntu-latest`; this container pins `ubuntu-20.04`. Minor coreutils,
 
 **Caveman not active after build:**
 
-The marketplace is registered and `enabledPlugins` is seeded, but `claude plugin install` still requires CLI auth. Run `claude plugin install` commands listed in the "stays manual" section above once authenticated.
+The caveman marketplace is registered automatically, but caveman enablement requires running `hivemind:setup-project caveman=yes` inside an authenticated Claude Code session (see [Configure the plugins](#configure-the-plugins-one-time-in-claude-code) above). The `claude plugin install` step is also required.

@@ -112,11 +112,11 @@ claude plugin install claude-mem@claude-mem
 /codex:setup
 ```
 
-**Caveman is auto-enabled by default.** `postCreate.sh` registers the caveman marketplace and writes `caveman@caveman` (ultra mode) into the gitignored `.claude/settings.local.json` — no auth required. The `claude plugin install` step still requires auth, but the enable entry is pre-seeded so it takes effect immediately after install.
+**Caveman marketplace is registered automatically.** `postCreate.sh` registers the caveman marketplace (no auth required). Caveman *enablement* (`enabledPlugins`, `pluginConfigs`, SubagentStart hook, `.envrc`) is handled by `hivemind:setup-project caveman=yes` — the canonical path for all plugin config — rather than being hand-seeded by postCreate.
 
 The optional npm installs are wrapped so a single failure (for example in an offline/locked-down Codespace) prints a warning but does not abort — only the CI-parity gates are must-pass. The script is idempotent: re-running `bash .devcontainer/postCreate.sh` is safe.
 
-The Codex cache permission grant and caveman enable are both seeded into the **gitignored** `.claude/settings.local.json` (never the tracked `.claude/settings.json`), using jq-merge that does not clobber existing entries.
+The Codex cache permission grant (container `$HOME` node path) is seeded into the **gitignored** `.claude/settings.local.json` (never the tracked `.claude/settings.json`), using a jq-merge that does not clobber existing entries.
 
 See `.devcontainer/README.md` for full launch instructions (Codespaces and local Dev Containers), the complete list of what is auto-provisioned, and troubleshooting.
 
