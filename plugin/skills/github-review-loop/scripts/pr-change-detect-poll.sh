@@ -12,9 +12,10 @@
 #     classes (no bodies): PR state; comment+review COUNTS plus reviewThreads
 #     totalCount (uncapped) AND a paginated unresolved-thread count (isResolved
 #     booleans only, no bodies); check ROLLUP status AND a check-IDENTITY
-#     fingerprint (count + sorted-name/state digest of the rollup contexts, no
-#     logs/bodies) so a changed check SET or per-check state wakes remediation
-#     even when the aggregate rollup string is unchanged; Codex 👍 PRESENT bool
+#     fingerprint (count + sorted-name/state digest spanning ALL rollup-context
+#     pages, walked via cursor exactly like reviewThreads, no logs/bodies) so a
+#     changed check SET or per-check state wakes remediation even when the
+#     aggregate rollup string is unchanged; Codex 👍 PRESENT bool
 #     (via paginated REST reactions).
 #   - It DIFFS the snapshot in bash against the previous iteration and emits a
 #     single minimal marker line ONLY on a real delta or a terminal state.
@@ -62,6 +63,13 @@ poll_fail() {
 case "$PR_NUMBER" in ''|*[!0-9]*) poll_fail ;; esac
 case "$MAX_WATCH_SECONDS" in ''|*[!0-9]*) poll_fail ;; esac
 case "$POLL_INTERVAL_SECONDS" in ''|*[!0-9]*) poll_fail ;; esac
+# Force base-10 interpretation before any $(( )) arithmetic. A digit-only value
+# with a leading zero (e.g. 08/09) is parsed as OCTAL by $(( )), which aborts
+# under set -u (08/09 are invalid octal) and leaves `deadline` unbound, or
+# silently mis-scales (060 == 48s). The case guards above already reject
+# non-numeric/empty input, so `10#` is safe here.
+MAX_WATCH_SECONDS=$((10#$MAX_WATCH_SECONDS))
+POLL_INTERVAL_SECONDS=$((10#$POLL_INTERVAL_SECONDS))
 # Reject a zero (or otherwise non-positive) poll interval: `sleep 0` would make
 # the loop re-poll immediately and hammer gh api until timeout, risking rate
 # limits. Require at least one second between polls before entering the loop.
@@ -95,7 +103,10 @@ have_baseline=0
 # digest of per-context name/state pairs, NO logs/bodies) so a changed check SET
 # or a per-check state shift wakes remediation even when the aggregate rollup
 # string is unchanged (same defect class as totalCount-vs-resolution for
-# threads). Either delta fires CHANGED; the reviewer still does the full
+# threads). The rollup contexts are walked across EVERY page via their own
+# cursor (mirroring the reviewThreads walk), so a check change beyond the first
+# 100 contexts is not missed; rollup state and totalCount are page-invariant and
+# read from page 0 only. Either delta fires CHANGED; the reviewer still does the full
 # body-level classification on wake (thin poll, no interpretation). Writes
 # diagnostic stderr to /dev/null (never /tmp).
 compute_snapshot() {
@@ -103,6 +114,11 @@ compute_snapshot() {
   local cursor=""
   local has_next="true"
   local raw line
+  local check_cursor=""
+  local check_has_next="true"
+  local check_count="" check_frags="" check_digest=""
+  local check_page=0
+  local craw cline
 
   # Walk EVERY reviewThreads page. The cursor lives in the same query that
   # returns state/counts/rollup, so page 0 (no `after`) carries those scalars
@@ -128,14 +144,6 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
           commit {
             statusCheckRollup {
               state
-              contexts(first: 100) {
-                totalCount
-                nodes {
-                  __typename
-                  ... on CheckRun { name status conclusion }
-                  ... on StatusContext { context state }
-                }
-              }
             }
           }
         }
@@ -150,15 +158,6 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
     "COMMENTS=" + ($pr.comments.totalCount | tostring),
     "REVIEWS=" + ($pr.reviews.totalCount | tostring),
     "ROLLUP=" + (($rollup.state) // "NONE"),
-    "CHECKS=" + (
-      (($rollup.contexts.totalCount) // 0 | tostring) + ":" +
-      ([(($rollup.contexts.nodes) // [])[]
-        | if .__typename == "CheckRun"
-          then (.name // "") + "|" + (.status // "") + "|" + (.conclusion // "")
-          else (.context // "") + "|" + (.state // "")
-          end]
-       | sort | join(";"))
-    ),
     "HASNEXT=" + ($pr.reviewThreads.pageInfo.hasNextPage | tostring),
     "CURSOR=" + ($pr.reviewThreads.pageInfo.endCursor // ""),
     ($pr.reviewThreads.nodes[] | select(.isResolved == false) | "UNRESOLVED")
@@ -197,7 +196,6 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
         COMMENTS=*) cur_comments="${line#COMMENTS=}" ;;
         REVIEWS=*) cur_reviews="${line#REVIEWS=}" ;;
         ROLLUP=*) cur_rollup="${line#ROLLUP=}" ;;
-        CHECKS=*) cur_checks="${line#CHECKS=}" ;;
         HASNEXT=*) has_next="${line#HASNEXT=}" ;;
         CURSOR=*) cursor="${line#CURSOR=}" ;;
         UNRESOLVED) unresolved_count=$((unresolved_count + 1)) ;;
@@ -207,6 +205,87 @@ $raw
 EOF
   done
   cur_unresolved="$unresolved_count"
+
+  # Walk EVERY statusCheckRollup.contexts page via its OWN cursor (a dedicated
+  # walk, NOT co-walking the reviewThreads cursor). Page 0 (no `after`) carries
+  # the page-invariant context totalCount; each page emits one CHECK= fingerprint
+  # fragment per context (CheckRun: name|status|conclusion; StatusContext:
+  # context|state — names/states only, NO logs/bodies, preserving the thin-poll
+  # no-bodies invariant). A null statusCheckRollup (check-less PR) yields zero
+  # fragments and totalCount 0, fingerprinting to "0:" — NOT a POLL_ERROR. Any
+  # page fetch failure returns 1 so the two-failure→POLL_ERROR guard sees it; no
+  # partial snapshot is fingerprinted on a mid-pagination failure.
+  while [ "$check_has_next" = "true" ]; do
+    craw=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f after="$check_cursor" -f query='
+query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              state
+              contexts(first: 100, after: $after) {
+                totalCount
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  __typename
+                  ... on CheckRun { name status conclusion }
+                  ... on StatusContext { context state }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}' --jq '
+    (.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup) as $rollup |
+    ($rollup.contexts) as $ctx |
+    "CHECKTOTAL=" + (($ctx.totalCount) // 0 | tostring),
+    "CHECKHASNEXT=" + (($ctx.pageInfo.hasNextPage) // false | tostring),
+    "CHECKCURSOR=" + (($ctx.pageInfo.endCursor) // ""),
+    ((($ctx.nodes) // [])[]
+      | if .__typename == "CheckRun"
+        then "CHECK=" + (.name // "") + "|" + (.status // "") + "|" + (.conclusion // "")
+        else "CHECK=" + (.context // "") + "|" + (.state // "")
+        end)
+  ' 2>/dev/null) || return 1
+
+    # Reset per-page pagination signals; an empty endCursor leaves cursor empty.
+    check_has_next="false"
+    check_cursor=""
+
+    # Parse the labeled lines. CHECKTOTAL is page-invariant — read from page 0
+    # ONLY so later pages cannot clobber it. CHECKHASNEXT/CHECKCURSOR appear
+    # every page; one CHECK= line per context on the current page accumulates
+    # into the fragment buffer. Read the captured string directly — no pipe
+    # into Monitor.
+    while IFS= read -r cline; do
+      case "$cline" in
+        CHECKTOTAL=*) [ "$check_page" -eq 0 ] && check_count="${cline#CHECKTOTAL=}" ;;
+        CHECKHASNEXT=*) check_has_next="${cline#CHECKHASNEXT=}" ;;
+        CHECKCURSOR=*) check_cursor="${cline#CHECKCURSOR=}" ;;
+        CHECK=*) check_frags="${check_frags}${cline#CHECK=}"$'\n' ;;
+      esac
+    done <<EOF
+$craw
+EOF
+    check_page=$((check_page + 1))
+  done
+
+  # Deterministic digest: sort the collected per-context fragments and join with
+  # ";" into the SAME COUNT:sorted-digest shape the diff already compares, so an
+  # identical check set fingerprints identically across runs and pages. The sort
+  # is a data transform on a captured string, NOT a functional pipe into Monitor.
+  # No CHECKTOTAL line (null rollup) leaves check_count empty → coerce to 0.
+  if [ -n "$check_frags" ]; then
+    check_digest=$(printf '%s' "$check_frags" | sort | paste -sd ';' -)
+  else
+    check_digest=""
+  fi
+  cur_checks="${check_count:-0}:${check_digest}"
 
   # Codex 👍 via the paginated REST reactions endpoint. The --jq filter emits the
   # matching login ONCE per Codex +1 reaction and nothing otherwise; gh may apply
