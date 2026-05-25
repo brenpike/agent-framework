@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-05-25
+
+### Changed
+
+- **`github-review-loop` poll rewritten to a thin coarse scalar change-detector**, restoring the D5 design intent. A single non-paginated GraphQL query now reads cheap scalars only (PR state; comment/review/reviewThreads `totalCount`s; check rollup state; check-context `totalCount`) plus the Codex 👍 bool; both in-bash GraphQL cursor-walks (the reviewThreads unresolved-count walk and the `statusCheckRollup.contexts` per-context fingerprint walk) and their digest machinery were removed (poll dropped from ~300 to ~240 lines). Accepted trade-off: a zero-scalar-delta mutation (a silent thread resolve→reopen with no new comment, or a check swapped at the same rollup state + count) is detected on the next activity / next reviewer wake rather than instantly — the reviewer re-fetches all state on every wake.
+
+### Fixed
+
+- **`github-review-loop` poll: base-10-coerce `MAX_WATCH_SECONDS` and `POLL_INTERVAL_SECONDS` before arithmetic/comparison.** Leading-zero inputs (`08`/`09`) no longer abort the watch under `set -u`, and `060` is 60s (not 48s).
+
 ## [2.8.0] - 2026-05-24
 
 ### Added
