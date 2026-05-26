@@ -243,6 +243,9 @@ All skills are invoked using the namespaced form:
 | `hivemind:github-review-loop` | Watch a PR in the main session and dispatch the fix-mode `github-reviewer` per actionable event — owns the post-PR review loop |
 | `hivemind:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `hivemind:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
+| `hivemind:create-handoff` | Generate an optional session-resumption handoff doc from a plan |
+| `hivemind:plan-to-prd` | Turn an interrogated plan into a committed WHAT-only PRD |
+| `hivemind:prd-to-issues` | Slice a PRD into vertically-sliced, brood-ready GitHub issues |
 | `hivemind:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.hivemind/` to `.gitignore` |
 | `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `hivemind:drone` context only |
 | `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
