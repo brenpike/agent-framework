@@ -917,16 +917,27 @@ code, pre, kbd {
     max-height: 0;
     opacity: 0;
     padding-block: 0;
+    /* visibility:hidden pulls the closed drawer's links out of the tab order
+       (max-height/opacity alone leave them focusable). It still transitions,
+       so the open animation is preserved. */
+    visibility: hidden;
     transition:
       max-height var(--transition-base),
       opacity var(--transition-base),
-      padding-block var(--transition-base);
+      padding-block var(--transition-base),
+      visibility 0s linear var(--transition-base);
   }
 
   .site-nav[data-nav-open] .site-nav__drawer {
     max-height: 320px;
     opacity: 1;
     padding-block: var(--space-5);
+    visibility: visible;
+    transition:
+      max-height var(--transition-base),
+      opacity var(--transition-base),
+      padding-block var(--transition-base),
+      visibility 0s;
   }
 }
 
