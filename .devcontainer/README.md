@@ -119,6 +119,7 @@ This is the one prerequisite `setup-project` cannot do for itself — it is a sk
 claude plugin install hivemind@brenpike
 claude plugin install codex@openai-codex
 claude plugin install claude-mem@thedotmack
+claude plugin install caveman@caveman
 ```
 
 > When developing from a local source checkout, you can also install hivemind from the local path instead of the registry. See the Install section of the root README.

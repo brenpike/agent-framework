@@ -108,7 +108,7 @@ This repo ships a `.devcontainer/` that provisions a **CI-parity toolchain** so 
 ```text
 claude plugin install hivemind@brenpike
 claude plugin install codex@openai-codex
-claude plugin install claude-mem@claude-mem
+claude plugin install claude-mem@thedotmack
 /codex:setup
 ```
 
