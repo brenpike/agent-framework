@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Why adopt Hivemind? Six real problems the multi-agent pipeline solves — from managing the plan-to-PR flow to parallel execution and optional tooling.">
+  <title>Benefits — Hivemind</title>
+  <!-- All paths are relative — site serves under https://brenpike.github.io/hivemind/ -->
+  <link rel="stylesheet" href="./styles/main.css">
+  <!-- [motion-hook] <script src="./js/motion.js"> added in motion phase -->
+</head>
+<body>
+
+  <!-- =====================================================================
+       SITE NAV
+       [motion-hook] id="site-nav" data-nav-open attribute toggled by JS
+       ===================================================================== -->
+  <header class="site-nav" id="site-nav" role="banner">
+    <div class="site-nav__inner">
+      <a href="./index.html" class="site-nav__logo" id="nav-logo-glow" aria-label="Hivemind — home">
+        Hivemind
+      </a>
+
+      <!-- Mobile toggle — behavior wired in motion phase -->
+      <!-- [motion-hook] id="nav-toggle" data-nav-toggle controls drawer open/close -->
+      <button
+        class="site-nav__toggle"
+        id="nav-toggle"
+        data-nav-toggle
+        aria-label="Toggle navigation menu"
+        aria-expanded="false"
+        aria-controls="nav-drawer"
+        type="button"
+      >
+        <span class="site-nav__toggle-bar" aria-hidden="true"></span>
+        <span class="site-nav__toggle-bar" aria-hidden="true"></span>
+        <span class="site-nav__toggle-bar" aria-hidden="true"></span>
+      </button>
+
+      <nav class="site-nav__links" aria-label="Site navigation">
+        <a href="./index.html" class="site-nav__link">Home</a>
+        <a href="./functionality.html" class="site-nav__link">How It Works</a>
+        <a href="./benefits.html" class="site-nav__link" aria-current="page">Benefits</a>
+        <a href="https://github.com/brenpike/hivemind" class="site-nav__link" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+
+    <!-- Mobile drawer -->
+    <!-- [motion-hook] id="nav-drawer" aria-expanded mirrors toggle state -->
+    <nav class="site-nav__drawer" id="nav-drawer" aria-label="Mobile navigation" aria-hidden="true">
+      <a href="./index.html" class="site-nav__link">Home</a>
+      <a href="./functionality.html" class="site-nav__link">How It Works</a>
+      <a href="./benefits.html" class="site-nav__link" aria-current="page">Benefits</a>
+      <a href="https://github.com/brenpike/hivemind" class="site-nav__link" target="_blank" rel="noopener noreferrer">GitHub</a>
+    </nav>
+  </header>
+
+
+  <main id="main-content">
+
+    <!-- ===================================================================
+         PAGE HERO
+         [motion-hook] id="ben-hero" — above fold, no scroll-reveal needed
+         [motion-hook] id="ben-hero-hex-1" class="hex-accent" — parallax shape
+         =================================================================== -->
+    <section class="site-section scanline-overlay" id="ben-hero" aria-labelledby="ben-hero-heading">
+      <div class="hex-accent" id="ben-hero-hex-1" aria-hidden="true" style="top:-60px;right:-80px;"></div>
+      <div class="hex-accent" id="ben-hero-hex-2" aria-hidden="true" style="bottom:20px;left:-60px;width:180px;height:180px;opacity:0.03;background:radial-gradient(circle at 50% 50%, var(--color-accent-magenta) 0%, transparent 70%);"></div>
+
+      <div class="container" style="position:relative;z-index:2;">
+        <div style="max-width:760px;">
+          <span class="eyebrow">Why Adopt It</span>
+          <h1 id="ben-hero-heading" style="font-size:var(--text-3xl);margin-bottom:var(--space-5);">
+            Problems Solved
+          </h1>
+          <p style="font-size:var(--text-lg);color:var(--color-text-dim);line-height:1.5;max-width:620px;">
+            Six real friction points in the plan-to-PR workflow — and how the Hivemind pipeline addresses each one.
+          </p>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================
+         ON-PAGE JUMP NAV
+         =================================================================== -->
+    <nav class="container" aria-label="Page sections" style="padding-block:var(--space-5);border-bottom:1px solid var(--color-border);">
+      <ol style="display:flex;flex-wrap:wrap;gap:var(--space-3) var(--space-5);list-style:none;" role="list">
+        <li><a href="#ben-pipeline"   style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.1em;color:var(--color-text-dim);">01 Pipeline overhead</a></li>
+        <li><a href="#ben-planning"   style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.1em;color:var(--color-text-dim);">02 Planning vs building</a></li>
+        <li><a href="#ben-review"     style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.1em;color:var(--color-text-dim);">03 Unreviewed code</a></li>
+        <li><a href="#ben-parallelism" style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.1em;color:var(--color-text-dim);">04 Serialised work</a></li>
+        <li><a href="#ben-git"        style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.1em;color:var(--color-text-dim);">05 Ad-hoc git hygiene</a></li>
+        <li><a href="#ben-lockout"    style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.1em;color:var(--color-text-dim);">06 Tooling lock-in</a></li>
+        <li><a href="#ben-install"    style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.1em;color:var(--color-text-dim);">Install</a></li>
+      </ol>
+    </nav>
+
+
+    <!-- ===================================================================
+         BENEFIT 01 — PIPELINE OVERHEAD
+         [motion-hook] .js-scroll-reveal data-reveal="fade-up" on cards
+         =================================================================== -->
+    <section class="site-section site-section--tight" id="ben-pipeline" aria-labelledby="ben-pipeline-heading">
+      <div class="container">
+
+        <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="0" -->
+        <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="0">
+          <span class="eyebrow">01 — Pipeline overhead</span>
+          <h2 id="ben-pipeline-heading" style="font-size:var(--text-2xl);margin-bottom:var(--space-5);">
+            Managing the pipeline is its own job
+          </h2>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-8);align-items:start;">
+
+          <!-- Problem / Solution / Benefit -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="100" -->
+          <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="100">
+
+            <div style="margin-bottom:var(--space-6);">
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-magenta);margin-bottom:var(--space-2);">Problem</p>
+              <p style="color:var(--color-text-dim);">
+                Manually managing the plan → build → review → ship pipeline — deciding when to plan, when to build, when to stop and review — is cognitive overhead on top of the actual work.
+              </p>
+            </div>
+
+            <div style="margin-bottom:var(--space-6);">
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-violet);margin-bottom:var(--space-2);">Solution</p>
+              <p style="color:var(--color-text-dim);">
+                The overlord is the control plane that coordinates specialized bioforms to plan, build, review, and ship code — <strong style="color:var(--color-text);">so you don't have to manage the pipeline yourself.</strong>
+              </p>
+            </div>
+
+            <div>
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-spore);margin-bottom:var(--space-2);">Benefit</p>
+              <p style="color:var(--color-text-dim);">
+                Less context-switching. A single interface. You give the overlord a task; the swarm handles the rest.
+              </p>
+            </div>
+
+          </div>
+
+          <!-- ASCII diagram -->
+          <!-- [motion-hook] id="ben-pipeline-diagram" class="js-scroll-reveal" data-reveal="fade-left" data-delay="200" -->
+          <div class="code-block js-scroll-reveal" id="ben-pipeline-diagram" data-reveal="fade-left" data-delay="200" role="img" aria-label="Pipeline: you give the overlord a task; the overlord routes to cerebrate, drone/changeling, adaptation cycle, then PR — you do not manage the hand-offs">
+            <pre><code><span style="color:var(--color-text-dim);">Before:  You → plan → build → review → ship</span>
+<span style="color:var(--color-text-dim);">         (every hand-off is manual)</span>
+
+<span style="color:var(--color-accent-spore);">After:</span>
+You → <span style="color:var(--color-accent-violet);">Overlord</span>
+       ├─▶ <span style="color:var(--color-accent-cyan);">Cerebrate</span>       (plan)
+       ├─▶ <span style="color:var(--color-accent-spore);">Drone</span> / <span style="color:var(--color-accent-magenta);">Changeling</span>  (build)
+       ├─▶ <span style="color:var(--color-accent-cyan);">Adaptation Cycle</span>  (review)
+       └─▶ <span style="color:var(--color-accent-spore);">PR</span></code></pre>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <hr class="section-divider">
+
+
+    <!-- ===================================================================
+         BENEFIT 02 — PLANNING VS BUILDING
+         [motion-hook] .js-scroll-reveal data-reveal="fade-up" on content
+         =================================================================== -->
+    <section class="site-section site-section--tight" id="ben-planning" aria-labelledby="ben-planning-heading">
+      <div class="container">
+
+        <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="0" -->
+        <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="0">
+          <span class="eyebrow">02 — Planning vs building</span>
+          <h2 id="ben-planning-heading" style="font-size:var(--text-2xl);margin-bottom:var(--space-5);">
+            Mixing planning and building leads to thrash
+          </h2>
+        </div>
+
+        <div class="card-grid card-grid--2" role="list">
+
+          <!-- Problem card -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="100" -->
+          <article class="card js-scroll-reveal" data-reveal="fade-up" data-delay="100" role="listitem">
+            <div class="card__icon" aria-label="Warning">&#9888;&#65039;</div>
+            <h3 class="card__title" style="color:var(--color-accent-magenta);">Problem</h3>
+            <p class="card__body">
+              When the same agent plans and builds simultaneously, it re-plans mid-implementation, second-guesses earlier decisions, and churns. The plan and the code drift apart.
+            </p>
+          </article>
+
+          <!-- Solution card -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="200" -->
+          <article class="card js-scroll-reveal" data-reveal="fade-up" data-delay="200" role="listitem">
+            <div class="card__icon" aria-hidden="true">&#129504;</div>
+            <h3 class="card__title" style="color:var(--color-accent-spore);">Solution + Benefit</h3>
+            <p class="card__body">
+              Separation of concerns: the read-only cerebrate plans (produces the directive), then drone and changeling build. Planning happens once, deliberately, before any code is written. Clearer reasoning; fewer mid-flight reversals.
+            </p>
+            <span class="badge badge--cyan" style="margin-top:var(--space-4);">Cerebrate is read-only</span>
+          </article>
+
+        </div>
+
+      </div>
+    </section>
+
+    <hr class="section-divider">
+
+
+    <!-- ===================================================================
+         BENEFIT 03 — UNREVIEWED CODE
+         [motion-hook] .js-scroll-reveal data-reveal="fade-up" on content
+         =================================================================== -->
+    <section class="site-section site-section--tight" id="ben-review" aria-labelledby="ben-review-heading">
+      <div class="container">
+
+        <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="0" -->
+        <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="0">
+          <span class="eyebrow">03 — Unreviewed code</span>
+          <h2 id="ben-review-heading" style="font-size:var(--text-2xl);margin-bottom:var(--space-5);">
+            Code ships without a review gate
+          </h2>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-8);align-items:start;">
+
+          <!-- Prose -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="100" -->
+          <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="100">
+
+            <div style="margin-bottom:var(--space-6);">
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-magenta);margin-bottom:var(--space-2);">Problem</p>
+              <p style="color:var(--color-text-dim);">
+                Without a built-in review step, code reaches the PR — or production — without being challenged. Adding an external review step is manual work that gets skipped under pressure.
+              </p>
+            </div>
+
+            <div style="margin-bottom:var(--space-6);">
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-violet);margin-bottom:var(--space-2);">Solution</p>
+              <p style="color:var(--color-text-dim);">
+                The adaptation cycle reviews before shipping. With the optional Codex companion, local pre-PR review runs automatically, and the <code>github-review-loop</code> skill handles post-PR feedback in a loop until the PR stabilises.
+              </p>
+            </div>
+
+            <div>
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-spore);margin-bottom:var(--space-2);">Benefit</p>
+              <p style="color:var(--color-text-dim);">
+                A review gate built into the flow — not bolted on after the fact.
+              </p>
+            </div>
+
+            <div style="margin-top:var(--space-5);display:flex;gap:var(--space-3);flex-wrap:wrap;">
+              <span class="badge badge--cyan">hivemind:adaptation-cycle</span>
+              <span class="badge badge--violet">hivemind:github-review-loop</span>
+            </div>
+
+          </div>
+
+          <!-- Review flow diagram -->
+          <!-- [motion-hook] id="ben-review-diagram" class="js-scroll-reveal" data-reveal="fade-right" data-delay="200" -->
+          <div class="code-block js-scroll-reveal" id="ben-review-diagram" data-reveal="fade-right" data-delay="200" role="img" aria-label="Review flow: build complete feeds into adaptation cycle with Codex review; findings are classified and fixes delegated back before the PR is opened; after the PR the github-review-loop handles further feedback">
+            <pre><code>Build complete
+ └─▶ <span style="color:var(--color-accent-cyan);">Adaptation Cycle</span>
+      ├─▶ Codex review on branch diff
+      ├─▶ Findings classified
+      └─▶ Fixes delegated back
+
+PR opened
+ └─▶ <span style="color:var(--color-accent-violet);">github-review-loop</span>
+      ├─▶ Watch for review feedback
+      ├─▶ Classify + fix
+      └─▶ Loop until stable</code></pre>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <hr class="section-divider">
+
+
+    <!-- ===================================================================
+         BENEFIT 04 — SERIALISED WORK
+         [motion-hook] .js-scroll-reveal data-reveal="fade-up" on content
+         =================================================================== -->
+    <section class="site-section site-section--tight" id="ben-parallelism" aria-labelledby="ben-parallelism-heading">
+      <div class="container">
+
+        <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="0" -->
+        <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="0">
+          <span class="eyebrow">04 — Serialised work</span>
+          <h2 id="ben-parallelism-heading" style="font-size:var(--text-2xl);margin-bottom:var(--space-5);">
+            Large work is slow when tasks run one at a time
+          </h2>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-8);align-items:start;">
+
+          <!-- Prose -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="100" -->
+          <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="100">
+
+            <div style="margin-bottom:var(--space-6);">
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-magenta);margin-bottom:var(--space-2);">Problem</p>
+              <p style="color:var(--color-text-dim);">
+                When independent work must be serialised through a single session, the pipeline becomes a bottleneck. Large features that could proceed in parallel wait on each other.
+              </p>
+            </div>
+
+            <div style="margin-bottom:var(--space-6);">
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-violet);margin-bottom:var(--space-2);">Solution</p>
+              <p style="color:var(--color-text-dim);">
+                Brood mode — the overlord splits work into independent <strong style="color:var(--color-text);">strains</strong> and dispatches a <strong style="color:var(--color-text);">brood</strong>: multiple parallel sessions, each running its own full lifecycle in a separate git worktree.
+              </p>
+            </div>
+
+            <div>
+              <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-spore);margin-bottom:var(--space-2);">Benefit</p>
+              <p style="color:var(--color-text-dim);">
+                Parallel throughput on independent work. Each strain gets its own branch and PR.
+              </p>
+            </div>
+
+            <div style="margin-top:var(--space-5);display:flex;gap:var(--space-3);flex-wrap:wrap;">
+              <span class="badge badge--spore">hivemind:spawn-brood</span>
+              <span class="badge badge--cyan">hivemind:brood-status</span>
+            </div>
+
+          </div>
+
+          <!-- Brood diagram -->
+          <!-- [motion-hook] id="ben-brood-diagram" class="js-scroll-reveal" data-reveal="fade-left" data-delay="200" -->
+          <div class="code-block js-scroll-reveal" id="ben-brood-diagram" data-reveal="fade-left" data-delay="200" role="img" aria-label="Brood mode: overlord enters hatchery mode, cerebrate decomposes work into strain A, B, and C running in parallel, each with its own branch and PR">
+            <pre><code><span style="color:var(--color-accent-violet);">Overlord</span>  (hatchery mode)
+ └─▶ <span style="color:var(--color-accent-cyan);">Cerebrate</span>  (decompose)
+      │
+      ├─▶ <span style="color:var(--color-accent-spore);">Strain A</span>  ─┐
+      │    └─▶ own branch, own PR │
+      ├─▶ <span style="color:var(--color-accent-spore);">Strain B</span>  ─┤  parallel
+      │    └─▶ own branch, own PR │
+      └─▶ <span style="color:var(--color-accent-spore);">Strain C</span>  ─┘
+           └─▶ own branch, own PR</code></pre>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <hr class="section-divider">
+
+
+    <!-- ===================================================================
+         BENEFIT 05 — AD-HOC GIT HYGIENE
+         [motion-hook] .js-scroll-reveal data-reveal="fade-up" on cards
+         =================================================================== -->
+    <section class="site-section site-section--tight" id="ben-git" aria-labelledby="ben-git-heading">
+      <div class="container">
+
+        <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="0" -->
+        <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="0">
+          <span class="eyebrow">05 — Ad-hoc git hygiene</span>
+          <h2 id="ben-git-heading" style="font-size:var(--text-2xl);margin-bottom:var(--space-5);">
+            Git workflow is inconsistent without a system
+          </h2>
+        </div>
+
+        <div class="card-grid card-grid--2" role="list">
+
+          <!-- Problem -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="100" -->
+          <article class="card js-scroll-reveal" data-reveal="fade-up" data-delay="100" role="listitem">
+            <div class="card__icon" aria-label="Warning">&#9888;&#65039;</div>
+            <h3 class="card__title" style="color:var(--color-accent-magenta);">Problem</h3>
+            <p class="card__body">
+              Without guardrails, branches are created informally, commits land with vague messages or not at all, and PRs open before validation passes. Every project drifts toward a different ad-hoc convention.
+            </p>
+          </article>
+
+          <!-- Solution + Benefit -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="200" -->
+          <article class="card js-scroll-reveal" data-reveal="fade-up" data-delay="200" role="listitem">
+            <div class="card__icon" aria-hidden="true">&#9913;&#65039;</div>
+            <h3 class="card__title" style="color:var(--color-accent-spore);">Solution + Benefit</h3>
+            <p class="card__body">
+              The overlord owns the git lifecycle — working branches, checkpoint commits (<em>molts</em>), and PR only after validation and versioning gates pass. Consistent, compliant history without manual discipline.
+            </p>
+            <div style="margin-top:var(--space-4);display:flex;gap:var(--space-3);flex-wrap:wrap;">
+              <span class="badge badge--violet">hivemind:create-working-branch</span>
+              <span class="badge badge--spore">hivemind:molt</span>
+              <span class="badge badge--cyan">hivemind:open-plan-pr</span>
+            </div>
+          </article>
+
+        </div>
+
+      </div>
+    </section>
+
+    <hr class="section-divider">
+
+
+    <!-- ===================================================================
+         BENEFIT 06 — TOOLING LOCK-IN
+         [motion-hook] .js-scroll-reveal data-reveal="fade-up" on cards
+         =================================================================== -->
+    <section class="site-section site-section--tight" id="ben-lockout" aria-labelledby="ben-lockout-heading">
+      <div class="container">
+
+        <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="0" -->
+        <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="0">
+          <span class="eyebrow">06 — Tooling lock-in</span>
+          <h2 id="ben-lockout-heading" style="font-size:var(--text-2xl);margin-bottom:var(--space-5);">
+            Rigid frameworks force you to adopt everything at once
+          </h2>
+        </div>
+
+        <div style="margin-bottom:var(--space-7);">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-8);align-items:start;">
+
+            <!-- Prose -->
+            <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="100" -->
+            <div class="js-scroll-reveal" data-reveal="fade-up" data-delay="100">
+
+              <div style="margin-bottom:var(--space-6);">
+                <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-magenta);margin-bottom:var(--space-2);">Problem</p>
+                <p style="color:var(--color-text-dim);">
+                  Tooling that demands full buy-in up front — including specific review services, memory systems, or communication styles — blocks incremental adoption. If one dependency is absent, nothing works.
+                </p>
+              </div>
+
+              <div style="margin-bottom:var(--space-6);">
+                <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-violet);margin-bottom:var(--space-2);">Solution</p>
+                <p style="color:var(--color-text-dim);">
+                  Optional companion plugins: <code>claude-mem</code> for cross-session memory, <code>codex</code> for local and GitHub-integrated review, <code>caveman</code> for token-compressed output. All optional. The framework works without any of them; if not installed, steps that depend on them are skipped gracefully. The theme itself is optional flavor — <strong style="color:var(--color-text);">the framework works with or without it.</strong>
+                </p>
+              </div>
+
+              <div>
+                <p style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.15em;text-transform:uppercase;color:var(--color-accent-spore);margin-bottom:var(--space-2);">Benefit</p>
+                <p style="color:var(--color-text-dim);">
+                  Adopt incrementally. Start with the core pipeline; layer in companions when you need them.
+                </p>
+              </div>
+
+            </div>
+
+            <!-- Companion stack -->
+            <!-- [motion-hook] id="ben-companions-diagram" class="js-scroll-reveal" data-reveal="fade-left" data-delay="200" -->
+            <div class="code-block js-scroll-reveal" id="ben-companions-diagram" data-reveal="fade-left" data-delay="200" role="img" aria-label="Companion plugins are all optional layers on top of the core framework: claude-mem adds memory, codex adds review, caveman adds compression; removing any has no effect on the others">
+              <pre><code><span style="color:var(--color-text-dim);">Core framework  ──────────────── always on</span>
+ └─ overlord / cerebrate / drone / changeling
+
+<span style="color:var(--color-accent-cyan);">+ claude-mem</span>    <span style="color:var(--color-text-dim);">─── optional (memory)</span>
+<span style="color:var(--color-accent-violet);">+ codex</span>         <span style="color:var(--color-text-dim);">─── optional (review)</span>
+<span style="color:var(--color-accent-spore);">+ caveman</span>       <span style="color:var(--color-text-dim);">─── optional (compression)</span>
+
+<span style="color:var(--color-text-dim);">Remove any layer → rest still works</span></code></pre>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Companion cards -->
+        <div class="card-grid" role="list">
+
+          <!-- claude-mem -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="0" -->
+          <article class="card js-scroll-reveal" data-reveal="fade-up" data-delay="0" role="listitem">
+            <div class="card__icon" aria-hidden="true">&#129504;</div>
+            <h3 class="card__title">claude-mem</h3>
+            <p class="card__body">
+              Optional cross-session memory. When installed, the cerebrate reads claude-mem memory before every plan. Writes happen through automatic capture.
+            </p>
+            <span class="badge badge--violet" style="margin-top:var(--space-4);">Optional</span>
+          </article>
+
+          <!-- codex -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="100" -->
+          <article class="card js-scroll-reveal" data-reveal="fade-up" data-delay="100" role="listitem">
+            <div class="card__icon" aria-hidden="true">&#128270;</div>
+            <h3 class="card__title">codex</h3>
+            <p class="card__body">
+              Local and GitHub-integrated Codex review. Enables <code>local-reviewer</code> (pre-PR) and <code>github-review-loop</code> (post-PR). If not installed, review steps are skipped gracefully.
+            </p>
+            <span class="badge badge--cyan" style="margin-top:var(--space-4);">Optional</span>
+          </article>
+
+          <!-- caveman -->
+          <!-- [motion-hook] class="js-scroll-reveal" data-reveal="fade-up" data-delay="200" -->
+          <article class="card js-scroll-reveal" data-reveal="fade-up" data-delay="200" role="listitem">
+            <div class="card__icon" aria-hidden="true">&#128367;</div>
+            <h3 class="card__title">caveman</h3>
+            <p class="card__body">
+              Token-compressed communication. When installed, all framework agents output in caveman ultra mode — reducing token usage while preserving full technical accuracy.
+            </p>
+            <span class="badge badge--spore" style="margin-top:var(--space-4);">Optional</span>
+          </article>
+
+        </div>
+
+      </div>
+    </section>
+
+    <hr class="section-divider">
+
+
+    <!-- ===================================================================
+         BOTTOM CTA — INSTALL
+         [motion-hook] id="ben-install" class="js-scroll-reveal" data-reveal="fade-up"
+         =================================================================== -->
+    <section class="site-section site-section--tight" id="ben-install" aria-labelledby="ben-install-heading">
+      <div class="container">
+        <div style="text-align:center;max-width:620px;margin-inline:auto;">
+
+          <span class="eyebrow">Get Started</span>
+          <h2 id="ben-install-heading" style="font-size:var(--text-2xl);margin-bottom:var(--space-5);">
+            Two commands inside Claude Code
+          </h2>
+          <p style="color:var(--color-text-dim);margin-bottom:var(--space-6);">
+            No external install step. Add the marketplace, install the plugin, done.
+          </p>
+
+          <!-- [motion-hook] id="ben-install-block" class="js-glow-target" data-glow="violet" -->
+          <div class="code-block pulse-violet js-scroll-reveal" id="ben-install-block" data-reveal="fade-up" style="text-align:left;margin-bottom:var(--space-6);" role="region" aria-label="Installation commands">
+            <pre><code><span class="prompt">/</span>plugin marketplace add https://github.com/brenpike/hivemind.git
+<span class="prompt">/</span>plugin install hivemind@brenpike</code></pre>
+          </div>
+
+          <div style="display:flex;gap:var(--space-4);justify-content:center;flex-wrap:wrap;">
+            <a href="https://github.com/brenpike/hivemind" class="btn btn--primary" target="_blank" rel="noopener noreferrer" aria-label="View Hivemind on GitHub (opens in new tab)">
+              View on GitHub
+            </a>
+            <a href="./functionality.html" class="btn btn--ghost">
+              How It Works
+            </a>
+            <a href="./index.html" class="btn btn--ghost">
+              Home
+            </a>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+
+  <!-- =====================================================================
+       SITE FOOTER
+       ===================================================================== -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="site-footer__inner">
+      <span class="site-footer__wordmark" aria-label="Hivemind">Hivemind</span>
+
+      <nav class="site-footer__links" aria-label="Footer navigation">
+        <a href="./index.html" class="site-footer__link">Home</a>
+        <a href="./functionality.html" class="site-footer__link">How It Works</a>
+        <a href="./benefits.html" class="site-footer__link">Benefits</a>
+        <a href="https://github.com/brenpike/hivemind" class="site-footer__link" target="_blank" rel="noopener noreferrer" aria-label="Hivemind on GitHub (opens in new tab)">GitHub</a>
+      </nav>
+
+      <span class="site-footer__copy">
+        MIT &mdash; fonts: Orbitron &amp; JetBrains Mono (OFL 1.1)
+      </span>
+    </div>
+  </footer>
+
+</body>
+</html>
