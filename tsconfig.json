@@ -5,9 +5,9 @@
     "moduleResolution": "bundler",
     "strict": true,
     "lib": ["ES2019", "DOM"],
-    "rootDir": "web/scripts",
+    "rootDir": "web/src",
     "outDir": "web/scripts",
     "sourceMap": true
   },
-  "include": ["web/scripts/**/*.ts"]
+  "include": ["web/src/**/*.ts"]
 }
