@@ -844,3 +844,75 @@ code, pre, kbd {
    Later phases add page rules BELOW this comment in separate <style> blocks
    or linked stylesheets. Do not redefine :root tokens.
    ========================================================================== */
+
+
+/* ==========================================================================
+   14. functionality.html — reference table component
+   Used on the Agents and Skills tables. No shared equivalent existed.
+   ========================================================================== */
+
+/* Scroll wrapper prevents layout break on narrow viewports */
+.func-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-md);
+}
+
+.func-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  color: var(--color-text-dim);
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  /* border-radius on table needs overflow:hidden on wrapper */
+  overflow: hidden;
+}
+
+.func-table thead {
+  background-color: var(--color-bg-raised);
+}
+
+.func-table th {
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text);
+  text-align: left;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--color-border-accent);
+  white-space: nowrap;
+}
+
+.func-table td {
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+  line-height: 1.6;
+}
+
+.func-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.func-table tbody tr:hover td {
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
+}
+
+/* First column — monospace identifier */
+.func-table td:first-child {
+  font-family: var(--font-mono);
+  color: var(--color-accent-cyan);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .func-table th,
+  .func-table td {
+    padding: var(--space-3) var(--space-4);
+  }
+}
