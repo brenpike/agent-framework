@@ -59,8 +59,7 @@ _Avoid_: assignment, dispatch, handoff (which has a different meaning)
 
 **Essence**:
 The distilled knowledge artifact (worker report) produced at phase completion and passed forward to enable the next phase to reconstruct context.
-_Alias_: handoff
-_Avoid_: transfer, relay, spawn
+_Avoid_: transfer, relay, spawn, handoff (which is the session-resumption artifact)
 
 **Checkpoint Commit**:
 A git commit made at a phase boundary or milestone, preserving incremental progress on the working branch.
@@ -249,6 +248,25 @@ _Avoid_: stream, task (too generic), work item, lane
 The YAML file at `.hivemind/brood/manifest.yaml` in the main checkout, tracking active brood sessions, their worktree paths, branches, tmux sessions, and status.
 _Avoid_: brood config, brood state, registry
 
+### Pipeline & Artifacts
+
+**Initiative**:
+The unit of work correlated by a single slug across its plan, Handoff, PRD, and issue set. One slug per initiative; the slug names `.hivemind/plans/<slug>.md`, `.hivemind/handoffs/<slug>.md`, `docs/prds/<slug>.md`, and the `initiative:<slug>` issue label.
+_Avoid_: project, epic, feature
+
+**PRD**:
+The committed, durable specification of WHAT an Initiative delivers, at `docs/prds/<slug>.md`. Contains problem statement, solution, user stories, acceptance criteria, implementation decisions (architectural/contract level), testing decisions, success metrics, and out-of-scope. Never carries file scope or step sequencing — that is the Directive. Produced by `hivemind:plan-to-prd`.
+_Avoid_: spec, design doc, directive
+
+**Vertical Slice**:
+A thin, end-to-end unit of behavior cutting every layer, small enough to be independently grabbable; one slice = one GitHub issue = one Strain candidate. Produced by `hivemind:prd-to-issues`.
+_Alias_: tracer bullet
+_Avoid_: module, horizontal slice, layer
+
+**Handoff**:
+The optional, ephemeral session-resumption artifact at `.hivemind/handoffs/<slug>.md`, produced by `hivemind:create-handoff`. Carries volatile session state (locked decisions, first actions, open questions, pointers) to bridge into a fresh session; points to the plan/PRD rather than duplicating them. Gitignored, disposable once loaded.
+_Avoid_: essence (which is the worker report), spawn
+
 ## Relationships
 
 - An **Overlord** (orchestrator) spawns exactly one **Cerebrate**, **Drone**, **Changeling**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
@@ -286,6 +304,11 @@ _Avoid_: brood config, brood state, registry
 - A **Flare** terminates a phase and returns control to the **Overlord**
 - A **Reflex** bypasses the **Cerebrate** entirely — **Overlord** spawns directly
 - An **Adaptation Cycle** may trigger **Mutation Decay**, forcing a **Flare**
+
+- An **Initiative** correlates exactly one plan, at most one **Handoff**, at most one **PRD**, and zero or more slice issues, all under one slug
+- A **PRD** (WHAT) is distinct from a **Directive** (HOW): the PRD carries stories/acceptance/metrics; the Directive carries steps/file-scope/sequence — no duplication
+- `hivemind:plan-to-prd`, `hivemind:prd-to-issues`, and `hivemind:create-handoff` are decoupled leaf transforms — none invokes another (ADR-0013); their output is path-agnostic (ADR-0012)
+- A **Vertical Slice** becomes one GitHub issue and one **Strain** candidate; the **Cerebrate** re-derives file overlap at brood-time and remains the sole independence authority (issues never self-declare scope)
 
 ## Example dialogue
 
