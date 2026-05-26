@@ -472,3 +472,6 @@ nupkgs/
 
 # hivemind runtime orchestration artifacts (ephemeral by default)
 .hivemind/
+
+# hivemind website build artifacts (compiled from web/src)
+web/scripts/
