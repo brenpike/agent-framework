@@ -194,18 +194,36 @@ install_plugins() {
     fi
 
     # Marketplace registration is local metadata and does not require login.
-    claude plugin marketplace add https://github.com/brenpike/hivemind.git || true
-    claude plugin marketplace add https://github.com/openai/codex-plugin-cc.git || true
-    claude plugin marketplace add thedotmack/claude-mem || true
-    claude plugin marketplace add https://github.com/juliusbrussee/caveman || true
+    # Track each add so we never claim success when a registration failed
+    # (e.g. connectivity or CLI state). A failed add must surface as a warning
+    # rather than the unconditional "Marketplaces registered" message below.
+    local -a marketplaces=(
+        https://github.com/brenpike/hivemind.git
+        https://github.com/openai/codex-plugin-cc.git
+        thedotmack/claude-mem
+        https://github.com/juliusbrussee/caveman
+    )
+    local mp registered_all=0
+    for mp in "${marketplaces[@]}"; do
+        if claude plugin marketplace add "$mp"; then
+            echo "  registered marketplace: $mp"
+        else
+            echo "  failed to register marketplace: $mp" >&2
+            registered_all=1
+        fi
+    done
+
+    if [[ $registered_all -ne 0 ]]; then
+        echo "  one or more marketplace registrations failed (see above)" >&2
+    fi
 
     cat <<'EOF'
-  Marketplaces registered. To finish plugin setup, run these inside Claude Code
-  (the CLI must be authenticated first — `claude` then sign in):
+  To finish plugin setup, run these inside Claude Code (the CLI must be
+  authenticated first — `claude` then sign in):
 
     claude plugin install hivemind@brenpike
     claude plugin install codex@openai-codex
-    claude plugin install claude-mem@claude-mem
+    claude plugin install claude-mem@thedotmack
 
   Then run the setup-project skill to configure plugin enablement (caveman,
   codex, claude-mem, SubagentStart hook, .envrc, allowlist):
@@ -213,6 +231,10 @@ install_plugins() {
     /hivemind:setup-project caveman=yes codex=yes claude_mem=yes seed_allowlist=yes
     /codex:setup
 EOF
+
+    # Non-zero when any marketplace add failed, so try_step records a warning
+    # instead of reporting this step as fully successful.
+    return $registered_all
 }
 try_step "Claude Code plugin marketplaces + install guidance" install_plugins
 

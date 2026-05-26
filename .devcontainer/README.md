@@ -25,7 +25,7 @@ In the browser:
 Via the CLI:
 
 ```bash
-gh codespace create --repo brenpike/hivemind --branch chore/devcontainer-ci-parity
+gh codespace create --repo brenpike/hivemind --branch <branch>
 ```
 
 GitHub pre-authenticates the `gh` CLI inside Codespaces via `GITHUB_TOKEN`. No manual `gh auth login` is needed.
@@ -118,7 +118,7 @@ This is the one prerequisite `setup-project` cannot do for itself — it is a sk
 ```text
 claude plugin install hivemind@brenpike
 claude plugin install codex@openai-codex
-claude plugin install claude-mem@claude-mem
+claude plugin install claude-mem@thedotmack
 ```
 
 > When developing from a local source checkout, you can also install hivemind from the local path instead of the registry. See the Install section of the root README.
