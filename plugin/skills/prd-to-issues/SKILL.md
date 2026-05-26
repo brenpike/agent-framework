@@ -146,7 +146,7 @@ through every layer. Behavior only.
 ## Dependencies
 
 Blocking issue refs, one per line as `#123`. Or, when there are none:
-"None — independently grabbable".
+"None".
 ```
 
 ### Hard rules for the issue body
