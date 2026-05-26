@@ -1,0 +1,127 @@
+---
+name: create-handoff
+description: >-
+  Synthesizes an interrogated plan (and optional handoff-context) into a session-resumption
+  handoff document at `.hivemind/handoffs/<slug>.md` that points to the plan rather than
+  duplicating it. Pure synthesis — asks no questions. Use when the user wants to generate a
+  session-resumption handoff, create a handoff document, write a fresh-session kickoff brief,
+  or bridge an interrogated plan into a new session. Trigger on: "create a handoff", "generate
+  a handoff", "session-resumption handoff", "fresh-session kickoff brief",
+  "/hivemind:create-handoff". Distinct from plan-to-prd (produces a WHAT-only PRD) and
+  prd-to-issues (slices a PRD into GitHub issues) — this only writes the kickoff handoff.
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash(find *)
+  - Bash(grep *)
+  - Bash(ls *)
+  - Bash(cat *)
+  - Bash(mkdir -p *)
+shell: bash
+---
+
+# Create Handoff
+
+Transform an interrogated plan into a fresh-session kickoff handoff. This is **pure synthesis**: read the source, write the handoff, stop. Ask the user nothing — they review the written output. Heavy interrogation lives upstream in `hivemind:plan-interrogation`; by the time a plan reaches this skill it is already settled (ADR-0013, locked decision D9).
+
+This skill is an independently-invocable leaf transform. It references and invokes **no other hivemind skill** — no `Skill` tool, no `Agent`, no Bash that runs another skill. Composition with other pipeline skills is a separate future orchestrator's job, never embedded here (ADR-0013, D4).
+
+---
+
+## When this runs
+
+The handoff offer is **overlord/human-driven**, never a prompt baked into this or any other skill. It runs when:
+
+- the user explicitly asks for a handoff, OR
+- the overlord suggests one at a context-rich stage boundary and the user accepts.
+
+This skill never decides on its own to produce a handoff and never solicits one from inside another skill's flow.
+
+---
+
+## Inputs
+
+Session-agnostic and resumable at any boundary (D10). Resolve inputs in this order:
+
+1. **Plan (required)** — the interrogated plan. Source it from either:
+   - the live conversation context (a plan already on screen / just produced), OR
+   - a file at `.hivemind/plans/<slug>.md`.
+   If both are present, prefer the live context and treat the file as a cross-check.
+2. **Handoff-context (optional, never required)** — extra session state the caller passes (recent decisions, in-flight questions, pointers). When absent, synthesize entirely from the plan. Do not ask for it, do not block on it (D10).
+
+Derive `<slug>` from the input — the plan file's basename, or the slug already in use for the initiative. **Never hardcode a slug.** One slug per initiative (D11): the same slug names `.hivemind/plans/<slug>.md`, `.hivemind/handoffs/<slug>.md`, and `docs/prds/<slug>.md`.
+
+---
+
+## Procedure
+
+1. Acquire the plan from context or `.hivemind/plans/<slug>.md`. If neither is available, stop and tell the user which is missing — do not invent a plan.
+2. Determine `<slug>` from the input (file basename or the initiative's existing slug).
+3. Ensure the output directory exists: `mkdir -p .hivemind/handoffs`.
+4. Synthesize the handoff body from the plan plus any optional handoff-context. **Point to the plan; do not duplicate it.** Each section is a pointer or a distilled list, never a copy of the plan's prose.
+5. Write `.hivemind/handoffs/<slug>.md` using the exact section set below.
+6. Report the written path to the user and stop. Do not ask follow-up questions.
+
+---
+
+## Output file format
+
+Write `.hivemind/handoffs/<slug>.md` with **exactly** these sections, in this order (D8):
+
+```markdown
+# HANDOFF — <Initiative> (fresh-session kickoff)
+
+> One-line pointer to the plan: `.hivemind/plans/<slug>.md` (read it first). This handoff points to the plan — it does not duplicate it.
+
+## What this delivers
+<One short paragraph: the outcome the new session is meant to reach. Distilled, not copied.>
+
+## FIRST ACTION
+1. Read `.hivemind/plans/<slug>.md` fully.
+2. <Next concrete numbered step from the plan.>
+3. <…>
+
+## Locked decisions (DO NOT RELITIGATE)
+- **<D#/label>** — <settled decision, one line each.>
+
+## Open questions
+- <Genuinely unresolved item. If the plan resolved everything, state "NONE (all resolved)".>
+
+## Pointers
+- Plan: `.hivemind/plans/<slug>.md`
+- <PRD / ADRs / glossary / reference skills / related artifacts as they exist.>
+```
+
+Section rules:
+
+- **Title** — `# HANDOFF — <Initiative> (fresh-session kickoff)`. `<Initiative>` is the human-readable initiative name, not the slug.
+- **Plan pointer** — the single blockquote line directly under the title. Always present; always tells the reader to read the plan first.
+- **What this delivers** — the target outcome in the new session, distilled to a few lines.
+- **FIRST ACTION** — a numbered list; step 1 is always "Read the plan fully."
+- **Locked decisions (DO NOT RELITIGATE)** — settled decisions, one line each, lifted as references (not re-argued).
+- **Open questions** — only genuinely open items. If none, write `NONE (all resolved)`.
+- **Pointers** — a bullet list of paths to durable artifacts (plan, PRD, ADRs, glossary, reference material). Pointers, not contents.
+
+Do not add, remove, rename, or reorder sections. The handoff is a pointer document — if a reader needs full rationale, they follow a pointer to the plan or PRD.
+
+---
+
+## Output is ephemeral
+
+`.hivemind/` is already gitignored, so the handoff is disposable session state (D11):
+
+- Do **not** `git add`, `git commit`, or otherwise stage the handoff. (This skill has no git tools and must not acquire them.)
+- The handoff is consumed by a fresh session and discarded; it is not a durable, committed artifact like a PRD or ADR.
+
+---
+
+## Do Not
+
+- ask the user any questions — this skill is zero-interrogation synthesis (D9).
+- require handoff-context — the optional input is never mandatory (D10).
+- hardcode a slug — always derive it from the input (D11).
+- duplicate the plan or PRD — the handoff points to them.
+- add, drop, rename, or reorder the output sections (D8).
+- invoke any other hivemind skill, dispatch an agent, or run Bash that calls another skill (D4, ADR-0013).
+- `git add`, commit, push, or open a PR — the overlord molts; the handoff is gitignored.
