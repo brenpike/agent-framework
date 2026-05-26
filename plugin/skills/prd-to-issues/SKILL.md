@@ -10,8 +10,6 @@ description: >-
   brood-ready issues from a PRD", "decompose a PRD", "/hivemind:prd-to-issues".
 allowed-tools:
   - Read
-  - Write
-  - Edit
   - Bash(find *)
   - Bash(grep *)
   - Bash(ls *)
