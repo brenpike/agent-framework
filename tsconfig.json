@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "ES2020",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "lib": ["ES2019", "DOM"],
+    "rootDir": "web/scripts",
+    "outDir": "web/scripts",
+    "sourceMap": true
+  },
+  "include": ["web/scripts/**/*.ts"]
+}
