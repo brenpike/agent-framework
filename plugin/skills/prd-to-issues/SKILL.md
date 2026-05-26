@@ -73,7 +73,7 @@ One slug names the whole Initiative — its plan, optional handoff, PRD at `docs
 
 ## Preflight — `gh` auth
 
-Before drafting, confirm GitHub CLI is authenticated. If `gh` is unauthenticated (or `gh issue list` / `gh label list` fails on auth), surface a **blocker** to the user and stop — do not fall back to printing issue bodies as if published, and do not fail silently. The slicing quiz may proceed for drafting, but no publish step runs until auth is confirmed.
+Before drafting, confirm GitHub CLI is authenticated. If `gh` is unauthenticated (or `gh issue list` / `gh label list` fails on auth), surface a **blocker** to the user and stop — do not fall back to printing issue bodies as if published, and do not fail silently. This same auth blocker covers the idempotency / resume preflight below: if the `gh issue list` call that enumerates existing initiative issues fails on auth, surface a blocker and STOP — never fall back to blind-create. The slicing quiz may proceed for drafting, but no publish step runs until auth is confirmed.
 
 ---
 
@@ -178,12 +178,26 @@ These keep the issue a behavior spec and preserve the cerebrate's independence a
 
 ---
 
+## Idempotency / resume preflight
+
+Run this AFTER the slicing quiz is approved (the approved slice set defines the planned titles to match) and BEFORE any publish. A blocker-first multi-step publish can fail mid-run, leaving a partial issue set; without this preflight a rerun would DUPLICATE issues and may wire dependents to the duplicates. This preflight reads and matches existing issues only — it adds no scope, no independence claim, no file paths, and no new label.
+
+1. **List existing initiative issues.** `gh issue list --label "initiative:<slug>" --state all --json number,title,body`. The `--state all` is deliberate — closed issues must be seen so a previously-closed match can be surfaced, not silently recreated.
+2. **Match key — Title + label, NOT the `## Initiative` anchor.** For each approved slice, match against existing issues by BOTH `initiative:<slug>` label membership AND exact slice **Title** (the Strain name). CRITICAL: the `## Initiative` PRD-anchor body text is identical across every slice of an Initiative and MUST NOT be used as the per-slice discriminator — it is only a coarse belongs-to-this-initiative check. The per-slice discriminator is Title + label.
+3. **Classify each planned slice:**
+   - **REUSE** — exactly one unambiguous OPEN title match → record its real `#number` for dependency wiring; do NOT recreate it.
+   - **CREATE** — no match → publish fresh.
+   - **AMBIGUOUS / CONFLICT** — any of: multiple OPEN matches for one title; a single match whose body/Acceptance Criteria materially diverge from the planned slice; or a CLOSED issue matches a planned slice (was it intentionally closed?). On any of these, STOP and surface the conflict to the user for confirmation — do NOT blind-create and do NOT blind-reuse.
+4. **Resume-safe.** Because matched slices are reused (not recreated) and only unmatched slices are created, a rerun after a mid-publish failure converges to the complete set without duplicates.
+
+---
+
 ## Publishing
 
-Publish only after the user approves the slicing quiz and `gh` auth is confirmed.
+Publish only after the user approves the slicing quiz, `gh` auth is confirmed, and the idempotency / resume preflight has classified every planned slice.
 
-1. **Publish in dependency order — blockers FIRST.** Publish issues with no blockers first so their real issue numbers exist; then publish dependent issues, filling each `## Dependencies` section with the resolved `#123` refs of its already-published blockers. A `#123` ref that does not yet exist cannot resolve, so ordering is mandatory.
-2. **Create each issue** with `gh issue create`, passing the behavior-only body and the single `initiative:<slug>` label. Use `--title` (the Strain name) and `--body` (the four-section template).
+1. **Publish in dependency order — blockers FIRST.** Create only the slices classified **CREATE** by the idempotency / resume preflight; never recreate a **REUSE**-matched slice. Among CREATE slices, publish those with no blockers first so their real issue numbers exist; then publish dependent CREATE slices. When filling a dependent's `## Dependencies` section, use the resolved real `#123` ref of each blocker — taken from EITHER a just-created blocker OR a REUSE-matched existing blocker (whose number the preflight already recorded). Ordering still matters for newly-created blockers: a `#123` ref to a not-yet-created blocker cannot resolve, so create blockers first. Reused blockers already have resolvable numbers and need no ordering.
+2. **Create each CREATE-class issue** with `gh issue create`, passing the behavior-only body and the single `initiative:<slug>` label. Use `--title` (the Strain name) and `--body` (the four-section template).
 3. **Verify** each created issue with `gh issue view <number>` if confirmation is needed, and report the published issue numbers and titles back to the caller.
 
 The published issue set is the output. There is no further action — no parent issue, no extra label, no PRD or handoff write, no invocation of any other skill. Whether this Initiative later runs single-branch or as a brood is decided downstream and is no concern of this transform.
