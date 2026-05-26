@@ -84,11 +84,42 @@ Once configured, the overlord is the session default agent. All skills are avail
   ```
   When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `hivemind:adaptation-cycle`) and post-PR review automation via the `hivemind:github-review-loop` skill (which watches the PR and dispatches the stateless fix-mode `github-reviewer` agent to handle feedback classification, fixes, and thread resolution). The framework works without it; if not installed, local review steps are skipped gracefully.
 
-- [`caveman`](https://github.com/caveman/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
+- [`caveman`](https://github.com/juliusbrussee/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
   ```json
   "enabledPlugins": { "caveman@caveman": true },
   "pluginConfigs": { "caveman@caveman": { "options": { "defaultLevel": "ultra" } } }
   ```
+
+## Dev container
+
+This repo ships a `.devcontainer/` that provisions a **CI-parity toolchain** so contributors can run the full validation suite locally — in GitHub Codespaces or in VS Code Dev Containers (Dev Containers: Reopen in Container) — and dogfood the plugin. The base image is Ubuntu (Debian/Ubuntu family is mandatory: the policy linter uses GNU `grep -P` and `perl`, which Alpine/BusyBox lack).
+
+**Auto-provisioned** by `.devcontainer/postCreate.sh`:
+
+- Validation toolchain — `jq` and `perl` are explicitly installed via apt before any gate runs (idempotent: skipped if already present); `gh`, Node 20, `python3`, GNU `grep`, and `git` are verified at startup and the script hard-fails if any are missing.
+- CLI tools via npm global — Claude Code CLI (`@anthropic-ai/claude-code`), Codex CLI (`@openai/codex`), `claude-mem`.
+- `uv` / `uvx` (Astral) via the official install script — claude-mem's optional vector-search backend.
+- `tmux` via apt — terminal multiplexer used by the `hivemind:spawn-brood` / `hivemind:brood-status` skills.
+- `bun` via the official installer (`bun.sh/install`) — fast JS runtime required by `claude-mem`.
+- A **CI-parity smoke test** that runs the same three gates as `.github/workflows/policy-check.yml`: the `python3` JSON-manifest parse, `tools/policy_check.sh --strict`, and `tools/validate_reports.sh --batch tests/reports/`. A green run is a strong best-effort signal that the branch will pass CI — not an absolute guarantee, since CI runs on `ubuntu-latest` while this container pins `ubuntu-20.04` (coreutils/grep/perl/python versions can differ). It also trips on CRLF line endings, which have corrupted these linters before.
+
+**Stays manual** — installing the Claude Code *plugins* requires an authenticated `claude` CLI, which a fresh container does not have. `postCreate.sh` registers the marketplaces (no auth needed) and prints the exact install commands to run once you have signed in:
+
+```text
+claude plugin install hivemind@brenpike
+claude plugin install codex@openai-codex
+claude plugin install claude-mem@thedotmack
+claude plugin install caveman@caveman
+/codex:setup
+```
+
+**Caveman marketplace is registered automatically.** `postCreate.sh` registers the caveman marketplace (no auth required). Caveman *enablement* (`enabledPlugins`, `pluginConfigs`, SubagentStart hook, `.envrc`) is handled by `hivemind:setup-project caveman=yes` — the canonical path for all plugin config — rather than being hand-seeded by postCreate.
+
+The optional npm installs are wrapped so a single failure (for example in an offline/locked-down Codespace) prints a warning but does not abort — only the CI-parity gates are must-pass. The script is idempotent: re-running `bash .devcontainer/postCreate.sh` is safe.
+
+The Codex cache permission grant (container `$HOME` node path) is seeded into the **gitignored** `.claude/settings.local.json` (never the tracked `.claude/settings.json`), using a jq-merge that does not clobber existing entries.
+
+See `.devcontainer/README.md` for full launch instructions (Codespaces and local Dev Containers), the complete list of what is auto-provisioned, and troubleshooting.
 
 ## After cloning a project that uses this plugin
 
