@@ -25,6 +25,21 @@ function prefersReducedMotion(): boolean {
   return motionQuery.matches;
 }
 
+// Older Safari/WebKit MediaQueryList does not inherit EventTarget and lacks
+// addEventListener; fall back to the deprecated addListener so init() does not
+// throw and abort later modules.
+type LegacyMediaQueryList = MediaQueryList & {
+  addListener?: (listener: (e: MediaQueryListEvent) => void) => void;
+};
+
+function onMotionChange(listener: (e: MediaQueryListEvent) => void): void {
+  if (typeof motionQuery.addEventListener === 'function') {
+    motionQuery.addEventListener('change', listener);
+  } else {
+    (motionQuery as LegacyMediaQueryList).addListener?.(listener);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 1. Mobile nav toggle
 // ---------------------------------------------------------------------------
@@ -120,7 +135,7 @@ function initScrollReveal(): void {
   elements.forEach((el) => observer.observe(el));
 
   // If reduced-motion preference changes live, immediately reveal remaining elements
-  motionQuery.addEventListener('change', () => {
+  onMotionChange(() => {
     if (prefersReducedMotion()) {
       elements.forEach((el) => {
         el.classList.remove('reveal-pending');
@@ -153,7 +168,7 @@ function initGlowTargets(): void {
   }
 
   // Respond to live preference change
-  motionQuery.addEventListener('change', () => {
+  onMotionChange(() => {
     if (prefersReducedMotion()) {
       targets.forEach((el) => {
         const glowColor = el.dataset['glow'] ?? 'violet';
@@ -339,7 +354,7 @@ function initSwarmCanvas(): void {
   }
 
   // Live reduced-motion change
-  motionQuery.addEventListener('change', () => {
+  onMotionChange(() => {
     if (prefersReducedMotion()) {
       stop();
       ctx!.clearRect(0, 0, canvas.width, canvas.height);
