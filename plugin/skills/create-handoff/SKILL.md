@@ -1,7 +1,7 @@
 ---
 name: create-handoff
 description: >-
-  Synthesizes an interrogated plan (and optional handoff-context) into a session-resumption
+  Synthesizes an interrogated plan (and optional relevant handoff-context) into a session-resumption
   handoff document at `.hivemind/handoffs/<slug>.md` that points to the plan rather than
   duplicating it. Pure synthesis — asks no questions. Use when the user wants to generate a
   session-resumption handoff, create a handoff document, write a fresh-session kickoff brief,
@@ -23,9 +23,9 @@ shell: bash
 
 # Create Handoff
 
-Transform an interrogated plan into a fresh-session kickoff handoff. This is **pure synthesis**: read the source, write the handoff, stop. Ask the user nothing — they review the written output. Heavy interrogation lives upstream in `hivemind:plan-interrogation`; by the time a plan reaches this skill it is already settled (ADR-0013, locked decision D9).
+Transform an interrogated plan and any additional context which is relevant into a fresh-session kickoff handoff. This is **pure synthesis**: read the source, write the handoff, stop. Ask the user nothing — they review the written output. Heavy interrogation lives upstream in `hivemind:plan-interrogation`; by the time a plan reaches this skill it is already settled (ADR-0013).
 
-This skill is an independently-invocable leaf transform. It references and invokes **no other hivemind skill** — no `Skill` tool, no `Agent`, no Bash that runs another skill. Composition with other pipeline skills is a separate future orchestrator's job, never embedded here (ADR-0013, D4).
+The handoff document should contain enough detail to bootstrap a new session with confidence, but it should point to the plan for the full rationale and details — do not duplicate them. The handoff is a **pointer document** that distills the most important context but directs the reader to the plan for the full story. Together with the plan, there must be a high-fidelity record of the interrogation and decision-making that led to the Initiative's current state.
 
 ---
 
@@ -42,7 +42,7 @@ This skill never decides on its own to produce a handoff and never solicits one 
 
 ## Inputs
 
-Session-agnostic and resumable at any boundary (D10). Resolve inputs in this order:
+Session-agnostic and resumable at any boundary. Resolve inputs in this order:
 
 1. **Plan (required)** — the interrogated plan. Source it from either:
    - the live conversation context (a plan already on screen / just produced), OR
@@ -115,7 +115,7 @@ Do not add, remove, rename, or reorder sections. The handoff is a pointer docume
 
 ## Output is ephemeral
 
-`.hivemind/` is already gitignored, so the handoff is disposable session state (D11):
+`.hivemind/` is already gitignored, so the handoff is disposable session state, not a committed artifact.
 
 - Do **not** `git add`, `git commit`, or otherwise stage the handoff. (This skill has no git tools and must not acquire them.)
 - The handoff is consumed by a fresh session and discarded; it is not a durable, committed artifact like a PRD or ADR.

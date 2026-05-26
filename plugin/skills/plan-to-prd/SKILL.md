@@ -26,8 +26,6 @@ Synthesize an already-interrogated plan into a **PRD** — the committed, durabl
 
 A PRD describes **WHAT** the Initiative delivers — never **HOW**. File scope, step sequencing, and the implementation path are the Directive's job, not the PRD's. The PRD is path-agnostic: producing it does not decide single-branch vs brood and does not force any execution path. That routing is decided downstream at implementation time, independent of this artifact.
 
-This skill is a standalone leaf transform. It names the conceptual pipeline (interrogated plan → PRD → sliced issues) for orientation only; it never references, instructs invoking, or chains to any other skill. The PRD it writes is its sole output — there is no tracker publish, no label, no handoff side-effect.
-
 ---
 
 ## Inputs
@@ -142,5 +140,3 @@ The PRD specifies WHAT, never HOW. These MUST NOT appear anywhere in the PRD —
 
 2. Write the PRD to `docs/prds/<slug>.md` using the resolved slug. This file is committed and durable — do not write it to `.hivemind/`.
 3. If `docs/prds/<slug>.md` already exists, read it first and update in place rather than blindly overwriting; preserve any sections the current plan does not touch.
-
-The PRD is the output. There is no further action — no label, no tracker publish, no handoff, no invocation of any other skill. Whether this Initiative later runs single-branch or as a brood is decided downstream and is no concern of this transform.
