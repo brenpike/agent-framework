@@ -836,6 +836,123 @@ code, pre, kbd {
   .pulse-cyan {
     animation: none;
   }
+
+  /* Scroll-reveal: show content immediately — no transform, no opacity hide */
+  .reveal-pending {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  /* Nav logo pulse */
+  .nav-logo-pulse {
+    animation: none !important;
+  }
+}
+
+
+/* ==========================================================================
+   14b. Motion — scroll-reveal states, glow keyframes, nav open transitions
+   Added by motion phase (STEP-005). Do not redefine tokens.
+   ========================================================================== */
+
+/* --- Scroll-reveal base states --- */
+/* Elements start visible; JS adds .reveal-pending to set the "from" state.
+   This ensures content is always readable when JS is absent or disabled.   */
+
+.reveal-pending {
+  opacity: 0;
+  transition:
+    opacity 600ms ease,
+    transform 600ms ease;
+}
+
+.reveal-pending[data-reveal="fade-up"] {
+  transform: translateY(28px);
+}
+
+.reveal-pending[data-reveal="fade-left"] {
+  transform: translateX(28px);
+}
+
+.reveal-pending[data-reveal="fade-right"] {
+  transform: translateX(-28px);
+}
+
+/* Revealed state — JS adds this class */
+.is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+/* Elements that never had reveal-pending (JS off) stay fully visible */
+.js-scroll-reveal:not(.reveal-pending):not(.is-revealed) {
+  opacity: 1;
+  transform: none;
+}
+
+
+/* --- Nav logo pulse keyframe --- */
+@keyframes nav-logo-glow-pulse {
+  0%, 100% { text-shadow: 0 0 6px rgba(0,255,240,0.12); }
+  50%       { text-shadow: 0 0 18px rgba(0,255,240,0.35), 0 0 4px rgba(0,255,240,0.2); }
+}
+
+.nav-logo-pulse {
+  animation: nav-logo-glow-pulse 4s ease-in-out infinite;
+}
+
+
+/* --- Nav drawer open-state transition --- */
+/* Base sheet hides drawer with display:none; here we switch to
+   display:flex always (at mobile widths) + max-height/opacity so
+   CSS transitions can animate open/close.
+   This motion rule only applies at mobile widths to avoid showing
+   the drawer on desktop accidentally.                                        */
+
+@media (max-width: 768px) {
+  .site-nav__drawer {
+    display: flex;      /* always in flex flow; hidden via max-height */
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    padding-block: 0;
+    transition:
+      max-height var(--transition-base),
+      opacity var(--transition-base),
+      padding-block var(--transition-base);
+  }
+
+  .site-nav[data-nav-open] .site-nav__drawer {
+    max-height: 320px;
+    opacity: 1;
+    padding-block: var(--space-5);
+  }
+}
+
+
+/* --- Hex accent subtle drift keyframe (CSS only, no JS required) --- */
+@keyframes hex-drift {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33%       { transform: translateY(-8px) rotate(3deg); }
+  66%       { transform: translateY(4px) rotate(-2deg); }
+}
+
+.hex-accent {
+  animation: hex-drift 12s ease-in-out infinite;
+}
+
+/* Stagger second hex on each page */
+#hero-hex-2,
+#func-hero-hex-2,
+#ben-hero-hex-2 {
+  animation-delay: -5s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hex-accent {
+    animation: none;
+  }
 }
 
 
