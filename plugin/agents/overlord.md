@@ -26,7 +26,9 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 
 The standard pipeline for a task:
 
-1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (`watch`, `monitor`, `wait`, `poll`, or `loop`) — route watch/monitor intent to the `hivemind:github-review-loop` skill — claude-mem availability, local-review availability (codex plugin present or not).
+1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (`watch`, `monitor`, `wait`, `poll`, or `loop`) — route watch/monitor intent to the `hivemind:github-review-loop` skill — architecture-improvement intent (`improve architecture`, `find refactoring opportunities`, `consolidate tightly-coupled modules`, `make the codebase more testable`) — route to the `hivemind:improving-architecture` analysis fast path below — claude-mem availability, local-review availability (codex plugin present or not).
+
+   1a. **Architecture-analysis fast path** — For architecture-improvement intent, invoke `Skill(hivemind:improving-architecture)`. It is read-only and edits no code; it returns a ranked refactoring blueprint of deepening candidates (shallow → deep modules). Present the blueprint. When the user accepts a candidate, ALWAYS invoke `hivemind:plan-interrogation` to harden it — no gate; it self-right-sizes (trivial candidates converge fast) and owns any CONTEXT.md/ADR writes. Then route the hardened blueprint into the standard pipeline at step 3 — `hivemind:cerebrate` converts it into an executable implementation plan, then `hivemind:drone`/`hivemind:changeling` refactor per the usual version → validate → review → PR gates.
 
 2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then route by watch keywords. For watch/monitor/poll/loop intent, invoke `Skill(hivemind:github-review-loop)` — the overlord executes the skill, which arms Monitor in the main session, dispatches `hivemind:github-reviewer` fix-mode per actionable event, and returns ONE terminal report; the skill owns the loop and the overlord does not regain control until the skill returns. For non-watch remediation, dispatch `hivemind:github-reviewer` directly in fix mode. Skip steps 3-11. Handle the return per step 12.
 
@@ -81,13 +83,14 @@ The standard pipeline for a task:
 - `hivemind:github-review-loop` — main-session watch loop; polls a PR for review activity and dispatches fix-mode remediation per actionable event; overlord-executed (hosts Monitor)
 - `hivemind:adaptation-cycle` — invoked by local-reviewer internally, not by overlord
 - `hivemind:tdd` — invoked by coder internally when TDD is requested
-- `hivemind:plan-interrogation` — interactive, user-invoked
+- `hivemind:plan-interrogation` — interactive (grills the user question-by-question) AND overlord-invocable; the overlord may invoke it to harden an accepted refactoring blueprint or plan, and it remains directly user-invokable. It self-right-sizes and owns any CONTEXT.md/ADR writes
 - `hivemind:create-handoff` — generate an optional, ephemeral session-resumption handoff (`.hivemind/handoffs/<slug>.md`) from a plan (+ live context); overlord may suggest when a session is context-rich, or on explicit user ask — never auto-embedded in another skill
 - `hivemind:plan-to-prd` — convert an interrogated plan (live context or `.hivemind/plans/<slug>.md`) + optional handoff into a committed WHAT-only PRD at `docs/prds/<slug>.md`
 - `hivemind:prd-to-issues` — slice a PRD (live context or `docs/prds/<slug>.md`) + optional handoff into vertically-sliced, brood-ready GitHub issues; main-session, overlord-invocable; producing issues does not force a brood (path-agnostic)
 - `hivemind:setup-project` — one-time project setup
 - `hivemind:bootstrap-context` — generate CONTEXT.md
 - `hivemind:zoom-out` — architecture analysis
+- `hivemind:improving-architecture` — read-only architecture analysis emitting a ranked refactoring blueprint of deepening opportunities; overlord- and user-invokable; edits no code
 - `hivemind:spawn-brood` — dispatch parallel orchestrator sessions as a brood
 - `hivemind:brood-status` — check status of all active brood sessions (interactive, user-invoked)
 
