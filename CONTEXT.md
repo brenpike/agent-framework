@@ -307,7 +307,7 @@ _Avoid_: essence (which is the worker report), spawn
 
 - An **Initiative** correlates exactly one plan, at most one **Handoff**, at most one **PRD**, and zero or more slice issues, all under one slug
 - A **PRD** (WHAT) is distinct from a **Directive** (HOW): the PRD carries stories/acceptance/metrics; the Directive carries steps/file-scope/sequence — no duplication
-- `hivemind:plan-to-prd`, `hivemind:prd-to-issues`, and `hivemind:create-handoff` are decoupled leaf transforms — none invokes another (ADR-0013); their output is path-agnostic (ADR-0012)
+- `hivemind:plan-to-prd`, `hivemind:prd-to-issues`, and `hivemind:create-handoff` (planned skills — not yet implemented) are designed as decoupled leaf transforms — none invokes another (ADR-0013); their output is path-agnostic (ADR-0012)
 - A **Vertical Slice** becomes one GitHub issue and one **Strain** candidate; the **Cerebrate** re-derives file overlap at brood-time and remains the sole independence authority (issues never self-declare scope)
 
 ## Example dialogue
