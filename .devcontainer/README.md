@@ -74,7 +74,7 @@ Registers the following marketplaces via `claude plugin marketplace add` (no aut
 - `https://github.com/brenpike/hivemind.git`
 - `https://github.com/openai/codex-plugin-cc.git`
 - `thedotmack/claude-mem`
-- `https://github.com/caveman/caveman`
+- `https://github.com/juliusbrussee/caveman`
 
 **Step 2 — Codex cache permission grant seeded (soft fail)**
 

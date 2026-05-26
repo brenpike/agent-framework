@@ -84,7 +84,7 @@ Once configured, the overlord is the session default agent. All skills are avail
   ```
   When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `hivemind:adaptation-cycle`) and post-PR review automation via the `hivemind:github-review-loop` skill (which watches the PR and dispatches the stateless fix-mode `github-reviewer` agent to handle feedback classification, fixes, and thread resolution). The framework works without it; if not installed, local review steps are skipped gracefully.
 
-- [`caveman`](https://github.com/caveman/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
+- [`caveman`](https://github.com/juliusbrussee/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
   ```json
   "enabledPlugins": { "caveman@caveman": true },
   "pluginConfigs": { "caveman@caveman": { "options": { "defaultLevel": "ultra" } } }

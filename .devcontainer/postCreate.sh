@@ -197,7 +197,7 @@ install_plugins() {
     claude plugin marketplace add https://github.com/brenpike/hivemind.git || true
     claude plugin marketplace add https://github.com/openai/codex-plugin-cc.git || true
     claude plugin marketplace add thedotmack/claude-mem || true
-    claude plugin marketplace add https://github.com/caveman/caveman || true
+    claude plugin marketplace add https://github.com/juliusbrussee/caveman || true
 
     cat <<'EOF'
   Marketplaces registered. To finish plugin setup, run these inside Claude Code
