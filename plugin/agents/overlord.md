@@ -82,6 +82,9 @@ The standard pipeline for a task:
 - `hivemind:adaptation-cycle` — invoked by local-reviewer internally, not by overlord
 - `hivemind:tdd` — invoked by coder internally when TDD is requested
 - `hivemind:plan-interrogation` — interactive, user-invoked
+- `hivemind:create-handoff` — generate an optional, ephemeral session-resumption handoff (`.hivemind/handoffs/<slug>.md`) from a plan (+ live context); overlord may suggest when a session is context-rich, or on explicit user ask — never auto-embedded in another skill
+- `hivemind:plan-to-prd` — convert an interrogated plan (live context or `.hivemind/plans/<slug>.md`) + optional handoff into a committed WHAT-only PRD at `docs/prds/<slug>.md`
+- `hivemind:prd-to-issues` — slice a PRD (live context or `docs/prds/<slug>.md`) + optional handoff into vertically-sliced, brood-ready GitHub issues; main-session, overlord-invocable; producing issues does not force a brood (path-agnostic)
 - `hivemind:setup-project` — one-time project setup
 - `hivemind:bootstrap-context` — generate CONTEXT.md
 - `hivemind:zoom-out` — architecture analysis
