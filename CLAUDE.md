@@ -14,7 +14,7 @@ plugin/                           # plugin root (resolves to ${CLAUDE_PLUGIN_ROO
   .claude-plugin/plugin.json      # plugin manifest (name, version)
   agents/{overlord,cerebrate,drone,changeling}.md
   skills/<skill-name>/SKILL.md
-  skills/_shared/                 # cross-skill helper docs (e.g. GraphQL ops)
+  skills/_shared/                 # cross-skill shared docs; first use = architecture vocabulary (LANGUAGE.md) + deepening mechanics (DEEPENING.md), shared by improving-architecture and refactor-to-depth
   governance/                     # *.md loaded by agents at runtime
 README.md
 CLAUDE.md
