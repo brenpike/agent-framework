@@ -49,8 +49,10 @@ Planning prevents the biggest TDD trap: writing tests for imagined interfaces.
 
 Ask the user (or infer from the task if obvious):
 
-1. **What is the public interface?** — the function/method/class signature the tests will call
+1. **What is the public interface?** — the function/method/class signature the tests will call. Shape it for testability as you design it: see `${CLAUDE_PLUGIN_ROOT}/skills/tdd/references/interface-design.md`.
 2. **Which behaviors matter most?** — list them in priority order
+
+Align test names and interface vocabulary with the project's domain glossary (e.g. `CONTEXT.md`, if present) and honor any architectural decisions the project records (e.g. ADRs, if it keeps them).
 
 You cannot test everything. Focus on:
 - Happy path (primary use case)
@@ -121,7 +123,9 @@ After all behaviors are green, look for improvement opportunities:
 - [ ] Extract duplicated setup into fixtures/helpers
 - [ ] Simplify complex conditionals
 - [ ] Move logic closer to the data it operates on
-- [ ] Deepen shallow modules (combine trivial helpers into meaningful abstractions)
+- [ ] Deepen shallow modules: prefer a small interface over a large one hiding a deep implementation. Fold trivial pass-through helpers into the abstraction that owns the logic.
+- [ ] Long method → extract a helper, but keep the tests on the public interface — don't test the extracted private helper directly.
+- [ ] New code reveals existing smells — what you just wrote may expose problems in adjacent existing code. Note or address them when they're covered by tests.
 - [ ] Remove speculative code added "just in case"
 
 **Rules:**
