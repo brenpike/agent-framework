@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-05-26
+
+### Changed
+
+- **`tdd` skill description genericized.** Removed hivemind-framework coupling from the packaged skill description; write-access requirement is now stated generically so the skill is legible outside the hivemind context.
+- **ADR-0013 clarified and corrected.** "Composition by Intent" principle clarified: decoupling forbids dependency, not intent-expression. Corrected the `allowed-tools` characterization — `allowed-tools` pre-approves tools, it does not restrict (per official Claude Code docs).
+
+### Added
+
+- **"Composition by Intent" glossary term in `CONTEXT.md`.**
+
 ## [2.10.0] - 2026-05-26
 
 ### Added
