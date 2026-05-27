@@ -42,7 +42,7 @@ function injectGlowTargets(): { violetDefault: HTMLElement; cyanTarget: HTMLElem
 }
 
 describe('initGlowTargets', () => {
-  it('does nothing when reduced-motion is on (early return)', async () => {
+  it('applies no glow when reduced-motion is on at load', async () => {
     installMatchMedia({ matches: true });
     installIntersectionObserver();
 
@@ -109,6 +109,37 @@ describe('initGlowTargets', () => {
     expect(violetDefault.style.animationDelay).toBe('');
     expect(cyanTarget.style.animationDelay).toBe('');
     expect(logo.classList.contains('nav-logo-pulse')).toBe(false);
+  });
+
+  it('restores the staggered glow on a live reduced-motion off transition when loaded with reduced-motion on', async () => {
+    // Load under reduced-motion: no glow applied initially (asserted above), but the
+    // initializer must still register a listener so a later reduced-motion-off restores
+    // the glow without a reload — matching the auto-recovery the prior CSS-only
+    // `pulse-*` class provided before this glow was JS-driven.
+    const mql = installMatchMedia({ matches: true });
+    installIntersectionObserver();
+    installRaf();
+    installCanvas2dContext();
+
+    mountPage('index');
+    const { violetDefault, cyanTarget } = injectGlowTargets();
+    await bootMain();
+
+    // Sanity: nothing applied while reduced-motion is on at load.
+    expect(violetDefault.classList.contains('pulse-violet')).toBe(false);
+    expect(cyanTarget.classList.contains('pulse-cyan')).toBe(false);
+    const logo = document.getElementById('nav-logo-glow')!;
+    expect(logo.classList.contains('nav-logo-pulse')).toBe(false);
+
+    // Live change to reduced-motion OFF → glow restored.
+    mql._fireChange(false);
+
+    const baseIndex = document.querySelectorAll('.js-glow-target').length - 2;
+    expect(violetDefault.style.animationDelay).toBe(`${baseIndex * 0.6}s`);
+    expect(cyanTarget.style.animationDelay).toBe(`${(baseIndex + 1) * 0.6}s`);
+    expect(violetDefault.classList.contains('pulse-violet')).toBe(true);
+    expect(cyanTarget.classList.contains('pulse-cyan')).toBe(true);
+    expect(logo.classList.contains('nav-logo-pulse')).toBe(true);
   });
 
   it('applies pulse-violet + a staggered animationDelay to real shipped .js-glow-target markup', async () => {
