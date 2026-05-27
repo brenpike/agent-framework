@@ -251,6 +251,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
 | `hivemind:brood-status` | Check status of all active brood sessions — reports per-strain tmux session state, branch existence, and PR status |
 | `hivemind:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
+| `hivemind:improving-architecture` | Read-only architecture analysis — emits a ranked refactoring blueprint of deepening opportunities (shallow → deep modules) for testability and AI-navigability |
 
 ## Governance
 

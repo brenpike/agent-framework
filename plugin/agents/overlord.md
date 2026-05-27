@@ -81,13 +81,14 @@ The standard pipeline for a task:
 - `hivemind:github-review-loop` — main-session watch loop; polls a PR for review activity and dispatches fix-mode remediation per actionable event; overlord-executed (hosts Monitor)
 - `hivemind:adaptation-cycle` — invoked by local-reviewer internally, not by overlord
 - `hivemind:tdd` — invoked by coder internally when TDD is requested
-- `hivemind:plan-interrogation` — interactive, user-invoked
+- `hivemind:plan-interrogation` — interactive (grills the user question-by-question) AND overlord-invocable; the overlord may invoke it to harden an accepted refactoring blueprint or plan, and it remains directly user-invokable. It self-right-sizes and owns any CONTEXT.md/ADR writes
 - `hivemind:create-handoff` — generate an optional, ephemeral session-resumption handoff (`.hivemind/handoffs/<slug>.md`) from a plan (+ live context); overlord may suggest when a session is context-rich, or on explicit user ask — never auto-embedded in another skill
 - `hivemind:plan-to-prd` — convert an interrogated plan (live context or `.hivemind/plans/<slug>.md`) + optional handoff into a committed WHAT-only PRD at `docs/prds/<slug>.md`
 - `hivemind:prd-to-issues` — slice a PRD (live context or `docs/prds/<slug>.md`) + optional handoff into vertically-sliced, brood-ready GitHub issues; main-session, overlord-invocable; producing issues does not force a brood (path-agnostic)
 - `hivemind:setup-project` — one-time project setup
 - `hivemind:bootstrap-context` — generate CONTEXT.md
 - `hivemind:zoom-out` — architecture analysis
+- `hivemind:improving-architecture` — read-only architecture analysis; emits a ranked refactoring blueprint of deepening opportunities (shallow → deep modules); edits no code
 - `hivemind:spawn-brood` — dispatch parallel orchestrator sessions as a brood
 - `hivemind:brood-status` — check status of all active brood sessions (interactive, user-invoked)
 
