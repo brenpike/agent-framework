@@ -247,7 +247,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:plan-to-prd` | Turn an interrogated plan into a committed WHAT-only PRD |
 | `hivemind:prd-to-issues` | Slice a PRD into vertically-sliced, brood-ready GitHub issues |
 | `hivemind:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.hivemind/` to `.gitignore` |
-| `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke from `hivemind:drone` context only |
+| `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke only in a context that can modify source and test files |
 | `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
 | `hivemind:brood-status` | Check status of all active brood sessions — reports per-strain tmux session state, branch existence, and PR status |
 | `hivemind:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
