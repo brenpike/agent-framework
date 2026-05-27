@@ -221,6 +221,10 @@ _Avoid_: malicious input, attack
 The architectural approach (ADR-0006) replacing exhaustive mechanical rules with intent descriptions backed by mechanical safety rails for inter-agent interfaces, safety stops, and exact commands.
 _Avoid_: intent-driven rules, soft governance
 
+**Composition by Intent**:
+The sanctioned way skills compose: a skill expresses the intent of the work to be done, and the framework's skill-selection may route that intent to an appropriate skill when it matches — without the expressing skill naming, invoking, or depending on the target. Creates no dependency and survives the target skill's absence (the work is done inline). The forbidden alternative is a skill naming or invoking a specific `hivemind:<skill>` (ADR-0013).
+_Avoid_: skill chaining, skill invocation, skill dependency
+
 **Worker Report**:
 The YAML artifact produced by a modifying agent at phase completion, in one of three schemas: complete (with decisions, risks, and essence fields), blocked (with stage, blocker, and next), or trivial (minimal for single-file changes).
 _Avoid_: phase report, agent output, result

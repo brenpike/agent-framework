@@ -1,6 +1,6 @@
 # Pipeline skills are decoupled leaf transforms
 
-**Status:** accepted — 2026-05-25
+**Status:** accepted — 2026-05-25 (clarified 2026-05-26)
 
 The three new meta-pipeline skills (`hivemind:create-handoff`, `hivemind:plan-to-prd`, `hivemind:prd-to-issues`) form a conceptual pipeline but do not chain by referencing or invoking each other. Each is an independently-invocable leaf transform. Composition, if ever wanted, is the job of a separate future orchestrator skill — not of the leaves.
 
@@ -11,6 +11,8 @@ The three new skills read as a sequence: an interrogated plan becomes a PRD, the
 ## Decision
 
 No skill references or invokes another. Each is an independently-invocable leaf transform consuming explicit, session-agnostic inputs (live context OR a persisted file, plus an optional handoff). Composition, if ever desired, is a *separate* future orchestrator skill (e.g. `idea-to-issues`) that calls each leaf in succession and owns the coupling. The stage-transition decision — including whether to offer a handoff at a stage boundary — is driven by the overlord or the Overmind, never embedded as a prompt inside a stage skill.
+
+**Decoupling forbids dependency, not intent.** "No skill references or invokes another" means a skill must not name, hard-call, or depend on a specific `hivemind:<skill>`. It does NOT mean a skill should avoid describing the work to be done. A skill SHOULD express its intent clearly (e.g. "pin the current behavior with tests", "harden this candidate"); the framework's own skill-selection may then route that intent to an appropriate skill when it matches. This is **composition by intent**, not coupling — it creates no dependency, survives the target skill's absence (Claude does the work inline), and keeps each skill generic and reusable. Expressing intent that happens to match another skill's triggers is encouraged.
 
 ## Considered Options
 
@@ -26,3 +28,4 @@ No skill references or invokes another. Each is an independently-invocable leaf 
 - A future orchestrator skill can add end-to-end automation without modifying the leaves — it owns the coupling
 - Per-skill `allowed-tools` exclude any "invoke `hivemind:*`" capability, enforcing the decoupling mechanically
 - The stage-end handoff offer is overlord/human-driven, never a skill-embedded prompt
+- Skills compose by intent: a skill expressing work-intent that the framework may match to another skill is sanctioned and creates no dependency — only naming or invoking a specific `hivemind:<skill>` is forbidden
