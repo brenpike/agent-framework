@@ -150,32 +150,42 @@ function initScrollReveal(): void {
 // ---------------------------------------------------------------------------
 
 function initGlowTargets(): void {
-  if (prefersReducedMotion()) return;
-
   const targets = document.querySelectorAll<HTMLElement>('.js-glow-target');
-
-  targets.forEach((el, i) => {
-    const glowColor = el.dataset['glow'] ?? 'violet';
-    // Stagger the animation-delay so targets don't all pulse in sync
-    el.style.animationDelay = `${i * 0.6}s`;
-    el.classList.add(`pulse-${glowColor}`);
-  });
-
-  // Also pulse the nav logo
   const logo = document.getElementById('nav-logo-glow');
-  if (logo) {
-    logo.classList.add('nav-logo-pulse');
+
+  function applyGlow(): void {
+    targets.forEach((el, i) => {
+      const glowColor = el.dataset['glow'] ?? 'violet';
+      // Stagger the animation-delay so targets don't all pulse in sync
+      el.style.animationDelay = `${i * 0.6}s`;
+      el.classList.add(`pulse-${glowColor}`);
+    });
+    // Also pulse the nav logo
+    if (logo) logo.classList.add('nav-logo-pulse');
   }
 
-  // Respond to live preference change
+  function removeGlow(): void {
+    targets.forEach((el) => {
+      const glowColor = el.dataset['glow'] ?? 'violet';
+      el.classList.remove(`pulse-${glowColor}`);
+      el.style.animationDelay = '';
+    });
+    if (logo) logo.classList.remove('nav-logo-pulse');
+  }
+
+  // Apply the staggered pulse only when motion is currently allowed. When the
+  // page loads under reduced-motion, the glow stays off until the user turns
+  // reduced-motion back off (handled by the listener below).
+  if (!prefersReducedMotion()) applyGlow();
+
+  // Always register a live-preference listener — symmetric in both directions —
+  // so disabling reduced-motion without a reload restores the glow (matching the
+  // automatic recovery the prior CSS-only `pulse-*` class provided).
   onMotionChange(() => {
     if (prefersReducedMotion()) {
-      targets.forEach((el) => {
-        const glowColor = el.dataset['glow'] ?? 'violet';
-        el.classList.remove(`pulse-${glowColor}`);
-        el.style.animationDelay = '';
-      });
-      if (logo) logo.classList.remove('nav-logo-pulse');
+      removeGlow();
+    } else {
+      applyGlow();
     }
   });
 }

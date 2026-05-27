@@ -14,31 +14,40 @@ import { mountPage } from './fixtures';
 // absent); the #nav-logo-glow → nav-logo-pulse class; and the live reduced-motion
 // revert. Determinism: asserts inline style strings and classes only.
 //
-// PINNED QUIRK: the shipped HTML pages contain NO elements with class
-// `.js-glow-target` and NO `data-glow` attributes — the glow hooks live only in
-// `[motion-hook]` HTML comments. The `pulse-violet` class is hard-coded statically in
-// the markup, not applied by JS to a `.js-glow-target`. So this suite injects synthetic
-// `.js-glow-target` elements to characterize the JS path that the real markup never
-// triggers. See dom-contract.test.ts, which pins the real-page absence of these hooks.
+// ACTIVATED CONTRACT (issue #147): the shipped install blocks ARE now wired as
+// `.js-glow-target` with `data-glow="violet"`, so initGlowTargets drives the staggered
+// pulse on the real markup (it is the sole `pulse-*` applier — no static `pulse-*` class
+// remains). The synthetic-injection tests below stay valid because main.ts's glow logic
+// is unchanged; they isolate per-element behavior (default-violet, data-glow="cyan",
+// reduced-motion revert) independent of which real ids happen to be wired. One
+// real-markup test then proves the wiring fires end-to-end on a shipped page. See
+// dom-contract.test.ts, which pins the per-page glow-target id contract.
 
-function injectGlowTargets(): HTMLElement[] {
+// Inject two synthetic `.js-glow-target` elements at the END of the mounted DOM and
+// return them alongside their DOCUMENT-ORDER base index. initGlowTargets staggers by
+// `${i * 0.6}s` across ALL `.js-glow-target` in document order, so the synthetic pair's
+// delay depends on how many real targets the mounted page already ships ahead of them.
+// Capturing `baseIndex` keeps these per-element characterization assertions valid
+// regardless of the shipped page's real glow-target count (issue #147 wired real ones).
+function injectGlowTargets(): { violetDefault: HTMLElement; cyanTarget: HTMLElement; baseIndex: number } {
   const main = document.getElementById('main-content')!;
+  const baseIndex = document.querySelectorAll('.js-glow-target').length;
   const violetDefault = document.createElement('div');
   violetDefault.className = 'js-glow-target glow-default';
   const cyanTarget = document.createElement('div');
   cyanTarget.className = 'js-glow-target glow-cyan-target';
   cyanTarget.setAttribute('data-glow', 'cyan');
   main.append(violetDefault, cyanTarget);
-  return [violetDefault, cyanTarget];
+  return { violetDefault, cyanTarget, baseIndex };
 }
 
 describe('initGlowTargets', () => {
-  it('does nothing when reduced-motion is on (early return)', async () => {
+  it('applies no glow when reduced-motion is on at load', async () => {
     installMatchMedia({ matches: true });
     installIntersectionObserver();
 
     mountPage('index');
-    const [violetDefault, cyanTarget] = injectGlowTargets();
+    const { violetDefault, cyanTarget } = injectGlowTargets();
     await bootMain();
 
     expect(violetDefault.style.animationDelay).toBe('');
@@ -57,12 +66,14 @@ describe('initGlowTargets', () => {
     installCanvas2dContext();
 
     mountPage('index');
-    const [violetDefault, cyanTarget] = injectGlowTargets();
+    const { violetDefault, cyanTarget, baseIndex } = injectGlowTargets();
     await bootMain();
 
-    // Stagger: element i gets animationDelay === `${i * 0.6}s`.
-    expect(violetDefault.style.animationDelay).toBe('0s');
-    expect(cyanTarget.style.animationDelay).toBe('0.6s');
+    // Stagger: element i gets animationDelay === `${i * 0.6}s` by DOCUMENT order across
+    // ALL `.js-glow-target`. The synthetic pair sits AFTER the page's real targets, so
+    // assert relative to its document-order base index.
+    expect(violetDefault.style.animationDelay).toBe(`${baseIndex * 0.6}s`);
+    expect(cyanTarget.style.animationDelay).toBe(`${(baseIndex + 1) * 0.6}s`);
 
     // Default glow color is violet when data-glow is absent.
     expect(violetDefault.classList.contains('pulse-violet')).toBe(true);
@@ -81,7 +92,7 @@ describe('initGlowTargets', () => {
     installCanvas2dContext();
 
     mountPage('index');
-    const [violetDefault, cyanTarget] = injectGlowTargets();
+    const { violetDefault, cyanTarget } = injectGlowTargets();
     await bootMain();
 
     // Sanity: active state applied first.
@@ -98,5 +109,60 @@ describe('initGlowTargets', () => {
     expect(violetDefault.style.animationDelay).toBe('');
     expect(cyanTarget.style.animationDelay).toBe('');
     expect(logo.classList.contains('nav-logo-pulse')).toBe(false);
+  });
+
+  it('restores the staggered glow on a live reduced-motion off transition when loaded with reduced-motion on', async () => {
+    // Load under reduced-motion: no glow applied initially (asserted above), but the
+    // initializer must still register a listener so a later reduced-motion-off restores
+    // the glow without a reload — matching the auto-recovery the prior CSS-only
+    // `pulse-*` class provided before this glow was JS-driven.
+    const mql = installMatchMedia({ matches: true });
+    installIntersectionObserver();
+    installRaf();
+    installCanvas2dContext();
+
+    mountPage('index');
+    const { violetDefault, cyanTarget } = injectGlowTargets();
+    await bootMain();
+
+    // Sanity: nothing applied while reduced-motion is on at load.
+    expect(violetDefault.classList.contains('pulse-violet')).toBe(false);
+    expect(cyanTarget.classList.contains('pulse-cyan')).toBe(false);
+    const logo = document.getElementById('nav-logo-glow')!;
+    expect(logo.classList.contains('nav-logo-pulse')).toBe(false);
+
+    // Live change to reduced-motion OFF → glow restored.
+    mql._fireChange(false);
+
+    const baseIndex = document.querySelectorAll('.js-glow-target').length - 2;
+    expect(violetDefault.style.animationDelay).toBe(`${baseIndex * 0.6}s`);
+    expect(cyanTarget.style.animationDelay).toBe(`${(baseIndex + 1) * 0.6}s`);
+    expect(violetDefault.classList.contains('pulse-violet')).toBe(true);
+    expect(cyanTarget.classList.contains('pulse-cyan')).toBe(true);
+    expect(logo.classList.contains('nav-logo-pulse')).toBe(true);
+  });
+
+  it('applies pulse-violet + a staggered animationDelay to real shipped .js-glow-target markup', async () => {
+    installMatchMedia({ matches: false });
+    installIntersectionObserver();
+    installRaf();
+    // benefits is a hero page: with motion on, main.js constructs the swarm canvas and
+    // throws without a 2d-context stub. Install it before boot per the harness contract.
+    installCanvas2dContext();
+
+    mountPage('benefits');
+    await bootMain();
+
+    const realTarget = document.getElementById('ben-install-block')!;
+    expect(realTarget.classList.contains('js-glow-target')).toBe(true);
+    // initGlowTargets applied the pulse — no static pulse-* class exists in the markup.
+    expect(realTarget.classList.contains('pulse-violet')).toBe(true);
+
+    // Stagger is `${i * 0.6}s` by DOCUMENT order across all `.js-glow-target`. Assert the
+    // value is a non-empty `Ns` string, and that the first target in document order is `0s`.
+    expect(realTarget.style.animationDelay).toMatch(/^\d+(?:\.\d+)?s$/);
+
+    const firstTarget = document.querySelector<HTMLElement>('.js-glow-target')!;
+    expect(firstTarget.style.animationDelay).toBe('0s');
   });
 });
