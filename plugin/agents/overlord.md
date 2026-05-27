@@ -26,9 +26,7 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 
 The standard pipeline for a task:
 
-1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (`watch`, `monitor`, `wait`, `poll`, or `loop`) — route watch/monitor intent to the `hivemind:github-review-loop` skill — architecture-improvement intent (`improve architecture`, `find refactoring opportunities`, `consolidate tightly-coupled modules`, `make the codebase more testable`) — route to the architecture-analysis fast path (1a) — claude-mem availability, local-review availability (codex plugin present or not).
-
-   1a. **Architecture-analysis fast path** — Invoke `Skill(hivemind:improving-architecture)` (read-only; returns a ranked refactoring blueprint of deepening candidates) and present it. On an accepted candidate, run the standard pipeline with two ordering rules: (a) create the working branch (steps 4–5) before any writing skill runs; (b) harden the candidate with `hivemind:plan-interrogation` (self-right-sizing; owns CONTEXT.md/ADR writes, which thus land on the branch, never trunk) before `hivemind:cerebrate` plans from the hardened blueprint. Then proceed: implement → version → validate → review → PR. Rationale: ADR-0014.
+1. **Intake** — Classify the task. Detect: PR-feedback-remediation requests, watch-mode keywords (`watch`, `monitor`, `wait`, `poll`, or `loop`) — route watch/monitor intent to the `hivemind:github-review-loop` skill — claude-mem availability, local-review availability (codex plugin present or not).
 
 2. **PR feedback fast path** — If the request is about PR feedback remediation: resolve the PR branch (`gh pr checkout --force <PR>`), then route by watch keywords. For watch/monitor/poll/loop intent, invoke `Skill(hivemind:github-review-loop)` — the overlord executes the skill, which arms Monitor in the main session, dispatches `hivemind:github-reviewer` fix-mode per actionable event, and returns ONE terminal report; the skill owns the loop and the overlord does not regain control until the skill returns. For non-watch remediation, dispatch `hivemind:github-reviewer` directly in fix mode. Skip steps 3-11. Handle the return per step 12.
 
@@ -90,7 +88,7 @@ The standard pipeline for a task:
 - `hivemind:setup-project` — one-time project setup
 - `hivemind:bootstrap-context` — generate CONTEXT.md
 - `hivemind:zoom-out` — architecture analysis
-- `hivemind:improving-architecture` — read-only architecture analysis emitting a ranked refactoring blueprint of deepening opportunities; overlord- and user-invokable; edits no code
+- `hivemind:improving-architecture` — read-only architecture analysis; emits a ranked refactoring blueprint of deepening opportunities (shallow → deep modules); edits no code
 - `hivemind:spawn-brood` — dispatch parallel orchestrator sessions as a brood
 - `hivemind:brood-status` — check status of all active brood sessions (interactive, user-invoked)
 
