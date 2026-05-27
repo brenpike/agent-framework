@@ -3,9 +3,8 @@ name: tdd
 description: >-
   Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle.
   Use when the user asks to implement X using TDD, write this with TDD, use TDD, TDD this feature,
-  red-green-refactor, or test-first. Requires Write and Edit tool access — invoke from
-  `hivemind:drone` context only. Orchestrators receiving TDD requests must delegate
-  to `hivemind:drone`, which then invokes this skill.
+  red-green-refactor, or test-first. Requires Write and Edit access — invoke only in a context
+  that can modify source and test files.
 allowed-tools:
   - Read
   - Write
