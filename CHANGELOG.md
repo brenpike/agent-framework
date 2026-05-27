@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-05-26
+
+### Added
+
+- **`interface-design.md` reference added to `tdd` skill.** Packages design-for-testability guidance (inject dependencies, return-don't-mutate, small surface area) as a loadable reference consumed by the skill's Step 1 planning phase.
+- **`tdd` skill Step 1 planning enriched with interface-testability hooks.** Step 1 now conditionally prompts interface and dependency-injection alignment when `interface-design.md` is present, and adds domain-glossary/ADR alignment checks when `CONTEXT.md` or ADRs are present.
+
+### Changed
+
+- **`tdd` skill refactor step deepened.** Expanded the shallow-module heuristic and added long-method-extract and new-code-reveals-existing-smells checklist items to the refactor phase.
+
 ## [2.10.1] - 2026-05-26
 
 ### Changed
