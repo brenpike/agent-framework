@@ -26,6 +26,6 @@ No skill references or invokes another. Each is an independently-invocable leaf 
 - Each skill is independently invocable and testable in isolation
 - Human / natural-language flow drives stage transitions today; there is no built-in automation between stages
 - A future orchestrator skill can add end-to-end automation without modifying the leaves — it owns the coupling
-- Per-skill `allowed-tools` exclude any "invoke `hivemind:*`" capability, enforcing the decoupling mechanically
+- The decoupling is enforced by skill design and intent-expression convention, NOT by tooling: a skill's `allowed-tools` only *pre-approves* tools (skips permission prompts) and cannot restrict a skill — every tool remains callable and permission settings still govern. If hard blocking of cross-skill invocation were ever required, it would be done via Claude Code `permissions` deny rules, not skill frontmatter.
 - The stage-end handoff offer is overlord/human-driven, never a skill-embedded prompt
 - Skills compose by intent: a skill expressing work-intent that the framework may match to another skill is sanctioned and creates no dependency — only naming or invoking a specific `hivemind:<skill>` is forbidden
