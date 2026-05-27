@@ -6,7 +6,7 @@ How the analyst reasons about the *shape* of a deepened module's interface when 
 
 This is a read-only analysis skill. It does not use the Agent tool, does not spawn parallel design agents, and does not run a multi-agent design exploration. Generating two or three candidate interface shapes happens entirely as the analyst's own inline reasoning while drafting a candidate card.
 
-Deeper, multi-design interface exploration — spawning agents to develop radically different interfaces in parallel — is **`cerebrate`'s job** during planning, after the user has accepted a candidate and the overlord has run `hivemind:plan-interrogation` on it. Do not attempt that work here, and do not instruct the reader to. If the interface shape genuinely needs more exploration than inline reasoning can give, say so in the candidate's notes and let the downstream pipeline handle it.
+Deeper or parallel multi-design interface exploration — developing radically different interfaces side by side — is a **separate downstream activity** this skill does not perform. Do not attempt that work here, and do not instruct the reader to. If the interface shape genuinely needs more exploration than inline reasoning can give, say so in the candidate's notes and let the workflow that implements changes handle it.
 
 ## Contents
 

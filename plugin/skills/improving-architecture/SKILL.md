@@ -25,23 +25,16 @@ Analyze a codebase and surface architectural friction as **deepening opportuniti
 
 This skill is strictly read-only analysis. It does NOT:
 
-- edit, refactor, or write any product code;
-- write `CONTEXT.md`, `CONTEXT-MAP.md`, or ADRs (that is `hivemind:plan-interrogation`'s job);
-- spawn agents or run multi-agent design exploration (that is `cerebrate`'s job);
+- edit or refactor product code, or perform the refactoring it describes;
+- write `CONTEXT.md`, `CONTEXT-MAP.md`, or ADRs;
+- spawn agents or run multi-agent design exploration;
 - emit HTML or write any file — the blueprint is returned inline in the response.
 
-If asked to "just do the refactor," refuse and point to the pipeline below. This skill produces a **blueprint**; it never executes one.
+If asked to "just do the refactor" or "apply this," decline: this skill produces a **blueprint**, never executes one. Hand the blueprint to whatever workflow implements changes.
 
-## Downstream pipeline
+## Term discipline
 
-The blueprint is an input to the hivemind pipeline, not a finished plan. After the user accepts a candidate:
-
-1. The overlord invokes **`hivemind:plan-interrogation`** on the accepted candidate — always; it self-right-sizes, so trivial candidates converge fast. Interrogation grills the candidate and owns any `CONTEXT.md` / ADR writes.
-2. **`cerebrate`** converts the hardened blueprint into an executable implementation plan (and does any deeper multi-design interface exploration).
-3. **`drone`** / **`changeling`** perform the refactor.
-4. Then: version → validate → review → PR.
-
-Term discipline: the artifact this skill emits is a **blueprint**, never a "plan." A plan is `cerebrate`'s downstream output — do not collide the vocabulary.
+The artifact this skill emits is a **blueprint** — an analysis output, not an implementation plan. Keep the vocabulary distinct: a blueprint ranks and describes candidate refactors; turning one into an executable plan and applying it is a separate, downstream activity this skill does not perform.
 
 ## Glossary
 
@@ -131,11 +124,10 @@ graph TD
 
 ## Next steps
 
-This is a blueprint, not a plan. To act on a candidate:
-
-1. The overlord runs `hivemind:plan-interrogation` on it (owns any CONTEXT.md / ADR writes).
-2. `cerebrate` turns the hardened candidate into an implementation plan.
-3. `drone` / `changeling` perform the refactor; then version → validate → review → PR.
+This is a blueprint, not an implementation plan. To act on a candidate, hand it to the
+workflow that implements changes: harden the design, produce an implementation plan,
+perform the refactor behind its tests, then validate and review. This skill stops at the
+blueprint.
 ```
 
 ## When to use
@@ -147,11 +139,10 @@ Not this skill:
 
 - **Just mapping / orienting** in unfamiliar code → `zoom-out`.
 - **Generating a domain glossary** → `hivemind:bootstrap-context`.
-- **Hardening a chosen candidate, writing CONTEXT.md / ADRs** → `hivemind:plan-interrogation`.
-- **Producing or executing an implementation plan** → `cerebrate`, then `drone` / `changeling`.
+- **Hardening, planning, or executing the refactor** → the workflow that implements changes; this skill only finds and ranks candidates.
 
 ## Edge cases
 
 - **No `CONTEXT.md` / `docs/adr/`:** do not block. Infer vocabulary from code, recommend `hivemind:bootstrap-context` first, and proceed.
 - **Multi-context repo (`CONTEXT-MAP.md` present):** scope the blueprint to one bounded context; ask which if ambiguous.
-- **"Just do the refactor" / "apply this":** refuse. This skill is read-only; point to the downstream pipeline (plan-interrogation → cerebrate → drone / changeling).
+- **"Just do the refactor" / "apply this":** decline. This skill is read-only — it emits the blueprint and hands off; it does not perform refactors.
