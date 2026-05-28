@@ -64,7 +64,7 @@ Discover context in this priority order, then walk the code:
 
 Apply the deletion test to anything you suspect is shallow.
 
-**If there is no `CONTEXT.md` / `CONTEXT-MAP.md` and no `docs/adr/`:** proceed with vocabulary inferred from the code, and recommend the user run `hivemind:creep-spread` first for sharper domain naming. (Mirror `zoom-out`'s behavior — do not block.)
+**If there is no `CONTEXT.md` / `CONTEXT-MAP.md` and no `docs/adr/`:** proceed with vocabulary inferred from the code, and recommend the user first generate a domain glossary (CONTEXT.md from project artifacts) for sharper domain naming.
 
 ### 2. Assess
 
@@ -135,14 +135,8 @@ blueprint.
 - The user wants to find where the codebase is hard to test, hard to navigate, or tightly coupled, and wants concrete, ranked refactors.
 - Before planning a refactor — to produce candidates the planning pipeline can harden.
 
-Not this skill:
-
-- **Just mapping / orienting** in unfamiliar code → `zoom-out`.
-- **Generating a domain glossary** → `hivemind:creep-spread`.
-- **Hardening, planning, or executing the refactor** → the workflow that implements changes; this skill only finds and ranks candidates.
-
 ## Edge cases
 
-- **No `CONTEXT.md` / `docs/adr/`:** do not block. Infer vocabulary from code, recommend `hivemind:creep-spread` first, and proceed.
+- **No `CONTEXT.md` / `docs/adr/`:** do not block. Infer vocabulary from code, recommend the user first generate a domain glossary (CONTEXT.md from project artifacts) for sharper domain naming, and proceed.
 - **Multi-context repo (`CONTEXT-MAP.md` present):** scope the blueprint to one bounded context; ask which if ambiguous.
 - **"Just do the refactor" / "apply this":** decline. This skill is read-only — it emits the blueprint and hands off; it does not perform refactors.
