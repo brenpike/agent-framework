@@ -6,9 +6,7 @@ description: >-
   duplicating it. Pure synthesis — asks no questions. Use when the user wants to generate a
   session-resumption handoff, create a handoff document, write a fresh-session kickoff brief,
   or bridge an interrogated plan into a new session. Trigger on: "create a handoff", "generate
-  a handoff", "session-resumption handoff", "fresh-session kickoff brief",
-  "/hivemind:create-handoff". Distinct from plan-to-prd (produces a WHAT-only PRD) and
-  prd-to-issues (slices a PRD into GitHub issues) — this only writes the kickoff handoff.
+  a handoff", "session-resumption handoff", "fresh-session kickoff brief".
 allowed-tools:
   - Read
   - Write
@@ -23,7 +21,7 @@ shell: bash
 
 # Create Handoff
 
-Transform an interrogated plan and any additional context which is relevant into a fresh-session kickoff handoff. This is **pure synthesis**: read the source, write the handoff, stop. Ask the user nothing — they review the written output. Heavy interrogation lives upstream in `hivemind:plan-interrogation`; by the time a plan reaches this skill it is already settled (ADR-0013).
+Transform an interrogated plan and any additional context which is relevant into a fresh-session kickoff handoff. This is **pure synthesis**: read the source, write the handoff, stop. Ask the user nothing — they review the written output.
 
 The handoff document should contain enough detail to bootstrap a new session with confidence, but it should point to the plan for the full rationale and details — do not duplicate them. The handoff is a **pointer document** that distills the most important context but directs the reader to the plan for the full story. Together with the plan, there must be a high-fidelity record of the interrogation and decision-making that led to the Initiative's current state.
 
@@ -48,10 +46,10 @@ Session-agnostic and resumable at any boundary. Resolve inputs in this order:
    - the live conversation context (a plan already on screen / just produced), OR
    - a file at `.hivemind/plans/<slug>.md`.
    If both are present, prefer the live context and treat the file as a cross-check.
-   When the plan is sourced from live context, `.hivemind/plans/<slug>.md` is the durable backing for the handoff's plan pointer and MUST exist by the time the handoff is written. Live-context input stays valid (D10) — the skill itself is responsible for materializing that backing file when only live context was supplied; do not treat a pre-persisted plan as a precondition.
-2. **Handoff-context (optional, never required)** — extra session state the caller passes (recent decisions, in-flight questions, pointers). When absent, synthesize entirely from the plan. Do not ask for it, do not block on it (D10).
+   When the plan is sourced from live context, `.hivemind/plans/<slug>.md` is the durable backing for the handoff's plan pointer and MUST exist by the time the handoff is written. Live-context input stays valid — the skill itself is responsible for materializing that backing file when only live context was supplied; do not treat a pre-persisted plan as a precondition.
+2. **Handoff-context (optional, never required)** — extra session state the caller passes (recent decisions, in-flight questions, pointers). When absent, synthesize entirely from the plan. Do not ask for it, do not block on it.
 
-Derive `<slug>` from the input — the plan file's basename, or the slug already in use for the initiative. **Never hardcode a slug.** One slug per initiative (D11): the same slug names `.hivemind/plans/<slug>.md`, `.hivemind/handoffs/<slug>.md`, and `docs/prds/<slug>.md`.
+Derive `<slug>` from the input — the plan file's basename, or the slug already in use for the initiative. **Never hardcode a slug.** One slug per initiative: the same slug names `.hivemind/plans/<slug>.md`, `.hivemind/handoffs/<slug>.md`, and `docs/prds/<slug>.md`.
 
 ---
 
@@ -62,7 +60,7 @@ Derive `<slug>` from the input — the plan file's basename, or the slug already
 3. Ensure the output directory exists: `mkdir -p .hivemind/handoffs`.
 4. Guarantee the plan's backing file exists (reuse the `<slug>` already determined in step 2 — do not derive a second slug; in the live-context-only case that slug came from the initiative name per the rule above):
    - Check whether `.hivemind/plans/<slug>.md` exists (`ls`/`find`).
-   - If it does NOT exist AND the plan came from live context: `mkdir -p .hivemind/plans`, then Write the live plan verbatim to `.hivemind/plans/<slug>.md`. This is **this skill's own Write** — writing the plan file is not invoking `hivemind:plan-interrogation` or any other skill (D4, ADR-0013).
+   - If it does NOT exist AND the plan came from live context: `mkdir -p .hivemind/plans`, then Write the live plan verbatim to `.hivemind/plans/<slug>.md`.
    - If it ALREADY exists: do NOT overwrite — the existing file is the source of truth.
 5. Synthesize the handoff body from the plan plus any optional handoff-context. **Point to the plan; do not duplicate it.** Each section is a pointer or a distilled list, never a copy of the plan's prose.
 6. Write `.hivemind/handoffs/<slug>.md` using the exact section set below.
@@ -125,11 +123,10 @@ Do not add, remove, rename, or reorder sections. The handoff is a pointer docume
 
 ## Do Not
 
-- ask the user any questions — this skill is zero-interrogation synthesis (D9).
-- require handoff-context — the optional input is never mandatory (D10).
-- hardcode a slug — always derive it from the input (D11).
+- ask the user any questions — this skill is zero-interrogation synthesis.
+- require handoff-context — the optional input is never mandatory.
+- hardcode a slug — always derive it from the input.
 - duplicate the plan or PRD — the handoff points to them. (Not in tension with persisting the plan file: the handoff body still only POINTS to the plan, copying no plan prose; materializing the plan FILE when absent is a separate permitted action.)
 - overwrite an existing `.hivemind/plans/<slug>.md` — the persisted plan is authoritative; only create it when absent in the live-context path.
-- add, drop, rename, or reorder the output sections (D8).
-- invoke any other hivemind skill, dispatch an agent, or run Bash that calls another skill (D4, ADR-0013).
+- add, drop, rename, or reorder the output sections.
 - `git add`, commit, push, or open a PR — the overlord molts; the handoff is gitignored.

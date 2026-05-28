@@ -3,7 +3,7 @@ name: creep-spread
 description: >-
   Analyze project artifacts and generate a populated CONTEXT.md (or CONTEXT-MAP.md and multiple CONTEXT.md files for
   multi-context repos) with domain terms extracted from existing code, documentation, and
-  configuration. Independently invocable or called by seed-hive as a final step.
+  configuration. Use when seeding a new hive, analyzing an existing project, or enriching an existing CONTEXT.md. Trigger on: "generate a domain glossary", "create a CONTEXT.md from project artifacts", "analyze project artifacts for domain terms", "enrich CONTEXT.md with terms from project", "update CONTEXT.MD", "update CONTEXT-MAP.md", "update project context definitions".
 allowed-tools:
   - Read
   - Write
@@ -19,8 +19,6 @@ shell: bash
 ---
 
 ## Quick Reference
-
-Rules: `REPORT-01` (blocked report contract)
 
 Before:
 - [ ] Project root resolved via `git rev-parse --show-toplevel`

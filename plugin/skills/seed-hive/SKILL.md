@@ -17,8 +17,6 @@ shell: bash
 
 ## Quick Reference
 
-Rules: `REPORT-01` (blocked report contract)
-
 Before:
 - [ ] Project root resolved via `git rev-parse --show-toplevel`
 - [ ] `.claude/settings.json` read or default `{}` established
@@ -192,11 +190,10 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5 (except `hooks.SubagentStart` when `caveman` = `yes`, as specified in steps 5 and 10d; and `permissions.allow` ONLY when `seed_allowlist` = `yes`, as specified in step 5)
-- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, repo-root `CLAUDE.md` (create-or-append-if-absent only, per step 14), and files created or modified by invoked skills (`hivemind:creep-spread`)
+- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, repo-root `CLAUDE.md` (create-or-append-if-absent only, per step 14), and files created or modified by invoked skills
 - install, scaffold, or invent a test harness; run the detected test command; or overwrite, reorder, or replace an existing documented test/validation command in repo-root `CLAUDE.md` (step 14 detects and records append-if-absent only)
 - modify `~/.claude-mem/settings.json` beyond setting its single `CLAUDE_CODE_PATH` key (and only when `claude_mem` = `yes`, the file already exists, the key is empty/missing, and a `claude` binary resolves, per step 11); never overwrite an existing non-empty `CLAUDE_CODE_PATH`, and never touch any other key in that file
 - commit, push, or otherwise touch git state
-- invoke skills other than `hivemind:creep-spread`
 - proceed if the project root cannot be resolved
 
 ## Output
