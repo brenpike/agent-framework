@@ -1,8 +1,8 @@
 # Architecture Language
 
-Shared vocabulary for every observation and recommendation this skill makes. Use these terms exactly — do not substitute "component," "service," "API," or "boundary." Consistent language is the whole point of this file.
+Shared vocabulary for reasoning about — and acting on — module depth. Use these terms exactly — do not substitute "component," "service," "API," or "boundary." Consistent language is the whole point of this file.
 
-This is **architecture** vocabulary, bundled with the skill and stable across projects. It is distinct from the project's **`CONTEXT.md`**, which is the project's **domain** glossary (Order, Invoice, Shipment). A good blueprint names domain concepts using `CONTEXT.md` and names architectural shapes using this file: "the Order intake module is shallow," never "the FooBarHandler is shallow."
+This is **architecture** vocabulary, stable across projects. It is distinct from the project's **`CONTEXT.md`**, which is the project's **domain** glossary (Order, Invoice, Shipment). Name domain concepts using `CONTEXT.md` and name architectural shapes using this file: "the Order intake module is shallow," never "the FooBarHandler is shallow."
 
 ## Contents
 
@@ -49,12 +49,12 @@ What maintainers get from depth: change, bugs, knowledge, and verification conce
 
 ## The deletion test
 
-The primary signal this skill uses to flag a shallow module. Imagine deleting the module and inlining its body at every call site:
+The primary signal for whether a module is shallow. Imagine deleting the module and inlining its body at every call site:
 
 - If complexity **vanishes**, the module was a pass-through — it was not hiding anything. It is shallow.
 - If complexity **reappears across N callers**, the module was earning its keep — it concentrated something. It is deep.
 
-A "yes, complexity reappears across many callers" is the signal that a candidate is worth deepening rather than deleting.
+A "yes, complexity reappears across many callers" is the signal that a module is worth deepening rather than deleting.
 
 ## Relationships
 

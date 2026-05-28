@@ -96,6 +96,10 @@ This policy applies to:
   - `hivemind:changeling`
 - All review feedback classification steps
 
+### Write-Capable Skill Containment
+
+User-driven skills carrying `Write`/`Edit` in `allowed-tools` (e.g. `tdd`, `refactor-to-depth`) cannot mutate source outside the branch → checkpoint → review → PR lifecycle: the user reaches only the orchestrator, whose `tools:` carry no `Write`/`Edit`, and write-capable executors (`drone`, `changeling`) are spawned only after git preflight inside an established working branch. Containment is structural — agent tool grants plus spawn topology — so it holds for all present and future write/edit skills with no per-skill governance preflight.
+
 ### Enforcement Order
 
 1. External Content Boundary applies at content ingestion time (before classification).

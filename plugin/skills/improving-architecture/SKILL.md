@@ -40,10 +40,10 @@ The artifact this skill emits is a **blueprint** — an analysis output, not an 
 
 The skill uses two distinct vocabularies:
 
-- **Architecture terms** (module, interface, implementation, depth/deep/shallow, seam, adapter, leverage, locality) come from `${CLAUDE_PLUGIN_ROOT}/skills/improving-architecture/references/LANGUAGE.md`. Use them exactly — do not drift into "component," "service," "API," or "boundary."
+- **Architecture terms** (module, interface, implementation, depth/deep/shallow, seam, adapter, leverage, locality) come from `${CLAUDE_PLUGIN_ROOT}/skills/_shared/LANGUAGE.md`. Use them exactly — do not drift into "component," "service," "API," or "boundary."
 - **Domain terms** (Order, Invoice, Shipment) come from the project's `CONTEXT.md` / `CONTEXT-MAP.md`. Name candidates with these: "the Order intake module is shallow," never "the FooBarHandler is shallow."
 
-The primary signal is the **deletion test**: imagine deleting a module and inlining its body at every call site. If complexity *vanishes*, it was a pass-through — shallow. If complexity *reappears across N callers*, it was earning its keep — deep. A "complexity reappears across many callers" is the signal a candidate is worth deepening. Full definitions and principles in `${CLAUDE_PLUGIN_ROOT}/skills/improving-architecture/references/LANGUAGE.md`.
+The primary signal is the **deletion test**: imagine deleting a module and inlining its body at every call site. If complexity *vanishes*, it was a pass-through — shallow. If complexity *reappears across N callers*, it was earning its keep — deep. A "complexity reappears across many callers" is the signal a candidate is worth deepening. Full definitions and principles in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/LANGUAGE.md`.
 
 ## Workflow
 
@@ -70,8 +70,8 @@ Apply the deletion test to anything you suspect is shallow.
 
 Apply the three references to turn friction into candidates:
 
-- `${CLAUDE_PLUGIN_ROOT}/skills/improving-architecture/references/LANGUAGE.md` — depth/shallowness vocabulary and the deletion test, to identify and name shallow modules and leaky interfaces.
-- `${CLAUDE_PLUGIN_ROOT}/skills/improving-architecture/references/DEEPENING.md` — classify each candidate's dependencies (in-process / local-substitutable / remote-owned → port+adapter / true-external → mock+inject) and derive the testing recommendation across the new seam.
+- `${CLAUDE_PLUGIN_ROOT}/skills/_shared/LANGUAGE.md` — depth/shallowness vocabulary and the deletion test, to identify and name shallow modules and leaky interfaces.
+- `${CLAUDE_PLUGIN_ROOT}/skills/_shared/DEEPENING.md` — classify each candidate's dependencies (in-process / local-substitutable / remote-owned → port+adapter / true-external → mock+inject) and derive the testing recommendation across the new seam.
 - `${CLAUDE_PLUGIN_ROOT}/skills/improving-architecture/references/INTERFACE-DESIGN.md` — inline "design it twice" reasoning: sketch 2–3 interface shapes for each candidate, compare by depth/locality/seam placement, and commit to one recommendation.
 
 If a candidate contradicts an existing ADR, surface it only when the friction is real enough to warrant reopening the ADR — mark it clearly in the card. Do not list every refactor an ADR forbids.

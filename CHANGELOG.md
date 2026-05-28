@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-05-27
+
+### Added
+
+- **`refactor-to-depth` skill.** New execution skill that performs a behavior-preserving "deepening" refactor via a refactor-under-green loop (pin behavior with characterization tests → deepen under green → relocate tests to the deep interface → deletion test). It is the in-implementation counterpart to the read-only `improving-architecture` blueprint: a producer/consumer artifact-transform pair analogous to `plan-to-prd` → `prd-to-issues`. Requires Write/Edit access.
+- **`plugin/skills/_shared/` shared architecture vocabulary.** First cross-skill use of `_shared/`: `LANGUAGE.md` (architecture vocabulary — module/interface/implementation, depth/deep/shallow, seam, adapter, leverage, locality, the deletion test) and `DEEPENING.md` (deepening mechanics and dependency categories), consumed by both `improving-architecture` and `refactor-to-depth`.
+- **ADR-0015** (`docs/adr/0015-deepening-refactor-execution-skill-and-shared-vocabulary.md`): documents the consumer execution skill, the producer/consumer pairing with `improving-architecture`, the one asymmetry vs `prd-to-issues` (the executor edits product code so it runs under the host framework's governance/lifecycle), and the first use of `_shared/` for cross-skill vocabulary.
+- **ADR-0016** (`docs/adr/0016-structural-containment-of-write-capable-skills.md`): records that write-capable user-driven skills (`tdd`, `refactor-to-depth`) are structurally contained by tool capability + spawn topology — no per-skill preflight needed.
+
 ## [2.11.0] - 2026-05-26
 
 ### Added
