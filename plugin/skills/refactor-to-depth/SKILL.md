@@ -4,9 +4,9 @@ description: >-
   Perform a behavior-preserving structural refactor that deepens a module — turning a small
   amount of behaviour behind a large, leaky interface into a large amount of behaviour behind a
   small one. Use when the user wants to deepen a module, refactor to a deeper interface, do a
-  behavior-preserving structural refactor, extract behind a port/adapter, merge shallow modules,
-  or execute an improving-architecture blueprint candidate. Requires Write and Edit access —
-  invoke only in a context that can modify source and test files.
+  behavior-preserving structural refactor, extract behind a port/adapter, merge shallow modules, 
+  or execute a ranked refactoring blueprint candidate produce by prior architectural analysis.
+  Requires Write and Edit access — invoke only in a context that can modify source and test files.
 allowed-tools:
   - Read
   - Write

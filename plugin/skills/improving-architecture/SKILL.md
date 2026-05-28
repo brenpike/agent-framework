@@ -5,8 +5,7 @@ description: >-
   opportunities — turning shallow modules (small behaviour behind a large, leaky interface)
   into deep ones for testability and AI-navigability. Use when the user wants to improve
   architecture, find refactoring opportunities, consolidate tightly-coupled modules, make
-  the codebase more testable, or make it more AI-navigable. Distinct from zoom-out (which
-  maps and orients) and creep-spread (which generates the domain glossary): this finds
+  the codebase more testable, or make it more AI-navigable: this finds
   and ranks specific refactors but never edits code, writes docs, or spawns agents.
 allowed-tools:
   - Read
