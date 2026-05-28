@@ -98,13 +98,7 @@ This policy applies to:
 
 ### Write-Capable Skill Containment
 
-User-driven skills carrying `Write`/`Edit` in `allowed-tools` (e.g. `tdd`, `refactor-to-depth`) are structurally contained — the containment is a property of agent tool grants and spawn topology, not an advisory rule, so it holds for all present and future write/edit skills with no per-skill governance preflight:
-
-1. A skill is loaded instructions executing in the **invoking agent's** context, using that agent's `tools:`. `allowed-tools` only pre-approves (skips permission prompts) for tools the agent already holds; it never grants a capability the agent lacks.
-2. The user reaches only the orchestrator (overlord), whose `tools:` carry no `Write`/`Edit`. A write/edit skill invoked at the orchestrator level physically cannot mutate files; its write intent routes through the orchestrator's normal delegate-to-executor lifecycle (git preflight → working branch → drone/changeling).
-3. Write-capable executors (`drone`, `changeling`) are spawned only by the orchestrator, after git preflight, inside an established working branch. Loop-heavy write skills run **inside** such a delegated executor, contained by the established branch.
-4. Therefore no user-reachable write-capable context exists outside the branch → checkpoint → review → PR lifecycle.
-5. Boundary: outside hivemind (a raw host session invoking the skill directly), the host framework owns governance; the skills stay portable and assume no lifecycle.
+User-driven skills carrying `Write`/`Edit` in `allowed-tools` (e.g. `tdd`, `refactor-to-depth`) cannot mutate source outside the branch → checkpoint → review → PR lifecycle: the user reaches only the orchestrator, whose `tools:` carry no `Write`/`Edit`, and write-capable executors (`drone`, `changeling`) are spawned only after git preflight inside an established working branch. Containment is structural — agent tool grants plus spawn topology — so it holds for all present and future write/edit skills with no per-skill governance preflight. Repo background (non-normative): `docs/adr/0016-structural-containment-of-write-capable-skills.md`.
 
 ### Enforcement Order
 
