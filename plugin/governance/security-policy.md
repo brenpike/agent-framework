@@ -96,6 +96,10 @@ This policy applies to:
   - `hivemind:changeling`
 - All review feedback classification steps
 
+### Write-Capable Skill Containment
+
+User-driven skills carrying `Write`/`Edit` in `allowed-tools` (e.g. `tdd`, `refactor-to-depth`) are structurally contained: the user reaches only the orchestrator, which holds no `Write`/`Edit`, and write-capable executors are spawned only after git preflight inside a working branch — so no write-capable context is reachable outside the branch → checkpoint → review → PR lifecycle. Rationale and the full invariant: `docs/adr/0016-structural-containment-of-write-capable-skills.md`.
+
 ### Enforcement Order
 
 1. External Content Boundary applies at content ingestion time (before classification).
