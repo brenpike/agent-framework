@@ -98,7 +98,7 @@ This policy applies to:
 
 ### Write-Capable Skill Containment
 
-User-driven skills carrying `Write`/`Edit` in `allowed-tools` (e.g. `tdd`, `refactor-to-depth`) cannot mutate source outside the branch → checkpoint → review → PR lifecycle: the user reaches only the orchestrator, whose `tools:` carry no `Write`/`Edit`, and write-capable executors (`drone`, `changeling`) are spawned only after git preflight inside an established working branch. Containment is structural — agent tool grants plus spawn topology — so it holds for all present and future write/edit skills with no per-skill governance preflight. Repo background (non-normative): `docs/adr/0016-structural-containment-of-write-capable-skills.md`.
+User-driven skills carrying `Write`/`Edit` in `allowed-tools` (e.g. `tdd`, `refactor-to-depth`) cannot mutate source outside the branch → checkpoint → review → PR lifecycle: the user reaches only the orchestrator, whose `tools:` carry no `Write`/`Edit`, and write-capable executors (`drone`, `changeling`) are spawned only after git preflight inside an established working branch. Containment is structural — agent tool grants plus spawn topology — so it holds for all present and future write/edit skills with no per-skill governance preflight.
 
 ### Enforcement Order
 

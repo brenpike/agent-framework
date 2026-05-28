@@ -27,7 +27,7 @@ Do not emit decorative or scaffolding shell output. Forbidden: section-banner ec
 
 ## Bash Command Discipline
 
-Shape Bash for permission economy. Claude Code re-prompts on any out-of-cwd write/redirect and matches each subcommand of a compound command independently (see `docs/adr/0010-permission-allowlist-posture.md` for the engine behavior). Therefore:
+Shape Bash for permission economy. Claude Code re-prompts on any out-of-cwd write/redirect and matches each subcommand of a compound command independently. Therefore:
 
 - Prefer the dedicated Read, Grep, and Glob tools over Bash for reading or searching files. Use Bash only when no dedicated tool covers the task.
 - Issue ONE atomic, single-purpose command per Bash call. Do not chain with `&&`, `||`, `;`, `|`, `|&`, or `&` purely to batch steps or narrate progress — split them into separate calls.
