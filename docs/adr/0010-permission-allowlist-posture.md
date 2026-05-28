@@ -60,3 +60,9 @@ This amendment refines the DIAGNOSIS recorded above. It does not rewrite the acc
 - **Actual mechanism.** COMPOUND-COMMAND BATCHING. CC splits a compound command (`&&` / `||` / `;` / `|` / newline) and matches each subcommand independently; one unlisted segment forces a prompt for the whole chain. 51 of 61 (84%) banner-decorated commands contained such an unlisted chain-mate. Measured unlisted triggers: `grep` flag near-misses (`grep -c`, `grep -v`, `grep -E`, `grep -nE`, `grep -rln`, `grep -rEn` — the seed had only `grep -n` / `grep -rn` / `grep -rE`), `git ls-tree`, and repo validation invocations (`bash tools/policy_check.sh`, `bash tools/validate_reports.sh`, `bash -n`).
 - **Remediation (shipped v2.8.2 / PR #132).** Static allowlist widening only: added `Bash(grep *)` and `Bash(git ls-tree *)` (both read-only) to the seed. Repo-local `bash ...` validation grants were kept OUT of the consumer seed. No hook, no new behavioral prose.
 - **Engine model unchanged.** The engine facts in the Findings section remain valid and load-bearing — the out-of-cwd write/redirect re-prompt and the compound-command split behavior are exactly what this amendment leans on. `grep` and `git ls-tree` are read-only and safe for the same engine reasons; the debunked "redirect-write tail" premise stays debunked.
+
+---
+
+## Naming update (2026-05-27)
+
+The `setup-project` skill referenced in this ADR has been renamed to `seed-hive`. The substantive decision recorded here (permission-allowlist posture) is unchanged; only the skill identifier rotated. Legacy invocations continue to match via trigger aliases.

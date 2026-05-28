@@ -9,7 +9,7 @@ This dev container provisions a **CI-parity toolchain** so contributors can run 
 - Plugin marketplaces registered (no auth required): hivemind, codex, claude-mem, caveman.
 - A seeded `.claude/settings.local.json` with the Codex cache permission grant for this container's `$HOME`.
 
-Plugin **enablement** (caveman, codex, claude-mem) and plugin **configuration** (SubagentStart hook, pluginConfigs, .envrc, permissions allowlist) are handled by `hivemind:setup-project` — the canonical path — not by postCreate. See [Configure the plugins](#configure-the-plugins-one-time-in-claude-code) below.
+Plugin **enablement** (caveman, codex, claude-mem) and plugin **configuration** (SubagentStart hook, pluginConfigs, .envrc, permissions allowlist) are handled by `hivemind:seed-hive` — the canonical path — not by postCreate. See [Configure the plugins](#configure-the-plugins-one-time-in-claude-code) below.
 
 The base image is Ubuntu 20.04. A Debian/Ubuntu family image is mandatory: the policy linter requires GNU `grep -P` and `perl`, which Alpine/BusyBox lack. CI runs on `ubuntu-latest`, so minor coreutils/grep/perl/python version differences between the two are possible — the smoke test is a best-effort signal, not an absolute guarantee.
 
@@ -99,7 +99,7 @@ Plugin enablement and configuration require an authenticated `claude` CLI sessio
 
 **Division of labor:**
 - `postCreate.sh` — OS tooling, npm CLIs, marketplace registration, container-real-path Codex grant in `.claude/settings.local.json` (gitignored)
-- `hivemind:setup-project` — plugin enablement (`enabledPlugins`), plugin config (`pluginConfigs`), SubagentStart hook, `.envrc`, permissions allowlist; writes to `.claude/settings.json` (tracked in this repo)
+- `hivemind:seed-hive` — plugin enablement (`enabledPlugins`), plugin config (`pluginConfigs`), SubagentStart hook, `.envrc`, permissions allowlist; writes to `.claude/settings.json` (tracked in this repo)
 
 ### Bootstrap order
 
@@ -113,7 +113,7 @@ Follow the login prompt. In a **local Dev Container**, also run `gh auth login` 
 
 **2. Enable the hivemind plugin**
 
-This is the one prerequisite `setup-project` cannot do for itself — it is a skill that runs inside hivemind:
+This is the one prerequisite `seed-hive` cannot do for itself — it is a skill that runs inside hivemind:
 
 ```text
 claude plugin install hivemind@brenpike
@@ -124,12 +124,12 @@ claude plugin install caveman@caveman
 
 > When developing from a local source checkout, you can also install hivemind from the local path instead of the registry. See the Install section of the root README.
 
-**3. Run setup-project**
+**3. Run seed-hive**
 
 This is the canonical step that writes all plugin configuration — caveman enablement, the caveman ultra SubagentStart hook, `pluginConfigs`, `.envrc`, and the recommended permissions allowlist:
 
 ```text
-/hivemind:setup-project caveman=yes codex=yes claude_mem=yes seed_allowlist=yes
+/hivemind:seed-hive caveman=yes codex=yes claude_mem=yes seed_allowlist=yes
 ```
 
 What it writes to `.claude/settings.json` (tracked):
@@ -176,7 +176,7 @@ This file is gitignored and per-contributor. `postCreate.sh` seeds one entry int
 
 The seed is a jq-merge: it appends entries that are absent and never overwrites entries that are already present. Re-running the script is safe.
 
-Note: caveman enablement (`enabledPlugins`, `pluginConfigs`) is no longer seeded here by postCreate. It is written to the tracked `.claude/settings.json` by `hivemind:setup-project caveman=yes`.
+Note: caveman enablement (`enabledPlugins`, `pluginConfigs`) is no longer seeded here by postCreate. It is written to the tracked `.claude/settings.json` by `hivemind:seed-hive caveman=yes`.
 
 ## Troubleshooting
 
@@ -201,4 +201,4 @@ CI runs on `ubuntu-latest`; this container pins `ubuntu-20.04`. Minor coreutils,
 
 **Caveman not active after build:**
 
-The caveman marketplace is registered automatically, but caveman enablement requires running `hivemind:setup-project caveman=yes` inside an authenticated Claude Code session (see [Configure the plugins](#configure-the-plugins-one-time-in-claude-code) above). The `claude plugin install` step is also required.
+The caveman marketplace is registered automatically, but caveman enablement requires running `hivemind:seed-hive caveman=yes` inside an authenticated Claude Code session (see [Configure the plugins](#configure-the-plugins-one-time-in-claude-code) above). The `claude plugin install` step is also required.

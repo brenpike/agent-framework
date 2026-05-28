@@ -226,10 +226,10 @@ install_plugins() {
     claude plugin install claude-mem@thedotmack
     claude plugin install caveman@caveman
 
-  Then run the setup-project skill to configure plugin enablement (caveman,
+  Then run the seed-hive skill to configure plugin enablement (caveman,
   codex, claude-mem, SubagentStart hook, .envrc, allowlist):
 
-    /hivemind:setup-project caveman=yes codex=yes claude_mem=yes seed_allowlist=yes
+    /hivemind:seed-hive caveman=yes codex=yes claude_mem=yes seed_allowlist=yes
     /codex:setup
 EOF
 
