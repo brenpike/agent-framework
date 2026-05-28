@@ -3,8 +3,7 @@ name: creep-spread
 description: >-
   Analyze project artifacts and generate a populated CONTEXT.md (or CONTEXT-MAP.md and multiple CONTEXT.md files for
   multi-context repos) with domain terms extracted from existing code, documentation, and
-  configuration. Independently invocable or called by seed-hive as a final step. Also triggers on:
-  bootstrap-context, generate CONTEXT.md, bootstrap context.
+  configuration. Independently invocable or called by seed-hive as a final step.
 allowed-tools:
   - Read
   - Write

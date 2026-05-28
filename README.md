@@ -253,6 +253,8 @@ All skills are invoked using the namespaced form:
 | `hivemind:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
 | `hivemind:improving-architecture` | Read-only architecture analysis — emits a ranked refactoring blueprint of deepening opportunities (shallow → deep modules) for testability and AI-navigability |
 | `hivemind:refactor-to-depth` | Execution skill that performs a behavior-preserving deepening refactor via a refactor-under-green loop — the in-implementation counterpart to the read-only `improving-architecture` blueprint |
+| `hivemind:setup-project` | DEPRECATED — renamed to `hivemind:seed-hive`. Stub forwards to the new skill; will be removed in a future MAJOR release. |
+| `hivemind:bootstrap-context` | DEPRECATED — renamed to `hivemind:creep-spread`. Stub forwards to the new skill; will be removed in a future MAJOR release. |
 
 ## Governance
 

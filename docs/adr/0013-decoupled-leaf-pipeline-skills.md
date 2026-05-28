@@ -36,4 +36,4 @@ This ban does NOT apply to an orchestrator skill that explicitly OWNS the coupli
 
 ## Naming update (2026-05-27)
 
-The `setup-project` and `bootstrap-context` skills referenced in this ADR have been renamed to `seed-hive` and `creep-spread`, respectively. The substantive decision recorded here (decoupled leaf-pipeline rule) is unchanged; only the skill identifiers rotated. Legacy invocations continue to match via trigger aliases.
+The `setup-project` and `bootstrap-context` skills referenced in this ADR have been renamed to `seed-hive` and `creep-spread`, respectively. The substantive decision recorded here (decoupled leaf-pipeline rule) is unchanged; only the skill identifiers rotated. Legacy `/hivemind:setup-project` and `/hivemind:bootstrap-context` slash-command invocations continue to resolve via compatibility-stub skills at `plugin/skills/setup-project/SKILL.md` and `plugin/skills/bootstrap-context/SKILL.md`, which forward to `hivemind:seed-hive` and `hivemind:creep-spread`. The decoupled-leaf-pipeline rule is unaffected: the stubs are orchestrators by design (they own the coupling).

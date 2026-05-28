@@ -18,8 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Renamed user-facing skills: `setup-project` → `seed-hive` and `bootstrap-context` → `creep-spread`. Themed renames matching the hive/brood/insect vocabulary already used by overlord, cerebrate, drone, changeling, brood, molt, strain, and spawn-brood. Behavior is unchanged.
-- Trigger phrases for the legacy skill IDs are preserved as aliases in each skill's description, so existing `/hivemind:setup-project` and `/hivemind:bootstrap-context` invocations continue to match. No migration is required.
+- Legacy `/hivemind:setup-project` and `/hivemind:bootstrap-context` slash-command invocations continue to work via deprecated compatibility-stub skills that forward to the renamed `hivemind:seed-hive` and `hivemind:creep-spread`. The stubs are not new behavior — they exist solely to preserve the existing slash-command contract — and will be removed in a future MAJOR release. No migration is required for users of the slash commands.
 - The `seed-hive` dry-run output field formerly labeled `bootstrap-context: invoked | skipped (dry_run)` is now labeled `creep-spread: invoked | skipped (dry_run)`. Consumers that parse this exact string must update accordingly.
+
+### Deprecated
+
+- `hivemind:setup-project` — use `hivemind:seed-hive` instead. Stub will be removed in a future MAJOR release.
+- `hivemind:bootstrap-context` — use `hivemind:creep-spread` instead. Stub will be removed in a future MAJOR release.
 
 ## [2.13.0] - 2026-05-27
 
