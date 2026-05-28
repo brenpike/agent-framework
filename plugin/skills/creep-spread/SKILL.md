@@ -109,7 +109,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 
    ## Flagged ambiguities
 
-   {Any terms that appeared with multiple meanings in the artifacts, or "None detected during bootstrap — use `hivemind:plan-interrogation` to refine."}
+   {Any terms that appeared with multiple meanings in the artifacts, or "None detected during bootstrap"}
    ```
 
    **If `multi_context: false` and `mode: update`:**
@@ -173,7 +173,6 @@ terms_added:
 term_sources:
 - [list of artifact files that contributed terms]
 
-recommendation: "Run `hivemind:plan-interrogation` to refine and expand this glossary."
 ```
 
 Use the Worker Report — Blocked schema from `${CLAUDE_PLUGIN_ROOT}/governance/report-format.md` for blocked states.
