@@ -6,6 +6,8 @@ allowed-tools:
   - Write
   - Bash(git rev-parse *)
   - Bash(test *)
+  - Bash(ls *)
+  - Bash(grep *)
   - Bash(command -v *)
   - Bash(mkdir -p *)
   - Bash(chmod +x *)
@@ -32,6 +34,7 @@ After:
 - [ ] If `caveman` = `yes`: `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`, `pluginConfigs` for caveman applied, SubagentStart hook configured
 - [ ] If `claude_mem` = `yes` and `~/.claude-mem/settings.json` present with empty/missing `CLAUDE_CODE_PATH`: key set to dynamically-resolved `claude` path (only that key), and user told to restart the worker
 - [ ] `hivemind:bootstrap-context` invoked (or skipped in dry_run)
+- [ ] Test command detected and recorded under `## Validation` in repo-root `CLAUDE.md` if absent (or `already documented` / `none detected`; previewed in dry_run)
 
 # Setup Project
 
@@ -157,6 +160,24 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
     g. After setting the path, the claude-mem background worker must be restarted to load the new value. Do NOT auto-restart it (keep this step side-effect-light). PRINT a manual follow-up instruction telling the user to restart the claude-mem worker (e.g. via claude-mem's worker restart) or note that it will pick up the new value on the next session.
 12. Report which keys were added vs already present.
 13. Invoke `hivemind:bootstrap-context` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). If `dry_run` = `yes`: skip invocation, report `context_bootstrap: skipped (dry_run)`. The skill has its own skip guard for existing files.
+14. Detect the project's test command and record it under a `## Validation` section in the repo-root `CLAUDE.md` if absent. DETECT only — never run, install, or scaffold a harness. This is the command `hivemind:refactor-to-depth` reads as its green-gate.
+    a. Match each signal below against repo-root or conventional well-known locations. Require the ACTUAL signal, not mere file existence — inspect the file content named in the signal:
+       - `package.json` with a `scripts.test` entry → that script (`npm test`)
+       - `package.json` declaring a `vitest` dependency or config → `npx vitest run`; declaring `jest` → `npx jest`
+       - `pyproject.toml` or `setup.py` with a pytest signal (a `pytest` dependency, `[tool.pytest]` config, or `tests/` test files) → `pytest`
+       - `go.mod` → `go test ./...`
+       - `Cargo.toml` → `cargo test`
+       - `*.csproj` or `*.sln` referencing `Microsoft.NET.Test.Sdk` → `dotnet test`
+       - `mix.exs` → `mix test`
+       - `Gemfile` or `spec/` with an `rspec` signal → `bundle exec rspec`
+       - `Makefile` with a real `test:` target → `make test`
+    b. When more than one signal matches (a monorepo or multi-ecosystem repo), record ALL detected commands — one per ecosystem. Never pick one, never fabricate a combined runner. Match only root / workspace-root signals; do not emit one command per nested package.
+    c. Read repo-root `CLAUDE.md` if present. If it ALREADY documents a test or validation command — the `## Validation` convention or any test-command line `hivemind:refactor-to-depth` would read — record NOTHING, leave the existing prose untouched (never overwrite or reorder it), and report `already documented`. This is append-if-absent only, identical in spirit to the `.gitignore` / `.envrc` / `CLAUDE_CODE_PATH` guards.
+    d. Otherwise, with one or more commands detected, record them under a `## Validation` section in repo-root `CLAUDE.md` as a fenced code block (or a list of fenced blocks when multiple). If the section is missing, append a minimal `## Validation` section containing only the detected command(s); if it exists without a command, append the command(s) into it without touching surrounding content.
+    e. If repo-root `CLAUDE.md` does not exist and a command is detected, create a minimal repo-root `CLAUDE.md` containing only the `## Validation` section with the detected command(s).
+    f. If NO signal matches, record nothing fabricated: note the absence and RECOMMEND that the user document a validation command manually. NEVER install, scaffold, or invent a harness or command. A documented-validation-only or non-executable repo (a Markdown plugin, a docs repo) is a legitimate outcome.
+    g. Re-running is idempotent: when a command is already recorded (step 14c), write nothing and report `already documented` — no duplicate lines or sections.
+    h. If `dry_run` = `yes`: compute the action without writing and print it — `would-record <commands>`, `already documented`, or `none-detected (recommend manual)` — consistent with the step 6 previews. Repo-root `CLAUDE.md` ONLY — never per-context `CONTEXT.md` files.
 
 ## Merge Rules
 
@@ -169,7 +190,8 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5 (except `hooks.SubagentStart` when `caveman` = `yes`, as specified in steps 5 and 10d; and `permissions.allow` ONLY when `seed_allowlist` = `yes`, as specified in step 5)
-- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, and files created or modified by invoked skills (`hivemind:bootstrap-context`)
+- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, repo-root `CLAUDE.md` (create-or-append-if-absent only, per step 14), and files created or modified by invoked skills (`hivemind:bootstrap-context`)
+- install, scaffold, or invent a test harness; run the detected test command; or overwrite, reorder, or replace an existing documented test/validation command in repo-root `CLAUDE.md` (step 14 detects and records append-if-absent only)
 - modify `~/.claude-mem/settings.json` beyond setting its single `CLAUDE_CODE_PATH` key (and only when `claude_mem` = `yes`, the file already exists, the key is empty/missing, and a `claude` binary resolves, per step 11); never overwrite an existing non-empty `CLAUDE_CODE_PATH`, and never touch any other key in that file
 - commit, push, or otherwise touch git state
 - invoke skills other than `hivemind:bootstrap-context`
@@ -216,6 +238,9 @@ dry_run: yes | no
 
 context_bootstrap:
 - bootstrap-context: invoked | skipped (dry_run)
+
+test_command:
+- repo-root CLAUDE.md ## Validation: recorded <commands> | already documented | none detected (recommend manual) | would-record (dry_run) | skipped (dry_run)
 
 conflicts:
 - [key]: existing value vs required value
