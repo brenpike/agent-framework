@@ -37,7 +37,7 @@ The `agent` key sets the default agent for the project session. Without it, Clau
 Or run the setup skill once to apply the required keys automatically:
 
 ```text
-/hivemind:setup-project
+/hivemind:seed-hive
 ```
 
 The setup skill also adds `.hivemind/` to your project's `.gitignore`. This directory is created at runtime by the overlord for ephemeral plans, handoffs, and checkpoints — it should not be committed. If you prefer manual setup, add `.hivemind/` to your project's `.gitignore` directly.
@@ -45,7 +45,7 @@ The setup skill also adds `.hivemind/` to your project's `.gitignore`. This dire
 **Optional: seed a least-privilege permission allowlist.** Pass `seed_allowlist=yes` to pre-populate a recommended set of `permissions.allow` entries in `.claude/settings.json`:
 
 ```text
-/hivemind:setup-project seed_allowlist=yes
+/hivemind:seed-hive seed_allowlist=yes
 ```
 
 The seeded entries cover read/output helper Bash commands (`echo`, `printf`, `cat`, `grep`, `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`) and scoped git read subcommands (`git ls-files`, `git ls-tree`, and `git grep` are read-only listers/searchers; `git stash list` and `git stash show *` are read-only stash inspection; `git tag` is list-only). They are appended-if-absent — existing entries are never overwritten or removed. `echo`/`printf`/`cat`/`sort` **are** included: Claude Code re-prompts (ask/deny) on any command that writes or redirects to a path outside the session working directory (only `> /dev/null` is exempt) and splits compound commands (`&&`/`||`/`;`/`|`/newline), requiring each subcommand to match a rule independently — so granting them does not create an arbitrary-file-write vector (`echo evil > /etc/passwd`, `printf x > ~/.bashrc`, `cmd && rm -rf y` all re-prompt). The only silent write any of these helpers permits is bounded to the working directory, identical to `grep`/`jq`/`head`/`tail`/`ls`/`wc`/`uniq`. `node`, `Edit`, and `Write` are not auto-approved; those require explicit per-project decisions.
@@ -84,7 +84,7 @@ Once configured, the overlord is the session default agent. All skills are avail
   ```
   When installed, enables local pre-PR Codex review via the `local-reviewer` agent (backed by `hivemind:adaptation-cycle`) and post-PR review automation via the `hivemind:github-review-loop` skill (which watches the PR and dispatches the stateless fix-mode `github-reviewer` agent to handle feedback classification, fixes, and thread resolution). The framework works without it; if not installed, local review steps are skipped gracefully.
 
-- [`caveman`](https://github.com/juliusbrussee/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `setup-project` skill auto-configures it, or add manually to `.claude/settings.json`:
+- [`caveman`](https://github.com/juliusbrussee/caveman) (`caveman@caveman`) — Token-compressed communication. Optional. When installed, all framework agents output in caveman ultra mode. The `seed-hive` skill auto-configures it, or add manually to `.claude/settings.json`:
   ```json
   "enabledPlugins": { "caveman@caveman": true },
   "pluginConfigs": { "caveman@caveman": { "options": { "defaultLevel": "ultra" } } }
@@ -113,7 +113,7 @@ claude plugin install caveman@caveman
 /codex:setup
 ```
 
-**Caveman marketplace is registered automatically.** `postCreate.sh` registers the caveman marketplace (no auth required). Caveman *enablement* (`enabledPlugins`, `pluginConfigs`, SubagentStart hook, `.envrc`) is handled by `hivemind:setup-project caveman=yes` — the canonical path for all plugin config — rather than being hand-seeded by postCreate.
+**Caveman marketplace is registered automatically.** `postCreate.sh` registers the caveman marketplace (no auth required). Caveman *enablement* (`enabledPlugins`, `pluginConfigs`, SubagentStart hook, `.envrc`) is handled by `hivemind:seed-hive caveman=yes` — the canonical path for all plugin config — rather than being hand-seeded by postCreate.
 
 The optional npm installs are wrapped so a single failure (for example in an offline/locked-down Codespace) prints a warning but does not abort — only the CI-parity gates are must-pass. The script is idempotent: re-running `bash .devcontainer/postCreate.sh` is safe.
 
@@ -236,7 +236,7 @@ All skills are invoked using the namespaced form:
 
 | Skill | Purpose |
 |---|---|
-| `hivemind:bootstrap-context` | Analyze project artifacts and generate a populated CONTEXT.md (or CONTEXT-MAP.md for multi-context repos) with domain terms extracted from code, docs, and config |
+| `hivemind:creep-spread` | Analyze project artifacts and generate a populated CONTEXT.md (or CONTEXT-MAP.md for multi-context repos) with domain terms extracted from code, docs, and config |
 | `hivemind:molt` | Commit a completed phase, milestone, version bump, or review-remediation item |
 | `hivemind:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `hivemind:adaptation-cycle` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `hivemind:local-reviewer` |
@@ -246,7 +246,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:create-handoff` | Generate an optional session-resumption handoff doc from a plan |
 | `hivemind:plan-to-prd` | Turn an interrogated plan into a committed WHAT-only PRD |
 | `hivemind:prd-to-issues` | Slice a PRD into vertically-sliced, brood-ready GitHub issues |
-| `hivemind:setup-project` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.hivemind/` to `.gitignore` |
+| `hivemind:seed-hive` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.hivemind/` to `.gitignore` |
 | `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke only in a context that can modify source and test files |
 | `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
 | `hivemind:brood-status` | Check status of all active brood sessions — reports per-strain tmux session state, branch existence, and PR status |

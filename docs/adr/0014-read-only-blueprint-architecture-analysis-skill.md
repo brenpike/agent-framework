@@ -44,3 +44,9 @@ The design question was how much of the upstream skill to keep, and where each d
 - A future need for parallel multi-design exploration is handled by `cerebrate`, not by growing this skill.
 
 This supersedes the prior ADR-0014 statements that the overlord ALWAYS invokes `plan-interrogation` on an accepted candidate and that an accepted blueprint candidate always passes through `plan-interrogation` before `cerebrate` with no gate. The decoupled artifact-transform model replaces the bespoke architecture fast path.
+
+---
+
+## Naming update (2026-05-27)
+
+The `bootstrap-context` skill referenced in this ADR has been renamed to `creep-spread`. The substantive decision recorded here (read-only blueprint architecture-analysis skill) is unchanged; only the skill identifier rotated. Legacy invocations continue to match via trigger aliases.

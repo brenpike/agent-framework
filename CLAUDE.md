@@ -81,7 +81,7 @@ When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runt
 
 ## Companion plugins referenced
 
-`claude-mem` is optional — cerebrate reads its memory directly via the MCP search tool (`mcp__plugin_claude-mem_mcp-search__*`) when present, skips when absent. Writes go through claude-mem's automatic capture (there is no write MCP tool). When `claude_mem=yes` and claude-mem is installed, `setup-project` provisions claude-mem's `CLAUDE_CODE_PATH` in `~/.claude-mem/settings.json` (only when currently empty) so its background worker can locate the `claude` binary. Do not hard-require it from any agent or skill.
+`claude-mem` is optional — cerebrate reads its memory directly via the MCP search tool (`mcp__plugin_claude-mem_mcp-search__*`) when present, skips when absent. Writes go through claude-mem's automatic capture (there is no write MCP tool). When `claude_mem=yes` and claude-mem is installed, `seed-hive` provisions claude-mem's `CLAUDE_CODE_PATH` in `~/.claude-mem/settings.json` (only when currently empty) so its background worker can locate the `claude` binary. Do not hard-require it from any agent or skill.
 
 `codex@openai-codex` is optional — the overlord uses `codex-plugin-cc` for pre-PR local review via the `local-reviewer` agent (`hivemind:adaptation-cycle`). If not installed, the overlord skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
 

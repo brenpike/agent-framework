@@ -231,8 +231,8 @@
             <code>.hivemind/</code> to your project's <code>.gitignore</code>:
           </p>
 
-          <div class="code-block" style="max-width:680px;" role="region" aria-label="setup-project skill command">
-            <pre><code><span class="prompt">/</span>hivemind:setup-project</code></pre>
+          <div class="code-block" style="max-width:680px;" role="region" aria-label="seed-hive skill command">
+            <pre><code><span class="prompt">/</span>hivemind:seed-hive</code></pre>
           </div>
 
           <p style="color:var(--color-text-dim);margin-top:var(--space-4);max-width:680px;font-size:var(--text-sm);">
@@ -256,8 +256,8 @@
             Entries are appended-if-absent; existing entries are never overwritten or removed.
           </p>
 
-          <div class="code-block" style="max-width:680px;margin-bottom:var(--space-4);" role="region" aria-label="setup-project with seed_allowlist">
-            <pre><code><span class="prompt">/</span>hivemind:setup-project seed_allowlist=yes</code></pre>
+          <div class="code-block" style="max-width:680px;margin-bottom:var(--space-4);" role="region" aria-label="seed-hive with seed_allowlist">
+            <pre><code><span class="prompt">/</span>hivemind:seed-hive seed_allowlist=yes</code></pre>
           </div>
 
           <p style="color:var(--color-text-dim);margin-bottom:var(--space-3);max-width:680px;">
@@ -437,7 +437,7 @@
             </thead>
             <tbody>
               <tr>
-                <td><code>hivemind:bootstrap-context</code></td>
+                <td><code>hivemind:creep-spread</code></td>
                 <td>Analyze project artifacts and generate a populated CONTEXT.md (or CONTEXT-MAP.md for multi-context repos) with domain terms extracted from code, docs, and config.</td>
               </tr>
               <tr>
@@ -477,7 +477,7 @@
                 <td>Slice a PRD into vertically-sliced, brood-ready GitHub issues.</td>
               </tr>
               <tr>
-                <td><code>hivemind:setup-project</code></td>
+                <td><code>hivemind:seed-hive</code></td>
                 <td>One-time project setup: write required <code>.claude/settings.json</code> keys (enabledPlugins + default agent) and add <code>.hivemind/</code> to <code>.gitignore</code>.</td>
               </tr>
               <tr>

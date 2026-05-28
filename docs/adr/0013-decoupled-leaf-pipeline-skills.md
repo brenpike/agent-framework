@@ -31,3 +31,9 @@ This ban does NOT apply to an orchestrator skill that explicitly OWNS the coupli
 - The decoupling is enforced by skill design and intent-expression convention, NOT by tooling: a skill's `allowed-tools` only *pre-approves* tools (skips permission prompts) and cannot restrict a skill — every tool remains callable and permission settings still govern. If hard blocking of cross-skill invocation were ever required, it would be done via Claude Code `permissions` deny rules, not skill frontmatter.
 - The stage-end handoff offer is overlord/human-driven, never a skill-embedded prompt
 - Skills compose by intent: a skill expressing work-intent that the framework may match to another skill is sanctioned and creates no dependency — naming or invoking a specific `hivemind:<skill>` is forbidden for leaf/portable skills, but an orchestrator skill that owns the coupling (e.g. `hivemind:setup-project` invoking `hivemind:bootstrap-context`) may invoke directly by design
+
+---
+
+## Naming update (2026-05-27)
+
+The `setup-project` and `bootstrap-context` skills referenced in this ADR have been renamed to `seed-hive` and `creep-spread`, respectively. The substantive decision recorded here (decoupled leaf-pipeline rule) is unchanged; only the skill identifiers rotated. Legacy invocations continue to match via trigger aliases.
