@@ -1,9 +1,10 @@
 ---
-name: bootstrap-context
+name: creep-spread
 description: >-
   Analyze project artifacts and generate a populated CONTEXT.md (or CONTEXT-MAP.md and multiple CONTEXT.md files for
   multi-context repos) with domain terms extracted from existing code, documentation, and
-  configuration. Independently invocable or called by setup-project as a final step.
+  configuration. Independently invocable or called by seed-hive as a final step. Also triggers on:
+  bootstrap-context, generate CONTEXT.md, bootstrap context.
 allowed-tools:
   - Read
   - Write
@@ -32,13 +33,13 @@ After:
 - [ ] Terms extracted from actual project artifacts, not invented
 - [ ] General programming terms excluded per CONTEXT-FORMAT.md Rules
 
-# Bootstrap Context
+# Creep Spread
 
 Analyze a project's existing artifacts and generate a populated domain glossary following the canonical format defined in `${CLAUDE_PLUGIN_ROOT}/skills/plan-interrogation/references/CONTEXT-FORMAT.md`.
 
 ## When to Use
 
-- New project adopting the hivemind plugin (called by setup-project)
+- New project adopting the hivemind plugin (called by seed-hive)
 - Existing project that lacks a CONTEXT.md
 - Existing project where CONTEXT.md needs enrichment with newly discovered terms
 - After significant project changes (new modules, renamed concepts)
@@ -67,7 +68,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    - If `mode: create`: scan for top-level directories that indicate bounded contexts, such as: `src/`, `services/`, `packages/`, `apps/`, `modules/`, `libs/`, `crates/`, `workspaces/`. For each found, check if it contains 2+ subdirectories with source files. If 2+ bounded context directories are detected, set `multi_context: true`. Otherwise `multi_context: false`.
 
 5. **Root CONTEXT.md conflict check:** If `multi_context: true` AND `mode: update` (root CONTEXT.md exists but no CONTEXT-MAP.md):
-   Stop blocked with reason: "Root CONTEXT.md exists but project layout requires multi-context (CONTEXT-MAP.md + per-context CONTEXT.md files). Delete the root CONTEXT.md and re-run bootstrap-context, or proceed manually." Do NOT auto-delete or auto-convert.
+   Stop blocked with reason: "Root CONTEXT.md exists but project layout requires multi-context (CONTEXT-MAP.md + per-context CONTEXT.md files). Delete the root CONTEXT.md and re-run creep-spread, or proceed manually." Do NOT auto-delete or auto-convert.
 
 6. **Artifact discovery:** Read the following files if they exist (first 200 lines each to stay within budget):
    a. `CLAUDE.md` — project rules, architecture, conventions

@@ -6,7 +6,7 @@ description: >-
   into deep ones for testability and AI-navigability. Use when the user wants to improve
   architecture, find refactoring opportunities, consolidate tightly-coupled modules, make
   the codebase more testable, or make it more AI-navigable. Distinct from zoom-out (which
-  maps and orients) and bootstrap-context (which generates the domain glossary): this finds
+  maps and orients) and creep-spread (which generates the domain glossary): this finds
   and ranks specific refactors but never edits code, writes docs, or spawns agents.
 allowed-tools:
   - Read
@@ -64,7 +64,7 @@ Discover context in this priority order, then walk the code:
 
 Apply the deletion test to anything you suspect is shallow.
 
-**If there is no `CONTEXT.md` / `CONTEXT-MAP.md` and no `docs/adr/`:** proceed with vocabulary inferred from the code, and recommend the user run `hivemind:bootstrap-context` first for sharper domain naming. (Mirror `zoom-out`'s behavior — do not block.)
+**If there is no `CONTEXT.md` / `CONTEXT-MAP.md` and no `docs/adr/`:** proceed with vocabulary inferred from the code, and recommend the user run `hivemind:creep-spread` first for sharper domain naming. (Mirror `zoom-out`'s behavior — do not block.)
 
 ### 2. Assess
 
@@ -138,11 +138,11 @@ blueprint.
 Not this skill:
 
 - **Just mapping / orienting** in unfamiliar code → `zoom-out`.
-- **Generating a domain glossary** → `hivemind:bootstrap-context`.
+- **Generating a domain glossary** → `hivemind:creep-spread`.
 - **Hardening, planning, or executing the refactor** → the workflow that implements changes; this skill only finds and ranks candidates.
 
 ## Edge cases
 
-- **No `CONTEXT.md` / `docs/adr/`:** do not block. Infer vocabulary from code, recommend `hivemind:bootstrap-context` first, and proceed.
+- **No `CONTEXT.md` / `docs/adr/`:** do not block. Infer vocabulary from code, recommend `hivemind:creep-spread` first, and proceed.
 - **Multi-context repo (`CONTEXT-MAP.md` present):** scope the blueprint to one bounded context; ask which if ambiguous.
 - **"Just do the refactor" / "apply this":** decline. This skill is read-only — it emits the blueprint and hands off; it does not perform refactors.

@@ -1,6 +1,6 @@
 ---
-name: setup-project
-description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the overlord becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.hivemind/` is excluded from git via `.gitignore`.
+name: seed-hive
+description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the overlord becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.hivemind/` is excluded from git via `.gitignore`. Also triggers on: setup-project, project setup, configure plugin.
 allowed-tools:
   - Read
   - Write
@@ -33,7 +33,7 @@ After:
 - [ ] `.hivemind/` entry ensured in `.gitignore`
 - [ ] If `caveman` = `yes`: `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`, `pluginConfigs` for caveman applied, SubagentStart hook configured
 - [ ] If `claude_mem` = `yes` and `~/.claude-mem/settings.json` present with empty/missing `CLAUDE_CODE_PATH`: key set to dynamically-resolved `claude` path (only that key), and user told to restart the worker
-- [ ] `hivemind:bootstrap-context` invoked (or skipped in dry_run)
+- [ ] `hivemind:creep-spread` invoked (or skipped in dry_run)
 - [ ] Test command detected and recorded under `## Validation` in repo-root `CLAUDE.md` if absent (or `already documented` / `none detected`; previewed in dry_run)
 
 # Setup Project
@@ -106,7 +106,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
    c. If `claude_mem` = `yes`: determine the `claude_mem_path` action that would be taken by applying the same checks as steps 11b–11e, without writing: one of `would-set <resolved-path>` (when `~/.claude-mem/settings.json` exists, is valid JSON, has a missing/empty `CLAUDE_CODE_PATH`, and a `claude` binary resolves), `already set` (key already non-empty), `skipped (claude-mem not installed)` (file absent), `skipped (malformed json)` (file not valid JSON), or `skipped (claude binary not found)` (no `claude` binary resolves).
    d. If `seed_allowlist` = `yes`: determine the `permissions.allow` additions that would be made by applying the same union/append-if-absent check as step 5 and Merge Rules, without writing: for each template rule, classify it as `would-add` (not currently in `permissions.allow`) or `already present`. The merged settings JSON printed in step 6e already reflects these additions; additionally list the would-add vs already-present rules explicitly.
    e. Print the merged settings JSON, the gitignore action, (if `caveman` = `yes`) the envrc action, (if `claude_mem` = `yes`) the claude_mem action, and (if `seed_allowlist` = `yes`) the allowlist would-add / already-present breakdown together.
-   f. Stop without writing any of the files governed by steps 7–12 (settings.json, .gitignore, .envrc, .claude/hooks/, ~/.claude-mem/settings.json). Continue to steps 13 and 14, which each carry their own `dry_run` branch (step 13 skips `bootstrap-context` invocation; step 14h computes and prints the test-command preview without writing).
+   f. Stop without writing any of the files governed by steps 7–12 (settings.json, .gitignore, .envrc, .claude/hooks/, ~/.claude-mem/settings.json). Continue to steps 13 and 14, which each carry their own `dry_run` branch (step 13 skips `creep-spread` invocation; step 14h computes and prints the test-command preview without writing).
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
 8. Ensure `.hivemind/` is listed in the project's `.gitignore`:
    a. If `<project root>/.gitignore` does not exist, create it with a single line `.hivemind/`.
@@ -159,7 +159,7 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
     f. Otherwise set ONLY the `CLAUDE_CODE_PATH` key to the resolved path, preserving every other key in `~/.claude-mem/settings.json`. Write with two-space indentation and a trailing newline. Report `claude_mem_path: set`.
     g. After setting the path, the claude-mem background worker must be restarted to load the new value. Do NOT auto-restart it (keep this step side-effect-light). PRINT a manual follow-up instruction telling the user to restart the claude-mem worker (e.g. via claude-mem's worker restart) or note that it will pick up the new value on the next session.
 12. Report which keys were added vs already present.
-13. Invoke `hivemind:bootstrap-context` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). If `dry_run` = `yes`: skip invocation, report `context_bootstrap: skipped (dry_run)`. The skill has its own skip guard for existing files.
+13. Invoke `hivemind:creep-spread` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). If `dry_run` = `yes`: skip invocation, report `context_bootstrap: skipped (dry_run)`. The skill has its own skip guard for existing files.
 14. Detect the project's test command and record it under a `## Validation` section in the repo-root `CLAUDE.md` if absent. DETECT only — never run, install, or scaffold a harness. This is the command `hivemind:refactor-to-depth` reads as its green-gate. Each signal must resolve to a real, executable test command. Step 14a explicitly rejects the `npm/yarn/pnpm init` default placeholder (`Error: no test specified`); other no-op or failing scripts remain a known limitation — review or override the recorded command after setup (dry_run previews the action).
     a. Match each signal below against repo-root or conventional well-known locations. Require the ACTUAL signal, not mere file existence — inspect the file content named in the signal:
        - JS ecosystem (`package.json` present): emit at most ONE command for this ecosystem, choosing the first sub-signal that matches in order. The vitest/jest sub-signals are FALLBACKS — they apply only when the `scripts.test` sub-signal is UNMATCHED for this ecosystem (so a curated `npm test` that handles env flags, setup, or workspace routing is never bypassed by a parallel `npx vitest run` / `npx jest`):
@@ -192,11 +192,11 @@ None. Operates on the current project root resolved via `git rev-parse --show-to
 ## Do Not
 
 - write any key not listed in step 5 (except `hooks.SubagentStart` when `caveman` = `yes`, as specified in steps 5 and 10d; and `permissions.allow` ONLY when `seed_allowlist` = `yes`, as specified in step 5)
-- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, repo-root `CLAUDE.md` (create-or-append-if-absent only, per step 14), and files created or modified by invoked skills (`hivemind:bootstrap-context`)
+- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, repo-root `CLAUDE.md` (create-or-append-if-absent only, per step 14), and files created or modified by invoked skills (`hivemind:creep-spread`)
 - install, scaffold, or invent a test harness; run the detected test command; or overwrite, reorder, or replace an existing documented test/validation command in repo-root `CLAUDE.md` (step 14 detects and records append-if-absent only)
 - modify `~/.claude-mem/settings.json` beyond setting its single `CLAUDE_CODE_PATH` key (and only when `claude_mem` = `yes`, the file already exists, the key is empty/missing, and a `claude` binary resolves, per step 11); never overwrite an existing non-empty `CLAUDE_CODE_PATH`, and never touch any other key in that file
 - commit, push, or otherwise touch git state
-- invoke skills other than `hivemind:bootstrap-context`
+- invoke skills other than `hivemind:creep-spread`
 - proceed if the project root cannot be resolved
 
 ## Output
@@ -239,7 +239,7 @@ permissions_allow:
 dry_run: yes | no
 
 context_bootstrap:
-- bootstrap-context: invoked | skipped (dry_run)
+- creep-spread: invoked | skipped (dry_run)
 
 test_command:
 - repo-root CLAUDE.md ## Validation: recorded <commands> | already documented | none detected (recommend manual) | would-record (dry_run) | skipped (dry_run)
