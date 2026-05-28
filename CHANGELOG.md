@@ -13,18 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [2.14.0] - 2026-05-28
+## [2.15.0] - 2026-05-28
+
+### Added
+
+- Compatibility-stub skills `plugin/skills/setup-project/SKILL.md` and `plugin/skills/bootstrap-context/SKILL.md`. Each stub's frontmatter `name:` field carries the legacy skill ID so `/hivemind:setup-project` and `/hivemind:bootstrap-context` slash-command invocations continue to resolve. Each stub forwards to its renamed counterpart (`hivemind:seed-hive` and `hivemind:creep-spread`) via the `Skill` tool and prints a one-line deprecation notice. No new public behavior — the stubs exist solely to preserve the existing slash-command contract.
 
 ### Changed
 
-- Renamed user-facing skills: `setup-project` → `seed-hive` and `bootstrap-context` → `creep-spread`. Themed renames matching the hive/brood/insect vocabulary already used by overlord, cerebrate, drone, changeling, brood, molt, strain, and spawn-brood. Behavior is unchanged.
-- Legacy `/hivemind:setup-project` and `/hivemind:bootstrap-context` slash-command invocations continue to work via deprecated compatibility-stub skills that forward to the renamed `hivemind:seed-hive` and `hivemind:creep-spread`. The stubs are not new behavior — they exist solely to preserve the existing slash-command contract — and will be removed in a future MAJOR release. No migration is required for users of the slash commands.
-- The `seed-hive` dry-run output field formerly labeled `bootstrap-context: invoked | skipped (dry_run)` is now labeled `creep-spread: invoked | skipped (dry_run)`. Consumers that parse this exact string must update accordingly.
+- Removed the redundant `Also triggers on: ...` alias text from the `seed-hive` and `creep-spread` skill descriptions. With real compatibility-stub skills now in place (see Added), the alias text was redundant and risked double-fire in description-keyed matching.
 
 ### Deprecated
 
 - `hivemind:setup-project` — use `hivemind:seed-hive` instead. Stub will be removed in a future MAJOR release.
 - `hivemind:bootstrap-context` — use `hivemind:creep-spread` instead. Stub will be removed in a future MAJOR release.
+
+## [2.14.0] - 2026-05-28
+
+### Changed
+
+- Renamed user-facing skills: `setup-project` → `seed-hive` and `bootstrap-context` → `creep-spread`. Themed renames matching the hive/brood/insect vocabulary already used by overlord, cerebrate, drone, changeling, brood, molt, strain, and spawn-brood. Behavior is unchanged.
+- The `seed-hive` dry-run output field formerly labeled `bootstrap-context: invoked | skipped (dry_run)` is now labeled `creep-spread: invoked | skipped (dry_run)`. Consumers that parse this exact string must update accordingly.
 
 ## [2.13.0] - 2026-05-27
 
