@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-05-27
+
+### Added
+
+- **`setup-project` test-command detection step.** Setup now scans the project for its test harness/runner and records the detected command(s) under a `## Validation` section in repo-root `CLAUDE.md` when absent — the same green-gate convention `hivemind:refactor-to-depth` reads. Detection only: it never runs, installs, or scaffolds a harness. Signals mirror `refactor-to-depth`'s table (`package.json scripts.test` / vitest / jest, `pyproject.toml`/`setup.py` + pytest, `go.mod`, `Cargo.toml`, `*.csproj`/`*.sln` + `Microsoft.NET.Test.Sdk`, `mix.exs`, `Gemfile`/`spec/` + rspec, `Makefile` `test:` target), constrained to root/workspace-root signals. Multi-harness monorepos record one command per ecosystem (never a fabricated combined runner). Append-if-absent and idempotent: an already-documented test/validation command is left untouched and reported `already documented`; no signal match records nothing and recommends documenting validation manually (documented-validation-only and non-executable repos are legitimate). May create or append repo-root `CLAUDE.md` for this purpose. Adds read-only `Bash(ls *)` and `Bash(grep *)` grants and a `test_command` output block (`recorded <commands>` | `already documented` | `none detected (recommend manual)` | `would-record (dry_run)` | `skipped (dry_run)`); `dry_run` previews the action without writing.
+
 ## [2.12.0] - 2026-05-27
 
 ### Added
