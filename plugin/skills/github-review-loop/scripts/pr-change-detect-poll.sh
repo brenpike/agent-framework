@@ -11,9 +11,10 @@
 #   - Each iteration computes a CHEAP SCALAR snapshot via ONE non-paginated
 #     GraphQL query (PR state; author-aware latest-id tokens for issue comments,
 #     filtered reviews, and review-thread comments (filtered by reviewer-filter
-#     and self-login); CI check rollup is NOT in the delta set) plus a Codex 👍
-#     PRESENT bool (via paginated REST reactions). No bodies, no cursor walks —
-#     the poll only answers "did anything change?" and "is the PR terminal?".
+#     and self-login); totalCount tripwires for the three connections capped at
+#     50; CI check rollup is NOT in the delta set) plus a Codex 👍 PRESENT bool
+#     (via paginated REST reactions). No bodies, no cursor walks — the poll only
+#     answers "did anything change?" and "is the PR terminal?".
 #   - It DIFFS the scalar snapshot in bash against the previous iteration and
 #     emits a single minimal marker line ONLY on a real delta or a terminal
 #     state. The reviewer re-fetches ALL feedback bodies and does the full
@@ -35,6 +36,14 @@
 #     never interprets — reviewer re-fetches all on wake.
 #   - `reviewThreads(first: 50)` is bounded — actionable threads past page 1
 #     surface on the NEXT CHANGED.
+#   - `*_TOTAL` scalars are tripwires for >50-node activity: when actionable
+#     feedback appears past page 1 of any connection (comments, reviews, or
+#     review threads), the corresponding totalCount changes and fires CHANGED
+#     even though no id token bumped. This re-introduces ONE self-induced
+#     noise vector — our own `Fixed in <SHA>` reply bumps COMMENTS_TOTAL.
+#     That noise is absorbed downstream by `prefilter.sh` returning
+#     `PREFILTER_SKIP` for the self-handled-only case. Net effect: huge-PR
+#     coverage without losing the self-echo suppression.
 #   - A silent thread resolve→reopen with no new comment does not bump a token
 #     and so does not fire on that exact poll. Such a cycle surfaces on the
 #     NEXT activity or the next reviewer wake — the reviewer re-fetches ALL
@@ -109,19 +118,25 @@ prev_state=""
 prev_nonself_comment_id=""
 prev_filtered_review_id=""
 prev_nonself_thread_id=""
+prev_comments_total=""
+prev_reviews_total=""
+prev_threads_total=""
 prev_codex=""
 have_baseline=0
 
 # compute_snapshot: fills the global scalar variables from ONE non-paginated
 # GraphQL query (PR state + last 50 issue-comment databaseIds + last 50 review
 # databaseIds with state and author + last 50 reviewThreads with their last
-# comment databaseId and author) plus a paginated REST reactions read for the
-# Codex 👍 bool. Returns 0 on success, non-zero on failure of the query or the
-# reactions call. Each id token is a single max-databaseId across the
-# author-filtered stream — self-only flurries (own replies, own pushes) do not
-# bump any token, eliminating self-echo CHANGED storms. The reviewer does the
-# full body-level classification on wake (thin poll, no interpretation).
-# Writes diagnostic stderr to /dev/null (never /tmp).
+# comment databaseId and author + the totalCount of each of those three
+# connections) plus a paginated REST reactions read for the Codex 👍 bool.
+# Returns 0 on success, non-zero on failure of the query or the reactions call.
+# Each id token is a single max-databaseId across the author-filtered stream —
+# self-only flurries (own replies, own pushes) do not bump any token,
+# eliminating self-echo CHANGED storms. The totalCount scalars are tripwires
+# for activity past the 50-node page boundary: when it bumps the totalCount but
+# not the id token, CHANGED still fires and the reviewer re-fetches all on
+# wake. The reviewer does the full body-level classification on wake (thin
+# poll, no interpretation). Writes diagnostic stderr to /dev/null (never /tmp).
 compute_snapshot() {
   local raw line
 
@@ -134,12 +149,15 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     pullRequest(number: $pr) {
       state
       comments(last: 50) {
+        totalCount
         nodes { databaseId author { login } }
       }
       reviews(last: 50) {
+        totalCount
         nodes { databaseId state author { login } }
       }
       reviewThreads(first: 50) {
+        totalCount
         nodes {
           comments(last: 1) {
             nodes { databaseId author { login } }
@@ -173,7 +191,10 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     "STATE=" + $pr.state,
     "LATEST_NONSELF_ISSUE_COMMENT_ID=" + $nonself_comment,
     "LATEST_FILTERED_REVIEW_ID=" + $filtered_review,
-    "LATEST_NONSELF_THREAD_COMMENT_ID=" + $nonself_thread
+    "LATEST_NONSELF_THREAD_COMMENT_ID=" + $nonself_thread,
+    "COMMENTS_TOTAL=" + ($pr.comments.totalCount | tostring),
+    "REVIEWS_TOTAL=" + ($pr.reviews.totalCount | tostring),
+    "THREADS_TOTAL=" + ($pr.reviewThreads.totalCount | tostring)
   ' \
   ) ) || return 1
 
@@ -185,6 +206,9 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       LATEST_NONSELF_ISSUE_COMMENT_ID=*) cur_nonself_comment_id="${line#LATEST_NONSELF_ISSUE_COMMENT_ID=}" ;;
       LATEST_FILTERED_REVIEW_ID=*) cur_filtered_review_id="${line#LATEST_FILTERED_REVIEW_ID=}" ;;
       LATEST_NONSELF_THREAD_COMMENT_ID=*) cur_nonself_thread_id="${line#LATEST_NONSELF_THREAD_COMMENT_ID=}" ;;
+      COMMENTS_TOTAL=*) cur_comments_total="${line#COMMENTS_TOTAL=}" ;;
+      REVIEWS_TOTAL=*) cur_reviews_total="${line#REVIEWS_TOTAL=}" ;;
+      THREADS_TOTAL=*) cur_threads_total="${line#THREADS_TOTAL=}" ;;
     esac
   done <<EOF
 $raw
@@ -217,6 +241,7 @@ while true; do
 
   cur_state=""; cur_nonself_comment_id=""; cur_filtered_review_id=""
   cur_nonself_thread_id=""; cur_codex=""
+  cur_comments_total=""; cur_reviews_total=""; cur_threads_total=""
 
   if ! compute_snapshot; then
     fail_count=$((fail_count + 1))
@@ -260,7 +285,10 @@ while true; do
     elif [ "$cur_state" != "$prev_state" ] \
       || [ "$cur_nonself_comment_id" != "$prev_nonself_comment_id" ] \
       || [ "$cur_filtered_review_id" != "$prev_filtered_review_id" ] \
-      || [ "$cur_nonself_thread_id" != "$prev_nonself_thread_id" ]; then
+      || [ "$cur_nonself_thread_id" != "$prev_nonself_thread_id" ] \
+      || [ "$cur_comments_total" != "$prev_comments_total" ] \
+      || [ "$cur_reviews_total" != "$prev_reviews_total" ] \
+      || [ "$cur_threads_total" != "$prev_threads_total" ]; then
       echo "CHANGED"
     fi
     # No-change iteration: emit nothing.
@@ -270,6 +298,9 @@ while true; do
   prev_nonself_comment_id="$cur_nonself_comment_id"
   prev_filtered_review_id="$cur_filtered_review_id"
   prev_nonself_thread_id="$cur_nonself_thread_id"
+  prev_comments_total="$cur_comments_total"
+  prev_reviews_total="$cur_reviews_total"
+  prev_threads_total="$cur_threads_total"
   prev_codex="$cur_codex"
 
   sleep "$POLL_INTERVAL_SECONDS"

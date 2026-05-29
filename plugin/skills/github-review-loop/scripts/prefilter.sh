@@ -16,19 +16,25 @@
 #     command substitution — no functional pipe feeding any consumer.
 #   - Emits `PREFILTER_SKIP` only when zero unresolved review threads carry a
 #     latest non-self comment that matches `REVIEWER_FILTER` AND lacks a
-#     `Fixed in <SHA>.` marker. Otherwise emits `PREFILTER_DISPATCH`.
+#     `Fixed in <SHA>.` marker AND the `reviewThreads.totalCount` tripwire is
+#     ≤ 50. Otherwise emits `PREFILTER_DISPATCH`.
 #   - Fail-open on GraphQL error: emits `PREFILTER_ERROR=<reason>` and exits
 #     non-zero so the skill treats the event as DISPATCH. Better to wake the
 #     reviewer for an extra cycle than to silently swallow real feedback.
+#   - Fail-open on >50-thread overflow: when `reviewThreads.totalCount` > 50
+#     and the in-page inspection would otherwise SKIP, emit
+#     `PREFILTER_DISPATCH` instead — the actionable thread may sit outside the
+#     inspected page.
 #   - No /tmp. No stop-file. No pagination loop. Stderr diagnostics go to
 #     /dev/null.
 #
 # Accepted trade-offs:
-#   - `reviewThreads(first: 50)` is bounded. A PR with more than 50 review
-#     threads where the actionable thread sits past page 1 may emit
-#     `PREFILTER_SKIP` for this cycle. It surfaces on the NEXT CHANGED event
-#     — caught late, never missed forever. This mirrors the poll script's
-#     coarse-scalar trade-off posture.
+#   - `reviewThreads(first: 50)` is bounded. When the connection's totalCount
+#     exceeds 50, prefilter FAILS OPEN to `PREFILTER_DISPATCH` rather than risk
+#     skipping a real finding that sits outside the inspected page. On
+#     ≤50-thread PRs (the common case) the decision uses in-page inspection as
+#     before. This mirrors the poll script's "wake unnecessarily > miss
+#     feedback" posture.
 #   - Body-marker detection uses regex `Fixed in [0-9a-f]{7,40}\.` (required
 #     trailing period per `plugin/agents/github-reviewer.md` step 11 reply
 #     format: `Fixed in <SHA>. <one-line summary>.`). Loose prose mentioning
@@ -92,6 +98,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
       reviewThreads(first: 50) {
+        totalCount
         nodes {
           isResolved
           comments(last: 1) {
@@ -106,30 +113,56 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   }
 }' 2>/dev/null \
   | jq -r --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" '
-    .data.repository.pullRequest.reviewThreads.nodes[]
-    | select(.isResolved == false)
-    | .comments.nodes[-1]
-    | select(. != null)
-    | . as $c
-    | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
-    | select($a != $login)
-    | select(
-        if $filter == "codex-only" then $a == "chatgpt-codex-connector"
-        elif $filter == "all" then $a != $login
-        else $a == $filter
+    .data.repository.pullRequest.reviewThreads as $rt |
+    "TOTAL=" + ($rt.totalCount | tostring),
+    ($rt.nodes[]
+      | select(.isResolved == false)
+      | .comments.nodes[-1]
+      | select(. != null)
+      | . as $c
+      | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
+      | select($a != $login)
+      | select(
+          if $filter == "codex-only" then $a == "chatgpt-codex-connector"
+          elif $filter == "all" then $a != $login
+          else $a == $filter
+          end)
+      | if (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
+        then "HANDLED"
+        else "ACTIONABLE"
         end)
-    | if (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
-      then "HANDLED"
-      else "ACTIONABLE"
-      end
   ' \
 ) ) || prefilter_fail "graphql-failed"
 
-# Bash-side decision. ACTIONABLE anywhere wins (dispatch); only HANDLED lines
-# or empty output means every unresolved actionable thread already carries a
+# Parse the totalCount tripwire out of the captured output. Mirrors the
+# label-prefixed parse pattern used by pr-change-detect-poll.sh. Defaults to 0
+# when the line is absent so a malformed payload behaves like a 0-thread page.
+total=0
+while IFS= read -r line; do
+  case "$line" in
+    TOTAL=*) total="${line#TOTAL=}" ;;
+  esac
+done <<EOF
+$result
+EOF
+case "$total" in ''|*[!0-9]*) total=0 ;; esac
+
+# Bash-side decision. ACTIONABLE anywhere wins (dispatch). Otherwise, when the
+# reviewThreads connection holds more than 50 nodes, the in-page inspection is
+# untrustworthy — fail OPEN to DISPATCH rather than risk skipping a real
+# finding outside the page. Only HANDLED lines or empty output with a bounded
+# totalCount means every unresolved actionable thread already carries a
 # `Fixed in <SHA>.` reply — silently update baseline.
 case "$result" in
-  *ACTIONABLE*) echo "PREFILTER_DISPATCH" ;;
-  *)            echo "PREFILTER_SKIP" ;;
+  *ACTIONABLE*)
+    echo "PREFILTER_DISPATCH"
+    ;;
+  *)
+    if [ "$total" -gt 50 ]; then
+      echo "PREFILTER_DISPATCH"
+    else
+      echo "PREFILTER_SKIP"
+    fi
+    ;;
 esac
 exit 0
