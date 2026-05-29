@@ -55,15 +55,18 @@
 #     contexts in a failed/errored state (FAILURE, ERROR, TIMED_OUT,
 #     CANCELLED, ACTION_REQUIRED for check runs; FAILURE, ERROR for legacy
 #     statuses). PENDING / QUEUED / IN_PROGRESS / NEUTRAL / SUCCESS /
-#     STARTUP_FAILURE are NOT counted. This keeps `github-reviewer` step 3
-#     (failed CI checks added as fix candidates via `gh pr checks`) wired to
-#     a wake signal: when a reviewer push lands and CI subsequently fails
-#     without any new review comment, FAILED_CHECKS changes and fires
-#     CHANGED so the reviewer can remediate. SUCCESS→PENDING / PENDING→
-#     SUCCESS transitions do not wake (they are not actionable feedback).
-#     The signal is also a recovery beacon: when failures clear, the count
-#     drops back to zero and fires CHANGED once, surfacing the recovery via
-#     a reviewer wake that will return clean.
+#     STARTUP_FAILURE are NOT counted. The count is derived from
+#     `checkRunCountsByState` and `statusContextCountsByState` — both are
+#     aggregate scalars that sum across ALL rollup contexts independent of
+#     paging, so a failed check past page 1 still bumps `FAILED_CHECKS`.
+#     This keeps `github-reviewer` step 3 (failed CI checks added as fix
+#     candidates via `gh pr checks`) wired to a wake signal: when a reviewer
+#     push lands and CI subsequently fails without any new review comment,
+#     FAILED_CHECKS changes and fires CHANGED so the reviewer can remediate.
+#     SUCCESS→PENDING / PENDING→SUCCESS transitions do not wake (they are
+#     not actionable feedback). The signal is also a recovery beacon: when
+#     failures clear, the count drops back to zero and fires CHANGED once,
+#     surfacing the recovery via a reviewer wake that will return clean.
 #
 # Markers emitted (one token-cheap line each):
 #   CHANGED          a non-terminal delta in the scalar snapshot (wake reviewer)
@@ -187,12 +190,9 @@ query($owner: String!, $repo: String!, $pr: Int!) {
         }
       }
       statusCheckRollup {
-        contexts(first: 100) {
-          nodes {
-            __typename
-            ... on CheckRun { conclusion status }
-            ... on StatusContext { state }
-          }
+        contexts(first: 0) {
+          checkRunCountsByState { state count }
+          statusContextCountsByState { state count }
         }
       }
     }
@@ -219,20 +219,29 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       | map(select((.author.login // "" | sub("\\[bot\\]$"; "")) != $login))
       | map(.databaseId)
       | (if length == 0 then "NONE" else max | tostring end)) as $nonself_thread |
-    # FAILED_CHECKS: count rollup contexts in a failed/errored terminal state.
-    # CheckRun reports conclusion (FAILURE / TIMED_OUT / CANCELLED / ACTION_
-    # REQUIRED / STARTUP_FAILURE); we treat the first four as failures (a
-    # STARTUP_FAILURE is more like an infrastructure flake than actionable
-    # feedback, and is excluded to avoid noisy wakes on transient CI
-    # outages). StatusContext reports state (FAILURE / ERROR). Anything else
-    # — PENDING / QUEUED / IN_PROGRESS / NEUTRAL / SUCCESS / SKIPPED — is
-    # NOT counted. A null rollup means no checks have run yet; count 0.
-    (($pr.statusCheckRollup.contexts.nodes // [])
-      | map(select(
-          (.__typename == "CheckRun" and (.conclusion == "FAILURE" or .conclusion == "TIMED_OUT" or .conclusion == "CANCELLED" or .conclusion == "ACTION_REQUIRED"))
-          or (.__typename == "StatusContext" and (.state == "FAILURE" or .state == "ERROR"))
-        ))
-      | length) as $failed_checks |
+    # FAILED_CHECKS: sum rollup state-count buckets for failed/errored
+    # terminal states across ALL contexts (independent of paging). Using
+    # `checkRunCountsByState` and `statusContextCountsByState` avoids the
+    # first-100-contexts blind spot the previous `contexts(first: 100)`
+    # walk had: a failed check past page 1 still bumps FAILED_CHECKS, so
+    # `github-reviewer` step 3 (failed CI checks added as fix candidates)
+    # stays wired even on PRs with many checks. CheckRun states reported
+    # here are the post-completion conclusions surfaced via CheckRunState
+    # (FAILURE / TIMED_OUT / CANCELLED / ACTION_REQUIRED — the first four
+    # treated as failures; STARTUP_FAILURE is excluded as infrastructure
+    # noise). StatusContext state buckets are FAILURE / ERROR. Anything
+    # else — PENDING / QUEUED / IN_PROGRESS / NEUTRAL / SUCCESS / SKIPPED
+    # / STARTUP_FAILURE / STALE — is NOT counted. A null rollup means no
+    # checks have run yet; count 0.
+    (
+      ((($pr.statusCheckRollup.contexts.checkRunCountsByState // [])
+        | map(select(.state == "FAILURE" or .state == "TIMED_OUT" or .state == "CANCELLED" or .state == "ACTION_REQUIRED"))
+        | map(.count) | add) // 0)
+      +
+      ((($pr.statusCheckRollup.contexts.statusContextCountsByState // [])
+        | map(select(.state == "FAILURE" or .state == "ERROR"))
+        | map(.count) | add) // 0)
+    ) as $failed_checks |
     "STATE=" + $pr.state,
     "LATEST_NONSELF_ISSUE_COMMENT_ID=" + $nonself_comment,
     "LATEST_FILTERED_REVIEW_ID=" + $filtered_review,
