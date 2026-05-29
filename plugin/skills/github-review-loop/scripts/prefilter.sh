@@ -21,20 +21,27 @@
 #   - Fail-open on GraphQL error: emits `PREFILTER_ERROR=<reason>` and exits
 #     non-zero so the skill treats the event as DISPATCH. Better to wake the
 #     reviewer for an extra cycle than to silently swallow real feedback.
-#   - Fail-open on >50-thread overflow: when `reviewThreads.totalCount` > 50
-#     and the in-page inspection would otherwise SKIP, emit
-#     `PREFILTER_DISPATCH` instead — the actionable thread may sit outside the
-#     inspected page.
+#   - Fail-open on >50-node overflow in any of `reviewThreads`, `comments`, or
+#     `reviews`. The bound is reached when any connection's `totalCount`
+#     exceeds 50 nodes; the prefilter cannot reliably author-classify activity
+#     past page 1, so it dispatches the reviewer rather than risk a silent
+#     drop.
 #   - No /tmp. No stop-file. No pagination loop. Stderr diagnostics go to
 #     /dev/null.
 #
 # Accepted trade-offs:
-#   - `reviewThreads(first: 50)` is bounded. When the connection's totalCount
-#     exceeds 50, prefilter FAILS OPEN to `PREFILTER_DISPATCH` rather than risk
-#     skipping a real finding that sits outside the inspected page. On
-#     ≤50-thread PRs (the common case) the decision uses in-page inspection as
-#     before. This mirrors the poll script's "wake unnecessarily > miss
-#     feedback" posture.
+#   - The 50-node bound is enforced symmetrically across all three pullRequest
+#     connections the loop cares about: `reviewThreads`, `comments`, and
+#     `reviews`. When ANY of their totalCounts exceeds 50, prefilter FAILS
+#     OPEN to `PREFILTER_DISPATCH` rather than risk skipping a real finding
+#     that sits outside the inspected page. This is a deliberately
+#     filter-blind decision: the prefilter cannot author-classify activity
+#     past page 1, so it dispatches and lets the reviewer adjudicate. Mirrors
+#     the poll-side `THREADS_TOTAL` / `COMMENTS_TOTAL` / `REVIEWS_TOTAL`
+#     scalars in `pr-change-detect-poll.sh`'s accepted-trade-off block and
+#     the same "wake unnecessarily > miss feedback" posture. Cost under
+#     `codex-only`: a >50 issue-comment burst from humans will wake the
+#     reviewer once and return clean — acceptable vs silent drop.
 #   - Body-marker detection uses regex `Fixed in [0-9a-f]{7,40}\.` (required
 #     trailing period per `plugin/agents/github-reviewer.md` step 11 reply
 #     format: `Fixed in <SHA>. <one-line summary>.`). Loose prose mentioning
@@ -97,6 +104,8 @@ result=$( ( set -o pipefail; \
 query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
+      comments(first: 0) { totalCount }
+      reviews(first: 0) { totalCount }
       reviewThreads(first: 50) {
         totalCount
         nodes {
@@ -113,8 +122,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   }
 }' 2>/dev/null \
   | jq -r --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" '
-    .data.repository.pullRequest.reviewThreads as $rt |
-    "TOTAL=" + ($rt.totalCount | tostring),
+    .data.repository.pullRequest as $pr |
+    $pr.reviewThreads as $rt |
+    "THREADS_TOTAL=" + (($rt.totalCount // 0) | tostring),
+    "COMMENTS_TOTAL=" + (($pr.comments.totalCount // 0) | tostring),
+    "REVIEWS_TOTAL=" + (($pr.reviews.totalCount // 0) | tostring),
     ($rt.nodes[]
       | select(.isResolved == false)
       | .comments.nodes[-1]
@@ -134,31 +146,40 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   ' \
 ) ) || prefilter_fail "graphql-failed"
 
-# Parse the totalCount tripwire out of the captured output. Mirrors the
-# label-prefixed parse pattern used by pr-change-detect-poll.sh. Defaults to 0
-# when the line is absent so a malformed payload behaves like a 0-thread page.
-total=0
+# Parse the three totalCount tripwires out of the captured output. Mirrors the
+# label-prefixed parse pattern used by pr-change-detect-poll.sh. Defaults each
+# to 0 when the line is absent so a malformed payload behaves like a 0-node
+# page on every connection.
+threads_total=0
+comments_total=0
+reviews_total=0
 while IFS= read -r line; do
   case "$line" in
-    TOTAL=*) total="${line#TOTAL=}" ;;
+    THREADS_TOTAL=*) threads_total="${line#THREADS_TOTAL=}" ;;
+    COMMENTS_TOTAL=*) comments_total="${line#COMMENTS_TOTAL=}" ;;
+    REVIEWS_TOTAL=*) reviews_total="${line#REVIEWS_TOTAL=}" ;;
   esac
 done <<EOF
 $result
 EOF
-case "$total" in ''|*[!0-9]*) total=0 ;; esac
+case "$threads_total" in ''|*[!0-9]*) threads_total=0 ;; esac
+case "$comments_total" in ''|*[!0-9]*) comments_total=0 ;; esac
+case "$reviews_total" in ''|*[!0-9]*) reviews_total=0 ;; esac
 
-# Bash-side decision. ACTIONABLE anywhere wins (dispatch). Otherwise, when the
-# reviewThreads connection holds more than 50 nodes, the in-page inspection is
-# untrustworthy — fail OPEN to DISPATCH rather than risk skipping a real
-# finding outside the page. Only HANDLED lines or empty output with a bounded
-# totalCount means every unresolved actionable thread already carries a
-# `Fixed in <SHA>.` reply — silently update baseline.
+# Bash-side decision. ACTIONABLE anywhere wins (dispatch). Otherwise, when ANY
+# of the three pullRequest connections (`reviewThreads`, `comments`, `reviews`)
+# holds more than 50 nodes, the in-page inspection is untrustworthy on at least
+# one axis — fail OPEN to DISPATCH rather than risk skipping a real finding
+# outside the page. Only HANDLED lines or empty output with all three
+# totalCounts bounded means every unresolved actionable thread already carries
+# a `Fixed in <SHA>.` reply and no oversized comment/review connection could be
+# hiding new feedback — silently update baseline.
 case "$result" in
   *ACTIONABLE*)
     echo "PREFILTER_DISPATCH"
     ;;
   *)
-    if [ "$total" -gt 50 ]; then
+    if [ "$threads_total" -gt 50 ] || [ "$comments_total" -gt 50 ] || [ "$reviews_total" -gt 50 ]; then
       echo "PREFILTER_DISPATCH"
     else
       echo "PREFILTER_SKIP"
