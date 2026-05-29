@@ -52,9 +52,21 @@
 #     matching `REVIEWER_FILTER` lacks a `Fixed in <SHA>.` marker. This
 #     prevents an unresolved reviewer finding from being hidden when a later
 #     reply from a non-matching author (maintainer, different bot) sits as
-#     the latest comment under `codex-only`. If a thread carries more than
-#     20 comments, the per-thread overflow falls back to DISPATCH (filter-
-#     blind — same posture as the connection-level 50-node bounds).
+#     the latest comment under `codex-only`. Before the matching-comment
+#     walk, the thread is first checked for a self-authored `Fixed in <SHA>.`
+#     reply: if present anywhere in the inspected page, the thread is
+#     treated as HANDLED regardless of whether the resolve step succeeded.
+#     This covers the crash-recovery case where the reviewer posted its
+#     fix-SHA reply but the non-blocking resolve mutation failed — the
+#     `matches_filter` predicate excludes self-authored comments, so without
+#     this pre-check the unresolved reviewer comment would be re-dispatched
+#     on its own fix.
+#   - If a thread carries more than 20 comments, the per-thread overflow
+#     ALWAYS falls back to DISPATCH (filter-blind — same posture as the
+#     connection-level 50-node bounds). An older unresolved reviewer finding
+#     can sit outside the last 20 replies; failing open only when matching
+#     comments are already visible would let the original finding go
+#     undispatched while the poll wakes on later thread activity.
 #   - Top-level PR comments and review-body summaries are also inspected.
 #     `github-reviewer` treats those as fix candidates (see
 #     `plugin/agents/github-reviewer.md` step 3) but they live outside review
@@ -181,8 +193,23 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     # ACTIONABLE if ANY matching comment lacks a `Fixed in <SHA>.` marker.
     # HANDLED is emitted when every matching comment carries the marker (used
     # only for telemetry/debug — the bash-side decision does not act on it).
+    #
+    # Before the matching-comment walk, the thread is checked for a self-
+    # authored `Fixed in <SHA>.` reply. The reviewer posts that reply after
+    # committing a fix and BEFORE attempting to resolve the thread; the
+    # resolve mutation is non-blocking and may fail. Without this pre-check,
+    # `matches_filter` (which excludes self-authored comments) would never
+    # see the self reply, and the original reviewer comment would be re-
+    # marked ACTIONABLE on every CHANGED wake — defeating the self-echo
+    # suppression this prefilter exists to provide. Presence of any self
+    # `Fixed in <SHA>.` reply in the page short-circuits the thread to
+    # HANDLED (emit nothing, same as the all-marks-true branch).
+    #
     # When a thread carries more than 20 comments, the per-thread page may
-    # have dropped earlier matching comments; fail open with ACTIONABLE.
+    # have dropped earlier matching comments; fail open with ACTIONABLE
+    # UNCONDITIONALLY. An older unresolved reviewer finding sitting outside
+    # the last 20 replies would otherwise yield an empty marks set and emit
+    # nothing, letting the poll silently `PREFILTER_SKIP` after the wake.
     ($rt.nodes[]
       | select(.isResolved == false)
       | . as $thread
@@ -191,11 +218,18 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           $thread.comments.nodes[]
           | . as $c
           | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
+          | select($a == $login)
+          | (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
+        ] | any(. == true)) as $self_fixed
+      | ([
+          $thread.comments.nodes[]
+          | . as $c
+          | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
           | select(matches_filter($a))
           | (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
         ]) as $marks
-      | if $thread_overflow and ($marks | length) > 0
-        then "ACTIONABLE"
+      | if $self_fixed then "HANDLED"
+        elif $thread_overflow then "ACTIONABLE"
         elif ($marks | length) == 0 then empty
         elif ($marks | any(. == false)) then "ACTIONABLE"
         else "HANDLED"
