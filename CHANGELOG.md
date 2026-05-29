@@ -4,7 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [Unreleased]
 
 ### Added
@@ -12,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+
+## [2.15.2] - 2026-05-28
+
+### Added
+
+### Changed
+
+- Update agents model and effort (opus 4.8)
+
+### Fixed
+
+## [2.15.1] - 2026-05-28
+
+### Fixed
+
+- `github-review-loop` poll (`scripts/pr-change-detect-poll.sh`) no longer fires `CHANGED` on self-induced churn. Replaced unbounded `comments` / `reviews` / `reviewThreads` total-count scalars with author-aware latest-id tokens (`LATEST_NONSELF_ISSUE_COMMENT_ID`, `LATEST_FILTERED_REVIEW_ID`, `LATEST_NONSELF_THREAD_COMMENT_ID`) filtered by `reviewer_filter` and `SELF_LOGIN`. Eliminates `CHANGED` storms from our own `Fixed in <SHA>` reply comments, Codex auto-`COMMENTED` re-review echoes, and PENDING review states ("eyes" reaction).
+- Poll now requires two new positional arguments: `$6 REVIEWER_FILTER`, `$7 SELF_LOGIN`. The skill passes these through from existing inputs and preflight output.
+
+### Added
+
+- New `scripts/prefilter.sh` in `github-review-loop`. Runs on every `CHANGED` Monitor event with a single cheap GraphQL call. Dispatches the reviewer (`PREFILTER_DISPATCH`) only when at least one unresolved review thread carries a latest non-self comment matching `reviewer_filter` AND that comment lacks a `Fixed in <SHA>.` marker. Otherwise emits `PREFILTER_SKIP` and the Monitor stays armed without burning a reviewer dispatch. Cycle 0 and `CODEX_APPROVED` paths are NEVER prefiltered. `PREFILTER_ERROR` is fail-open — falls through to dispatch.
+
+### Removed
+
+- CI check rollup (`statusCheckRollup.state` and `contexts.totalCount`) removed from the `github-review-loop` poll's delta set. The skill never acted on CI state in its termination guard set; previously these counters fired `CHANGED` whenever CI re-ran on a reviewer push. Net effect: fewer reviewer dispatches, identical terminal outcomes.
 
 ## [2.15.0] - 2026-05-28
 

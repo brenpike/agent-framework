@@ -9,10 +9,14 @@
 #
 # Contract:
 #   - Each iteration computes a CHEAP SCALAR snapshot via ONE non-paginated
-#     GraphQL query (PR state; comment + review + reviewThreads totalCounts;
-#     check rollup state; check-context totalCount) plus a Codex 👍 PRESENT bool
-#     (via paginated REST reactions). No bodies, no nodes, no cursor walks — the
-#     poll only answers "did anything change?" and "is the PR terminal?".
+#     GraphQL query (PR state; author-aware latest-id tokens for issue comments,
+#     filtered reviews, and review-thread comments (filtered by reviewer-filter
+#     and self-login); totalCount tripwires for the three connections capped at
+#     50; a CI `FAILED_CHECKS` scalar that counts only checks in a failed/
+#     errored state, so CI regressions wake the reviewer even when no new review
+#     comment was posted) plus a Codex 👍 PRESENT bool (via paginated REST
+#     reactions). No bodies, no cursor walks — the poll only answers "did
+#     anything change?" and "is the PR terminal?".
 #   - It DIFFS the scalar snapshot in bash against the previous iteration and
 #     emits a single minimal marker line ONLY on a real delta or a terminal
 #     state. The reviewer re-fetches ALL feedback bodies and does the full
@@ -23,13 +27,46 @@
 #     is NO functional pipe (`tail -f | grep`, etc.) feeding Monitor.
 #   - No /tmp. No stop-file. Monitor is stopped natively by the skill.
 #
-# Accepted trade-off (coarse scalars, not fingerprints): a silent thread
-# resolve→reopen with no new comment, or a check swapped for another at the same
-# rollup state and same context count, does not bump a scalar and so does not fire
-# on that exact poll. Such a cycle surfaces on the NEXT activity or the next
-# reviewer wake — the reviewer re-fetches ALL state on every wake, and Codex
-# reopens normally carry a new comment that bumps a scalar. The cost is "caught a
-# cycle late," never "missed forever."
+# Accepted trade-off (coarse author-aware tokens, not full fingerprints): the
+# poll tracks a single max databaseId per author-filtered stream rather than a
+# per-node identity set. Consequences:
+#   - Self-only flurries between polls (own `Fixed in <SHA>` replies, own
+#     pushes) do not bump any token — by design, eliminates self-echo CHANGED
+#     storms.
+#   - Non-self activity older than 50 nodes behind a self-flurry surfaces on
+#     the next non-self event or next non-`CHANGED` terminal marker; thin-poll
+#     never interprets — reviewer re-fetches all on wake.
+#   - `reviewThreads(first: 50)` is bounded — actionable threads past page 1
+#     surface on the NEXT CHANGED.
+#   - `*_TOTAL` scalars are tripwires for >50-node activity: when actionable
+#     feedback appears past page 1 of any connection (comments, reviews, or
+#     review threads), the corresponding totalCount changes and fires CHANGED
+#     even though no id token bumped. This re-introduces ONE self-induced
+#     noise vector — our own `Fixed in <SHA>` reply bumps COMMENTS_TOTAL.
+#     That noise is absorbed downstream by `prefilter.sh` returning
+#     `PREFILTER_SKIP` for the self-handled-only case. Net effect: huge-PR
+#     coverage without losing the self-echo suppression.
+#   - A silent thread resolve→reopen with no new comment does not bump a token
+#     and so does not fire on that exact poll. Such a cycle surfaces on the
+#     NEXT activity or the next reviewer wake — the reviewer re-fetches ALL
+#     state on every wake. The cost is "caught a cycle late," never
+#     "missed forever."
+#   - The CI failure signal `FAILED_CHECKS` counts only `statusCheckRollup`
+#     contexts in a failed/errored state (FAILURE, ERROR, TIMED_OUT,
+#     CANCELLED, ACTION_REQUIRED for check runs; FAILURE, ERROR for legacy
+#     statuses). PENDING / QUEUED / IN_PROGRESS / NEUTRAL / SUCCESS /
+#     STARTUP_FAILURE are NOT counted. The count is derived from
+#     `checkRunCountsByState` and `statusContextCountsByState` — both are
+#     aggregate scalars that sum across ALL rollup contexts independent of
+#     paging, so a failed check past page 1 still bumps `FAILED_CHECKS`.
+#     This keeps `github-reviewer` step 3 (failed CI checks added as fix
+#     candidates via `gh pr checks`) wired to a wake signal: when a reviewer
+#     push lands and CI subsequently fails without any new review comment,
+#     FAILED_CHECKS changes and fires CHANGED so the reviewer can remediate.
+#     SUCCESS→PENDING / PENDING→SUCCESS transitions do not wake (they are
+#     not actionable feedback). The signal is also a recovery beacon: when
+#     failures clear, the count drops back to zero and fires CHANGED once,
+#     surfacing the recovery via a reviewer wake that will return clean.
 #
 # Markers emitted (one token-cheap line each):
 #   CHANGED          a non-terminal delta in the scalar snapshot (wake reviewer)
@@ -48,6 +85,10 @@
 #   $3  PR_NUMBER               integer PR number
 #   $4  MAX_WATCH_SECONDS       integer seconds before WATCH_TIMEOUT
 #   $5  POLL_INTERVAL_SECONDS   integer seconds between polls
+#   $6  REVIEWER_FILTER         "codex-only" | "all" | "<login>"
+#                               (default "codex-only" when empty)
+#   $7  SELF_LOGIN              viewer login used to exclude self-authored
+#                               activity from delta tokens (required)
 
 set -u
 
@@ -56,6 +97,8 @@ REPO="${2:-}"
 PR_NUMBER="${3:-}"
 MAX_WATCH_SECONDS="${4:-}"
 POLL_INTERVAL_SECONDS="${5:-}"
+REVIEWER_FILTER="${6:-}"
+SELF_LOGIN="${7:-}"
 
 # Validate inputs before any arithmetic or gh binding. Empty OWNER/REPO or a
 # non-integer numeric arg would otherwise abort under set -u or corrupt the
@@ -78,6 +121,11 @@ POLL_INTERVAL_SECONDS=$((10#$POLL_INTERVAL_SECONDS))
 # the loop re-poll immediately and hammer gh api until timeout, risking rate
 # limits. Require at least one second between polls before entering the loop.
 [ "$POLL_INTERVAL_SECONDS" -ge 1 ] || poll_fail
+# SELF_LOGIN is required: without it, the jq filter cannot exclude self-authored
+# activity and self-echo CHANGED storms return. REVIEWER_FILTER defaults to
+# codex-only when empty; any non-empty string is accepted as a login form.
+[ -n "$SELF_LOGIN" ] || poll_fail
+[ -n "$REVIEWER_FILTER" ] || REVIEWER_FILTER="codex-only"
 
 deadline=$(($(date +%s) + MAX_WATCH_SECONDS))
 fail_count=0
@@ -85,68 +133,138 @@ fail_count=0
 # Previous-snapshot scalars. Empty until the first successful poll establishes
 # the baseline; the baseline poll itself emits no CHANGED marker.
 prev_state=""
-prev_comments=""
-prev_reviews=""
-prev_threads=""
-prev_rollup=""
-prev_checktotal=""
+prev_nonself_comment_id=""
+prev_filtered_review_id=""
+prev_nonself_thread_id=""
+prev_comments_total=""
+prev_reviews_total=""
+prev_threads_total=""
+prev_failed_checks=""
 prev_codex=""
 have_baseline=0
 
 # compute_snapshot: fills the global scalar variables from ONE non-paginated
-# GraphQL query (PR state + comment/review/reviewThreads totalCounts + check
-# rollup state + check-context totalCount) plus a paginated REST reactions read
-# for the Codex 👍 bool. Returns 0 on success, non-zero on failure of the query
-# or the reactions call. Every count is a cheap totalCount — no nodes, no
-# pageInfo, no isResolved, no per-context identity — so a new/changed thread or a
-# new/dropped check bumps a count and fires CHANGED; the reviewer does the full
-# body-level classification on wake (thin poll, no interpretation). A check-less
-# PR has a null statusCheckRollup, which coerces to ROLLUP=NONE / CHECKTOTAL=0
-# (not a failure). Writes diagnostic stderr to /dev/null (never /tmp).
+# GraphQL query (PR state + last 50 issue-comment databaseIds + last 50 review
+# databaseIds with state and author + last 50 reviewThreads with their last
+# comment databaseId and author + the totalCount of each of those three
+# connections + the `statusCheckRollup` contexts so a `FAILED_CHECKS` scalar
+# can be derived) plus a paginated REST reactions read for the Codex 👍 bool.
+# Returns 0 on success, non-zero on failure of the query or the reactions call.
+# Each id token is a single max-databaseId across the author-filtered stream —
+# self-only flurries (own replies, own pushes) do not bump any token,
+# eliminating self-echo CHANGED storms. The totalCount scalars are tripwires
+# for activity past the 50-node page boundary: when it bumps the totalCount but
+# not the id token, CHANGED still fires and the reviewer re-fetches all on
+# wake. `FAILED_CHECKS` is the count of `statusCheckRollup` contexts in a
+# failed/errored state (FAILURE / ERROR / TIMED_OUT / CANCELLED /
+# ACTION_REQUIRED for CheckRun; FAILURE / ERROR for legacy StatusContext);
+# changes here fire CHANGED so `github-reviewer` step 3 (failed-CI fix
+# candidates) is wired to a wake signal independent of review activity. The
+# reviewer does the full body-level classification on wake (thin poll, no
+# interpretation). Writes diagnostic stderr to /dev/null (never /tmp).
 compute_snapshot() {
   local raw line
 
-  raw=$(gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f query='
+  raw=$( ( set -o pipefail; \
+    gh api graphql \
+      -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
+      -f query='
 query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
       state
-      comments { totalCount }
-      reviews { totalCount }
-      reviewThreads(first: 0) { totalCount }
-      commits(last: 1) {
+      comments(last: 50) {
+        totalCount
+        nodes { databaseId author { login } }
+      }
+      reviews(last: 50) {
+        totalCount
+        nodes { databaseId state author { login } }
+      }
+      reviewThreads(first: 50) {
+        totalCount
         nodes {
-          commit {
-            statusCheckRollup {
-              state
-              contexts(first: 0) { totalCount }
-            }
+          comments(last: 1) {
+            nodes { databaseId author { login } }
           }
+        }
+      }
+      statusCheckRollup {
+        contexts(first: 0) {
+          checkRunCountsByState { state count }
+          statusContextCountsByState { state count }
         }
       }
     }
   }
-}' --jq '
+}' 2>/dev/null \
+    | jq -r --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" '
     .data.repository.pullRequest as $pr |
-    ($pr.commits.nodes[0].commit.statusCheckRollup) as $rollup |
+    ($pr.comments.nodes
+      | map(select((.author.login // "" | sub("\\[bot\\]$"; "")) != $login))
+      | map(.databaseId)
+      | (if length == 0 then "NONE" else max | tostring end)) as $nonself_comment |
+    ($pr.reviews.nodes
+      | map(select(.state as $s | ["CHANGES_REQUESTED","COMMENTED","APPROVED","DISMISSED"] | index($s)))
+      | map(select(
+          (.author.login // "" | sub("\\[bot\\]$"; "")) as $a |
+          if $filter == "codex-only" then $a == "chatgpt-codex-connector"
+          elif $filter == "all" then $a != $login
+          else $a == $filter
+          end))
+      | map(.databaseId)
+      | (if length == 0 then "NONE" else max | tostring end)) as $filtered_review |
+    ($pr.reviewThreads.nodes
+      | map(.comments.nodes[]?)
+      | map(select((.author.login // "" | sub("\\[bot\\]$"; "")) != $login))
+      | map(.databaseId)
+      | (if length == 0 then "NONE" else max | tostring end)) as $nonself_thread |
+    # FAILED_CHECKS: sum rollup state-count buckets for failed/errored
+    # terminal states across ALL contexts (independent of paging). Using
+    # `checkRunCountsByState` and `statusContextCountsByState` avoids the
+    # first-100-contexts blind spot the previous `contexts(first: 100)`
+    # walk had: a failed check past page 1 still bumps FAILED_CHECKS, so
+    # `github-reviewer` step 3 (failed CI checks added as fix candidates)
+    # stays wired even on PRs with many checks. CheckRun states reported
+    # here are the post-completion conclusions surfaced via CheckRunState
+    # (FAILURE / TIMED_OUT / CANCELLED / ACTION_REQUIRED — the first four
+    # treated as failures; STARTUP_FAILURE is excluded as infrastructure
+    # noise). StatusContext state buckets are FAILURE / ERROR. Anything
+    # else — PENDING / QUEUED / IN_PROGRESS / NEUTRAL / SUCCESS / SKIPPED
+    # / STARTUP_FAILURE / STALE — is NOT counted. A null rollup means no
+    # checks have run yet; count 0.
+    (
+      ((($pr.statusCheckRollup.contexts.checkRunCountsByState // [])
+        | map(select(.state == "FAILURE" or .state == "TIMED_OUT" or .state == "CANCELLED" or .state == "ACTION_REQUIRED"))
+        | map(.count) | add) // 0)
+      +
+      ((($pr.statusCheckRollup.contexts.statusContextCountsByState // [])
+        | map(select(.state == "FAILURE" or .state == "ERROR"))
+        | map(.count) | add) // 0)
+    ) as $failed_checks |
     "STATE=" + $pr.state,
-    "COMMENTS=" + ($pr.comments.totalCount | tostring),
-    "REVIEWS=" + ($pr.reviews.totalCount | tostring),
-    "THREADS=" + ($pr.reviewThreads.totalCount | tostring),
-    "ROLLUP=" + (($rollup.state) // "NONE"),
-    "CHECKTOTAL=" + (($rollup.contexts.totalCount) // 0 | tostring)
-  ' 2>/dev/null) || return 1
+    "LATEST_NONSELF_ISSUE_COMMENT_ID=" + $nonself_comment,
+    "LATEST_FILTERED_REVIEW_ID=" + $filtered_review,
+    "LATEST_NONSELF_THREAD_COMMENT_ID=" + $nonself_thread,
+    "COMMENTS_TOTAL=" + ($pr.comments.totalCount | tostring),
+    "REVIEWS_TOTAL=" + ($pr.reviews.totalCount | tostring),
+    "THREADS_TOTAL=" + ($pr.reviewThreads.totalCount | tostring),
+    "FAILED_CHECKS=" + ($failed_checks | tostring)
+  ' \
+  ) ) || return 1
 
   # Parse the labeled scalar lines. Read the captured string directly — no pipe
   # into Monitor.
   while IFS= read -r line; do
     case "$line" in
       STATE=*) cur_state="${line#STATE=}" ;;
-      COMMENTS=*) cur_comments="${line#COMMENTS=}" ;;
-      REVIEWS=*) cur_reviews="${line#REVIEWS=}" ;;
-      THREADS=*) cur_threads="${line#THREADS=}" ;;
-      ROLLUP=*) cur_rollup="${line#ROLLUP=}" ;;
-      CHECKTOTAL=*) cur_checktotal="${line#CHECKTOTAL=}" ;;
+      LATEST_NONSELF_ISSUE_COMMENT_ID=*) cur_nonself_comment_id="${line#LATEST_NONSELF_ISSUE_COMMENT_ID=}" ;;
+      LATEST_FILTERED_REVIEW_ID=*) cur_filtered_review_id="${line#LATEST_FILTERED_REVIEW_ID=}" ;;
+      LATEST_NONSELF_THREAD_COMMENT_ID=*) cur_nonself_thread_id="${line#LATEST_NONSELF_THREAD_COMMENT_ID=}" ;;
+      COMMENTS_TOTAL=*) cur_comments_total="${line#COMMENTS_TOTAL=}" ;;
+      REVIEWS_TOTAL=*) cur_reviews_total="${line#REVIEWS_TOTAL=}" ;;
+      THREADS_TOTAL=*) cur_threads_total="${line#THREADS_TOTAL=}" ;;
+      FAILED_CHECKS=*) cur_failed_checks="${line#FAILED_CHECKS=}" ;;
     esac
   done <<EOF
 $raw
@@ -177,8 +295,10 @@ while true; do
     exit 0
   fi
 
-  cur_state=""; cur_comments=""; cur_reviews=""
-  cur_threads=""; cur_rollup=""; cur_checktotal=""; cur_codex=""
+  cur_state=""; cur_nonself_comment_id=""; cur_filtered_review_id=""
+  cur_nonself_thread_id=""; cur_codex=""
+  cur_comments_total=""; cur_reviews_total=""; cur_threads_total=""
+  cur_failed_checks=""
 
   if ! compute_snapshot; then
     fail_count=$((fail_count + 1))
@@ -220,22 +340,26 @@ while true; do
     if [ "$cur_codex" = "true" ] && [ "$prev_codex" != "true" ]; then
       echo "CODEX_APPROVED"
     elif [ "$cur_state" != "$prev_state" ] \
-      || [ "$cur_comments" != "$prev_comments" ] \
-      || [ "$cur_reviews" != "$prev_reviews" ] \
-      || [ "$cur_threads" != "$prev_threads" ] \
-      || [ "$cur_rollup" != "$prev_rollup" ] \
-      || [ "$cur_checktotal" != "$prev_checktotal" ]; then
+      || [ "$cur_nonself_comment_id" != "$prev_nonself_comment_id" ] \
+      || [ "$cur_filtered_review_id" != "$prev_filtered_review_id" ] \
+      || [ "$cur_nonself_thread_id" != "$prev_nonself_thread_id" ] \
+      || [ "$cur_comments_total" != "$prev_comments_total" ] \
+      || [ "$cur_reviews_total" != "$prev_reviews_total" ] \
+      || [ "$cur_threads_total" != "$prev_threads_total" ] \
+      || [ "$cur_failed_checks" != "$prev_failed_checks" ]; then
       echo "CHANGED"
     fi
     # No-change iteration: emit nothing.
   fi
 
   prev_state="$cur_state"
-  prev_comments="$cur_comments"
-  prev_reviews="$cur_reviews"
-  prev_threads="$cur_threads"
-  prev_rollup="$cur_rollup"
-  prev_checktotal="$cur_checktotal"
+  prev_nonself_comment_id="$cur_nonself_comment_id"
+  prev_filtered_review_id="$cur_filtered_review_id"
+  prev_nonself_thread_id="$cur_nonself_thread_id"
+  prev_comments_total="$cur_comments_total"
+  prev_reviews_total="$cur_reviews_total"
+  prev_threads_total="$cur_threads_total"
+  prev_failed_checks="$cur_failed_checks"
   prev_codex="$cur_codex"
 
   sleep "$POLL_INTERVAL_SECONDS"

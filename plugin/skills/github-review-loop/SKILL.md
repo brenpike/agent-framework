@@ -16,6 +16,7 @@ allowed-tools:
   - Agent(hivemind:github-reviewer)
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/preflight.sh *)
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/prefilter.sh *)
 shell: bash
 ---
 
@@ -73,19 +74,21 @@ Before establishing any poll baseline, dispatch `hivemind:github-reviewer` in fi
 mode over the feedback already on the PR (see Dispatch contract). This is a full
 pass over pre-existing feedback — "watch PR #X" means remediate what is there now,
 THEN watch for new. Handle its return per Reviewer-return handling. Only after a
-non-terminal (`clean`) cycle-0 return do you arm the Monitor.
+non-terminal (`clean`) cycle-0 return do you arm the Monitor. The cycle-0 dispatch is NEVER prefiltered — it runs unconditionally over whatever pre-existing feedback is on the PR.
 
 ### 3. Arm the Monitor
 
 Arm a Monitor in the main session on
 
 ```
-bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh <OWNER> <REPO> <PR_NUMBER> <max_watch_duration> <poll_interval>
+bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh <OWNER> <REPO> <PR_NUMBER> <max_watch_duration> <poll_interval> <reviewer_filter> <SELF_LOGIN>
 ```
 
 where `<OWNER>`, `<REPO>`, `<PR_NUMBER>` are the concrete values resolved from
-preflight output and `<max_watch_duration>`, `<poll_interval>` are the skill
-inputs, all passed as positional arguments in that order. The Monitor command
+preflight output, `<max_watch_duration>` and `<poll_interval>` are the skill
+inputs, `<reviewer_filter>` is the skill input passed straight through, and
+`<SELF_LOGIN>` is resolved from preflight output and passed through, all passed
+as positional arguments in that order. The Monitor command
 STRING carries the resolved arguments inline. The poll runs its loop in the
 background and emits a line ONLY on a real delta or terminal state; idle polls are
 silent and cost zero model tokens. Read the poll's emitted lines directly — never
@@ -95,9 +98,14 @@ feed it into a functional pipe (`tail -f | grep`, etc.).
 
 Each emitted line is a minimal marker. Act on it:
 
-- `CHANGED` → wake `hivemind:github-reviewer` fix mode (no `target` — full pass
-  over unresolved feedback) to fetch, classify, and remediate the change. Handle
-  its return per Reviewer-return handling.
+- `CHANGED` → run the prefilter, then dispatch only if it returns `PREFILTER_DISPATCH`:
+
+  Run `bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/prefilter.sh <OWNER> <REPO> <PR_NUMBER> <reviewer_filter> <SELF_LOGIN>`, passing the same `<OWNER>` / `<REPO>` / `<PR_NUMBER>` resolved at preflight and the same `<reviewer_filter>` / `<SELF_LOGIN>` inputs passed to the poll.
+
+  - `PREFILTER_SKIP` → silently keep the Monitor armed. Do NOT dispatch the reviewer. Do NOT increment the remediation cycle count. Do NOT increment `Routed: github-reviewer` in the terminal report.
+  - `PREFILTER_DISPATCH` or `PREFILTER_ERROR=<reason>` → dispatch `hivemind:github-reviewer` in fix mode (no `target` — full pass over unresolved feedback). `PREFILTER_ERROR` is fail-open: the reviewer dispatch still happens AND counts toward `Routed: github-reviewer`; the error is surfaced in the terminal report's `Issues` only if a downstream termination guard fires. Handle the reviewer return per Reviewer-return handling.
+
+  The prefilter exists to neutralize self-echo CHANGED events. Our own `Fixed in <SHA>` reply and code push trigger Codex auto-`COMMENTED` re-review and new review-thread comments, all of which the poll surfaces as `CHANGED` but which carry no new actionable findings. The prefilter detects this by checking whether any unresolved review thread carries a latest non-self comment matching `reviewer_filter` AND lacking a `Fixed in <SHA>.` marker — if none do, the wake is noise and the reviewer dispatch is skipped.
 - `CODEX_APPROVED` → Codex 👍 newly present. Do NOT terminate immediately. Wake
   the reviewer for a confirmation fetch+classify pass (no `target` — full pass).
   Terminal `clean` ONLY if the reviewer reports nothing actionable remains; if
@@ -240,8 +248,8 @@ the required follow-up under `Next action`.
 
 ## Bash and shell discipline
 
-The two scripts are predefined and exact — pass the documented positional
+The three scripts are predefined and exact — pass the documented positional
 arguments; do not otherwise modify or reconstruct the script bodies. Follow Shell
 Output Discipline and Bash Command Discipline per
-`${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`. The poll and preflight use no
+`${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`. The poll, preflight, and prefilter use no
 `/tmp`, no stop-file, and no functional pipe feeding Monitor.
