@@ -80,12 +80,24 @@
 #     `github-reviewer` treats those as fix candidates (see
 #     `plugin/agents/github-reviewer.md` step 3) but they live outside review
 #     threads, so the per-thread fix-SHA skip rule does not apply to them.
-#     The prefilter follows the "fail open" half of Codex P1 — if ANY
-#     non-self matching top-level comment or review-body summary exists,
+#     Instead, `github-reviewer` step 11 posts a SEPARATE self-authored
+#     top-level reply containing `Addresses: <candidate_url>` for each
+#     handled top-level / review-summary candidate. The prefilter walks the
+#     same top-level comment page for self-authored bodies and harvests the
+#     full set of `Addresses: <url>` URLs into an "addressed-url set"; a
+#     non-self matching top-level comment or review summary is treated as
+#     HANDLED when its own `url` appears in that set (URL is per-comment
+#     unique on GitHub — a follow-up Codex finding lands as a NEW comment
+#     with a NEW url, so set membership alone is sufficient and no
+#     databaseId ordering is required). When the candidate is not handled,
 #     emit `PREFILTER_DISPATCH`. The poll's own author-aware id-token dedup
 #     (`LATEST_NONSELF_ISSUE_COMMENT_ID`, `LATEST_FILTERED_REVIEW_ID`)
 #     bounds the cost — a static unhandled top-level finding fires at most
 #     once per its appearance, not repeatedly.
+#   - The `Addresses:` URL harvest only scans self-authored bodies inside the
+#     `comments(last: 50)` page; the >50 fail-open at the bash layer covers
+#     the case where the addressing reply has been pushed off the page along
+#     with its candidate.
 #
 # Markers emitted (one labeled line):
 #   PREFILTER_SKIP            silently update baseline; do NOT dispatch
@@ -142,12 +154,13 @@ case "$PR_NUMBER" in ''|*[!0-9]*) prefilter_fail "invalid-pr-number" ;; esac
 #   ACTIONABLE_REVIEW   any non-self matching review summary body exists
 # All non-self comments in each thread are walked, not just the latest, so a
 # later non-matching author reply cannot hide an unresolved matching finding.
-# The thread-level fix-SHA skip cannot be transferred to top-level / review-
-# body items (those use `Addresses: <url>` in a SEPARATE self-authored comment,
-# not an in-place reply), so the prefilter fails open on any non-self matching
-# top-level or review-body activity and lets the reviewer adjudicate. The poll
-# de-duplicates the wake by author-aware id token so a static unhandled
-# top-level finding does not fire repeatedly.
+# For top-level and review-body candidates (which live OUTSIDE review threads
+# and so cannot use the per-thread fix-SHA skip), the prefilter harvests a
+# set of `Addresses: <url>` URLs from self-authored top-level bodies and
+# treats a candidate as HANDLED when its own `url` is in that set. This is
+# the top-level analogue of the in-thread fix-SHA skip — both close the
+# self-induced loop that fires when the reviewer's OWN address/fix reply
+# bumps the corresponding totalCount and wakes the poll.
 result=$( ( set -o pipefail; \
   gh api graphql \
     -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
@@ -157,11 +170,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     pullRequest(number: $pr) {
       comments(last: 50) {
         totalCount
-        nodes { author { login } body }
+        nodes { author { login } body url }
       }
       reviews(last: 50) {
         totalCount
-        nodes { author { login } body state }
+        nodes { author { login } body state url }
       }
       reviewThreads(first: 50) {
         totalCount
@@ -195,6 +208,27 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 
     .data.repository.pullRequest as $pr |
     $pr.reviewThreads as $rt |
+
+    # Harvest the set of candidate URLs that self-authored top-level comments
+    # have already addressed via `Addresses: <url>`. `github-reviewer` step 11
+    # posts those replies for top-level PR comments and review-summary
+    # candidates. Without this set, a self `Addresses:` reply bumps
+    # `COMMENTS_TOTAL` (the poll wakes), and the prefilter re-dispatches the
+    # reviewer for the original non-self candidate it already handled — the
+    # exact self-induced loop this script exists to suppress, ported from
+    # threads to top-level / review feedback. URL is GitHub-unique per comment
+    # / review, so set-membership alone is sufficient — a follow-up Codex
+    # finding lands as a new top-level item with a new URL and is NOT in the
+    # set, so it still dispatches.
+    ([ $pr.comments.nodes[]?
+       | . as $c
+       | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
+       | select($a == $login)
+       | ($c.body // "")
+       | scan("Addresses:[[:space:]]*([^[:space:]]+)")
+       | .[0]
+     ]) as $addressed_urls |
+
     "THREADS_TOTAL=" + (($rt.totalCount // 0) | tostring),
     "COMMENTS_TOTAL=" + (($pr.comments.totalCount // 0) | tostring),
     "REVIEWS_TOTAL=" + (($pr.reviews.totalCount // 0) | tostring),
@@ -253,25 +287,35 @@ query($owner: String!, $repo: String!, $pr: Int!) {
         else "HANDLED"
         end),
 
-    # Top-level PR comments: any non-self matching body fails open to
-    # ACTIONABLE_TOPLEVEL. Thread-style in-place dedup does not apply; the
-    # reviewer posts a separate `Addresses: <url>` comment for top-level work.
+    # Top-level PR comments: a non-self matching body emits
+    # ACTIONABLE_TOPLEVEL ONLY when its own `url` does not appear in the
+    # `$addressed_urls` set. The reviewer posts a separate self-authored
+    # `Addresses: <url>` reply for top-level work; without this URL guard,
+    # that self reply bumps `COMMENTS_TOTAL`, the poll wakes, the prefilter
+    # dispatches, and the reviewer is re-dispatched on its own already-handled
+    # candidate — the same self-induced loop the per-thread fix-SHA skip
+    # suppresses for inline threads.
     ($pr.comments.nodes[]?
       | . as $c
       | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
       | select(matches_filter($a))
       | select((($c.body // "") | gsub("[[:space:]]+"; "")) != "")
+      | select(($c.url // "") as $u | ($addressed_urls | index($u)) == null)
       | "ACTIONABLE_TOPLEVEL"),
 
-    # Review summaries (CHANGES_REQUESTED / COMMENTED with body): any non-self
-    # matching body fails open to ACTIONABLE_REVIEW. APPROVED / DISMISSED are
-    # not actionable feedback for the reviewer.
+    # Review summaries (CHANGES_REQUESTED / COMMENTED with body): a non-self
+    # matching body emits ACTIONABLE_REVIEW ONLY when its own `url` does not
+    # appear in the `$addressed_urls` set (same `Addresses: <url>` covers both
+    # top-level comments and review summaries — they use the same URL-keyed
+    # reply contract). APPROVED / DISMISSED are not actionable feedback for
+    # the reviewer.
     ($pr.reviews.nodes[]?
       | . as $r
       | (($r.author.login // "") | sub("\\[bot\\]$"; "")) as $a
       | select(matches_filter($a))
       | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
       | select((($r.body // "") | gsub("[[:space:]]+"; "")) != "")
+      | select(($r.url // "") as $u | ($addressed_urls | index($u)) == null)
       | "ACTIONABLE_REVIEW")
   ' \
 ) ) || prefilter_fail "graphql-failed"
