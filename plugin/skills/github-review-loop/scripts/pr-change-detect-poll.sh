@@ -12,9 +12,11 @@
 #     GraphQL query (PR state; author-aware latest-id tokens for issue comments,
 #     filtered reviews, and review-thread comments (filtered by reviewer-filter
 #     and self-login); totalCount tripwires for the three connections capped at
-#     50; CI check rollup is NOT in the delta set) plus a Codex 👍 PRESENT bool
-#     (via paginated REST reactions). No bodies, no cursor walks — the poll only
-#     answers "did anything change?" and "is the PR terminal?".
+#     50; a CI `FAILED_CHECKS` scalar that counts only checks in a failed/
+#     errored state, so CI regressions wake the reviewer even when no new review
+#     comment was posted) plus a Codex 👍 PRESENT bool (via paginated REST
+#     reactions). No bodies, no cursor walks — the poll only answers "did
+#     anything change?" and "is the PR terminal?".
 #   - It DIFFS the scalar snapshot in bash against the previous iteration and
 #     emits a single minimal marker line ONLY on a real delta or a terminal
 #     state. The reviewer re-fetches ALL feedback bodies and does the full
@@ -49,6 +51,19 @@
 #     NEXT activity or the next reviewer wake — the reviewer re-fetches ALL
 #     state on every wake. The cost is "caught a cycle late," never
 #     "missed forever."
+#   - The CI failure signal `FAILED_CHECKS` counts only `statusCheckRollup`
+#     contexts in a failed/errored state (FAILURE, ERROR, TIMED_OUT,
+#     CANCELLED, ACTION_REQUIRED for check runs; FAILURE, ERROR for legacy
+#     statuses). PENDING / QUEUED / IN_PROGRESS / NEUTRAL / SUCCESS /
+#     STARTUP_FAILURE are NOT counted. This keeps `github-reviewer` step 3
+#     (failed CI checks added as fix candidates via `gh pr checks`) wired to
+#     a wake signal: when a reviewer push lands and CI subsequently fails
+#     without any new review comment, FAILED_CHECKS changes and fires
+#     CHANGED so the reviewer can remediate. SUCCESS→PENDING / PENDING→
+#     SUCCESS transitions do not wake (they are not actionable feedback).
+#     The signal is also a recovery beacon: when failures clear, the count
+#     drops back to zero and fires CHANGED once, surfacing the recovery via
+#     a reviewer wake that will return clean.
 #
 # Markers emitted (one token-cheap line each):
 #   CHANGED          a non-terminal delta in the scalar snapshot (wake reviewer)
@@ -121,6 +136,7 @@ prev_nonself_thread_id=""
 prev_comments_total=""
 prev_reviews_total=""
 prev_threads_total=""
+prev_failed_checks=""
 prev_codex=""
 have_baseline=0
 
@@ -128,15 +144,21 @@ have_baseline=0
 # GraphQL query (PR state + last 50 issue-comment databaseIds + last 50 review
 # databaseIds with state and author + last 50 reviewThreads with their last
 # comment databaseId and author + the totalCount of each of those three
-# connections) plus a paginated REST reactions read for the Codex 👍 bool.
+# connections + the `statusCheckRollup` contexts so a `FAILED_CHECKS` scalar
+# can be derived) plus a paginated REST reactions read for the Codex 👍 bool.
 # Returns 0 on success, non-zero on failure of the query or the reactions call.
 # Each id token is a single max-databaseId across the author-filtered stream —
 # self-only flurries (own replies, own pushes) do not bump any token,
 # eliminating self-echo CHANGED storms. The totalCount scalars are tripwires
 # for activity past the 50-node page boundary: when it bumps the totalCount but
 # not the id token, CHANGED still fires and the reviewer re-fetches all on
-# wake. The reviewer does the full body-level classification on wake (thin
-# poll, no interpretation). Writes diagnostic stderr to /dev/null (never /tmp).
+# wake. `FAILED_CHECKS` is the count of `statusCheckRollup` contexts in a
+# failed/errored state (FAILURE / ERROR / TIMED_OUT / CANCELLED /
+# ACTION_REQUIRED for CheckRun; FAILURE / ERROR for legacy StatusContext);
+# changes here fire CHANGED so `github-reviewer` step 3 (failed-CI fix
+# candidates) is wired to a wake signal independent of review activity. The
+# reviewer does the full body-level classification on wake (thin poll, no
+# interpretation). Writes diagnostic stderr to /dev/null (never /tmp).
 compute_snapshot() {
   local raw line
 
@@ -164,6 +186,15 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           }
         }
       }
+      statusCheckRollup {
+        contexts(first: 100) {
+          nodes {
+            __typename
+            ... on CheckRun { conclusion status }
+            ... on StatusContext { state }
+          }
+        }
+      }
     }
   }
 }' 2>/dev/null \
@@ -188,13 +219,28 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       | map(select((.author.login // "" | sub("\\[bot\\]$"; "")) != $login))
       | map(.databaseId)
       | (if length == 0 then "NONE" else max | tostring end)) as $nonself_thread |
+    # FAILED_CHECKS: count rollup contexts in a failed/errored terminal state.
+    # CheckRun reports conclusion (FAILURE / TIMED_OUT / CANCELLED / ACTION_
+    # REQUIRED / STARTUP_FAILURE); we treat the first four as failures (a
+    # STARTUP_FAILURE is more like an infrastructure flake than actionable
+    # feedback, and is excluded to avoid noisy wakes on transient CI
+    # outages). StatusContext reports state (FAILURE / ERROR). Anything else
+    # — PENDING / QUEUED / IN_PROGRESS / NEUTRAL / SUCCESS / SKIPPED — is
+    # NOT counted. A null rollup means no checks have run yet; count 0.
+    (($pr.statusCheckRollup.contexts.nodes // [])
+      | map(select(
+          (.__typename == "CheckRun" and (.conclusion == "FAILURE" or .conclusion == "TIMED_OUT" or .conclusion == "CANCELLED" or .conclusion == "ACTION_REQUIRED"))
+          or (.__typename == "StatusContext" and (.state == "FAILURE" or .state == "ERROR"))
+        ))
+      | length) as $failed_checks |
     "STATE=" + $pr.state,
     "LATEST_NONSELF_ISSUE_COMMENT_ID=" + $nonself_comment,
     "LATEST_FILTERED_REVIEW_ID=" + $filtered_review,
     "LATEST_NONSELF_THREAD_COMMENT_ID=" + $nonself_thread,
     "COMMENTS_TOTAL=" + ($pr.comments.totalCount | tostring),
     "REVIEWS_TOTAL=" + ($pr.reviews.totalCount | tostring),
-    "THREADS_TOTAL=" + ($pr.reviewThreads.totalCount | tostring)
+    "THREADS_TOTAL=" + ($pr.reviewThreads.totalCount | tostring),
+    "FAILED_CHECKS=" + ($failed_checks | tostring)
   ' \
   ) ) || return 1
 
@@ -209,6 +255,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       COMMENTS_TOTAL=*) cur_comments_total="${line#COMMENTS_TOTAL=}" ;;
       REVIEWS_TOTAL=*) cur_reviews_total="${line#REVIEWS_TOTAL=}" ;;
       THREADS_TOTAL=*) cur_threads_total="${line#THREADS_TOTAL=}" ;;
+      FAILED_CHECKS=*) cur_failed_checks="${line#FAILED_CHECKS=}" ;;
     esac
   done <<EOF
 $raw
@@ -242,6 +289,7 @@ while true; do
   cur_state=""; cur_nonself_comment_id=""; cur_filtered_review_id=""
   cur_nonself_thread_id=""; cur_codex=""
   cur_comments_total=""; cur_reviews_total=""; cur_threads_total=""
+  cur_failed_checks=""
 
   if ! compute_snapshot; then
     fail_count=$((fail_count + 1))
@@ -288,7 +336,8 @@ while true; do
       || [ "$cur_nonself_thread_id" != "$prev_nonself_thread_id" ] \
       || [ "$cur_comments_total" != "$prev_comments_total" ] \
       || [ "$cur_reviews_total" != "$prev_reviews_total" ] \
-      || [ "$cur_threads_total" != "$prev_threads_total" ]; then
+      || [ "$cur_threads_total" != "$prev_threads_total" ] \
+      || [ "$cur_failed_checks" != "$prev_failed_checks" ]; then
       echo "CHANGED"
     fi
     # No-change iteration: emit nothing.
@@ -301,6 +350,7 @@ while true; do
   prev_comments_total="$cur_comments_total"
   prev_reviews_total="$cur_reviews_total"
   prev_threads_total="$cur_threads_total"
+  prev_failed_checks="$cur_failed_checks"
   prev_codex="$cur_codex"
 
   sleep "$POLL_INTERVAL_SECONDS"

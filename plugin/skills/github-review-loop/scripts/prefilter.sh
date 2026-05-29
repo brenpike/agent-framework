@@ -46,6 +46,25 @@
 #     trailing period per `plugin/agents/github-reviewer.md` step 11 reply
 #     format: `Fixed in <SHA>. <one-line summary>.`). Loose prose mentioning
 #     "Fixed in" without a hex SHA + trailing period is rejected.
+#   - Each unresolved review thread is inspected with `comments(last: 20)`,
+#     not `comments(last: 1)`. The full set of non-self matching comments in
+#     each thread is walked: a thread is `ACTIONABLE` if ANY non-self comment
+#     matching `REVIEWER_FILTER` lacks a `Fixed in <SHA>.` marker. This
+#     prevents an unresolved reviewer finding from being hidden when a later
+#     reply from a non-matching author (maintainer, different bot) sits as
+#     the latest comment under `codex-only`. If a thread carries more than
+#     20 comments, the per-thread overflow falls back to DISPATCH (filter-
+#     blind — same posture as the connection-level 50-node bounds).
+#   - Top-level PR comments and review-body summaries are also inspected.
+#     `github-reviewer` treats those as fix candidates (see
+#     `plugin/agents/github-reviewer.md` step 3) but they live outside review
+#     threads, so the per-thread fix-SHA skip rule does not apply to them.
+#     The prefilter follows the "fail open" half of Codex P1 — if ANY
+#     non-self matching top-level comment or review-body summary exists,
+#     emit `PREFILTER_DISPATCH`. The poll's own author-aware id-token dedup
+#     (`LATEST_NONSELF_ISSUE_COMMENT_ID`, `LATEST_FILTERED_REVIEW_ID`)
+#     bounds the cost — a static unhandled top-level finding fires at most
+#     once per its appearance, not repeatedly.
 #
 # Markers emitted (one labeled line):
 #   PREFILTER_SKIP            silently update baseline; do NOT dispatch
@@ -88,15 +107,26 @@ case "$PR_NUMBER" in ''|*[!0-9]*) prefilter_fail "invalid-pr-number" ;; esac
 # would re-emerge.
 [ -n "$SELF_LOGIN" ] || prefilter_fail "missing-self-login"
 
-# Single non-paginated GraphQL call: last comment per unresolved review thread,
-# bounded to the first 50 threads. The --jq filter walks each thread and emits
-# ONE token per matching unresolved thread:
-#   ACTIONABLE  latest comment matches REVIEWER_FILTER AND body lacks a
-#               `Fixed in <SHA>.` marker
-#   HANDLED     latest comment matches REVIEWER_FILTER AND body carries the
-#               marker
-# Threads where the latest comment is self-authored are skipped (own replies
-# are not actionable). Resolved threads are skipped entirely.
+# Single non-paginated GraphQL call: each unresolved review thread's last 20
+# comments (per-thread; threads with >20 comments overflow to DISPATCH), bounded
+# to the first 50 threads; plus the last 50 top-level PR comments and last 50
+# review summaries so the prefilter can detect non-self matching feedback
+# outside review threads. The --jq filter emits tokens for the bash-side
+# decision:
+#   ACTIONABLE          any non-self matching thread comment lacks a
+#                       `Fixed in <SHA>.` marker
+#   HANDLED             every non-self matching thread comment carries the
+#                       marker
+#   ACTIONABLE_TOPLEVEL any non-self matching top-level PR comment exists
+#   ACTIONABLE_REVIEW   any non-self matching review summary body exists
+# All non-self comments in each thread are walked, not just the latest, so a
+# later non-matching author reply cannot hide an unresolved matching finding.
+# The thread-level fix-SHA skip cannot be transferred to top-level / review-
+# body items (those use `Addresses: <url>` in a SEPARATE self-authored comment,
+# not an in-place reply), so the prefilter fails open on any non-self matching
+# top-level or review-body activity and lets the reviewer adjudicate. The poll
+# de-duplicates the wake by author-aware id token so a static unhandled
+# top-level finding does not fire repeatedly.
 result=$( ( set -o pipefail; \
   gh api graphql \
     -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
@@ -104,13 +134,20 @@ result=$( ( set -o pipefail; \
 query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
-      comments(first: 0) { totalCount }
-      reviews(first: 0) { totalCount }
+      comments(last: 50) {
+        totalCount
+        nodes { author { login } body }
+      }
+      reviews(last: 50) {
+        totalCount
+        nodes { author { login } body state }
+      }
       reviewThreads(first: 50) {
         totalCount
         nodes {
           isResolved
-          comments(last: 1) {
+          comments(last: 20) {
+            totalCount
             nodes {
               author { login }
               body
@@ -122,27 +159,68 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   }
 }' 2>/dev/null \
   | jq -r --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" '
+    # Reusable identity-match predicate for the active REVIEWER_FILTER. The
+    # caller passes the stripped login; this returns true when that login is
+    # non-self AND matches the filter.
+    def matches_filter($a):
+      $a != $login
+      and (
+        if $filter == "codex-only" then $a == "chatgpt-codex-connector"
+        elif $filter == "all" then true
+        else $a == $filter
+        end
+      );
+
     .data.repository.pullRequest as $pr |
     $pr.reviewThreads as $rt |
     "THREADS_TOTAL=" + (($rt.totalCount // 0) | tostring),
     "COMMENTS_TOTAL=" + (($pr.comments.totalCount // 0) | tostring),
     "REVIEWS_TOTAL=" + (($pr.reviews.totalCount // 0) | tostring),
+
+    # Per-thread inspection: walk ALL non-self matching comments. A thread is
+    # ACTIONABLE if ANY matching comment lacks a `Fixed in <SHA>.` marker.
+    # HANDLED is emitted when every matching comment carries the marker (used
+    # only for telemetry/debug — the bash-side decision does not act on it).
+    # When a thread carries more than 20 comments, the per-thread page may
+    # have dropped earlier matching comments; fail open with ACTIONABLE.
     ($rt.nodes[]
       | select(.isResolved == false)
-      | .comments.nodes[-1]
-      | select(. != null)
+      | . as $thread
+      | (($thread.comments.totalCount // 0) > ($thread.comments.nodes | length)) as $thread_overflow
+      | ([
+          $thread.comments.nodes[]
+          | . as $c
+          | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
+          | select(matches_filter($a))
+          | (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
+        ]) as $marks
+      | if $thread_overflow and ($marks | length) > 0
+        then "ACTIONABLE"
+        elif ($marks | length) == 0 then empty
+        elif ($marks | any(. == false)) then "ACTIONABLE"
+        else "HANDLED"
+        end),
+
+    # Top-level PR comments: any non-self matching body fails open to
+    # ACTIONABLE_TOPLEVEL. Thread-style in-place dedup does not apply; the
+    # reviewer posts a separate `Addresses: <url>` comment for top-level work.
+    ($pr.comments.nodes[]?
       | . as $c
       | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
-      | select($a != $login)
-      | select(
-          if $filter == "codex-only" then $a == "chatgpt-codex-connector"
-          elif $filter == "all" then $a != $login
-          else $a == $filter
-          end)
-      | if (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
-        then "HANDLED"
-        else "ACTIONABLE"
-        end)
+      | select(matches_filter($a))
+      | select((($c.body // "") | gsub("[[:space:]]+"; "")) != "")
+      | "ACTIONABLE_TOPLEVEL"),
+
+    # Review summaries (CHANGES_REQUESTED / COMMENTED with body): any non-self
+    # matching body fails open to ACTIONABLE_REVIEW. APPROVED / DISMISSED are
+    # not actionable feedback for the reviewer.
+    ($pr.reviews.nodes[]?
+      | . as $r
+      | (($r.author.login // "") | sub("\\[bot\\]$"; "")) as $a
+      | select(matches_filter($a))
+      | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
+      | select((($r.body // "") | gsub("[[:space:]]+"; "")) != "")
+      | "ACTIONABLE_REVIEW")
   ' \
 ) ) || prefilter_fail "graphql-failed"
 
@@ -166,16 +244,17 @@ case "$threads_total" in ''|*[!0-9]*) threads_total=0 ;; esac
 case "$comments_total" in ''|*[!0-9]*) comments_total=0 ;; esac
 case "$reviews_total" in ''|*[!0-9]*) reviews_total=0 ;; esac
 
-# Bash-side decision. ACTIONABLE anywhere wins (dispatch). Otherwise, when ANY
-# of the three pullRequest connections (`reviewThreads`, `comments`, `reviews`)
-# holds more than 50 nodes, the in-page inspection is untrustworthy on at least
-# one axis — fail OPEN to DISPATCH rather than risk skipping a real finding
-# outside the page. Only HANDLED lines or empty output with all three
-# totalCounts bounded means every unresolved actionable thread already carries
-# a `Fixed in <SHA>.` reply and no oversized comment/review connection could be
-# hiding new feedback — silently update baseline.
+# Bash-side decision. ACTIONABLE / ACTIONABLE_TOPLEVEL / ACTIONABLE_REVIEW
+# anywhere wins (dispatch). Otherwise, when ANY of the three pullRequest
+# connections (`reviewThreads`, `comments`, `reviews`) holds more than 50 nodes,
+# the in-page inspection is untrustworthy on at least one axis — fail OPEN to
+# DISPATCH rather than risk skipping a real finding outside the page. Only
+# HANDLED lines (or empty output) with all three totalCounts bounded means
+# every unresolved actionable thread already carries a `Fixed in <SHA>.` reply
+# and no non-self top-level / review activity is present and no oversized
+# connection could be hiding new feedback — silently update baseline.
 case "$result" in
-  *ACTIONABLE*)
+  *ACTIONABLE_TOPLEVEL*|*ACTIONABLE_REVIEW*|*ACTIONABLE*)
     echo "PREFILTER_DISPATCH"
     ;;
   *)
