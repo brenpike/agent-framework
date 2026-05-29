@@ -84,10 +84,10 @@ case "$PR_NUMBER" in ''|*[!0-9]*) prefilter_fail "invalid-pr-number" ;; esac
 #               marker
 # Threads where the latest comment is self-authored are skipped (own replies
 # are not actionable). Resolved threads are skipped entirely.
-result=$(gh api graphql \
-  -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
-  --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" \
-  -f query='
+result=$( ( set -o pipefail; \
+  gh api graphql \
+    -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
+    -f query='
 query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
@@ -104,7 +104,8 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       }
     }
   }
-}' --jq '
+}' 2>/dev/null \
+  | jq -r --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" '
     .data.repository.pullRequest.reviewThreads.nodes[]
     | select(.isResolved == false)
     | .comments.nodes[-1]
@@ -121,7 +122,8 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       then "HANDLED"
       else "ACTIONABLE"
       end
-  ' 2>/dev/null) || prefilter_fail "graphql-failed"
+  ' \
+) ) || prefilter_fail "graphql-failed"
 
 # Bash-side decision. ACTIONABLE anywhere wins (dispatch); only HANDLED lines
 # or empty output means every unresolved actionable thread already carries a

@@ -125,10 +125,10 @@ have_baseline=0
 compute_snapshot() {
   local raw line
 
-  raw=$(gh api graphql \
-    -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
-    --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" \
-    -f query='
+  raw=$( ( set -o pipefail; \
+    gh api graphql \
+      -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
+      -f query='
 query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
@@ -148,7 +148,8 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       }
     }
   }
-}' --jq '
+}' 2>/dev/null \
+    | jq -r --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" '
     .data.repository.pullRequest as $pr |
     ($pr.comments.nodes
       | map(select((.author.login // "" | sub("\\[bot\\]$"; "")) != $login))
@@ -173,7 +174,8 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     "LATEST_NONSELF_ISSUE_COMMENT_ID=" + $nonself_comment,
     "LATEST_FILTERED_REVIEW_ID=" + $filtered_review,
     "LATEST_NONSELF_THREAD_COMMENT_ID=" + $nonself_thread
-  ' 2>/dev/null) || return 1
+  ' \
+  ) ) || return 1
 
   # Parse the labeled scalar lines. Read the captured string directly — no pipe
   # into Monitor.
