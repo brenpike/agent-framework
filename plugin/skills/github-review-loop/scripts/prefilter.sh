@@ -52,15 +52,24 @@
 #     matching `REVIEWER_FILTER` lacks a `Fixed in <SHA>.` marker. This
 #     prevents an unresolved reviewer finding from being hidden when a later
 #     reply from a non-matching author (maintainer, different bot) sits as
-#     the latest comment under `codex-only`. Before the matching-comment
-#     walk, the thread is first checked for a self-authored `Fixed in <SHA>.`
-#     reply: if present anywhere in the inspected page, the thread is
-#     treated as HANDLED regardless of whether the resolve step succeeded.
-#     This covers the crash-recovery case where the reviewer posted its
-#     fix-SHA reply but the non-blocking resolve mutation failed — the
-#     `matches_filter` predicate excludes self-authored comments, so without
-#     this pre-check the unresolved reviewer comment would be re-dispatched
-#     on its own fix.
+#     the latest comment under `codex-only`. The thread also tracks the
+#     latest self-authored `Fixed in <SHA>.` reply by `databaseId` (monotonic
+#     per-comment, matches the poll's id-token discipline). The reviewer
+#     posts that reply after committing a fix and BEFORE attempting to
+#     resolve the thread; the resolve mutation is non-blocking and may fail.
+#     A non-self matching comment is treated as HANDLED only when its
+#     `databaseId` is LESS THAN OR EQUAL to that latest self fix-reply id;
+#     otherwise it is ACTIONABLE. This covers two cases together:
+#       (a) crash-recovery: the reviewer posted its fix-SHA reply but the
+#           resolve mutation failed → the original Codex finding's
+#           databaseId is below the self reply's databaseId → HANDLED, the
+#           original finding is NOT re-dispatched on its own fix.
+#       (b) follow-up finding: a later Codex (or matching-author) comment
+#           lands in the SAME unresolved thread → its databaseId is above
+#           the latest self fix-reply → ACTIONABLE, the reviewer is
+#           dispatched. Without the per-comment ordering, any self fix-reply
+#           would short-circuit the whole thread to HANDLED and the new
+#           finding would be silently swallowed.
 #   - If a thread carries more than 20 comments, the per-thread overflow
 #     ALWAYS falls back to DISPATCH (filter-blind — same posture as the
 #     connection-level 50-node bounds). An older unresolved reviewer finding
@@ -161,6 +170,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           comments(last: 20) {
             totalCount
             nodes {
+              databaseId
               author { login }
               body
             }
@@ -190,20 +200,27 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     "REVIEWS_TOTAL=" + (($pr.reviews.totalCount // 0) | tostring),
 
     # Per-thread inspection: walk ALL non-self matching comments. A thread is
-    # ACTIONABLE if ANY matching comment lacks a `Fixed in <SHA>.` marker.
-    # HANDLED is emitted when every matching comment carries the marker (used
-    # only for telemetry/debug — the bash-side decision does not act on it).
+    # ACTIONABLE if ANY matching comment lacks a `Fixed in <SHA>.` marker OR
+    # post-dates the latest self fix-reply.
     #
-    # Before the matching-comment walk, the thread is checked for a self-
-    # authored `Fixed in <SHA>.` reply. The reviewer posts that reply after
+    # The thread tracks the latest self-authored `Fixed in <SHA>.` reply by
+    # `databaseId` (monotonic per-comment, matches the id-token discipline
+    # used by the poll script). The reviewer posts that reply after
     # committing a fix and BEFORE attempting to resolve the thread; the
-    # resolve mutation is non-blocking and may fail. Without this pre-check,
-    # `matches_filter` (which excludes self-authored comments) would never
-    # see the self reply, and the original reviewer comment would be re-
-    # marked ACTIONABLE on every CHANGED wake — defeating the self-echo
-    # suppression this prefilter exists to provide. Presence of any self
-    # `Fixed in <SHA>.` reply in the page short-circuits the thread to
-    # HANDLED (emit nothing, same as the all-marks-true branch).
+    # resolve mutation is non-blocking and may fail. A non-self matching
+    # comment is HANDLED only when its body already carries the marker OR
+    # when its databaseId is LESS THAN OR EQUAL to the latest self fix-reply
+    # databaseId. Otherwise it is ACTIONABLE. This handles both:
+    #   (a) crash-recovery: the existing reviewer comment databaseId is
+    #       below the self reply databaseId → HANDLED, not re-dispatched.
+    #   (b) follow-up finding in the same unresolved thread: the new
+    #       reviewer comment databaseId is above the latest self fix-reply
+    #       → ACTIONABLE, the reviewer wakes. The previous `$self_fixed`
+    #       short-circuit would have hidden this; the per-comment ordering
+    #       guarantees it surfaces.
+    # If no self fix-reply exists in the page, the latest-id sentinel is 0
+    # (every non-self matching databaseId is > 0), so ordering reduces to
+    # the marker check alone.
     #
     # When a thread carries more than 20 comments, the per-thread page may
     # have dropped earlier matching comments; fail open with ACTIONABLE
@@ -219,17 +236,18 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           | . as $c
           | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
           | select($a == $login)
-          | (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
-        ] | any(. == true)) as $self_fixed
+          | select((($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\.")))
+          | (.databaseId // 0)
+        ] | (if length == 0 then 0 else max end)) as $latest_self_fix_id
       | ([
           $thread.comments.nodes[]
           | . as $c
           | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
           | select(matches_filter($a))
           | (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
+            or ((.databaseId // 0) <= $latest_self_fix_id)
         ]) as $marks
-      | if $self_fixed then "HANDLED"
-        elif $thread_overflow then "ACTIONABLE"
+      | if $thread_overflow then "ACTIONABLE"
         elif ($marks | length) == 0 then empty
         elif ($marks | any(. == false)) then "ACTIONABLE"
         else "HANDLED"
