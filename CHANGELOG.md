@@ -23,7 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `seed-hive` companion enablement inputs (`caveman`, `claude_mem`, `codex`) now detect the installed companion set and interactively confirm, recommending the detected set, instead of silently defaulting omitted inputs to `no`. Explicit `=no` still suppresses a companion without a prompt (preserving the prior silent-skip behavior).
 - `seed_allowlist` input default changed from `no` to `yes`.
-- `dry_run` input removed from `seed-hive`.
+
+### Removed
+
+- `dry_run` input removed from `seed-hive`. Migration: callers that passed `dry_run=yes` for a no-write preview should omit it — the skill now always performs its writes; preview by inspecting the diff/settings after the run, or review before invoking.
 
 ## [2.15.2] - 2026-05-28
 

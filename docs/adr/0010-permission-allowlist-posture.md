@@ -34,7 +34,7 @@ CONSEQUENCE: a `Bash(cmd *)` read/output-helper grant is NOT an arbitrary-file-w
    - broad `Bash(git stash *)` — `drop` / `clear` / `pop` lose work.
    - broad `Bash(git tag *)` — `-d` / `-f` mutate tags.
 4. Decorative shell output (section banners, progress narration, terse status tokens) is suppressed at the source via agent-prose directives (cerebrate, local-reviewer, drone, overlord, github-reviewer) rather than by granting echo — ~93% of echo/printf prompts were gratuitous scaffolding. Load-bearing `printf` routing-data emissions (the pipeline-skill contract output) are exempt.
-5. `setup-project` seeds this least-privilege set via an opt-in `seed_allowlist` input (append-if-absent; never overwrites a consumer's existing entries).
+5. `setup-project` seeds this least-privilege set via the `seed_allowlist` input, which now **defaults to `yes`** — the least-privilege template is union-merged by default and consumers opt OUT via `seed_allowlist=no` (append-if-absent; never overwrites, removes, or reorders a consumer's existing entries). See **Amendment — 2026-05-29**.
 6. The follow-up issue proposing to harden pipeline-skill `printf` routing emission (#123) was CLOSED: it rested on the same debunked arbitrary-write premise; skill-level `printf` is not an arbitrary-write vector.
 
 ## Considered Options
@@ -60,6 +60,15 @@ This amendment refines the DIAGNOSIS recorded above. It does not rewrite the acc
 - **Actual mechanism.** COMPOUND-COMMAND BATCHING. CC splits a compound command (`&&` / `||` / `;` / `|` / newline) and matches each subcommand independently; one unlisted segment forces a prompt for the whole chain. 51 of 61 (84%) banner-decorated commands contained such an unlisted chain-mate. Measured unlisted triggers: `grep` flag near-misses (`grep -c`, `grep -v`, `grep -E`, `grep -nE`, `grep -rln`, `grep -rEn` — the seed had only `grep -n` / `grep -rn` / `grep -rE`), `git ls-tree`, and repo validation invocations (`bash tools/policy_check.sh`, `bash tools/validate_reports.sh`, `bash -n`).
 - **Remediation (shipped v2.8.2 / PR #132).** Static allowlist widening only: added `Bash(grep *)` and `Bash(git ls-tree *)` (both read-only) to the seed. Repo-local `bash ...` validation grants were kept OUT of the consumer seed. No hook, no new behavioral prose.
 - **Engine model unchanged.** The engine facts in the Findings section remain valid and load-bearing — the out-of-cwd write/redirect re-prompt and the compound-command split behavior are exactly what this amendment leans on. `grep` and `git ls-tree` are read-only and safe for the same engine reasons; the debunked "redirect-write tail" premise stays debunked.
+
+## Amendment — 2026-05-29
+
+The `seed_allowlist` input default FLIPPED from `no` to `yes` (Decision #5 above updated in place). This makes least-privilege seeding the out-of-the-box behavior: the recommended template is union-merged into the consumer's `.claude/settings.json` unless `seed_allowlist=no` is passed.
+
+- **Merge semantics unchanged.** Append-if-absent / union only — existing consumer entries are NEVER overwritten, removed, or reordered. Re-running is idempotent.
+- **Seeded surface unchanged.** Still seeds only read/output helpers, scoped git reads, and the codex-companion node entry. Still seeds NO `acceptEdits` / `Edit` / `Write`.
+- **Opt-out preserved.** Consumers retain full opt-out via `seed_allowlist=no`.
+- **Safety rationale unchanged.** The template is safe to default-on for the same engine reasons recorded in Findings: Claude Code re-prompts on any write/redirect to a path outside the working directory and splits compound commands, so each granted helper's only silent write is bounded to the working directory. The debunked "redirect-write tail" premise stays debunked.
 
 ---
 
