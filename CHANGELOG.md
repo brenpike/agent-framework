@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.3] - 2026-05-30
+
+### Fixed
+
+- **`spawn-brood` quotes every dynamic path/branch/session argument in all hatchery commands.** The prior fix only quoted `<branch>`/`<worktree_path>`/`<base>` on the `git worktree add` line. Every other snippet that substitutes a dynamic value (pre-flight branch/collision checks, `mkdir`/`cat` heredoc redirect for `task.md`, `tmux new-session`/`capture-pane`/`load-buffer`/`paste-buffer`/`send-keys`, config-propagation `mkdir`/`cp`, and the per-strain cleanup `tmux kill-session`/`git worktree remove`/`git branch -D`) now passes each `<branch>`, `<base>`, `<worktree_path>`, `<repo_root>`, and `<tmux_session>` token double-quoted. A new step-3 INVARIANT documents the rule. A coordinator checkout under a path containing spaces (`git rev-parse --show-toplevel`) or a planner branch with shell metacharacters no longer breaks tokenization or executes embedded commands in the hatchery shell.
+
+### Security
+
+- **`spawn-brood` block-scalars all untrusted/path manifest fields.** The prior fix block-scalared only `description` and `overlap_details`. `name`, `branch`, `base`, and `worktree_path` were still emitted as inline double-quoted scalars — and `git check-ref-format --branch` accepts a branch containing a double-quote, so a planner-produced `branch`/`name` could terminate the inline YAML scalar and corrupt `.hivemind/brood/manifest.yaml` (consumed by `hivemind:brood-status`). Step 6 now emits every dynamic scalar derived from planner output, issue text, or a filesystem path (`name`, `description`, `branch`, `base`, `worktree_path`, `overlap_details`) as a YAML literal block scalar; only fixed-shape trusted literals (`brood_id`, `hatchery_session`, `tmux_session`, `status`, `pr`, `merged`, `rebased_after`, `merge_order`, `overlap_risk`) stay inline. No manifest field renamed.
+- **`spawn-brood` self-excludes `.claude/worktrees/` for older-seeded consumers.** `seed-hive`'s `.gitignore` entry only helps projects that re-run seed-hive; a consumer seeded by an older plugin version has only `.hivemind/` ignored, so invoking spawn-brood directly left `?? .claude/` in the coordinator `git status` (dirty hatchery, may block git-state checks). New pre-flight sub-step 1f idempotently excludes `.claude/worktrees/` via the repo-local `.git/info/exclude` file (not `.gitignore`, to avoid dirtying the coordinator's tracked tree and to require no commit/re-seed): it skips when `git check-ignore -q .claude/worktrees/` already passes, else appends the standalone line. Additive belt-and-suspenders — `seed-hive`'s `.gitignore` behavior is unchanged. `allowed-tools` gains `Bash(git check-ignore *)`.
+
 ## [2.17.2] - 2026-05-30
 
 ### Fixed
