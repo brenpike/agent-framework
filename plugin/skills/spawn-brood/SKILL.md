@@ -5,6 +5,7 @@ allowed-tools:
   - Bash(tmux *)
   - Bash(git worktree *)
   - Bash(git branch *)
+  - Bash(git check-ref-format *)
   - Bash(git ls-remote *)
   - Bash(git rev-parse *)
   - Bash(git symbolic-ref *)
@@ -70,12 +71,29 @@ For each strain, derive these values up front and reuse them everywhere (pre-fli
 - `worktree_path` = `<repo_root>/.claude/worktrees/<short>` — store as an ABSOLUTE path.
 - `tmux_session` = `brood-<short>`.
 
+## Input Validation Gate
+
+BEFORE any Bash tool call, the agent MUST validate every `branch` and every `base` value by matching it **in agent reasoning** (the model inspects the planner-produced string value and compares it against the literal rule below — NOT via a `[[ $x =~ ... ]]` or any other Bash call). A value is ACCEPTED only when ALL hold:
+
+- it matches `^[A-Za-z0-9._/-]+$` (allowlist charset only),
+- it is non-empty,
+- it does NOT start with `-` (arg-injection guard),
+- it does NOT contain `..` (path/ref-traversal guard).
+
+On ANY failure, emit the blocker and exit 1 BEFORE spawning anything (the value is treated as injection-suspect, not coerced or sanitized):
+
+```bash
+printf 'blocker: branch %s contains characters outside the safe allowlist [A-Za-z0-9._/-]; reject as injection-suspect' "<branch>" >&2; exit 1
+```
+
+WHY the gate runs in agent reasoning and not in a shell test: `branch`/`base` are untrusted (planner output, possibly issue-sourced). `git check-ref-format --branch` ACCEPTS branches like `feat/x$(touch${IFS}/tmp/pwn)`, so the moment those raw bytes appear in the SOURCE of any generated shell command — even inside double quotes — bash command substitution `$(...)`, backticks, and `${}` STILL expand when bash parses that command source. Double-quoting stops only word-splitting and globbing; it is NOT a shell-safety encoding and is NEVER the boundary. By matching the allowlist in agent reasoning, raw untrusted bytes are never interpolated into generated shell source at all: only an already-allowlist-clean value (charset excludes space, `$`, backtick, `;`, `&`, `|`, `(`, `)`, `{`, `}`, `<`, `>`, newline, quotes, `*` — every shell-special byte) is ever placed into a (still double-quoted) shell token. The allowlist keeps real branches valid (`feat/x.y`, `release/1.2.3`, `bugfix/foo-bar`). Out-of-band fallback (recorded for completeness, not primary): a value first read into a shell variable and referenced only as `"$var"` is also inert, because bash does not re-evaluate command substitution from variable contents — but the agent-reasoning allowlist is the primary boundary because no real branch needs a forbidden byte and clean rejection beats faithful execution of a hostile name.
+
 ## Procedure
 
 1. **Pre-flight checks.** Run each check; if any fails, emit a blocker to stderr and exit 1 BEFORE spawning anything. A pre-existing collision is a hard pre-flight blocker for the whole skill, exactly like the branch-existence checks.
    a. Verify tmux is installed: `command -v tmux`. If missing: `printf 'blocker: tmux is not installed' >&2; exit 1`.
    b. Verify claude CLI is available: `command -v claude`. If missing: `printf 'blocker: claude CLI is not available' >&2; exit 1`.
-   c. For each strain, verify the branch does not already exist (pass `<branch>` double-quoted — it is dynamic planner output that may contain spaces or metacharacters):
+   c. For each strain, verify the branch does not already exist. `<branch>` has already passed the **Input Validation Gate** above (allowlist-validated in agent reasoning), so it carries no shell-special bytes; it is additionally passed double-quoted here as defense-in-depth — quoting is necessary but NOT sufficient and is never the boundary:
       - Local: `git branch --list "<branch>"` — if non-empty output: `printf 'blocker: branch %s already exists locally' "<branch>" >&2; exit 1`.
       - Remote: `git ls-remote --heads origin "<branch>"` — if non-empty output: `printf 'blocker: branch %s already exists on remote' "<branch>" >&2; exit 1`.
    d. For each strain, verify no naming collision:
@@ -97,8 +115,8 @@ For each strain, derive these values up front and reuse them everywhere (pre-fli
    mkdir -p .hivemind/brood
    ```
 
-3. **Spawn each strain — Pass 1 (create + launch, non-blocking).** INVARIANT: every dynamic token — `<branch>`, `<base>`, `<worktree_path>`, `<repo_root>`, `<tmux_session>`, and every path derived from them (task file, redirection target, `.claude` config path) — is passed double-quoted in EVERY command in this skill (pre-flight, spawn, config propagation, cleanup, manifest). These values are derived from planner output or a filesystem path that may contain spaces or shell metacharacters; an unquoted interpolation breaks tokenization or executes embedded commands. The already-quoted `git worktree add` line is the model. For each strain in `strains`:
-   a. Create the worktree and its exact strain branch off `base`. Do NOT rely on `claude --worktree` (it mangles names and creates a `worktree-<name>` branch instead of the intended strain branch). `<branch>`, `<worktree_path>`, and `<base>` are dynamic values derived from user-directed planner output, and Git accepts branch names containing shell metacharacters (e.g. `feat/x;touch_x`, `feat/x$(touch_x)`, backticks); an unquoted interpolation would execute embedded commands in the hatchery shell before Git validates the ref. So validate each branch ref with `git check-ref-format --branch <branch>` (reject the strain on non-zero exit) and pass every dynamic argument as a separate, double-quoted token — never interpolate raw. The same validate-and-quote rule applies everywhere these values recur: the pre-flight checks in step 1c-1d and the cleanup commands in **Per-Strain Failure Handling**:
+3. **Spawn each strain — Pass 1 (create + launch, non-blocking).** INVARIANT: the untrusted values (`<branch>`, `<base>`) are allowlist-validated in the **Input Validation Gate** above BEFORE any Bash call, so raw untrusted bytes never enter generated shell source. The derived values are safe-by-construction: `<short>` is sanitized to `[a-z0-9-]`; `<worktree_path>` = `<repo_root>/.claude/worktrees/<short>`; `<tmux_session>` = `brood-<short>`; `<repo_root>` comes from `git rev-parse --show-toplevel`. ALL of these — untrusted-then-validated and derived-safe alike — are ADDITIONALLY referenced only as double-quoted tokens in EVERY command in this skill (pre-flight, spawn, config propagation, cleanup, manifest). Quoting stops word-splitting and globbing but does NOT stop command substitution and is NEVER the boundary; the allowlist gate (for `branch`/`base`) and safe-by-construction derivation (for the rest) are the boundary. The already-quoted `git worktree add` line is the model. For each strain in `strains`:
+   a. Create the worktree and its exact strain branch off `base`. Do NOT rely on `claude --worktree` (it mangles names and creates a `worktree-<name>` branch instead of the intended strain branch). `<branch>` and `<base>` have ALREADY passed the **Input Validation Gate** (allowlist-validated in agent reasoning), which is what makes it safe to place them into a shell command at all — `git check-ref-format --branch` accepts injection-bearing branches like `feat/x$(touch${IFS}/tmp/pwn)`, so it can NEVER be the shell-safety boundary; it runs here AFTER the gate purely as defense-in-depth ref-SHAPE validation on an already-safe value (reject the strain on non-zero exit). Every dynamic argument is also passed as a separate double-quoted token — necessary but not sufficient. The same gate-then-quote rule applies everywhere these values recur: the pre-flight checks in step 1c-1d and the cleanup commands in **Per-Strain Failure Handling**:
       ```bash
       git check-ref-format --branch "<branch>" || { printf 'blocker: invalid branch ref %s' "<branch>" >&2; exit 1; }
       git worktree add -b "<branch>" "<worktree_path>" "<base>"

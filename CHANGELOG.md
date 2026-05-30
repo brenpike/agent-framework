@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.6] - 2026-05-30
+
+### Security
+
+- **`spawn-brood` and `brood-status` close the shell-injection class on `branch`/`base` via a conservative agent-reasoning allowlist gate.** Prior rounds leaned on "double-quote every dynamic token" as the shell-safety story — but double-quoting is NOT a shell-safety encoding: when untrusted literal bytes appear in the SOURCE of a command handed to the Bash tool, bash command substitution `$(...)`, backticks, and `${}` STILL expand even inside double quotes. `git check-ref-format --branch` ACCEPTS branches like `feat/x$(touch${IFS}/tmp/pwn)`, so emitting `git check-ref-format --branch "feat/x$(touch...)"` runs `touch` before git validates the ref; quoting only stops word-splitting/globbing. `spawn-brood` now adds an **Input Validation Gate** applied by the agent in its OWN reasoning (the model matches each `branch`/`base` value against the literal rule `^[A-Za-z0-9._/-]+$`, non-empty, no leading `-`, no `..`) BEFORE any Bash call, so raw untrusted bytes never enter generated shell source — only an already-allowlist-clean value is ever placed into a (still double-quoted) shell token. Derived values (`short`, `worktree_path`, `tmux_session`) are safe-by-construction. `brood-status` re-enforces the same allowlist on the manifest branch before its first shell use (skipping a strain's probes and reporting `blocked (branch failed safety allowlist)` on failure, continuing other strains). `git check-ref-format` is demoted to defense-in-depth ref-shape validation on an already-safe value. `spawn-brood` `allowed-tools` gains `Bash(git check-ref-format *)`. ADR-0017 amended; a third compensating-control bullet added to `security-policy.md` (Brood Spawn Bypass-Mode Mitigation).
+
 ## [2.17.5] - 2026-05-30
 
 ### Security
