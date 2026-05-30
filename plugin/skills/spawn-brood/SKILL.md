@@ -27,6 +27,7 @@ Rules: `GIT-01` (no trunk commits)
 
 Before:
 - [ ] `strains`, `brood_id`, `base`, `overlap_risk`, and `overlap_details` inputs are provided
+- [ ] `base` resolves to a real commit (`git rev-parse --verify --quiet "<base>^{commit}"`)
 - [ ] tmux is installed
 - [ ] claude CLI is available
 - [ ] No strain branch already exists locally or remotely
@@ -100,7 +101,7 @@ WHY the gate runs in agent reasoning and not in a shell test: `branch`/`base` ar
       - tmux: `tmux has-session -t "brood-<short>" 2>/dev/null` — if it exits 0 (session alive): `printf 'blocker: tmux session %s already exists' "brood-<short>" >&2; exit 1`.
       - worktree path: if `<worktree_path>` already exists on disk (test it double-quoted, e.g. `test -e "<worktree_path>"`): `printf 'blocker: worktree path %s already exists' "<worktree_path>" >&2; exit 1`.
    e. Verify all derived `short` values are unique across the `strains` set. Two distinct strain names can sanitize to the same `short` (e.g. `api/v2` and `api-v2`), and the pre-existence checks in 1d only catch resources that existed BEFORE this spawn, not in-set collisions. If any two strains share a `short`: `printf 'blocker: strain names %s and %s collide on sanitized short name %s' "<name_a>" "<name_b>" "<short>" >&2; exit 1`. This must run before Pass 1 so a later `git worktree add` failure never triggers cleanup (`tmux kill-session -t "<tmux_session>"`) against an earlier strain's still-valid session.
-   f. Ensure the coordinator checkout will not go dirty from the worktrees this skill is about to create. Every strain worktree lands under `<repo_root>/.claude/worktrees/<short>`; if `.claude/worktrees/` is not git-ignored, the coordinator's `git status` shows `?? .claude/` after the first spawn, which can block later git-state checks. `hivemind:seed-hive` adds `.claude/worktrees/` to `.gitignore` — but a consumer seeded by an older plugin version only has `.hivemind/` ignored, so spawn-brood must self-protect. Exclude `.claude/worktrees/` via the repo-local exclude file (NOT `.gitignore`) — the untracked local-exclude keeps the coordinator's tracked tree clean and requires no commit or re-seed. Resolve the shared exclude path with `exclude_path="$(git rev-parse --git-path info/exclude)"` — a hardcoded `<repo_root>/.git/info/exclude` is WRONG in a linked git worktree, where `<repo_root>/.git` is a gitdir-pointer FILE (not a directory), and recursive brood (a spawned child overlord spawning from a worktree) is a supported context; `git rev-parse --git-path info/exclude` always resolves to the correct shared exclude in both standalone and linked-worktree checkouts. Idempotent append-if-absent: first check whether it is already covered with `git check-ignore -q .claude/worktrees/` (exit 0 = already ignored, skip); if not covered, also scan the existing exclude file for a standalone line so a re-run never duplicates, e.g. `cat "$exclude_path" 2>/dev/null`. Only when neither shows coverage, append the standalone line, prepending a newline if the file lacks a trailing one:
+   f. Ensure the coordinator checkout will not go dirty from the worktrees this skill is about to create. Every strain worktree lands under `<repo_root>/.claude/worktrees/<short>`; if `.claude/worktrees/` is not git-ignored, the coordinator's `git status` shows `?? .claude/` after the first spawn, which can block later git-state checks. `hivemind:seed-hive` adds `.claude/worktrees/` to `.gitignore` — but a consumer seeded by an older plugin version only has `.hivemind/` ignored, so spawn-brood must self-protect. Exclude `.claude/worktrees/` via the repo-local exclude file (NOT `.gitignore`) — the untracked local-exclude keeps the coordinator's tracked tree clean and requires no commit or re-seed. Resolve the shared exclude path with `exclude_path="$(git rev-parse --git-path info/exclude)"` — a hardcoded `<repo_root>/.git/info/exclude` is WRONG in a linked git worktree, where `<repo_root>/.git` is a gitdir-pointer FILE (not a directory), and recursive brood (a spawned child overlord spawning from a worktree) is a supported context; `git rev-parse --git-path info/exclude` always resolves to the correct shared exclude in both standalone and linked-worktree checkouts. Idempotent append-if-absent: check whether it is already covered with `git check-ignore -q .claude/worktrees/` (exit 0 = already ignored, skip). Only when it is not covered, append the standalone line, prepending a newline if the file lacks a trailing one. A duplicate exclude line is harmless and self-healing, so `check-ignore` alone is sufficient — no separate file scan is needed:
       ```bash
       exclude_path="$(git rev-parse --git-path info/exclude)"
       if ! git check-ignore -q .claude/worktrees/; then
@@ -109,6 +110,10 @@ WHY the gate runs in agent reasoning and not in a shell test: `branch`/`base` ar
       fi
       ```
       This is additive belt-and-suspenders — it does NOT replace `hivemind:seed-hive`'s `.gitignore` behavior. Run it once in pre-flight, before any `git worktree add`.
+   g. Verify `base` resolves to a real commit ONCE, up front. `base` is already allowlist-clean (it passed the **Input Validation Gate** in agent reasoning), so it carries no shell-special bytes and is passed double-quoted as defense-in-depth. A clean-but-nonexistent `base` (a typo) would otherwise fail only at `git worktree add` for EVERY strain — N cascading HARD failures — instead of one upfront blocker:
+      ```bash
+      git rev-parse --verify --quiet "<base>^{commit}" || { printf 'blocker: base ref %s does not resolve to a commit' "<base>" >&2; exit 1; }
+      ```
 
 2. **Create manifest directory.**
    ```bash
@@ -151,10 +156,10 @@ WHY the gate runs in agent reasoning and not in a shell test: `branch`/`base` ar
       tmux capture-pane -t "<tmux_session>" -p
       ```
       If the ready substring never appears within `READY_TIMEOUT` (POST-LAUNCH failure — session is already alive): do NOT kill or clean. Leave the session, worktree, and branch alive for debugging. Mark the strain `status: failed` and continue.
-   b. Once ready, inject the task via tmux buffers (NOT `send-keys` of the raw text — `printf '%q' | send-keys` mangles multi-line prompts):
+   b. Once ready, inject the task via a per-strain NAMED tmux buffer that is deleted on paste (NOT `send-keys` of the raw text — `printf '%q' | send-keys` mangles multi-line prompts). The untrusted (issue-sourced) task payload MUST NOT persist in the shared global buffer after the skill exits (any tmux client can read it via `show-buffer`); a per-strain named buffer (`brood-<short>`) plus `paste-buffer -d` deletes the buffer on paste and avoids cross-strain/concurrent-buffer bleed:
       ```bash
-      tmux load-buffer "<worktree_path>/.hivemind/brood/task.md"
-      tmux paste-buffer -t "<tmux_session>"
+      tmux load-buffer -b "brood-<short>" "<worktree_path>/.hivemind/brood/task.md"
+      tmux paste-buffer -d -b "brood-<short>" -t "<tmux_session>"
       tmux send-keys -t "<tmux_session>" Enter
       ```
       If injection fails (POST-LAUNCH failure — session already alive): do NOT kill or clean. Leave everything alive. Mark the strain `status: failed` and continue.
@@ -215,11 +220,11 @@ Defensive floor: if that substring never appears within `READY_TIMEOUT`, the str
 
 The cleanup behavior depends on whether the tmux session was confirmed launched:
 
-- **HARD failure** — `git worktree add` fails, OR `tmux new-session` fails (BEFORE the session is confirmed launched). Run full cleanup, then mark `status: failed` and continue:
+- **HARD failure** — `git worktree add` fails, OR `tmux new-session` fails (BEFORE the session is confirmed launched). Cleanup MUST remove ONLY the resources THIS invocation confirmed it created in THIS Pass-1 step (the worktree/branch from 3a, the session from 3d) — NEVER a pre-existing target that a racing spawn may own. Pre-flight 1c/1d only checked non-existence; in the supported recursive/parallel-brood case a concurrent spawn can create the same branch/session in the TOCTOU window between that check and creation here, and `git worktree add -b`/`tmux new-session -d` fail-safe on a pre-existing target. So a lost TOCTOU race (creation failed because another spawn already owns the target) must NOT force-delete that other brood's just-created branch or session. Guard each removal on "this invocation created it":
   ```bash
-  tmux kill-session -t "<tmux_session>" 2>/dev/null || true
-  git worktree remove --force "<worktree_path>"   # only if the worktree was created
-  git branch -D "<branch>"                         # only if the branch was created
+  tmux kill-session -t "<tmux_session>" 2>/dev/null || true   # only if this invocation's new-session confirmed launched
+  git worktree remove --force "<worktree_path>"               # only if this invocation's worktree add succeeded
+  git branch -D "<branch>"                                    # only if this invocation's branch was created
   ```
 - **POST-LAUNCH failure** — ready-timeout in Pass 2, OR inject failure (the session is already alive). Do NOT kill or clean. Leave the session, worktree, and branch alive for debugging. Mark `status: failed` and continue.
 

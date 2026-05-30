@@ -46,7 +46,7 @@ The bypass-mode blast radius above interacts with untrusted input: a strain task
 1. **Data-boundary preamble in `task.md`** — `hivemind:spawn-brood` prepends the canonical external-content data-boundary preamble above the description payload (inside the same heredoc), so it is injected ahead of every strain description.
 2. **Pre-spawn human approval of normalized task text** — the overlord brood gate (`overlord.md` steps 3a/3b) surfaces the normalized `{name, description}` task text to the human for explicit approval before spawn; with no downstream permission prompt, this approval is the injection gate.
 
-Structural backstop: the child is itself a delegating overlord whose `tools:` carry no `Write`/`Edit`, so embedded instructions still route through branch → checkpoint → review → PR rather than direct execution (Write-Capable Skill Containment, `plugin/governance/security-policy.md`). Status remains accepted.
+Partial structural backstop (scoped to product-file mutation): the child is itself a delegating overlord whose `tools:` carry no `Write`/`Edit`, so embedded instructions that would mutate product files still route through branch → checkpoint → review → PR rather than direct file writes (Write-Capable Skill Containment, `plugin/governance/security-policy.md`). It does NOT contain all execution — the child holds `Bash` and runs `--dangerously-skip-permissions`, so a surviving injected instruction could drive Bash directly; the three compensating controls (preamble, human approval, allowlist) remain the real boundary. Status remains accepted.
 
 ## Amendment — 2026-05-30 (PR #154, I/O-primitive change)
 
