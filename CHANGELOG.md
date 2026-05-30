@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.8] - 2026-05-30
+
+### Removed
+
+- Pruned unused `Bash(cat *)` and `Bash(git symbolic-ref *)` grants from `spawn-brood`'s `allowed-tools` surface. Neither grant had any usage in the skill body after the Write-tool refactor (2.17.4) and the explicit-worktree-branch change (2.17.0). No behavior change; tightens the permission surface.
+
 ## [2.17.7] - 2026-05-30
 
 ### Security
