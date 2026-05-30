@@ -62,7 +62,7 @@ There is no gate timeout: the one-time "Bypass Permissions mode" trust gate is p
 
 For each strain, derive these values up front and reuse them everywhere (pre-flight, spawn, manifest):
 
-- `short` = `strain.name` sanitized to `[a-z0-9-]` — lowercase, with slashes and any other characters mapped to `-`.
+- `short` = `strain.name` sanitized to `[a-z0-9-]` — lowercase, with slashes and any other characters mapped to `-`. Distinct strain names can sanitize to the same `short` (e.g. `api/v2` and `api-v2`); because `short` is reused for both the worktree path and the tmux session, a collision is unsafe — see pre-flight check 1e, which rejects derived-name collisions before any spawn.
 - `repo_root` = `git rev-parse --show-toplevel` (resolve once).
 - `worktree_path` = `<repo_root>/.claude/worktrees/<short>` — store as an ABSOLUTE path.
 - `tmux_session` = `brood-<short>`.
@@ -78,6 +78,7 @@ For each strain, derive these values up front and reuse them everywhere (pre-fli
    d. For each strain, verify no naming collision:
       - tmux: `tmux has-session -t brood-<short> 2>/dev/null` — if it exits 0 (session alive): `printf 'blocker: tmux session %s already exists' "brood-<short>" >&2; exit 1`.
       - worktree path: if `<worktree_path>` already exists on disk: `printf 'blocker: worktree path %s already exists' "<worktree_path>" >&2; exit 1`.
+   e. Verify all derived `short` values are unique across the `strains` set. Two distinct strain names can sanitize to the same `short` (e.g. `api/v2` and `api-v2`), and the pre-existence checks in 1d only catch resources that existed BEFORE this spawn, not in-set collisions. If any two strains share a `short`: `printf 'blocker: strain names %s and %s collide on sanitized short name %s' "<name_a>" "<name_b>" "<short>" >&2; exit 1`. This must run before Pass 1 so a later `git worktree add` failure never triggers cleanup (`tmux kill-session -t <tmux_session>`) against an earlier strain's still-valid session.
 
 2. **Create manifest directory.**
    ```bash
@@ -91,12 +92,16 @@ For each strain, derive these values up front and reuse them everywhere (pre-fli
       ```
       If this fails (HARD failure — session not yet launched): run full cleanup, mark the strain `status: failed`, and continue with the remaining strains. See **Per-Strain Failure Handling**.
    b. Propagate config (see step 5) into the new worktree.
-   c. Write the strain's task to a file inside the worktree, via heredoc with a fixed quoted delimiter so multi-line descriptions with shell metacharacters survive intact:
+   c. Write the strain's task to a file under the worktree's ignored `.hivemind/` path, so multi-line descriptions with shell metacharacters survive intact AND the file never lands in the child's tracked worktree status. The `<strain description>` is untrusted text (the overlord may source it from a GitHub issue body), so it MUST NOT be embedded in shell syntax with a fixed heredoc delimiter — a description line equal to the delimiter would terminate the heredoc early and execute subsequent lines as hatchery-shell commands. Generate a per-call random delimiter and verify the payload does not contain it before issuing the heredoc; if it does, regenerate. The `.hivemind/` directory is gitignored (seeded by `hivemind:seed-hive`), so this file does not dirty the child worktree:
       ```bash
-      cat > <worktree_path>/.hivemind-task.md <<'HIVEMIND_TASK_EOF'
+      mkdir -p <worktree_path>/.hivemind/brood
+      # DELIM is a random token (e.g. HIVEMIND_TASK_$(openssl rand -hex 8) or similar);
+      # confirm <strain description> contains no line equal to DELIM before this call, else regenerate DELIM.
+      cat > <worktree_path>/.hivemind/brood/task.md <<"$DELIM"
       <strain description>
-      HIVEMIND_TASK_EOF
+      $DELIM
       ```
+      The task file path is `<worktree_path>/.hivemind/brood/task.md` everywhere it is referenced below (Pass 2 injection).
    d. Launch a DETACHED tmux session that runs claude inside it (tmux supplies the pty the Bash tool lacks). Pre-accept the bypass-permissions trust gate by injecting `--settings '{"skipDangerousModePermissionPrompt":true}'` and run with `--dangerously-skip-permissions` (detached children have no human to approve prompts). This is non-blocking — it returns immediately:
       ```bash
       tmux new-session -d -s <tmux_session> -c <worktree_path> "claude --dangerously-skip-permissions --settings '{\"skipDangerousModePermissionPrompt\":true}'"
@@ -112,7 +117,7 @@ For each strain, derive these values up front and reuse them everywhere (pre-fli
       If the ready substring never appears within `READY_TIMEOUT` (POST-LAUNCH failure — session is already alive): do NOT kill or clean. Leave the session, worktree, and branch alive for debugging. Mark the strain `status: failed` and continue.
    b. Once ready, inject the task via tmux buffers (NOT `send-keys` of the raw text — `printf '%q' | send-keys` mangles multi-line prompts):
       ```bash
-      tmux load-buffer <worktree_path>/.hivemind-task.md
+      tmux load-buffer <worktree_path>/.hivemind/brood/task.md
       tmux paste-buffer -t <tmux_session>
       tmux send-keys -t <tmux_session> Enter
       ```
@@ -125,7 +130,7 @@ For each strain, derive these values up front and reuse them everywhere (pre-fli
    cp <repo_root>/.claude/settings.local.json <worktree_path>/.claude/settings.local.json
    ```
 
-6. **Write brood manifest** to `.hivemind/brood/manifest.yaml` via heredoc with a fixed quoted delimiter (NOT the Write tool, to preserve Silence Discipline). Use this schema — the existing field names are consumed by `hivemind:brood-status` and MUST NOT be renamed; `base` is the one added top-level field:
+6. **Write brood manifest** to `.hivemind/brood/manifest.yaml` via heredoc (NOT the Write tool, to preserve Silence Discipline). The manifest embeds untrusted text (`<strain description>`, `<overlap_details>`), so apply the same delimiter treatment as step 3c: generate a per-call random delimiter and verify none of the embedded values contains a line equal to it before issuing the heredoc; regenerate if it does. Use this schema — the existing field names are consumed by `hivemind:brood-status` and MUST NOT be renamed; `base` is the one added top-level field:
    ```yaml
    brood_id: "<brood_id>"
    hatchery_session: "<current session identifier>"
@@ -184,6 +189,7 @@ The cleanup behavior depends on whether the tmux session was confirmed launched:
 | claude CLI not found | `printf 'blocker: claude CLI is not available' >&2; exit 1` |
 | Branch already exists (local or remote) | `printf 'blocker: branch <name> already exists' >&2; exit 1` |
 | tmux session or worktree path already exists (pre-flight collision) | `printf 'blocker: tmux session/worktree path already exists' >&2; exit 1` |
+| Two strain names sanitize to the same `short` (in-set collision) | `printf 'blocker: strain names <a> and <b> collide on sanitized short name <short>' >&2; exit 1` |
 | `git worktree add` fails (HARD — session not launched) | Full cleanup, mark strain `status: failed`, continue, exit 1 at end |
 | `tmux new-session` fails (HARD — session not launched) | Full cleanup, mark strain `status: failed`, continue, exit 1 at end |
 | Ready timeout (`READY_TIMEOUT`, POST-LAUNCH) | Leave session/worktree/branch alive, mark strain `status: failed`, continue, exit 1 at end |
