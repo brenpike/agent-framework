@@ -50,6 +50,12 @@
 
 set -u
 
+# blocker: emit a verbose pre-flight blocker to stderr in the canonical form and
+# exit 1 (writes no manifest). Mirrors the inline `printf 'blocker: ...' >&2; exit 1`
+# pattern used throughout pre-flight; provided as a helper for the guards added in
+# the security-remediation pass.
+blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
+
 # ── Constants ──────────────────────────────────────────────────────────────────
 # READY_TIMEOUT: maximum seconds to wait for a child session to boot to a
 # ready-for-input state before treating the strain as a POST-LAUNCH failure. 90s
@@ -100,6 +106,18 @@ overlap_details="$(jq -r '.overlap_details // ""' "$INPUTS_FILE")"
 [ -n "$brood_id" ]     || { printf 'blocker: inputs file is missing brood_id\n' >&2; exit 1; }
 [ -n "$base" ]         || { printf 'blocker: inputs file is missing base\n' >&2; exit 1; }
 [ -n "$overlap_risk" ] || { printf 'blocker: inputs file is missing overlap_risk\n' >&2; exit 1; }
+
+# Shape-validate the two overlord-generated scalars that are emitted into the
+# manifest. Although overlord-authored, a malformed value could corrupt YAML — reject
+# at pre-flight rather than risk an unparseable manifest brood-status consumes.
+case "$overlap_risk" in
+  low|medium|high) : ;;
+  *) blocker "overlap_risk must be low|medium|high, got: $overlap_risk" ;;
+esac
+case "$brood_id" in
+  [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) : ;;
+  *) blocker "brood_id is not a valid ISO-8601 timestamp: $brood_id" ;;
+esac
 
 # Strain count. An empty/zero-strain array is a blocker — never write an empty
 # manifest (a downstream brood-status would treat it as a broodless session).
@@ -184,10 +202,16 @@ for idx in $(seq 0 $((strain_count - 1))); do
   if [ -n "$(git branch --list "$branch")" ]; then
     printf 'blocker: branch %s already exists locally\n' "$branch" >&2; exit 1
   fi
-  # 1c remote
-  if [ -n "$(git ls-remote --heads origin "$branch" 2>/dev/null)" ]; then
-    printf 'blocker: branch %s already exists on remote\n' "$branch" >&2; exit 1
-  fi
+  # 1c remote — FAIL CLOSED. --exit-code distinguishes ref-found (0) from
+  # no-matching-ref (2) from network/other error (anything else). An unreachable
+  # origin must NOT be treated as "no collision" (the old empty-output check failed
+  # open). rc captured without tripping set -e. "$branch" is allowlist-validated.
+  git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; rc=$?
+  case "$rc" in
+    0) blocker "branch $branch already exists on remote origin" ;;
+    2) : ;;
+    *) blocker "cannot reach origin to verify branch $branch; refusing to spawn (fail-closed)" ;;
+  esac
   # 1d tmux session collision
   if tmux has-session -t "${S_TMUX[$idx]}" 2>/dev/null; then
     printf 'blocker: tmux session %s already exists\n' "${S_TMUX[$idx]}" >&2; exit 1
@@ -227,6 +251,28 @@ git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
 
 # ── Manifest directory ──────────────────────────────────────────────────────────
 mkdir -p .hivemind/brood
+STATE="$(pwd)/.hivemind/brood"
+
+# ── Single-brood model (reject overlap) ─────────────────────────────────────────
+# inputs.json and manifest.yaml are singleton paths per checkout; concurrent or
+# overlapping broods would clobber each other. Two guards enforce one active brood:
+#
+# Active-brood guard: a previously-spawned brood whose sessions are still alive holds
+# no in-flight lock (that lock lives only for the spawning process). Detect a live
+# brood via any `brood-*` tmux session and refuse to overwrite its manifest. A fresh
+# brood MAY overwrite stale, fully-completed state (no live session), so only a live
+# session blocks.
+if tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -q '^brood-'; then
+  blocker "an active brood already exists in this checkout (live brood-* tmux session present); refusing to overwrite its manifest (single-brood model)"
+fi
+
+# In-flight atomic lock: covers two spawn processes racing in the same checkout.
+# mkdir is atomic and fails if the directory already exists — no TOCTOU window. The
+# trap releases it on ANY exit path (blocker, per-strain failure, or success).
+if ! mkdir "$STATE/.spawn-lock" 2>/dev/null; then
+  blocker "another brood spawn is in progress in this checkout (lock held); concurrent broods are not supported"
+fi
+trap 'rmdir "$STATE/.spawn-lock" 2>/dev/null || true' EXIT
 
 # ── Per-strain failure helpers ──────────────────────────────────────────────────
 # HARD failure: worktree add / new-session failed BEFORE launch. Clean up ONLY
@@ -288,61 +334,72 @@ for idx in $(seq 0 $((strain_count - 1))); do
   : "$created_session"  # session confirmed launched; provisionally running
 done
 
-# ── Pass 2: wait ready + inject task (per launched strain) ──────────────────────
-# All Pass-1 sessions boot concurrently, so total wait ≈ slowest single strain.
-for idx in $(seq 0 $((strain_count - 1))); do
-  # Skip strains that already failed in Pass 1.
-  [ "${S_STATUS[$idx]}" = "running" ] || continue
+# inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted
+# on paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE
+# bounded prompt; send-keys Enter submits it once. Best-effort delete the buffer on
+# EVERY inject-failure path so an untrusted task never persists in the shared tmux
+# buffer. Marks the strain failed and returns 1 on any tmux failure; returns 0 on a
+# clean inject. Behavior is byte-identical to the prior inline 4b block.
+inject_strain() {
+  local idx="$1"
+  local tmux_session="${S_TMUX[$idx]}"
+  local wt="${S_WT[$idx]}"
+  local buffer_name="$tmux_session"   # session-unique named buffer (brood-<short>)
+  local task_file="$wt/.hivemind/brood/task.md"
 
-  tmux_session="${S_TMUX[$idx]}"
-  wt="${S_WT[$idx]}"
-  short="${S_SHORT[$idx]}"
-  buffer_name="$tmux_session"   # session-unique named buffer (brood-<short>)
-  task_file="$wt/.hivemind/brood/task.md"
-
-  # 4a: poll until the ready substring renders, up to READY_TIMEOUT.
-  ready=false
-  elapsed=0
-  while [ "$elapsed" -lt "$READY_TIMEOUT" ]; do
-    if tmux capture-pane -t "$tmux_session" -p 2>/dev/null | grep -qF "$READY_SUBSTRING"; then
-      ready=true
-      break
-    fi
-    sleep "$POLL_INTERVAL"
-    elapsed=$((elapsed + POLL_INTERVAL))
-  done
-
-  if [ "$ready" != true ]; then
-    # POST-LAUNCH failure: leave session/worktree/branch alive for debugging. No
-    # buffer was created on a ready-timeout, so nothing to delete.
-    printf 'warning: strain %s did not reach ready state within %ds\n' "${S_NAME[$idx]}" "$READY_TIMEOUT" >&2
-    mark_failed "$idx"
-    continue
-  fi
-
-  # 4b: inject via a per-strain NAMED buffer deleted on paste (-d). Bracketed paste
-  # (-p) keeps the multiline preamble+description as ONE bounded prompt; send-keys
-  # Enter submits it once. Best-effort delete the buffer on EVERY inject-failure
-  # path so an untrusted task never persists in the shared tmux buffer.
   if ! tmux load-buffer -b "$buffer_name" "$task_file" 2>/dev/null; then
     printf 'warning: tmux load-buffer failed for strain %s\n' "${S_NAME[$idx]}" >&2
     tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
     mark_failed "$idx"
-    continue
+    return 1
   fi
   if ! tmux paste-buffer -d -p -b "$buffer_name" -t "$tmux_session" 2>/dev/null; then
     printf 'warning: tmux paste-buffer failed for strain %s\n' "${S_NAME[$idx]}" >&2
     tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
     mark_failed "$idx"
-    continue
+    return 1
   fi
   if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
     printf 'warning: tmux send-keys Enter failed for strain %s\n' "${S_NAME[$idx]}" >&2
     tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
     mark_failed "$idx"
-    continue
+    return 1
   fi
   # On success paste-buffer -d already deleted the buffer; strain stays running.
+  return 0
+}
+
+# ── Pass 2: wait ready + inject task (ONE shared deadline) ──────────────────────
+# All Pass-1 sessions boot concurrently. A single shared deadline (NOT N×timeout) is
+# what makes the total wait ≈ the slowest single strain: pending strains are polled
+# round-robin against one READY_TIMEOUT budget rather than each consuming its own.
+deadline=$(( $(date +%s) + READY_TIMEOUT ))
+
+# pending = indices of strains that launched in Pass 1 and are not yet ready/injected.
+declare -a pending=()
+for idx in $(seq 0 $((strain_count - 1))); do
+  [ "${S_STATUS[$idx]}" = "running" ] && pending+=("$idx")
+done
+
+while [ "${#pending[@]}" -gt 0 ] && [ "$(date +%s)" -lt "$deadline" ]; do
+  declare -a still_pending=()
+  for idx in "${pending[@]}"; do
+    tmux_session="${S_TMUX[$idx]}"
+    if tmux capture-pane -t "$tmux_session" -p 2>/dev/null | grep -qF "$READY_SUBSTRING"; then
+      inject_strain "$idx"   # marks failed internally on tmux error; removed from pending either way
+    else
+      still_pending+=("$idx")
+    fi
+  done
+  pending=( "${still_pending[@]+"${still_pending[@]}"}" )
+  [ "${#pending[@]}" -gt 0 ] && sleep "$POLL_INTERVAL"
+done
+
+# Any strain still pending after the shared deadline is a POST-LAUNCH ready-timeout
+# failure: leave session/worktree/branch alive for debugging; no buffer was created.
+for idx in "${pending[@]+"${pending[@]}"}"; do
+  printf 'warning: strain %s did not reach ready state within %ds\n' "${S_NAME[$idx]}" "$READY_TIMEOUT" >&2
+  mark_failed "$idx"
 done
 
 # ── Manifest emission ───────────────────────────────────────────────────────────
@@ -369,10 +426,14 @@ emit_block() {
 }
 
 {
-  printf 'brood_id: "%s"\n' "$brood_id"
+  # brood_id and overlap_risk are pre-flight-validated, but routed through the
+  # block-scalar helper (not emitted inline) so every untrusted/exact-value scalar
+  # uses one YAML-safe emission path. brood_id is an exact value (|-); overlap_risk
+  # is a validated enum, also emitted exact for consistency.
+  emit_block '|-' 'brood_id' "$brood_id" 0 2
   printf 'hatchery_session: "%s"\n' "$hatchery_session"
   emit_block '|-' 'base' "$base" 0 2
-  printf 'overlap_risk: %s\n' "$overlap_risk"
+  emit_block '|-' 'overlap_risk' "$overlap_risk" 0 2
   emit_block '|' 'overlap_details' "$overlap_details" 0 2
   printf 'strains:\n'
   for idx in $(seq 0 $((strain_count - 1))); do

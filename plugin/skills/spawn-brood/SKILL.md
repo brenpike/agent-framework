@@ -26,6 +26,8 @@ Before:
 - [ ] `base` resolves to a real commit (the script verifies this once, up front).
 - [ ] No strain branch exists locally/remotely; no `brood-<short>` session or
       worktree path collides (the script pre-flights all of these).
+- [ ] Only one active brood per checkout — the script rejects a spawn while another
+      brood is active (live `brood-*` session) or being spawned (lock held).
 
 After:
 - [ ] Brood manifest written to `.hivemind/brood/manifest.yaml`.

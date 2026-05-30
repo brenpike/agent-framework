@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.13] - 2026-05-30
+
+### Security
+
+- **`spawn-brood` remote branch-collision check now FAILS CLOSED.** Pre-flight 1c-remote previously read `git ls-remote --heads origin "<branch>"` and treated empty output as "no collision" — so an unreachable `origin` (network down, auth failure) failed OPEN, proceeding to spawn despite being unable to verify the branch does not already exist remotely. The check now uses `git ls-remote --exit-code --heads origin "<branch>"` with the status captured without tripping `set -e`: rc 0 (ref found) blocks as a collision; rc 2 (no matching ref) proceeds; any other rc blocks with `cannot reach origin to verify branch <branch>; refusing to spawn (fail-closed)`. `<branch>` stays allowlist-validated and quoted.
+- **`spawn-brood` enforces a SINGLE active brood per checkout (reject overlap).** `inputs.json` and `manifest.yaml` are singleton paths; concurrent or overlapping broods from the same checkout would clobber each other. Two guards now run after the state dir is resolved and before any inputs/manifest write or spawn: (1) an **active-brood guard** refuses to overwrite an existing manifest when any `brood-*` tmux session is alive (`an active brood already exists in this checkout …`) — stale, fully-completed state (no live session) may still be overwritten; (2) an **in-flight atomic lock** via `mkdir "$STATE/.spawn-lock"` (atomic; fails if held) blocks two spawn processes racing in the same checkout (`another brood spawn is in progress in this checkout (lock held) …`), released on any exit via an `EXIT` trap.
+- **`spawn-brood` validates and block-scalar-emits `brood_id` and `overlap_risk`.** Both overlord-generated scalars were emitted INLINE into the manifest (`printf 'brood_id: "%s"'` / `printf 'overlap_risk: %s'`), bypassing the block-scalar helper used for every other untrusted/exact-value field — a malformed value could corrupt the YAML brood-status consumes. They are now shape-validated in pre-flight (`overlap_risk` MUST be `low|medium|high`; `brood_id` MUST match an ISO-8601-ish `YYYY-MM-DD…` shape, else a verbose blocker + exit 1) and routed through the same `emit_block '|-'` helper as `base`. Field names are unchanged (brood-status consumes them); both still parse to the same scalar string values.
+
+### Fixed
+
+- **`spawn-brood` Pass-2 ready-poll now uses ONE shared deadline instead of N×timeout.** Pass 2 previously polled each strain serially up to `READY_TIMEOUT` each, so worst-case total wait was N×90s — contradicting the comment that total wait ≈ the slowest single strain. The poll is redesigned around a single shared `deadline = now + READY_TIMEOUT`: a `pending` index list is polled round-robin (capture-pane → on ready substring, inject via the UNCHANGED named-buffer bracketed-paste + delete-on-success/failure path, remove from pending) under one budget, sleeping `POLL_INTERVAL` between sweeps; any strain still pending after the deadline is the existing POST-LAUNCH ready-timeout failure (left alive, `status: failed`). Total wait now ≈ one `READY_TIMEOUT`. `READY_TIMEOUT=90`/`POLL_INTERVAL=2` and the injection behavior are unchanged; array expansions are `set -u`-safe.
+
 ## [2.17.12] - 2026-05-30
 
 ### Removed
