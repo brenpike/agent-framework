@@ -204,5 +204,5 @@ This is a pipeline skill:
 - do not rely on `claude --worktree` for branch/worktree creation — create worktrees explicitly via `git worktree add -b <exact strain branch>`
 - commit, push, or open a PR
 - modify any product files
-- invent values for `strains`, `brood_id`, `base`, `overlap_risk`, or `overlap_details` — exit 1 with blocker if any are missing
-- continue when pre-flight checks fail for branch existence or naming collision
+- invent values for `strains`, `brood_id`, `overlap_risk`, `overlap_details`, or `base` — exit 1 with blocker if any are missing
+- continue when pre-flight checks fail for branch existence
