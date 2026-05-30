@@ -1,6 +1,6 @@
 ---
 name: seed-hive
-description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the overlord becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.hivemind/` is excluded from git via `.gitignore`.
+description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the overlord becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.hivemind/` and `.claude/worktrees/` are excluded from git via `.gitignore`.
 allowed-tools:
   - Read
   - Write
@@ -31,7 +31,7 @@ After:
 - [ ] Required keys applied to `.claude/settings.json`
 - [ ] Existing keys preserved
 - [ ] Output uses lowercase snake_case field names
-- [ ] `.hivemind/` entry ensured in `.gitignore`
+- [ ] `.hivemind/` and `.claude/worktrees/` entries ensured in `.gitignore`
 - [ ] If `caveman` resolves to `yes`: `.envrc` contains `CAVEMAN_DEFAULT_MODE=ultra`, `pluginConfigs` for caveman applied, SubagentStart hook configured
 - [ ] If `claude_mem` resolves to `yes` and `~/.claude-mem/settings.json` present with empty/missing `CLAUDE_CODE_PATH`: key set to dynamically-resolved `claude` path (only that key), and user told to restart the worker
 - [ ] `hivemind:creep-spread` invoked
@@ -123,10 +123,9 @@ The resolved `yes`/`no` value (not the raw input) drives every write in the merg
      ```
      The template grants read/output helper Bash commands (`echo`, `printf`, `cat`, `grep`, `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`), scoped git read subcommands (`git ls-files *`, `git ls-tree *` — both read-only object/working-tree listers; `git tag` is list-only via the three `git tag` / `git tag -l*` / `git tag --list*` forms — never broad `git tag *`, which would permit creating tags), and the codex-companion node entry. These read/output helpers are safe to auto-approve because Claude Code re-prompts (ask/deny) on any command that writes or redirects to a path OUTSIDE the session working directory (only `> /dev/null` is exempt) and splits compound commands (`&&`/`||`/`;`/`|`/newline), requiring each subcommand to match a rule independently. Granting `Bash(echo *)`/`Bash(printf *)`/`Bash(cat *)`/`Bash(sort *)` therefore does NOT create an arbitrary-file-write vector — `echo evil > /etc/passwd`, `printf x > ~/.bashrc`, `sort -o /etc/x`, and `cmd && rm -rf y` all re-prompt. The only silent write any granted helper permits is into the working directory, which is a uniform, bounded surface identical for `jq`/`head`/`tail`/`ls`/`wc`/`uniq`/`grep` as for `echo`/`printf`/`cat`/`sort`. Pipeline skills (`molt`, `create-working-branch`, `open-plan-pr`, `adaptation-cycle`) also grant `Bash(printf *)` via their own `allowed-tools` for routing-data output — safe for the same reason. The codex-companion rule uses the literal placeholder path `/path/to/.claude/plugins/cache/openai-codex/codex/*`; the consumer must replace `/path/to/` with their own home directory path after setup. Do NOT seed `acceptEdits` mode, `Edit`, or `Write` into consumer settings.
 7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
-8. Ensure `.hivemind/` is listed in the project's `.gitignore`:
-   a. If `<project root>/.gitignore` does not exist, create it with a single line `.hivemind/`.
-   b. If `.gitignore` exists, read it. If it already contains `.hivemind/` as a standalone line (trimmed), report `already present` and skip.
-   c. Otherwise append `.hivemind/` to the end of the file (prepend a blank line if the file does not end with a newline).
+8. Ensure both `.hivemind/` and `.claude/worktrees/` are listed in the project's `.gitignore`. `.hivemind/` is the brood manifest and runtime artifact directory; `.claude/worktrees/` is where `hivemind:spawn-brood` creates explicit git worktrees for each strain — without this entry the coordinator checkout goes dirty after any brood spawn. Apply the same append-if-absent idempotent guard to each entry independently:
+   a. If `<project root>/.gitignore` does not exist, create it with two lines: `.hivemind/` followed by `.claude/worktrees/`.
+   b. If `.gitignore` exists, read it. For each of the two entries (`.hivemind/`, `.claude/worktrees/`): if it already appears as a standalone line (trimmed), report `already present` and skip that entry. Otherwise append it to the end of the file (prepend a blank line if the file does not end with a newline at the time of that append). Process `.hivemind/` first, then `.claude/worktrees/`.
 9. If `caveman` resolves to `yes`: ensure `.envrc` contains `export CAVEMAN_DEFAULT_MODE=ultra`:
    a. If `<project root>/.envrc` does not exist, create it with a single line `export CAVEMAN_DEFAULT_MODE=ultra`.
    b. If `.envrc` exists, read it. If it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`), report `already present` and skip. Lines starting with `#` (after trimming) are not active.

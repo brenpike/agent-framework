@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.2] - 2026-05-30
+
+### Fixed
+
+- **`seed-hive` now ensures `.claude/worktrees/` is listed in consumer `.gitignore`.** `hivemind:spawn-brood` creates explicit git worktrees under `<repo_root>/.claude/worktrees/<short>`. Without a `.gitignore` entry for `.claude/worktrees/`, a seeded consumer's coordinator checkout goes dirty after the first brood spawn — potentially blocking later git-state checks or accidentally staging child files. `seed-hive` step 8 now applies the same append-if-absent idempotent guard to both `.hivemind/` and `.claude/worktrees/`, reporting each entry as `already present` or appended independently.
+
 ## [2.17.1] - 2026-05-30
 
 ### Security
