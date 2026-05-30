@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.4] - 2026-05-30
+
+### Security
+
+- **`spawn-brood` writes `task.md` and `manifest.yaml` via the Write tool, eliminating the heredoc-delimiter injection class.** The prior implementation wrote both files with a shell heredoc (`cat > file <<"$DELIM"`) and claimed a per-call random delimiter. Root cause: a quoted heredoc word does NOT parameter-expand, so `<<"$DELIM"` used the literal token `$DELIM` as the delimiter on every spawn — the scheme never randomized. An untrusted payload line (e.g. an issue-sourced strain description or `overlap_details`) equal to the literal `$DELIM` would terminate the heredoc early and execute subsequent lines in the hatchery shell. Both files are now written with a single Write tool call each, which performs no shell parsing of untrusted bytes — there is no delimiter to collide with and no path to hatchery-shell execution. The random-delimiter generation and combined-payload collision checks are removed from steps 3c and 6. Manifest YAML validity is now assured solely by the existing block-scalar discipline (every untrusted/path scalar emitted as a literal block scalar `|`). The `task.md` data-boundary preamble and its rationale are unchanged. `allowed-tools` gains `Write`; `Bash(cat *)` / `Bash(printf *)` are retained (still used by pre-flight 1f and routing). Silence Discipline reconciled: the Write tool is a permitted non-final tool call (emits no chat text); the final routing/exit Bash call still follows.
+
+### Fixed
+
+- **`spawn-brood` pre-flight 1f resolves the repo-local exclude path correctly in a linked git worktree.** The self-exclude guard for `.claude/worktrees/` hardcoded `<repo_root>/.git/info/exclude`, which is wrong in a linked git worktree where `<repo_root>/.git` is a gitdir-pointer FILE (not a directory) — a supported context under recursive brood (a spawned child overlord spawning from a worktree). The shared exclude path is now resolved via `exclude_path="$(git rev-parse --git-path info/exclude)"`, which is correct in both standalone and linked-worktree checkouts; the skip-guard (`git check-ignore -q .claude/worktrees/`), the standalone-line scan (`cat "$exclude_path"`), and the append (`printf '\n.claude/worktrees/\n' >> "$exclude_path"`) all use the resolved path. `git rev-parse` is already in `allowed-tools`.
+
 ## [2.17.3] - 2026-05-30
 
 ### Fixed
