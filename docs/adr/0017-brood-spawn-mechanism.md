@@ -75,6 +75,39 @@ Decision (closes the entire shell-injection class on `branch`/`base`):
 
 Considered and rejected as PRIMARY: the out-of-band approach (Write-then-`cat`, or read into a shell variable referenced only as `"$var"`, which is inert because bash does not re-evaluate command substitution from variable contents). Recorded as a documented fallback only — rejected as primary because no real branch needs a forbidden byte, and clean rejection of a hostile name beats faithful execution of it. Status remains accepted.
 
+## Amendment — 2026-05-30 (PR #154, behavior-preserving structural refactor)
+
+The deterministic shell that `hivemind:spawn-brood` previously hand-templated in
+its SKILL.md body is extracted into one committed script,
+`plugin/skills/spawn-brood/scripts/spawn-brood.sh`. Same inputs produce identical
+worktrees, sessions, manifest, and exit codes — no observable-behavior change.
+
+Decision:
+
+1. **File-based Write-tool inputs parsed by jq into inert variables.** The agent
+   authors a single JSON inputs file (`.hivemind/brood/inputs.json`) with the
+   Write tool; the script parses it with `jq` into shell variables referenced only
+   as `"$var"`. This makes the command-substitution injection class STRUCTURALLY
+   closed by architecture rather than per-snippet quoting: untrusted bytes never
+   enter generated command source, and bash does not re-evaluate command
+   substitution from variable contents. The round-7 allowlist gate is retained in
+   the script as defense-in-depth ref-shape validation, no longer load-bearing.
+2. **`jq` is now a required runtime dependency** (READ-only, for inputs parsing).
+   The script blocks with a verbose `blocker: jq is required …` + exit 1 if
+   absent, alongside the existing `tmux`/`claude` checks. ADR-0017's earlier
+   rejection of a true YAML serializer for manifest WRITING still holds — manifest
+   emission stays `printf` block-scalar.
+3. **SKILL.md slimmed to a navigator; rationale relocated to `reference.md`.** The
+   skill body is now ~4 imperative steps (build inputs → Write file → run script →
+   interpret exit). The security WHY, three-layer manifest model, block-scalar
+   chomping reasoning, ready-substring maintenance point, and inputs schema move to
+   `plugin/skills/spawn-brood/reference.md`. The broad `allowed-tools` Bash grants
+   collapse to the single precise
+   `Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh *)`
+   grant plus `Read`/`Write`, matching the `github-review-loop` precedent.
+
+Status remains accepted.
+
 ## Amendment — 2026-05-30 (PR #154, filesystem-path out-of-band + tmux paste/buffer hardening)
 
 The round-7 shell-injection closure (allowlist gate) covered `branch`/`base` but left filesystem PATHS treated as "safe-by-construction because `repo_root` came from `git rev-parse`" / "the user's own filesystem path, not in the threat model." That carve-out is SUPERSEDED and was wrong: the checkout DIRECTORY NAME is filesystem-controlled and can legally contain shell metacharacters (a repo cloned under `repo$(touch${IFS}PWNED)`), and command substitution `$(...)`/backticks expand even inside double quotes when those literal bytes appear in command source. Paths cannot be charset-allowlisted (legit paths contain spaces).

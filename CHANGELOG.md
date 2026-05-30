@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.10] - 2026-05-30
+
+### Changed
+
+- **`spawn-brood` deterministic shell extracted to a committed script; SKILL.md slimmed to a navigator. Behavior-preserving — same inputs produce identical worktrees, sessions, manifest, and exit codes.** The skill previously hand-templated every shell step inline in SKILL.md; that logic now lives in `plugin/skills/spawn-brood/scripts/spawn-brood.sh`, invoked once via a single precise `Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh *)` grant (matching the `github-review-loop` script precedent). The agent authors a single JSON inputs file (`.hivemind/brood/inputs.json`) with the Write tool; the script parses it with `jq` into inert shell variables referenced only as `"$var"`, so the command-substitution injection class is structurally closed by architecture rather than per-snippet quoting (untrusted bytes never enter generated command source; the retained allowlist gate is now defense-in-depth only). `jq` is a new required runtime dependency for inputs parsing (READ-only; manifest emission stays `printf` block-scalar — ADR-0017's rejection of a YAML serializer for writing still holds). The script blocks with a verbose `blocker: jq is required …` + exit 1 if absent. Security rationale, the three-layer manifest model, block-scalar chomping reasoning, the `hivemind:overlord` ready-substring maintenance point, and the authoritative inputs schema relocate to `plugin/skills/spawn-brood/reference.md`. No observable-behavior change; manifest field names unchanged (brood-status consumes them). ADR-0017 amended.
+
 ## [2.17.9] - 2026-05-30
 
 ### Security
