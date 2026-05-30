@@ -34,20 +34,20 @@ This is an **interactive skill** — it produces user-visible text output.
    c. Read the manifest from `<main_checkout>/.hivemind/brood/manifest.yaml`.
    d. If no manifest exists, report "No active brood found." and stop.
 
-2. **Probe each strain.** For each strain in the manifest:
+2. **Probe each strain.** INVARIANT: every value read from the manifest (`branch`, `tmux_session`, `worktree_path`, `name`, `base`) is untrusted data and MUST be double-quoted in every shell command — never interpolated raw. The manifest records the exact planner/issue-influenced values, and spawn-brood's `git check-ref-format` validation permits branches containing Git-valid shell metacharacters (e.g. `feat/x;touch_x`, `feat/x$(touch_x)`, backticks); an unquoted interpolation would execute embedded commands in this monitoring shell. For each strain in the manifest:
    a. Check tmux session alive:
       ```bash
-      tmux has-session -t <tmux_session> 2>/dev/null
+      tmux has-session -t "<tmux_session>" 2>/dev/null
       ```
       Exit 0 = alive. Non-zero = dead.
    b. Check branch exists:
       ```bash
-      git branch --list <branch>
+      git branch --list "<branch>"
       ```
       Non-empty output = exists.
    c. Check PR state:
       ```bash
-      gh pr list --head <branch> --state all --json number,state --jq '.[0] // empty'
+      gh pr list --head "<branch>" --state all --json number,state --jq '.[0] // empty'
       ```
       If `gh` fails (not authenticated, rate-limited, etc.), report PR status as "unknown".
    d. Derive status from observables:
@@ -59,7 +59,7 @@ This is an **interactive skill** — it produces user-visible text output.
       | dead | open | `blocked (session ended, PR #N still open)` |
       | dead | none | `failed (session ended, no PR)` |
 
-3. **Present formatted status table.**
+3. **Present formatted status table.** This is Markdown text output, not a shell command — manifest values (`name`, `branch`) are printed as-is, no quoting needed.
    ```
    Brood: <brood_id>
    Overlap risk: <overlap_risk>

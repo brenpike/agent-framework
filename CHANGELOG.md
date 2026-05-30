@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.5] - 2026-05-30
+
+### Security
+
+- **`brood-status` double-quotes every manifest-derived value, closing a shell-injection vector on brood monitoring.** The brood manifest records the EXACT planner-produced `branch`, and `spawn-brood`'s validation (`git check-ref-format --branch`) permits branches containing Git-valid shell metacharacters (e.g. `feat/x;touch_x`, `feat/x$(touch_x)`, backticks). `hivemind:brood-status` previously interpolated these values UNQUOTED into its probe commands (`tmux has-session -t <tmux_session>`, `git branch --list <branch>`, `gh pr list --head <branch>`), so merely monitoring a brood executed trailing hatchery-shell commands embedded in a strain branch name. Step 2 now double-quotes every manifest-derived value (`branch`, `tmux_session`, `worktree_path`, `name`, `base`) in every shell command, and a new step-2 INVARIANT documents the untrusted-data rule. This pairs with `spawn-brood`'s block-scalar/`|-` discipline — block scalars give YAML-injection safety, `|-` gives exact values, and consumer-side quoting gives shell safety; all three are required together.
+
+### Fixed
+
+- **`spawn-brood` exact-value manifest fields use `|-` (STRIP chomping) so consumers read values without a trailing newline.** A YAML literal block scalar `|` (CLIP chomping) appends a `\n`, so `branch: |` + `feat/x` parses as `feat/x\n`. A YAML-aware `hivemind:brood-status` would then probe for `feat/x\n`, missing the real branch and using the wrong PR head. Step 6 now emits the exact-value single-line fields consumed as identifiers/paths/shell-args (`name`, `branch`, `base`, `worktree_path`) with `|-` (strip) so the parsed value has no trailing newline; the free-text prose fields (`description`, `overlap_details`) keep `|` (clip), where a conventional trailing newline is harmless. No field renamed; the values remain block scalars (not inline double-quoted scalars, which were the earlier YAML-injection bug).
+
 ## [2.17.4] - 2026-05-30
 
 ### Security
