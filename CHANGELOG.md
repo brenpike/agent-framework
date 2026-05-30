@@ -12,6 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.0] - 2026-05-30
+
+### Fixed
+
+- **`spawn-brood` launch: TTY requirement eliminated.** `claude --tmux` requires a real terminal; the Bash tool has none. Replaced with `tmux new-session -d` (detached), which supplies a PTY for the child session. Resolves "open terminal failed: not a terminal".
+- **`spawn-brood` branch-name mangling eliminated.** `claude --worktree <NAME>` was deriving an incorrect branch name and mangling slash-separated names. Replaced with explicit `git worktree add -b <exact-strain-branch> <path> <base>`.
+- **`spawn-brood` foreground hang eliminated.** Sequential foreground spawn blocked on strain #1 indefinitely. Two-pass spawn (launch all detached, then poll-ready + inject each) runs all sessions in parallel.
+- **`spawn-brood` multi-line prompt injection fixed.** `printf '%q' | tmux send-keys` mangled multi-line task strings. Replaced with write-to-file + `tmux load-buffer` + `paste-buffer` + Enter.
+
+### Changed
+
+- **`spawn-brood` bypass-permissions gate pre-accepted non-interactively.** Detached children have no human to approve Claude Code permission prompts. Sessions launched with `--dangerously-skip-permissions --settings '{"skipDangerousModePermissionPrompt":true}'`; the settings key suppresses the one-time trust gate without screen-scraping.
+- **`spawn-brood` two-pass spawn topology.** Pass 1 launches all strain sessions; pass 2 polls each for readiness (detects `hivemind:overlord` in `tmux capture-pane`, READY_TIMEOUT=90 s) then injects the task.
+- **`spawn-brood` new `base` input and manifest field.** Hatchery passes resolved trunk ref; worktrees branch off it; recorded as top-level `base` in the brood manifest.
+- **`spawn-brood` deterministic naming.** tmux session `brood-<short-id>`, worktree `.claude/worktrees/<short-id>`.
+- **`spawn-brood` split per-strain cleanup.** Hard failures before launch → kill session + remove worktree. Post-launch ready-timeout or inject failures → leave session alive, mark strain `failed` (recoverable).
+- **`spawn-brood` allowed-tools updated.** Dropped standalone `Bash(claude *)`; added `Bash(cat *)`, `Bash(git rev-parse *)`, `Bash(git symbolic-ref *)`.
+- **Overlord brood-route note reconciled.** Step 3a now states that `spawn-brood` creates worktrees via `git worktree add -b` and that the overlord must pass `base`.
+- ADR-0017 (`docs/adr/0017-brood-spawn-mechanism.md`): documents the chosen spawn mechanism, rejected options, and the one remaining TUI coupling (ready-detection substring).
+
 ## [2.16.0] - 2026-05-29
 
 ### Added
