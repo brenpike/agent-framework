@@ -97,8 +97,6 @@ The overlord resolves and passes these; the skill does not resolve them.
 
 - EXECUTE (do not read) the engine:
   `${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh`.
-- Security rationale and manifest discipline:
-  `${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/reference.md`.
 
 ## Silence Discipline
 

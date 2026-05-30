@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.12] - 2026-05-30
+
+### Removed
+
+- **Deleted `plugin/skills/spawn-brood/reference.md`.** The file contained only human/maintainer rationale (injection reasoning, manifest/chomping discipline, allowlist defense-in-depth, ready-substring note, jq dependency). Nothing operational depended on it: the script hardcodes its preamble and parses inputs.json; SKILL.md now holds the full inputs schema inline. All content was already covered by `docs/adr/0017-brood-spawn-mechanism.md` and the script header comments, making reference.md a redundant third copy. De-dangled its pointers from `SKILL.md` (Pointers section) and from the script header (two `reference.md` references repointed to ADR-0017 and SKILL.md respectively).
+
 ## [2.17.11] - 2026-05-30
 
 ### Changed

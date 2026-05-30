@@ -14,9 +14,9 @@
 #       variables and referenced only as "$var" — bash does not re-evaluate command
 #       substitution from variable contents, so the command-substitution injection
 #       class is structurally absent (the values never enter generated command
-#       SOURCE). See ${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/reference.md.
+#       SOURCE). Rationale: docs/adr/0017-brood-spawn-mechanism.md.
 #
-#   Inputs JSON shape (authoritative schema lives in reference.md):
+#   Inputs JSON shape (authoritative schema in SKILL.md § Required Inputs):
 #     {
 #       "brood_id":        "<ISO-8601 timestamp>",
 #       "base":            "<base ref>",
@@ -63,7 +63,7 @@ POLL_INTERVAL=2
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
 # maintenance point — if the CLI chrome changes, update this substring. See
-# reference.md (Ready-substring maintenance point).
+# docs/adr/0017-brood-spawn-mechanism.md (Consequences).
 READY_SUBSTRING='hivemind:overlord'
 
 # Canonical external-content data-boundary preamble. Emitted as the FIRST lines of

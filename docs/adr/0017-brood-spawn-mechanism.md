@@ -97,12 +97,13 @@ Decision:
    absent, alongside the existing `tmux`/`claude` checks. ADR-0017's earlier
    rejection of a true YAML serializer for manifest WRITING still holds — manifest
    emission stays `printf` block-scalar.
-3. **SKILL.md slimmed to a navigator; rationale relocated to `reference.md`.** The
+3. **SKILL.md slimmed to a ~4-step navigator with the inputs schema inline.** The
    skill body is now ~4 imperative steps (build inputs → Write file → run script →
-   interpret exit). The security WHY, three-layer manifest model, block-scalar
-   chomping reasoning, ready-substring maintenance point, and inputs schema move to
-   `plugin/skills/spawn-brood/reference.md`. The broad `allowed-tools` Bash grants
-   collapse to the single precise
+   interpret exit), and the authoritative inputs schema lives inline in that body.
+   The security WHY, three-layer manifest model, block-scalar chomping reasoning,
+   and ready-substring maintenance point are documented in this ADR and in the
+   script's own header comments — not in a separate doc. The broad `allowed-tools`
+   Bash grants collapse to the single precise
    `Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh *)`
    grant plus `Read`/`Write`, matching the `github-review-loop` precedent.
 
