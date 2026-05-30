@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.1] - 2026-05-30
+
+### Security
+
+- **`spawn-brood` brood-injection defense-in-depth (PR #154).** Detached brood children run with `--dangerously-skip-permissions` (no interactive permission gate, per ADR-0017), and a strain task description may be sourced from an untrusted GitHub issue body and pasted into the child prompt. Two compensating controls now mitigate the injection surface: (1) `hivemind:spawn-brood` (step 3c) prepends the canonical external-content data-boundary preamble as the first lines of the child's `task.md`, above the description payload and inside the same heredoc, so it is injected ahead of the description on every spawn — and the per-call random-delimiter collision check now validates the combined preamble+description payload; (2) the overlord brood gate (`overlord.md` steps 3a/3b) surfaces the normalized `{name, description}` task text to the human for explicit approval before invoking `hivemind:spawn-brood` — with no downstream permission prompt, this approval is the injection gate. GitHub issue bodies (including when sourced as a brood/strain description) added to the External Content Boundary data-origin sources, and a new "Brood Spawn Bypass-Mode Mitigation" subsection added to `security-policy.md`. ADR-0017 amended with both controls and the structural backstop (the child is itself a delegating overlord with no `Write`/`Edit`, so embedded instructions still route through branch → checkpoint → review → PR).
+
 ## [2.17.0] - 2026-05-30
 
 ### Fixed

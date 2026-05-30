@@ -38,3 +38,12 @@ Five root-cause failures emerged at first launch:
 - `--dangerously-skip-permissions` widens child blast radius (consistent with ADR-0007: unattended children run the full standard pipeline with no human in the loop).
 - New `base` input on `spawn-brood` and top-level `base` field in the brood manifest.
 - Naming is now deterministic: tmux session `brood-<short-id>`, worktree `.claude/worktrees/<short-id>`.
+
+## Amendment — 2026-05-30 (PR #154)
+
+The bypass-mode blast radius above interacts with untrusted input: a strain task description may be sourced from a GitHub issue body and pasted into the child prompt, while the detached child has no interactive permission gate. Two compensating controls now mitigate the brood injection surface (defense-in-depth), plus a structural backstop:
+
+1. **Data-boundary preamble in `task.md`** — `hivemind:spawn-brood` prepends the canonical external-content data-boundary preamble above the description payload (inside the same heredoc), so it is injected ahead of every strain description.
+2. **Pre-spawn human approval of normalized task text** — the overlord brood gate (`overlord.md` steps 3a/3b) surfaces the normalized `{name, description}` task text to the human for explicit approval before spawn; with no downstream permission prompt, this approval is the injection gate.
+
+Structural backstop: the child is itself a delegating overlord whose `tools:` carry no `Write`/`Edit`, so embedded instructions still route through branch → checkpoint → review → PR rather than direct execution (Write-Capable Skill Containment, `plugin/governance/security-policy.md`). Status remains accepted.
