@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.17.11] - 2026-05-30
+
+### Changed
+
+- **`spawn-brood` inputs JSON schema moved from `reference.md` into `SKILL.md` body.** The schema is load-bearing (the agent must author `inputs.json` correctly on every run, step 1); load-bearing content belongs in the navigator body, not an optional reference file. `SKILL.md` step 1 now contains the full JSON shape and field rules inline. `reference.md` is now rationale-only (load-on-demand): it holds injection-class reasoning, the three-layer manifest model, block-scalar chomping, allowlist defense-in-depth, the `hivemind:overlord` ready substring, and the `jq` dependency note. The `Pointers` section updated accordingly.
+
 ## [2.17.10] - 2026-05-30
 
 ### Changed
