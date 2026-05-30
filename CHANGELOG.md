@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.0] - 2026-05-30
+
+### Added
+
+- **`spawn-brood` supports concurrent broods via per-brood-id namespaced state.** Each brood now owns a disjoint state directory keyed by `brood_slug` (derived from `brood_id` by mapping every byte outside `[A-Za-z0-9._-]` to `-`): `.hivemind/brood/<brood_slug>/{inputs.json,manifest.yaml}`. Because two distinct `brood_id`s resolve to two distinct directories, concurrent broods — same checkout AND across checkouts — never collide on inputs or manifest state. This replaces the single-brood model (a checkout-global lock + server-global `brood-*` session guard) that rejected concurrent broods entirely.
+- **`brood-status` reports every active brood.** It discovers manifests via the glob `<main_checkout>/.hivemind/brood/*/manifest.yaml`, runs the existing per-strain probe (and its untrusted-manifest safety re-gate) per discovered manifest, and emits one labeled status table + summary per brood keyed by `brood_id` (most-recent-first), with a leading `Broods: N active` roll-up line. No matches still reports "No active brood found."
+
+### Changed
+
+- **`spawn-brood` brood manifest layout moved from singleton to per-brood.** The manifest moves from `.hivemind/brood/manifest.yaml` to `.hivemind/brood/<brood_slug>/manifest.yaml`; the inputs file likewise moves to `.hivemind/brood/<brood_slug>/inputs.json`. `hivemind:brood-status` reads the new glob path. A brood dispatched before upgrading writes the old singleton path; finish or re-dispatch in-flight broods across the upgrade (the manifest is ephemeral, gitignored runtime state).
+- **`spawn-brood` tmux session naming changed `brood-<short>` → `brood-<short>-<brood_slug>`.** The `brood_slug` suffix distinguishes sessions belonging to concurrent broods and lets a brood's own sessions be recovered from its manifest.
+- **`spawn-brood` removed the single-brood lock and server-global active-brood guard, replacing them with a brood-scoped same-`brood_id` guard.** The `mkdir "$STATE/.spawn-lock"` atomic lock (+ `EXIT` trap) and the `tmux list-sessions | grep '^brood-'` active-brood guard are deleted — disjoint per-brood directories make them unnecessary. The sole remaining guard refuses to re-spawn the SAME `brood_id` while its own sessions are live: if `$STATE/manifest.yaml` exists, its recorded `tmux_session:` values are probed with `tmux has-session` and any live session blocks (`brood <brood_id> is already active (live session <name>); refusing to overwrite`); stale completed state (no live session) is overwritten. The guard inspects only this brood's own manifest, never a sibling brood's. ADR-0017 amended.
+
 ## [2.17.13] - 2026-05-30
 
 ### Security

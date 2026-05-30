@@ -4,8 +4,17 @@
 #
 # Spawns N overlord sessions ("strains") as a brood: one git worktree per strain,
 # one detached tmux session per strain running claude, a per-strain task.md, and a
-# single brood manifest. This script OWNS every deterministic shell step; the skill
+# per-brood manifest. This script OWNS every deterministic shell step; the skill
 # body is a navigator that authors the inputs file and calls this script once.
+#
+# STATE NAMESPACING: each brood owns a disjoint state directory keyed by a slug
+# derived from its brood_id — .hivemind/brood/<brood_slug>/{inputs.json,manifest.yaml}.
+# Because two distinct brood_ids resolve to two distinct directories, concurrent
+# broods (same checkout or across checkouts) never collide on inputs or manifest
+# state. There is therefore NO in-flight lock and NO server-global active-brood
+# guard: disjoint per-brood paths make those unnecessary. The only guard is a
+# BROOD-SCOPED same-brood_id check (below) that refuses to re-spawn a brood whose
+# own sessions are still live.
 #
 # INPUT (single positional argument):
 #   $1  Absolute or repo-relative path to a JSON inputs file authored by the agent
@@ -30,8 +39,8 @@
 #
 # OUTPUT:
 #   - Writes per-strain task.md files under each worktree's gitignored .hivemind/.
-#   - Writes the brood manifest to .hivemind/brood/manifest.yaml in the coordinator
-#     checkout (cwd).
+#   - Writes the brood manifest to .hivemind/brood/<brood_slug>/manifest.yaml in the
+#     coordinator checkout (cwd), where <brood_slug> is derived from brood_id.
 #   - On full success: prints `manifest: <abs path>` to stdout, exits 0.
 #   - On any per-strain failure: writes the manifest with failed strains marked
 #     `status: failed`, prints `blocker: <n> of <m> strains failed to spawn` and
@@ -119,6 +128,25 @@ case "$brood_id" in
   *) blocker "brood_id is not a valid ISO-8601 timestamp: $brood_id" ;;
 esac
 
+# brood_slug: filesystem-safe key derived from brood_id, every byte outside
+# [A-Za-z0-9._-] mapped to '-'. Names the disjoint per-brood state dir, the manifest
+# sibling, and the tmux session suffix. Re-derived here from the PARSED brood_id —
+# the manifest sibling never trusts the inputs arg path. Mirror the ref/path guards:
+# reject an empty slug and a slug bearing '..' (traversal).
+brood_slug="$(printf '%s' "$brood_id" | tr -c 'A-Za-z0-9._-' '-')"
+[ -n "$brood_slug" ] || blocker "brood_id sanitizes to an empty brood_slug: $brood_id"
+case "$brood_slug" in
+  *..*) blocker "brood_slug $brood_slug contains \"..\" (traversal guard)" ;;
+esac
+
+# inputs-path/slug consistency (defense-in-depth). The passed inputs file must live
+# at <...>/$brood_slug/inputs.json: its parent dir basename MUST equal the slug
+# re-derived from the parsed brood_id. The script never trusts the arg path for the
+# manifest sibling — it re-derives the slug — but a mismatch signals a caller error.
+if [ "$(basename "$(dirname "$INPUTS_FILE")")" != "$brood_slug" ]; then
+  blocker "inputs file $INPUTS_FILE must live under a directory named $brood_slug (derived from brood_id)"
+fi
+
 # Strain count. An empty/zero-strain array is a blocker — never write an empty
 # manifest (a downstream brood-status would treat it as a broodless session).
 strain_count="$(jq -r '.strains | length' "$INPUTS_FILE" 2>/dev/null || echo 0)"
@@ -153,7 +181,7 @@ for idx in $(seq 0 $((strain_count - 1))); do
   # worktree path derived from repo_root (filesystem-controlled dir name); only the
   # sanitized short is interpolated. Referenced only as "$wt" thereafter.
   wt="$repo_root/.claude/worktrees/$short"
-  tmux_session="brood-$short"
+  tmux_session="brood-$short-$brood_slug"
 
   S_NAME[$idx]="$name"
   S_DESC[$idx]="$desc"
@@ -249,30 +277,30 @@ fi
 git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
   || { printf 'blocker: base ref %s does not resolve to a commit\n' "$base" >&2; exit 1; }
 
-# ── Manifest directory ──────────────────────────────────────────────────────────
-mkdir -p .hivemind/brood
-STATE="$(pwd)/.hivemind/brood"
+# ── Per-brood state directory ───────────────────────────────────────────────────
+# Each brood owns a disjoint state dir keyed by brood_slug:
+# .hivemind/brood/<brood_slug>/{inputs.json,manifest.yaml}. Two distinct brood_ids
+# resolve to two distinct directories, so concurrent broods (same checkout or across
+# checkouts) never touch each other's inputs or manifest state. Because the dirs are
+# disjoint, NO in-flight lock and NO server-global active-brood guard are needed: the
+# only collision a guard must catch is re-spawning the SAME brood_id while its own
+# sessions are still live (below).
+STATE="$(pwd)/.hivemind/brood/$brood_slug"
+mkdir -p "$STATE"
 
-# ── Single-brood model (reject overlap) ─────────────────────────────────────────
-# inputs.json and manifest.yaml are singleton paths per checkout; concurrent or
-# overlapping broods would clobber each other. Two guards enforce one active brood:
-#
-# Active-brood guard: a previously-spawned brood whose sessions are still alive holds
-# no in-flight lock (that lock lives only for the spawning process). Detect a live
-# brood via any `brood-*` tmux session and refuse to overwrite its manifest. A fresh
-# brood MAY overwrite stale, fully-completed state (no live session), so only a live
-# session blocks.
-if tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -q '^brood-'; then
-  blocker "an active brood already exists in this checkout (live brood-* tmux session present); refusing to overwrite its manifest (single-brood model)"
+# ── Same-brood_id guard (brood-scoped) ──────────────────────────────────────────
+# If this brood's own manifest already exists, refuse to overwrite it while any of
+# its recorded sessions is still live. A fresh brood MAY overwrite stale, fully-
+# completed state (no live session). Scoped to THIS brood_slug's manifest only — a
+# different brood_id's manifest in a sibling dir is never inspected.
+if [ -f "$STATE/manifest.yaml" ]; then
+  while IFS= read -r prior_session; do
+    [ -n "$prior_session" ] || continue
+    if tmux has-session -t "$prior_session" 2>/dev/null; then
+      blocker "brood $brood_id is already active (live session $prior_session); refusing to overwrite"
+    fi
+  done < <(grep -E '^[[:space:]]*tmux_session:' "$STATE/manifest.yaml" | sed -E 's/^[[:space:]]*tmux_session:[[:space:]]*"?([^"]*)"?[[:space:]]*$/\1/')
 fi
-
-# In-flight atomic lock: covers two spawn processes racing in the same checkout.
-# mkdir is atomic and fails if the directory already exists — no TOCTOU window. The
-# trap releases it on ANY exit path (blocker, per-strain failure, or success).
-if ! mkdir "$STATE/.spawn-lock" 2>/dev/null; then
-  blocker "another brood spawn is in progress in this checkout (lock held); concurrent broods are not supported"
-fi
-trap 'rmdir "$STATE/.spawn-lock" 2>/dev/null || true' EXIT
 
 # ── Per-strain failure helpers ──────────────────────────────────────────────────
 # HARD failure: worktree add / new-session failed BEFORE launch. Clean up ONLY
@@ -411,7 +439,7 @@ done
 #       trailing newline is harmless.
 # Any embedded newline in an untrusted value is reproduced at the block-scalar
 # content indent. Field names MUST NOT be renamed (brood-status consumes them).
-manifest_path="$(pwd)/.hivemind/brood/manifest.yaml"
+manifest_path="$STATE/manifest.yaml"
 hatchery_session="${TMUX:-}"   # current tmux session identifier, if any; inert literal
 
 # emit_block: print a key as a YAML block scalar, indenting every content line to
