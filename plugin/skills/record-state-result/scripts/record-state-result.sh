@@ -100,16 +100,21 @@ have_plan_steps=false
 plan_path=""
 have_plan_path=false
 
+# require_value: every valued flag must be followed by an argument. A trailing valued flag
+# with no value would otherwise consume "" and `shift 2` would fail against a single remaining
+# positional — silently mis-parsing under set -u (no set -e). Reject with a clear blocker.
+require_value() { [ "$#" -ge 2 ] || blocker "flag $1 requires a value"; }
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --ledger)     ledger="${2:-}"; shift 2 ;;
-    --workflow)   workflow="${2:-}"; shift 2 ;;
-    --state)      state="${2:-}"; shift 2 ;;
-    --result)     result="${2:-}"; shift 2 ;;
-    --summary)    summary="${2:-}"; shift 2 ;;
-    --outputs)    outputs="${2:-}"; have_outputs=true; shift 2 ;;
-    --plan-steps) plan_steps="${2:-}"; have_plan_steps=true; shift 2 ;;
-    --plan-path)  plan_path="${2:-}"; have_plan_path=true; shift 2 ;;
+    --ledger)     require_value "$@"; ledger="$2"; shift 2 ;;
+    --workflow)   require_value "$@"; workflow="$2"; shift 2 ;;
+    --state)      require_value "$@"; state="$2"; shift 2 ;;
+    --result)     require_value "$@"; result="$2"; shift 2 ;;
+    --summary)    require_value "$@"; summary="$2"; shift 2 ;;
+    --outputs)    require_value "$@"; outputs="$2"; have_outputs=true; shift 2 ;;
+    --plan-steps) require_value "$@"; plan_steps="$2"; have_plan_steps=true; shift 2 ;;
+    --plan-path)  require_value "$@"; plan_path="$2"; have_plan_path=true; shift 2 ;;
     *) blocker "unknown argument: $1" ;;
   esac
 done
