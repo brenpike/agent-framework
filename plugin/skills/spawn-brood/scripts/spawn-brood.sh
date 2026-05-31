@@ -277,8 +277,12 @@ done
 # Idempotent append-if-absent: a duplicate exclude line is harmless and
 # self-healing, so check-ignore alone is sufficient — no file scan.
 if ! git check-ignore -q .claude/worktrees/; then
-  exclude_path="$(git rev-parse --git-path info/exclude)"
-  printf '\n.claude/worktrees/\n' >> "$exclude_path"
+  exclude_path="$(git rev-parse --git-path info/exclude 2>/dev/null)" \
+    || blocker "failed to install .claude/worktrees/ git exclude; refusing to spawn"
+  [ -n "$exclude_path" ] \
+    || blocker "failed to install .claude/worktrees/ git exclude; refusing to spawn"
+  printf '\n.claude/worktrees/\n' >> "$exclude_path" \
+    || blocker "failed to install .claude/worktrees/ git exclude; refusing to spawn"
 fi
 
 # 1g base resolves ONCE, up front (one blocker instead of N cascading worktree-add
@@ -324,6 +328,22 @@ mark_failed() { S_STATUS[$1]="failed"; }
 # ── Pass 1: create worktree + launch detached session (non-blocking) ────────────
 launched_sessions=""
 settings_local="$repo_root/.claude/settings.local.json"
+
+# Interruption guard over BOTH the Pass-1 launch loop and the Pass-2 readiness wait:
+# once a detached session launches, no manifest exists yet, so a cancelled Bash call /
+# SIGTERM — even MID-loop, after one session launched but while a later strain is
+# creating its worktree / provisioning its task / starting tmux — would orphan live
+# sessions+worktrees+branches with nothing for brood-status or the liveness guard to
+# find. Arm BEFORE the first launch so the trap reports whatever launched_sessions has
+# accumulated so far (appended incrementally per confirmed launch). Emit the launched
+# session names in the SAME recovery: format used on the manifest-write-failure path,
+# then exit nonzero. No lock, no reservation — pure best-effort visibility. Cleared
+# before the normal manifest write.
+brood_interrupt_trap() {
+  printf 'recovery: spawn interrupted; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
+  exit 1
+}
+trap brood_interrupt_trap INT TERM
 
 for idx in $(seq 0 $((strain_count - 1))); do
   branch="${S_BRANCH[$idx]}"
@@ -436,18 +456,6 @@ inject_strain() {
   return 0
 }
 
-# Interruption guard over the readiness wait: Pass 1 has launched detached sessions
-# but no manifest exists yet, so a cancelled Bash call / SIGTERM during the up-to-90s
-# poll would orphan live sessions+worktrees+branches with nothing for brood-status or
-# the liveness guard to find. Emit the launched session names in the SAME recovery:
-# format used on the manifest-write-failure path, then exit nonzero. No lock, no
-# reservation — pure best-effort visibility. Cleared before the normal manifest write.
-brood_interrupt_trap() {
-  printf 'recovery: spawn interrupted; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
-  exit 1
-}
-trap brood_interrupt_trap INT TERM
-
 # ── Pass 2: wait ready + inject task (ONE shared deadline) ──────────────────────
 # All Pass-1 sessions boot concurrently. A single shared deadline (NOT N×timeout) is
 # what makes the total wait ≈ the slowest single strain: pending strains are polled
@@ -530,8 +538,15 @@ emit_block() {
   printf 'strains:\n'
   for idx in $(seq 0 $((strain_count - 1))); do
     desc_clean="$(printf '%s' "${S_DESC[$idx]}" | tr -d '\000-\010\013-\037\177')"
+    # Strip C0 control bytes (except TAB/LF) + DEL from the strain name at manifest
+    # emission ONLY: a valid JSON name carrying a literal control byte passes the
+    # non-empty + short-name gates, launches, then would write a raw control byte YAML
+    # 1.2 forbids → unreadable manifest. S_NAME is left untouched everywhere else (the
+    # short-id sanitization derives from the raw value); this cleans only the value
+    # written to the manifest. Same expression as desc_clean/overlap_details_clean.
+    name_clean="$(printf '%s' "${S_NAME[$idx]}" | tr -d '\000-\010\013-\037\177')"
     printf '  - name: |-\n'
-    printf '%s\n' "${S_NAME[$idx]}"   | sed 's/^/      /'
+    printf '%s\n' "$name_clean"        | sed 's/^/      /'
     printf '    description: |\n'
     printf '%s\n' "$desc_clean"        | sed 's/^/      /'
     printf '    worktree_path: |-\n'

@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.5] - 2026-05-30
+
+### Fixed
+
+- `brood-status` resolves the current checkout root via `git rev-parse --show-toplevel` (was `--git-dir` + strip `/.git`, which points at `.git/worktrees/<name>` metadata in a linked worktree and never found a nested recursive-brood manifest).
+- `spawn-brood` aborts when the `.claude/worktrees/` git-exclude entry cannot be installed (unwritable `info/exclude`), before any `git worktree add`, instead of continuing and risking a tracked worktrees dir.
+- `spawn-brood` arms the INT/TERM interruption-recovery trap before the Pass-1 launch loop (was after), so an interrupt mid-loop still emits the already-launched session names for recovery.
+- `spawn-brood` strips C0 control bytes from the strain `name` at manifest emission (previously only `description` and `overlap_details` were stripped), preventing an issue-sourced control byte in a strain name from writing an unreadable manifest.
+
 ## [2.18.4] - 2026-05-30
 
 ### Fixed
