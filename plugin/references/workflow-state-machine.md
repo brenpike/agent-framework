@@ -79,6 +79,8 @@ The overlord delegates to a named agent. Either a single `agent` field or a stat
 
 INVARIANT: `agent_from` is NOT a recognized field. Dynamic agent resolution from ledger fields violates the WHO/WHAT-not-WHY invariant. The legal set is always static data in the definition.
 
+Only a cerebrate-agent state (`agent: "hivemind:cerebrate"`) may persist plan steps: the deterministic engine honors `record-state-result --plan-steps` / `--plan-path` ONLY when the recording state's `agent` is `hivemind:cerebrate`, and rejects (ledger byte-unchanged) every other state. This authorizes exactly the cerebrate planning states and derives entirely from the existing `agent` key — no schema field is added.
+
 ```json
 {
   "type": "agent",

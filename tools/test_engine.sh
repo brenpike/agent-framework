@@ -20,9 +20,14 @@
 #   G. id mismatch       -> definition.id != ledger.run.workflow -> non-zero, byte-UNCHANGED.
 #   H. version mismatch  -> definition.version != ledger.run.workflow_version -> non-zero,
 #                           byte-UNCHANGED.
-#   I. plan-steps record  -> record-state-result.sh --plan-steps at the `plan` state writes
-#                           plan.steps into the ledger (length + id round-trip). PRIMARY,
-#                           live writer; complements F (the init-time child/resume seed).
+#   I. plan-steps record  -> record-state-result.sh --plan-steps at the `plan` (cerebrate)
+#                           state writes plan.steps into the ledger (length + id round-trip).
+#                           PRIMARY, live writer; complements F (init-time child/resume seed).
+#                           This is the AUTHORIZED plan-write case (plan.agent==cerebrate).
+#   J. plan-write authz   -> record-state-result.sh --plan-steps at a NON-cerebrate state
+#                           (`build`, no agent==cerebrate) is rejected: non-zero exit, ledger
+#                           byte-UNCHANGED (sha256). Flag presence alone never authorizes a
+#                           plan write — only a cerebrate planning state may persist plan.steps.
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -331,6 +336,34 @@ assert_plan_steps_record_time() {
     fi
 }
 
+# ── J. plan-write authorization: non-cerebrate state + --plan-steps rejected ─
+
+assert_plan_write_unauthorized_unchanged() {
+    local name="J:plan-write-unauthorized-unchanged"
+    # Ledger at state.current=build; `build` is NOT a cerebrate state (no agent==cerebrate,
+    # it carries allowed_agents:[hivemind:drone]). Recording it WITH --plan-steps must be
+    # rejected and leave the ledger byte-unchanged.
+    local ledger="$WORKDIR/j-ledger.json"
+    cp "$LEDGER_AT_BUILD" "$ledger"
+    local before after rc=0
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    bash "$ENGINE" \
+        --ledger "$ledger" \
+        --workflow "$WORKFLOW_DEF" \
+        --state build \
+        --result blocked \
+        --summary "engine test unauthorized plan write" \
+        --plan-steps '[{"id":"STEP-001","status":"pending"}]' >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "non-cerebrate plan write rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: record-state-result.sh against tests/engine/ fixtures ==='
@@ -343,6 +376,7 @@ assert_plan_steps_seed
 assert_id_mismatch_unchanged
 assert_version_mismatch_unchanged
 assert_plan_steps_record_time
+assert_plan_write_unauthorized_unchanged
 
 echo ''
 echo '=== Summary ==='

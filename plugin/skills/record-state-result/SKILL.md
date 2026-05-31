@@ -83,6 +83,11 @@ The script validates, in order, ALL before any write:
 5. `--state` exists in `definition.states` (state-existence — a renamed/removed state never
    guesses; this is NOT version-skew).
 6. `--result` is a key under `states.<state>.transitions`; resolves `next_state`.
+7. PLAN-WRITE AUTHORIZATION — if `--plan-steps` or `--plan-path` was supplied, the recording
+   state MUST be a cerebrate planning state (`states.<state>.agent == "hivemind:cerebrate"`,
+   i.e. `plan` / `review_remediation_plan` / `brood_plan`); otherwise the engine rejects (exit 1,
+   ledger byte-unchanged). Flag presence alone does NOT authorize a plan write — only a cerebrate
+   agent state may persist `plan.steps` / `plan.path`.
 
 Then it appends the event; updates `state.previous`/`state.current`/`state.status`,
 `run.updated_at`, (if `next_state` is terminal) `run.status`, and — when `--plan-steps` /

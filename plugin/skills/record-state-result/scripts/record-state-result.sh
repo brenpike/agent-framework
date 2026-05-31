@@ -188,6 +188,20 @@ next_state="$(jq -r --arg s "$state" --arg r "$result" \
 [ -n "$next_state" ] && [ "$next_state" != "null" ] \
   || blocker "transition '$result' from state '$state' resolves to an empty target"
 
+# (6) PLAN-WRITE AUTHORIZATION: --plan-steps / --plan-path may ONLY be honored when the
+# state being recorded is a cerebrate planning state (definition.states[<state>].agent ==
+# "hivemind:cerebrate"). This authorizes exactly the cerebrate agent states (plan /
+# review_remediation_plan / brood_plan) and forbids every other state from mutating the
+# plan — flag PRESENCE alone is NOT sufficient. This guard runs BEFORE mktemp and the
+# temp-write, so a rejection leaves the on-disk ledger byte-unchanged. The untrusted plan
+# values still reach jq solely via --arg/--argjson; here only the engine-validated $state
+# (an existing definition key) is interpolated into the message.
+if [ "$have_plan_steps" = true ] || [ "$have_plan_path" = true ]; then
+  state_agent="$(jq -r --arg s "$state" '.states[$s].agent // ""' "$workflow")"
+  [ "$state_agent" = "hivemind:cerebrate" ] \
+    || blocker "plan steps may only be written from a cerebrate planning state; state '$state' (agent '$state_agent') is not authorized; ledger unchanged"
+fi
+
 # (10 pre-compute) determine whether next_state is a declared terminal and map its
 # run/state status. The schema constrains run.status to running|complete|blocked|
 # cancelled, so any terminal other than blocked/cancelled is complete-equivalent.
