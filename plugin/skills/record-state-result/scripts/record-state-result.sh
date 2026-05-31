@@ -154,7 +154,8 @@ workflow_id="$(jq -r '.id // ""' "$workflow")"
 # (2) BINDING GUARD: the supplied definition MUST bind to this ledger. The engine
 # HARD-REJECTS a non-binding definition (exit 1, ledger byte-unchanged); it does NOT
 # attempt to reconcile. Version-skew reconciliation is owned by the overlord resume-on-start
-# gate's three doors (start fresh / deterministic resume / proceed intent-driven), NOT here.
+# gate's two doors (start fresh / proceed intent-driven), NOT here. There is NO
+# deterministic-resume door — the engine exposes no rebind surface.
 # These checks run BEFORE the state-existence check and BEFORE any temp-file creation, so a
 # binding failure never mutates a byte of the on-disk ledger.
 #   (2a) definition.id == ledger.run.workflow.
@@ -162,7 +163,7 @@ ledger_workflow="$(jq -r '.run.workflow // ""' "$ledger")"
 [ "$workflow_id" = "$ledger_workflow" ] \
   || blocker "workflow definition id '$workflow_id' does not match ledger run.workflow '$ledger_workflow'; ledger unchanged"
 #   (2b) definition.version == ledger.run.workflow_version (engine hard-reject half of the
-#   §I policy; the overlord resume gate owns the three version-skew doors).
+#   §I policy; the overlord resume gate owns the two version-skew doors).
 ledger_wf_version="$(jq -r '.run.workflow_version // empty' "$ledger")"
 def_version="$(jq -r '.version // empty' "$workflow")"
 [ "$def_version" = "$ledger_wf_version" ] \
