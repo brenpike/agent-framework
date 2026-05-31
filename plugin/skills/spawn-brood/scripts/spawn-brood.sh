@@ -292,6 +292,7 @@ fi
 mark_failed() { S_STATUS[$1]="failed"; }
 
 # ── Pass 1: create worktree + launch detached session (non-blocking) ────────────
+launched_sessions=""
 settings_local="$repo_root/.claude/settings.local.json"
 
 for idx in $(seq 0 $((strain_count - 1))); do
@@ -354,6 +355,7 @@ for idx in $(seq 0 $((strain_count - 1))); do
     continue
   fi
   created_session=true
+  launched_sessions="${launched_sessions:+$launched_sessions }$tmux_session"
   : "$created_session"  # session confirmed launched; provisionally running
 done
 
@@ -479,7 +481,10 @@ emit_block() {
     printf '    rebased_after: []\n'
   done
   printf 'merge_order: []\n'
-} > "$manifest_path" || blocker "failed to write brood manifest to $manifest_path (target unwritable, e.g. a stale directory at that path); refusing to report success with no current manifest"
+} > "$manifest_path" || {
+  printf 'recovery: manifest write failed; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
+  blocker "failed to write brood manifest to $manifest_path (target unwritable, e.g. a stale directory at that path); refusing to report success with no current manifest"
+}
 
 # ── Final contract ──────────────────────────────────────────────────────────────
 failed_count=0
