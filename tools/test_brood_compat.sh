@@ -90,31 +90,36 @@ assert_v2_new() {
     fi
 }
 
-# ── Assertion 3: generated child instructions cover every brood flag init requires ──
-# Producer/consumer parity for the task-to-init invocation path: the child task file
-# emitted by spawn-brood.sh instructs the child how to call init-run-ledger. The
-# initializer REJECTS a brood child unless all four --parent-* flags are non-empty
-# (init-run-ledger.sh: --parent-brood-id, --parent-strain-id, --parent-run-id,
-# --parent-manifest). If the generated instructions omit any mapping, a child that
-# follows the injected contract blocks before creating its ledger. This asserts every
-# brood flag the initializer enforces is named in the spawn-brood child instructions.
+# ── Assertion 3: generated child instructions cover every brood parent field init requires ──
+# Producer/consumer parity for the task-to-init invocation path under the JSON-inputs
+# interface: the child task file emitted by spawn-brood.sh instructs the child how to
+# author the init-run-ledger inputs JSON. init-run-ledger.sh takes a single positional
+# JSON inputs file (not CLI flags) and REJECTS a brood child unless all four parent
+# fields are non-empty (init-run-ledger.sh reads .parent.brood_id, .parent.strain_id,
+# .parent.run_id, .parent.manifest; kind=brood requires all four). If the generated
+# instructions omit any mapping, a child that follows the injected contract blocks
+# before creating its ledger. This asserts every brood parent field the initializer
+# enforces is named in the spawn-brood child instructions.
 assert_brood_instruction_flag_parity() {
     local name="PARITY:child-instructions-cover-init-brood-flags"
-    # The brood flags init-run-ledger.sh enforces for --parent-kind=brood.
-    local flags=( --parent-brood-id --parent-strain-id --parent-run-id --parent-manifest )
+    # The parent JSON fields init-run-ledger.sh reads/enforces for parent.kind=brood,
+    # paired with the stable grep token each side uses to reference the field. The init
+    # token is the jq accessor (`.parent.<field>`); the instruction token is the new
+    # `parent.<field>` wording emitted in the child instructions.
+    local fields=( brood_id strain_id run_id manifest )
     local missing_init="" missing_instr=""
-    for flag in "${flags[@]}"; do
-        # Confirm the initializer actually enforces the flag (guards against the list
-        # going stale if the init contract changes).
-        grep -q -- "$flag" "$INIT_SCRIPT" || missing_init+=" $flag"
-        # Confirm the generated child instructions name the flag. Restrict to the
+    for field in "${fields[@]}"; do
+        # Confirm the initializer actually reads/enforces the field (guards against the
+        # list going stale if the init contract changes).
+        grep -q -- ".parent.$field" "$INIT_SCRIPT" || missing_init+=" parent.$field"
+        # Confirm the generated child instructions name the field. Restrict to the
         # `printf '  - ...` instruction emission lines so a stray mention elsewhere
         # cannot satisfy the check.
-        grep -E "printf '[[:space:]]*-.*$flag" "$SPAWN_SCRIPT" >/dev/null \
-            || missing_instr+=" $flag"
+        grep -E "printf '[[:space:]]*-.*parent\.$field" "$SPAWN_SCRIPT" >/dev/null \
+            || missing_instr+=" parent.$field"
     done
     if [[ -z "$missing_init" && -z "$missing_instr" ]]; then
-        pass "$name" "all four brood flags enforced by init and mapped in child instructions"
+        pass "$name" "all four brood parent fields enforced by init and mapped in child instructions"
     else
         failed "$name" "init missing:[${missing_init# }] instructions missing:[${missing_instr# }]"
     fi
