@@ -36,17 +36,20 @@ Optional (brood child / id control):
   the `brood` variant (brood/strain ids must match `[A-Za-z0-9._-]`).
 - `suggested_run_id`: caller-suggested run id, used verbatim only if it matches
   `[A-Za-z0-9._-]`, else a derived id is used.
-- `plan_steps`: cerebrate's plan `steps` reformatted to a JSON array (seeds
-  `ledger.plan.steps`). UNTRUSTED step text — serialized only. Default `[]`.
-- `plan_path`: path to the cerebrate directive (seeds `ledger.plan.path`). Default `null`.
+- `plan_steps`: cerebrate's plan `steps` reformatted to a JSON array — child/resume SEED for
+  `ledger.plan.steps` (NOT the primary live writer; see §A). UNTRUSTED, serialized only. Default `[]`.
+- `plan_path`: path to the cerebrate directive — child/resume seed for `ledger.plan.path`. Default `null`.
 
 ### The §A Plan-Steps Seam
 
 The ledger and workflow definitions are JSON; cerebrate's plan `steps` arrive as YAML in the
-plan block, with no maintained converter. At the §A boundary the overlord reformats
-cerebrate's YAML plan `steps` into a JSON array and passes it via `--plan-steps` at init —
-this is the SOLE writer of `plan.steps` (no engine path mutates it after init). The brood/child
-path omits the flag, preserving the default `[]`.
+plan block, with no maintained converter. `--plan-steps` / `--plan-path` here are the
+child/resume SEED path, NOT the primary live writer: the overlord inits the ledger BEFORE
+the `plan` (cerebrate) state runs, so an init-time seed would be empty on a fresh root run.
+The PRIMARY, live persistence of `plan.steps` happens at record-time, when the overlord
+records the `plan` state result via `hivemind:record-state-result --plan-steps` (see that
+skill's §A Plan-Steps Seam). Init-time `--plan-steps` exists ONLY to seed `plan.steps` for a
+child/resume run that already has the steps in hand; absent the flag it defaults to `[]`.
 
 ## Script Flag Interface
 

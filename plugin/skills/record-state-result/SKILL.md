@@ -19,8 +19,9 @@ set is read DIRECTLY from the workflow definition by the script — the model NE
 it (ADR-0018 §C).
 
 Rules: ADR-0018 §C (engine is the committed script, reads the allowed-set); §A (ledger and
-definitions are JSON); §I (engine hard-rejects a non-binding definition; the overlord resume
-gate owns the three version-skew doors).
+definitions are JSON); §I (engine hard-rejects a non-binding id/version mismatch and exposes
+no rebind; the overlord resume gate owns the two version-skew doors — start fresh / proceed
+intent-driven).
 
 ## Required Inputs
 
@@ -33,16 +34,26 @@ The overlord resolves and passes these; the skill does not invent them.
 - `result`: the named outcome to record (MUST be a legal transition key under that state).
 - `summary`: human-readable summary of the outcome — UNTRUSTED, serialized only.
 - `outputs` (optional): a JSON object of named outputs — UNTRUSTED, serialized only.
+- `plan_steps` (optional): cerebrate's plan `steps` reformatted to a JSON array — UNTRUSTED,
+  serialized only. Pass this when recording the `plan` state result (see §A below).
+- `plan_path` (optional): path to the cerebrate directive — UNTRUSTED, serialized only.
 
 ## The §A Plan-Steps Seam
 
 The ledger and workflow definitions are JSON; cerebrate's plan `steps` arrive as YAML in
-the plan block, with no maintained converter. `record-state-result` does **NOT** persist
-`plan.steps` — it neither writes them via `--outputs` nor exposes a `--plan-update` path.
-`plan.steps` is seeded ONCE, at init time, by `init-run-ledger --plan-steps` (see that
-skill's §A Plan-Steps Seam); that is the real persistence path. This skill only appends
-events and advances `state.current`. `--outputs` here is the event's free-form `outputs`
-object — it is NOT a plan-steps writer.
+the plan block, with no maintained converter. The PRIMARY, live persistence path for
+`plan.steps` is **record-time, here**: the overlord inits the ledger BEFORE the `plan`
+(cerebrate) state runs, so an init-time seed would be empty at runtime. When the overlord
+records the `plan` state result (after cerebrate returns), it reformats cerebrate's YAML
+plan `steps` into a JSON array and passes `--plan-steps` (and optionally `--plan-path`); the
+script sets `.plan.steps = $plan_steps` (and `.plan.path`). When the flags are ABSENT,
+`.plan.*` is left UNTOUCHED — never clobbered to `[]`.
+
+`init-run-ledger --plan-steps` remains a writer ONLY for the child/resume SEED path (default
+`[]`); it is no longer the primary live writer (see that skill's §A Plan-Steps Seam).
+
+`--outputs` here is the event's free-form `outputs` object — it is NOT a plan-steps writer;
+use `--plan-steps` for that.
 
 ## Script Flag Interface
 
@@ -53,31 +64,40 @@ object — it is NOT a plan-steps writer.
 --result <outcome>   (required) named outcome to record (must be a legal transition)
 --summary <text>     (required) human-readable summary (UNTRUSTED, serialized only)
 --outputs <json>     (optional) JSON object of named outputs (UNTRUSTED, serialized only)
+--plan-steps <json>  (optional) cerebrate plan steps as a JSON array (sets plan.steps;
+                     UNTRUSTED, serialized only via --argjson). Absent -> plan.steps untouched.
+--plan-path <text>   (optional) path to the cerebrate directive (sets plan.path; UNTRUSTED,
+                     serialized only via --arg). Absent -> plan.path untouched.
 ```
 
 The script validates, in order, ALL before any write:
 
-1. `definition.id == ledger.run.workflow` — BINDING GUARD (engine hard-reject; ledger unchanged).
-2. `definition.version == ledger.run.workflow_version` — BINDING GUARD. This is the engine
-   HARD-REJECT half of the §I version-skew policy; the overlord resume-on-start gate owns the
-   three version-skew DOORS (start fresh / deterministic resume / proceed intent-driven). The
-   engine never reconciles skew — it rejects a non-binding definition outright.
-3. `ledger.state.current == --state`.
-4. `--state` exists in `definition.states` (state-existence — a renamed/removed state never
+1. `--outputs` (if present) must be a JSON object; `--plan-steps` (if present) must be a JSON
+   array — both validated up front for a clear blocker before any temp-write.
+2. `definition.id == ledger.run.workflow` — BINDING GUARD (engine hard-reject; ledger unchanged).
+3. `definition.version == ledger.run.workflow_version` — BINDING GUARD. The engine HARD-REJECTS
+   an id/version mismatch and exposes NO rebind; the overlord resume-on-start gate owns the
+   TWO version-skew DOORS (start fresh / proceed intent-driven). There is NO deterministic-resume
+   door. The engine never reconciles skew — it rejects a non-binding definition outright.
+4. `ledger.state.current == --state`.
+5. `--state` exists in `definition.states` (state-existence — a renamed/removed state never
    guesses; this is NOT version-skew).
-5. `--result` is a key under `states.<state>.transitions`; resolves `next_state`.
+6. `--result` is a key under `states.<state>.transitions`; resolves `next_state`.
 
 Then it appends the event; updates `state.previous`/`state.current`/`state.status`,
-`run.updated_at`, and (if `next_state` is terminal) `run.status`. Every write is
-temp-write + atomic rename; on ANY validation failure the on-disk ledger is byte-unchanged.
+`run.updated_at`, (if `next_state` is terminal) `run.status`, and — when `--plan-steps` /
+`--plan-path` are present — `plan.steps` / `plan.path`. Every write is temp-write + atomic
+rename; on ANY validation failure the on-disk ledger is byte-unchanged.
 
 ## Procedure
 
-1. **Gather the Required Inputs** from the overlord's run context. If recording
-   plan-bearing outputs, reformat cerebrate's YAML plan `steps` into JSON per the §A seam.
+1. **Gather the Required Inputs** from the overlord's run context. When recording the `plan`
+   (cerebrate) state result, reformat cerebrate's YAML plan `steps` into a JSON array per the
+   §A seam and pass it via `--plan-steps` (and `--plan-path` if known) — this is the primary,
+   live writer of `ledger.plan.steps`.
 2. **(Conditional) Write the reformatted outputs** via the Write tool only if they must be
    materialized to a file before the script call — otherwise pass them inline via
-   `--outputs`. This is a permitted NON-FINAL tool call.
+   `--outputs` / `--plan-steps`. This is a permitted NON-FINAL tool call.
 3. **Execute the script** with one Bash call:
    ```bash
    bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh \

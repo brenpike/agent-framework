@@ -15,8 +15,9 @@
 #   1. ledger.state.current MUST equal --state, else blocker + exit 1, ledger UNCHANGED.
 #   2. BINDING GUARD: definition.id MUST equal ledger.run.workflow AND definition.version
 #      MUST equal ledger.run.workflow_version, else blocker + exit 1, ledger UNCHANGED. The
-#      engine HARD-REJECTS a non-binding definition; the §I version-skew DOORS (start fresh /
-#      deterministic resume / proceed intent-driven) are owned by the overlord resume gate.
+#      engine HARD-REJECTS a non-binding id/version mismatch and exposes NO rebind. The §I
+#      resume gate offers only TWO doors (start fresh / proceed intent-driven); there is NO
+#      deterministic-resume door. This guard is a hard-reject — it never reconciles skew.
 #   3. --state MUST exist in definition.states (a renamed/removed state never guesses —
 #      this is state-existence, NOT version-skew), else blocker + exit 1, UNCHANGED.
 #   5. The allowed-result set is read DIRECTLY from definition.states[<state>].transitions
@@ -37,9 +38,10 @@
 # failure the on-disk ledger is byte-unchanged — no partial write ever occurs (all
 # validation runs BEFORE the temp file is created).
 #
-# INJECTION POSTURE: the untrusted fields --summary and --outputs are serialized into
-# the event object via jq --arg / --argjson ONLY; they never enter the jq program or
-# any shell command source.
+# INJECTION POSTURE: the untrusted fields --summary, --outputs, --plan-steps, and
+# --plan-path are serialized via jq --arg / --argjson ONLY; they never enter the jq
+# program or any shell command source. --plan-steps reaches jq solely as an --argjson
+# binding; --plan-path solely as an --arg binding.
 #
 # FLAG INTERFACE:
 #   --ledger <path>      (required) path to the run ledger state.json
@@ -48,6 +50,14 @@
 #   --result <outcome>   (required) the named outcome to record (must be a legal transition)
 #   --summary <text>     (required) human-readable summary — UNTRUSTED, serialized only
 #   --outputs <json>     (optional) JSON object of named outputs — UNTRUSTED, serialized only
+#   --plan-steps <json>  (optional) cerebrate's plan steps reformatted to a JSON array. This
+#                        is the PRIMARY, live writer of ledger.plan.steps: the overlord passes
+#                        it when recording the `plan` state result (after cerebrate returns).
+#                        When present, .plan.steps = the array. When ABSENT, .plan.* is left
+#                        UNTOUCHED (never clobbered to []). UNTRUSTED step text — enters jq
+#                        ONLY via --argjson (pre-validated JSON), never the program/shell SOURCE.
+#   --plan-path <text>   (optional) path to the cerebrate directive. When present, .plan.path =
+#                        this (nullable) text. UNTRUSTED — enters jq ONLY via --arg.
 #
 # OUTPUT:
 #   - On success: writes the mutated ledger atomically and prints YAML routing lines:
@@ -82,15 +92,21 @@ result=""
 summary=""
 outputs=""
 have_outputs=false
+plan_steps=""
+have_plan_steps=false
+plan_path=""
+have_plan_path=false
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --ledger)   ledger="${2:-}"; shift 2 ;;
-    --workflow) workflow="${2:-}"; shift 2 ;;
-    --state)    state="${2:-}"; shift 2 ;;
-    --result)   result="${2:-}"; shift 2 ;;
-    --summary)  summary="${2:-}"; shift 2 ;;
-    --outputs)  outputs="${2:-}"; have_outputs=true; shift 2 ;;
+    --ledger)     ledger="${2:-}"; shift 2 ;;
+    --workflow)   workflow="${2:-}"; shift 2 ;;
+    --state)      state="${2:-}"; shift 2 ;;
+    --result)     result="${2:-}"; shift 2 ;;
+    --summary)    summary="${2:-}"; shift 2 ;;
+    --outputs)    outputs="${2:-}"; have_outputs=true; shift 2 ;;
+    --plan-steps) plan_steps="${2:-}"; have_plan_steps=true; shift 2 ;;
+    --plan-path)  plan_path="${2:-}"; have_plan_path=true; shift 2 ;;
     *) blocker "unknown argument: $1" ;;
   esac
 done
@@ -115,6 +131,15 @@ if [ "$have_outputs" = true ]; then
     || blocker "--outputs must be a JSON object"
 else
   outputs='{}'
+fi
+
+# If --plan-steps was supplied, it must be a valid JSON array (validated up front for a
+# clear blocker — same posture as --outputs). UNTRUSTED step text never enters the jq
+# program SOURCE; it flows ONLY through the --argjson binding in the mutate program below.
+# When ABSENT, .plan.steps is left untouched (never clobbered to []).
+if [ "$have_plan_steps" = true ]; then
+  printf '%s' "$plan_steps" | jq -e 'type == "array"' >/dev/null 2>&1 \
+    || blocker "--plan-steps must be a JSON array"
 fi
 
 # ── Deterministic validation (ALL before any write) ───────────────────────────
@@ -186,10 +211,24 @@ ledger_dir="$(dirname "$ledger")"
 tmp_ledger="$(mktemp "$ledger_dir/.state.json.XXXXXX")" \
   || blocker "failed to create temp ledger file under $ledger_dir"
 
-# Mutate via a single jq program. Untrusted --summary / --outputs enter ONLY as
-# --arg / --argjson bindings; the structural values (state, result, next_state,
-# statuses, timestamp) are engine-validated. INVARIANT: the input ledger is the file
-# itself; on a jq failure the temp file is removed and the on-disk ledger is untouched.
+# Mutate via a single jq program. Untrusted --summary / --outputs / --plan-steps /
+# --plan-path enter ONLY as --arg / --argjson bindings; the structural values (state,
+# result, next_state, statuses, timestamp) are engine-validated. The plan.* clauses are
+# appended to the program ONLY when their flags are present — flag PRESENCE (an inert
+# bool), never the untrusted VALUE, decides which clauses run; the values themselves still
+# arrive solely through --argjson/--arg. When a flag is absent the corresponding plan.*
+# field is left untouched (NOT clobbered). INVARIANT: the input ledger is the file itself;
+# on a jq failure the temp file is removed and the on-disk ledger is untouched.
+plan_program=""
+if [ "$have_plan_steps" = true ]; then
+  plan_program="$plan_program
+  | .plan.steps = \$plan_steps"
+fi
+if [ "$have_plan_path" = true ]; then
+  plan_program="$plan_program
+  | .plan.path = (if \$plan_path == \"\" then null else \$plan_path end)"
+fi
+
 jq \
   --arg at "$now_ts" \
   --arg state "$state" \
@@ -199,6 +238,8 @@ jq \
   --argjson outputs "$outputs" \
   --arg run_status "$run_status" \
   --arg state_status "$state_status" \
+  --argjson plan_steps "${plan_steps:-[]}" \
+  --arg plan_path "$plan_path" \
   '
   .events += [{
     at: $at,
@@ -212,7 +253,7 @@ jq \
   | .state.current = $next_state
   | .state.status = $state_status
   | .run.status = $run_status
-  | .run.updated_at = $at
+  | .run.updated_at = $at'"$plan_program"'
   ' "$ledger" > "$tmp_ledger" \
   || { rm -f "$tmp_ledger"; blocker "failed to serialize the mutated ledger with jq; on-disk ledger unchanged"; }
 

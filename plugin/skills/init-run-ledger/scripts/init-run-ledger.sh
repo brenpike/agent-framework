@@ -32,10 +32,12 @@
 #   --suggested-run-id <id>    (optional) caller-suggested run id; used verbatim only if
 #                              it matches ^[A-Za-z0-9._-]+$, else a derived id is used.
 #   --plan-steps <json-array>  (optional) cerebrate's plan steps reformatted to a JSON
-#                              array (seeds plan.steps). UNTRUSTED step text — enters jq
-#                              ONLY via --argjson (pre-validated JSON). Default [].
-#   --plan-path <text>         (optional) path to the cerebrate directive (seeds plan.path).
-#                              Default null.
+#                              array — the child/resume SEED path for plan.steps (NOT the
+#                              primary live writer; record-state-result --plan-steps at the
+#                              `plan` state is primary). UNTRUSTED step text — enters jq ONLY
+#                              via --argjson (pre-validated JSON). Default [].
+#   --plan-path <text>         (optional) path to the cerebrate directive — child/resume seed
+#                              for plan.path. Default null.
 #
 # RUN-ID DERIVATION:
 #   - --parent-kind=brood: child form <brood-id>--<strain-id> (both required, both must

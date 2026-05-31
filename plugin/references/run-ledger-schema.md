@@ -92,9 +92,11 @@ Reconciliation anchors derived from git observables: `branch`, `base`, `pr`.
 
 ### `plan.*`
 
-- `path` — path to the cerebrate directive, or `null`. Seeded at init by `init-run-ledger --plan-path`.
+- `path` — path to the cerebrate directive, or `null`. Written by the same two writers as `steps` (`--plan-path` on each).
 - `current_step` — the step id currently executing, or `null`.
-- `steps` — array reformatted from the cerebrate YAML plan block at the §A boundary (no maintained converter). The WRITER is `init-run-ledger --plan-steps`, which seeds `plan.steps` at init time (validated as a JSON array, bound via `--argjson`); absent the flag it defaults to `[]`. No engine path mutates `plan.steps` after init.
+- `steps` — array reformatted from the cerebrate YAML plan block at the §A boundary (no maintained converter). Two writers, validated as a JSON array and bound via `--argjson` in each:
+  - **PRIMARY (live):** `record-state-result --plan-steps`, passed by the overlord when recording the `plan` (cerebrate) state result. The overlord inits the ledger BEFORE the `plan` state runs, so this record-time write is what populates `plan.steps` for the implement loop on a fresh root run. When the flag is absent the script leaves `plan.steps` UNTOUCHED (never clobbered to `[]`).
+  - **SEED (child/resume):** `init-run-ledger --plan-steps`, which seeds `plan.steps` at init time for a child/resume run that already has the steps in hand; absent the flag it defaults to `[]`.
 
 ### `artifacts` (object)
 

@@ -47,13 +47,13 @@ The generic, workflow-agnostic loop. It carries no per-workflow sequencing — t
 
 Do not invent states. Do not skip required states. Do not transition to states not allowed by the workflow definition.
 
-The cerebrate plan arrives as a YAML `plan:` block; reformat its `steps` into the JSON ledger `plan.steps` at the §A seam when recording the planning state. Map delivery `single`/`multi`/`brood` and `open_questions`/`blocked` to the matching transition result.
+The cerebrate plan arrives as a YAML `plan:` block. When the `plan` (cerebrate) state completes, reformat its `steps` into a JSON array and pass them to `hivemind:record-state-result` via `--plan-steps` (with `--plan-path` if known) so `ledger.plan.steps` is populated for the implement loop — the ledger is inited before this state runs, so this record-time write, not an init seed, is what fills `plan.steps`. Map delivery `single`/`multi`/`brood` and `open_questions`/`blocked` to the matching transition result.
 
 ## Resume On Start
 
 On session start, scan `.hivemind/runs/<id>/state.json` for `run.status: running`: zero — no resume, proceed normally; exactly one — read it, reconcile `state.current` against git observables (branch, PR, trunk), then offer the user resume vs start-fresh; two or more — surface them, do not auto-pick.
 
-**Version-skew gate:** on resume, if `ledger.run.workflow_version` != the on-disk definition `version`, do NOT auto-resume — present three doors: (1) start fresh; (2) deterministic resume, ONLY if `state.current` still exists in the current definition with a compatible allowed-set; (3) proceed intent-driven (the universal fallback below).
+**Version-skew gate:** on resume, if `ledger.run.workflow_version` != the on-disk definition `version`, do NOT auto-resume — present exactly TWO doors: (1) start fresh; (2) proceed intent-driven (the universal fallback below — `run.mode: intent_fallback`, transition gating suspended, ledger becomes an append-only log, finish by judgment). The engine hard-rejects any id/version mismatch and offers no way to re-point a ledger at a changed definition, so on version skew the overlord does NOT attempt to continue the existing deterministic run against the new definition; the intent-driven door covers safe continuation.
 
 ## Intent-Driven Fallback (Universal)
 

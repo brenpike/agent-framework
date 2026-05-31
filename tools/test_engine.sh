@@ -20,6 +20,9 @@
 #   G. id mismatch       -> definition.id != ledger.run.workflow -> non-zero, byte-UNCHANGED.
 #   H. version mismatch  -> definition.version != ledger.run.workflow_version -> non-zero,
 #                           byte-UNCHANGED.
+#   I. plan-steps record  -> record-state-result.sh --plan-steps at the `plan` state writes
+#                           plan.steps into the ledger (length + id round-trip). PRIMARY,
+#                           live writer; complements F (the init-time child/resume seed).
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -295,6 +298,39 @@ assert_version_mismatch_unchanged() {
     fi
 }
 
+# ── I. plan-steps persisted at record-time via --plan-steps ─────────────────
+
+assert_plan_steps_record_time() {
+    local name="I:plan-steps-record-time"
+    # Start from a ledger at state.current=plan, record a valid plan-state result while
+    # passing --plan-steps; assert the written ledger persisted the steps array.
+    local ledger="$WORKDIR/i-ledger.json"
+    cp "$LEDGER_AT_PLAN" "$ledger"
+
+    local rc=0
+    bash "$ENGINE" \
+        --ledger "$ledger" \
+        --workflow "$WORKFLOW_DEF" \
+        --state plan \
+        --result ready \
+        --summary "engine test plan-steps record-time" \
+        --plan-steps '[{"id":"STEP-001","status":"pending"}]' >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording with --plan-steps (expected 0)"
+        return
+    fi
+
+    local steps_len step_id
+    steps_len="$(jq -r '.plan.steps | length' "$ledger")"
+    step_id="$(jq -r '.plan.steps[0].id' "$ledger")"
+    if [[ "$steps_len" -eq 1 && "$step_id" == "STEP-001" ]]; then
+        pass "$name" "plan.steps persisted at record-time: length=1, id round-trips (STEP-001)"
+    else
+        failed "$name" "expected length=1/id=STEP-001, got length=$steps_len/id=$step_id"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: record-state-result.sh against tests/engine/ fixtures ==='
@@ -306,6 +342,7 @@ assert_atomicity_on_write_failure
 assert_plan_steps_seed
 assert_id_mismatch_unchanged
 assert_version_mismatch_unchanged
+assert_plan_steps_record_time
 
 echo ''
 echo '=== Summary ==='
