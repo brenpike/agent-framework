@@ -51,7 +51,7 @@ The cerebrate plan arrives as a YAML `plan:` block. When ANY cerebrate planning 
 
 ## Resume On Start
 
-On session start, scan `.hivemind/runs/<id>/state.json` for `run.status: running`: zero — no resume, proceed normally; exactly one — read it, reconcile `state.current` against git observables (branch, PR, trunk), then offer the user resume vs start-fresh; two or more — surface them, do not auto-pick.
+On session start, scan `<checkout-root>/.hivemind/runs/*/state.json` for `run.status: running` — anchor the scan to the checkout root via `git rev-parse --show-toplevel`, NOT CWD-relative, since `hivemind:init-run-ledger` writes the run dir at the checkout root and a session started in a subdir would otherwise miss it: zero — no resume, proceed normally; exactly one — read it, reconcile `state.current` against git observables (branch, PR, trunk), then offer the user resume vs start-fresh; two or more — surface them, do not auto-pick.
 
 **Version-skew gate:** on resume, if `ledger.run.workflow_version` != the on-disk definition `version`, do NOT auto-resume — present exactly TWO doors: (1) start fresh; (2) proceed intent-driven (the universal fallback below — `run.mode: intent_fallback`, transition gating suspended, ledger becomes an append-only log, finish by judgment). The engine hard-rejects any id/version mismatch and offers no way to re-point a ledger at a changed definition, so on version skew the overlord does NOT attempt to continue the existing deterministic run against the new definition; the intent-driven door covers safe continuation.
 

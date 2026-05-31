@@ -56,10 +56,10 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
        - on FWL failure: exit 1 with blocker. Remote has commits the local clone has not seen.
      - on **any other** failure (auth, read-only, protected branch, hook policy, `[remote rejected]`): exit 1 with blocker. Do NOT warn and continue — a failed push leaves the remote unchanged, so the post-PR review loop would resume against stale commits and could repeat the same finding indefinitely (there is no PR-creation fallback in this skill). Classify the failure for the blocker message: treat as auth/read-only/protected/hook-policy when stderr contains any of `Permission denied`, `remote: Permission`, `protected branch`, `403`, `401`, `[remote rejected]`, `remote rejected`, `pre-receive hook`, `update hook`, `push declined`; treat as non-fast-forward (eligible for the force-with-lease retry above) only when stderr contains `non-fast-forward` OR `(fetch first)`. Bare `rejected` is not a non-fast-forward marker on its own (`[remote rejected]` is server-side and is not resolved by force-with-lease). Whichever class it is, the result is `blocked`.
    - else (no upstream, no `push_remote`): exit 1 with blocker. There is no remote to push to and none was supplied; the orchestrator must resolve a remote before the review loop can resume.
-5. **Final Bash tool call.** Emit YAML routing data to stdout (substitute the literal captured branch name and SHA from steps 1 and 3 — each Bash call is independent, use literal values not shell variables):
+5. **Final Bash tool call.** Emit YAML routing data to stdout. Derive the branch name and SHA OUT-OF-BAND inside this same Bash call via command substitution captured into shell vars, then reference them only as `"$h"` / `"$c"` — never paste the captured ref bytes as model-authored literal text (untrusted ref bytes in command source allow `$(...)`/backtick command substitution even inside double quotes; bash does NOT re-evaluate command substitution from variable contents — the ADR-0017 out-of-band technique):
 
    ```bash
-   printf 'branch: %s\ncommit: %s\n' "<head>" "<local_sha>"
+   h="$(git rev-parse --abbrev-ref HEAD)"; c="$(git rev-parse HEAD)"; printf 'branch: %s\ncommit: %s\n' "$h" "$c"
    ```
 
    On success, `branch` + `commit` are the routing data. On any blocking failure above, exit 1 with `blocker: <reason>` on stderr.

@@ -125,6 +125,6 @@ External observables win because they reflect ground truth. Manifest static fiel
 
 ## Reconciliation concept
 
-Before resuming work that touches a brood, the overlord reconciles ledger state against external observables — brood manifest presence, tmux sessions alive or dead, worktrees and branches existing, PRs existing, child ledgers present or missing and their current states. Reconciliation is a concept the docs define, not a v1 skill.
+Before resuming work that touches a brood, the overlord reconciles state against external observables + the manifest's static fields only — brood manifest presence, tmux sessions alive or dead, worktrees and branches existing, PRs existing. Consistent with the #161 deferral above, reconciliation does NOT open, `Read`, or `jq`-project any child `state.json`; child-ledger workflow-state reading is DEFERRED to issue #161. Reconciliation is a concept the docs define, not a v1 skill.
 
 A dedicated `reconcile-run` skill is DEFERRED — it is NOT part of v1. In v1, reconciliation is performed by the overlord's resume-on-start judgment using the status-derivation priority above.

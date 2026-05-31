@@ -37,9 +37,9 @@ After:
       (`suggested_id`, `suggested_ledger`, `workflow_hint`) alongside the v1
       fields. Old consumers ignore the new fields (back-compat).
 - [ ] Each strain has a worktree + branch off `base`, a detached tmux session
-      `brood-<short>` running claude, and its injected `task.md` — whose YAML
-      child-task metadata (`parent`, `strain`, `run`, `instructions`) is prepended
-      ABOVE the data-boundary preamble + description.
+      `brood-<short>` running claude, and its injected `task.md` — which emits
+      the data-boundary preamble FIRST, THEN the YAML child-task metadata block
+      (`parent`, `strain`, `run`, `instructions`), THEN the description.
 - [ ] `.claude/worktrees/` is excluded from git (the script self-guards).
 - [ ] Final action is the Bash script call (exit 0 = spawned, exit 1 = blocked).
 
