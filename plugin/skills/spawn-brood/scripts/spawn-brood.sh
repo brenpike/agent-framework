@@ -477,7 +477,12 @@ for idx in $(seq 0 $((strain_count - 1))); do
   brood_meta="$( {
     printf 'parent:\n'
     printf '  kind: brood\n'
-    printf '  brood_id: |-\n';          printf '%s\n' "$brood_id_safe"       | sed 's/^/    /'
+    # parent.brood_id is a LINEAGE identity, not a path: emit the CANONICAL $brood_id
+    # (the same value the coordinator manifest emits at the manifest emitter below) so
+    # lineage reconciliation matches child<->manifest. brood_id_safe (colons->dashes) is
+    # reserved for filesystem-derived run ids/paths only; using it here would record a
+    # different identifier in the child than the manifest carries (lineage mismatch).
+    printf '  brood_id: |-\n';          printf '%s\n' "$brood_id"            | sed 's/^/    /'
     printf '  hatchery_run_id: |-\n';   printf '%s\n' "$hatchery_run_id"     | sed 's/^/    /'
     printf '  hatchery_manifest: |-\n'; printf '%s\n' "$repo_root/.hivemind/brood/manifest.yaml" | sed 's/^/    /'
     printf 'strain:\n'
