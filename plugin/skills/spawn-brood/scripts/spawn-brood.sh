@@ -362,6 +362,18 @@ for idx in $(seq 0 $((strain_count - 1))); do
   # 3c: write the strain task to the worktree's gitignored .hivemind path. Preamble
   # FIRST, blank line, then the untrusted description — both inert variables, no
   # shell parsing of description bytes.
+  #
+  # CONTROL-BYTE STRIP (bracketed-paste-terminator defense): the description is paste-
+  # injected into the child TUI via `tmux paste-buffer -p`, which wraps the buffer in
+  # bracketed-paste control codes (ESC [200~ … ESC [201~). xterm's bracketed-paste
+  # spec warns the terminating marker can be EMBEDDED in pasted text; an issue-sourced
+  # description carrying a literal ESC[201~ (or ESC[200~) would close the bounded paste
+  # early, so the remainder reaches the child as live keystrokes OUTSIDE the data-
+  # boundary preamble — acute because the child runs --dangerously-skip-permissions.
+  # Strip every C0 control byte (incl. ESC 0x1b, which begins every paste marker)
+  # except TAB (0x09) and LF (0x0a), plus DEL (0x7f), before writing. No control byte
+  # is load-bearing in a task description; removing them cannot break a paste boundary.
+  desc="$(printf '%s' "$desc" | tr -d '\000-\010\013-\037\177')"
   mkdir -p "$wt/.hivemind/brood"
   task_file="$wt/.hivemind/brood/task.md"
   printf '%s\n\n%s\n' "$PREAMBLE" "$desc" > "$task_file"
@@ -481,7 +493,11 @@ emit_block() {
   # uses one YAML-safe emission path. brood_id is an exact value (|-); overlap_risk
   # is a validated enum, also emitted exact for consistency.
   emit_block '|-' 'brood_id' "$brood_id" 0 2
-  printf 'hatchery_session: "%s"\n' "$hatchery_session"
+  # hatchery_session derives from $TMUX, whose first comma-delimited field is the
+  # server socket path; tmux -S permits a socket path containing '"' or a newline,
+  # either of which would break an inline double-quoted YAML string. Emit via the
+  # same block-scalar discipline as every other exact-value field. |- (STRIP).
+  emit_block '|-' 'hatchery_session' "$hatchery_session" 0 2
   emit_block '|-' 'base' "$base" 0 2
   emit_block '|-' 'overlap_risk' "$overlap_risk" 0 2
   emit_block '|' 'overlap_details' "$overlap_details" 0 2
@@ -502,7 +518,7 @@ emit_block() {
     printf '    rebased_after: []\n'
   done
   printf 'merge_order: []\n'
-} > "$manifest_path"
+} > "$manifest_path" || blocker "failed to write brood manifest to $manifest_path (target unwritable, e.g. a stale directory at that path); refusing to report success with no current manifest"
 
 # ── Final contract ──────────────────────────────────────────────────────────────
 failed_count=0

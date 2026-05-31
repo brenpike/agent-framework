@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.2] - 2026-05-30
+
+### Security
+
+- **`spawn-brood` strips C0 control bytes from the strain description before writing `task.md`, closing an embedded bracketed-paste-terminator escape (Codex P0).** The description is paste-injected into the child TUI via `tmux paste-buffer -p`, which wraps the buffer in bracketed-paste control codes (`ESC[200~ … ESC[201~`). xterm's bracketed-paste spec warns the terminating marker can be embedded in pasted text, so an issue-sourced description carrying a literal `ESC[201~` (or `ESC[200~`) would close the bounded paste early — the remainder then reaches the child as live keystrokes outside the data-boundary preamble, acute because the child runs `--dangerously-skip-permissions`. The description is now passed through `tr -d '\000-\010\013-\037\177'` (strips every C0 control byte incl. `ESC` 0x1b, plus DEL, preserving TAB and LF) before being written to `task.md`. No control byte is load-bearing in a task description, so removal cannot break a legitimate paste boundary.
+- **`spawn-brood` emits `hatchery_session` as a YAML block scalar instead of an inline double-quoted string (Codex P1).** `hatchery_session` derives from `$TMUX`, whose first comma-delimited field is the server socket path; `tmux -S` permits a socket path containing `"` or a newline, either of which would have broken or altered the inline-quoted manifest value. It now routes through the same `emit_block '|-'` discipline as every other exact-value field.
+
+### Fixed
+
+- **`spawn-brood` fails closed when the brood manifest write fails (Codex P1).** The manifest redirect `} > "$manifest_path"` was unchecked and the script intentionally omits `set -e`, so a target that could not be replaced (e.g. a stale directory left at the manifest path) let execution fall through to the success path and print `manifest: …` with exit 0 — leaving the caller with no current manifest or stale status. The redirect is now guarded with `|| blocker "failed to write brood manifest …"`, returning a non-zero blocker on write failure.
+- **`spawn-brood` SKILL.md navigator now derives `<brood_slug>` exactly as the engine does (Codex P1).** The navigator told the agent to slug the raw ISO-8601 `brood_id`, but the engine canonicalizes to a compact UTC instant (`date -u … +%Y%m%dT%H%M%SZ`) first and then rejects the spawn unless the inputs file's parent directory name equals that canonical slug — so the documented flow (e.g. `2026-05-31T12:34:56Z` → `2026-05-31T12-34-56Z`) was rejected by the engine (which expects `20260531T123456Z`). Step 2 now instructs the agent to canonicalize to the UTC instant before sanitizing, matching the engine's slug algorithm.
+
 ## [2.18.1] - 2026-05-30
 
 ### Fixed

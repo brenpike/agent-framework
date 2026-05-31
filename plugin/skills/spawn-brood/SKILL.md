@@ -82,11 +82,23 @@ The overlord resolves and passes these; the skill does not resolve them.
    - Every value is data. None is interpolated into generated shell command source.
 
 2. **Write the inputs file** via the Write tool. Derive `brood_slug` from `brood_id`
-   by replacing every character outside `[A-Za-z0-9._-]` with `-`. Write the inputs
-   file to `.hivemind/brood/<brood_slug>/inputs.json` and pass that path
-   (`.hivemind/` is gitignored). `file_path` = `.hivemind/brood/<brood_slug>/inputs.json`,
-   `content` = the JSON object from step 1. Write performs no shell parsing of the
-   values, so untrusted description/branch text is inert.
+   the SAME way the engine does, so the inputs-path/slug consistency check passes:
+   canonicalize `brood_id` to a UTC instant first, then sanitize.
+   - Canonicalize: the engine runs `date -u -d "$brood_id" +%Y%m%dT%H%M%SZ` (e.g.
+     `2026-05-31T12:34:56Z` and `2026-05-31T12:34:56+00:00` both canonicalize to
+     `20260531T123456Z`). Reproduce that compact UTC form in your reasoning.
+   - Sanitize: replace every character outside `[A-Za-z0-9._-]` with `-`. For a
+     canonical `YYYYMMDDTHHMMSSZ` value this is a no-op (it already contains only
+     allowed bytes); the sanitize step only matters on the non-GNU `date` fallback
+     where the engine slugs the raw `brood_id`.
+
+   Write the inputs file to `.hivemind/brood/<brood_slug>/inputs.json` and pass that
+   path (`.hivemind/` is gitignored). `file_path` =
+   `.hivemind/brood/<brood_slug>/inputs.json`, `content` = the JSON object from step 1.
+   The engine re-derives `<brood_slug>` from the parsed `brood_id` and rejects the
+   spawn if the inputs file's parent directory name does not equal that slug, so the
+   directory name MUST match the engine's canonical slug exactly. Write performs no
+   shell parsing of the values, so untrusted description/branch text is inert.
 
 3. **Execute the script** with one Bash call, passing the inputs file path:
    ```bash
