@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.19.0] - 2026-05-31
+
+### Added
+
+- **Declarative workflow state machine.** JSON workflow definitions introduced under `plugin/workflows/` covering six workflows: `workflow-router`, `analysis-only`, `standard-delivery`, `pr-feedback-remediation`, `hatchery-dispatch`, and `exploratory-intent-session`. Each definition is a self-contained state graph with typed transitions and terminal markers.
+- **Per-run JSON run ledger + engine scripts.** A per-run ledger records live state transitions. Two committed engine scripts (`init-run-ledger.sh`, `record-state-result.sh`) back thin SKILL.md navigators (`hivemind:route-workflow`, `hivemind:init-run-ledger`, `hivemind:record-state-result`) — the overlord drives all state transitions through these scripts.
+- **Additive brood ledger bridge.** Brood manifest format bumped to `manifest_version: 2`; child run metadata is carried in the manifest. `brood-status` reads child ledgers read-only, enabling cross-strain state visibility without coupling child sessions to the coordinator.
+- **CI: workflow-definition validator + engine behavior tests.** Workflow-definition schema validation, engine behavior tests, and brood back-compat tests added and wired into `policy-check`.
+- **Reference docs and ADR.** `plugin/references/` reference documents and `docs/adr/ADR-0018` cover the state-machine design decisions.
+
+### Changed
+
+- **Overlord executes via the generic workflow-state loop.** The prior imperative pipeline in the overlord is retired; the overlord now routes every session through the workflow-state loop (select workflow → init ledger → execute states → record results). Reflex sessions use a ledger-skip path. Resume-on-start rehydrates an in-progress ledger; a workflow-version-skew gate blocks resumption on definition drift. An intent-driven universal fallback ensures unrecognized intent always resolves to a workflow.
+
 ## [2.18.8] - 2026-05-30
 
 ### Fixed
