@@ -1,0 +1,355 @@
+#!/usr/bin/env bash
+#
+# Workflow-definition structural validator for the hivemind plugin (plan §J.1).
+#
+# Validates every workflow definition under plugin/workflows/*.json against the
+# v1 contract in ${CLAUDE_PLUGIN_ROOT}/references/workflow-state-machine.md, and
+# structurally validates the run-ledger JSON shape of every ledger fixture under
+# tests/engine/ against ${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md.
+#
+# Per workflow definition, asserts:
+#   - valid JSON
+#   - top-level keys id, version, start present
+#   - start exists in .states
+#   - every transition target is a declared state
+#   - every NON-terminal state has a .transitions object (a JSON object)
+#   - every declared terminal exists in .states with type "terminal"
+#   - only v1 state types are used: decision|agent|skill|user_gate|terminal
+#
+# Per ledger fixture, asserts the required run-ledger fields exist with the right
+# shape (schema_version, run.{id,workflow,workflow_version,status,mode}, state.current,
+# events array, blockers array, etc.).
+#
+# Exit 0 when all definitions and fixtures pass. Non-zero with a clear per-file /
+# per-rule message on any failure.
+#
+# Usage:
+#   ./tools/validate_workflows.sh
+#   ./tools/validate_workflows.sh --strict
+#   ./tools/validate_workflows.sh --self-test
+#
+# --strict is accepted for parity with tools/policy_check.sh; this validator has no
+# advisory findings (every rule is a hard structural invariant), so --strict and the
+# default mode behave identically: any failure exits non-zero. The flag exists so CI
+# and contributors can invoke this validator with the same discipline as the others.
+#
+# --self-test runs each deliberately-broken fixture under tests/workflow-defs/broken/
+# through the same validation rules and asserts that EACH is rejected (proving the
+# validator catches dangling targets, missing start, undeclared terminal, bad state
+# type, and non-object transitions). It also confirms the known-good fixture under
+# tests/workflow-defs/valid/ passes. Exit 0 only if every broken fixture is rejected
+# and every valid fixture passes.
+
+set -euo pipefail
+
+# ── Argument parsing ────────────────────────────────────────────────────────
+
+STRICT=false
+SELF_TEST=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --strict|-Strict)
+            STRICT=true
+            shift
+            ;;
+        --self-test)
+            SELF_TEST=true
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# ── Path setup ──────────────────────────────────────────────────────────────
+
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+WORKFLOWS_DIR="$REPO_ROOT/plugin/workflows"
+ENGINE_FIXTURES_DIR="$REPO_ROOT/tests/engine"
+
+# ── Dependency check ──────────────────────────────────────────────────────────
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "FAIL: jq is required to validate workflow definitions but is not installed" >&2
+    exit 2
+fi
+
+# v1 legal state types (workflow-state-machine.md → V1 state types).
+V1_STATE_TYPES='["decision","agent","skill","user_gate","terminal"]'
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+FAILURES=0
+
+fail() {
+    # fail <file-label> <message>
+    echo "FAIL [$1] $2"
+    FAILURES=$((FAILURES + 1))
+}
+
+# ── Workflow definition validation ─────────────────────────────────────────────
+
+validate_workflow_definition() {
+    local def_file="$1"
+    local label
+    label="${def_file#"$REPO_ROOT"/}"
+    local file_failures_before="$FAILURES"
+
+    # Rule: valid JSON.
+    if ! jq -e . "$def_file" >/dev/null 2>&1; then
+        fail "$label" "not valid JSON"
+        return
+    fi
+
+    # Rule: top-level id, version, start present.
+    local has_id has_version has_start
+    has_id="$(jq -r 'has("id")' "$def_file")"
+    has_version="$(jq -r 'has("version")' "$def_file")"
+    has_start="$(jq -r 'has("start")' "$def_file")"
+    [[ "$has_id" == "true" ]]      || fail "$label" "missing top-level key: id"
+    [[ "$has_version" == "true" ]] || fail "$label" "missing top-level key: version"
+    [[ "$has_start" == "true" ]]   || fail "$label" "missing top-level key: start"
+
+    # Rule: .states must be an object (everything below depends on it).
+    local states_type
+    states_type="$(jq -r '.states | type' "$def_file" 2>/dev/null || echo "null")"
+    if [[ "$states_type" != "object" ]]; then
+        fail "$label" "missing or non-object .states map"
+        return
+    fi
+
+    # Rule: start exists in .states (only when start is present).
+    if [[ "$has_start" == "true" ]]; then
+        local start_name start_in_states
+        start_name="$(jq -r '.start' "$def_file")"
+        start_in_states="$(jq -r --arg s "$start_name" '.states | has($s)' "$def_file")"
+        [[ "$start_in_states" == "true" ]] \
+            || fail "$label" "start state '$start_name' is not declared in .states"
+    fi
+
+    # Rule: only v1 state types are used.
+    local bad_types
+    bad_types="$(jq -r --argjson allowed "$V1_STATE_TYPES" '
+        [.states | to_entries[]
+         | select((.value.type // "<missing>") as $t | ($allowed | index($t)) == null)
+         | "\(.key)=\(.value.type // "<missing>")"]
+        | join(", ")
+    ' "$def_file")"
+    [[ -z "$bad_types" ]] \
+        || fail "$label" "state(s) with unsupported type (allowed: decision|agent|skill|user_gate|terminal): $bad_types"
+
+    # Rule: every NON-terminal state has a .transitions object.
+    local missing_transitions
+    missing_transitions="$(jq -r '
+        [.states | to_entries[]
+         | select((.value.type // "") != "terminal")
+         | select((.value.transitions | type) != "object")
+         | .key]
+        | join(", ")
+    ' "$def_file")"
+    [[ -z "$missing_transitions" ]] \
+        || fail "$label" "non-terminal state(s) missing a transitions object: $missing_transitions"
+
+    # Rule: every transition target is a declared state.
+    local dangling_targets
+    dangling_targets="$(jq -r '
+        . as $wf
+        | [.states | to_entries[]
+           | .key as $from
+           | (if (.value.transitions | type) == "object" then .value.transitions else {} end)
+           | to_entries[]
+           | .key as $outcome
+           | .value as $target
+           | select(($wf.states | has($target)) | not)
+           | "\($from).\($outcome)->\($target)"]
+        | join(", ")
+    ' "$def_file")"
+    [[ -z "$dangling_targets" ]] \
+        || fail "$label" "transition target(s) point to undeclared states: $dangling_targets"
+
+    # Rule: every declared terminal exists in .states with type "terminal".
+    # (.terminal is optional structurally, but when present each name must resolve.)
+    local bad_terminals
+    bad_terminals="$(jq -r '
+        . as $wf
+        | [(.terminal // [])[]
+           | select(($wf.states[.].type // "") != "terminal")
+           | .]
+        | join(", ")
+    ' "$def_file")"
+    [[ -z "$bad_terminals" ]] \
+        || fail "$label" "declared terminal(s) absent from .states or not type terminal: $bad_terminals"
+
+    if [[ "$FAILURES" -eq "$file_failures_before" ]]; then
+        echo "PASS [$label] workflow definition valid"
+    fi
+}
+
+# ── Run-ledger fixture shape validation ─────────────────────────────────────────
+
+validate_ledger_fixture() {
+    local ledger_file="$1"
+    local label
+    label="${ledger_file#"$REPO_ROOT"/}"
+    local file_failures_before="$FAILURES"
+
+    if ! jq -e . "$ledger_file" >/dev/null 2>&1; then
+        fail "$label" "ledger fixture is not valid JSON"
+        return
+    fi
+
+    # Required fields per run-ledger-schema.md. Each entry is a jq path expression
+    # evaluated for existence; a null/absent value at the path is a failure.
+    local checks=(
+        'has("schema_version")'
+        '.run | has("id")'
+        '.run | has("workflow")'
+        '.run | has("workflow_version")'
+        '.run | has("status")'
+        '.run | has("mode")'
+        '.state | has("current")'
+        '.state | has("previous")'
+        '.state | has("status")'
+        '.parent | has("kind")'
+        '.request | has("raw")'
+        '.request | has("normalized")'
+        '(.events | type) == "array"'
+        '(.blockers | type) == "array"'
+    )
+    local check
+    for check in "${checks[@]}"; do
+        local result
+        result="$(jq -r "$check" "$ledger_file" 2>/dev/null || echo "false")"
+        [[ "$result" == "true" ]] \
+            || fail "$label" "run-ledger shape violation: expected '$check' to hold"
+    done
+
+    if [[ "$FAILURES" -eq "$file_failures_before" ]]; then
+        echo "PASS [$label] run-ledger fixture shape valid"
+    fi
+}
+
+# ── Self-test: prove the validator REJECTS broken definitions ───────────────────
+
+run_self_test() {
+    local defs_dir="$REPO_ROOT/tests/workflow-defs"
+    local broken_dir="$defs_dir/broken"
+    local valid_dir="$defs_dir/valid"
+    local self_failures=0
+
+    echo '=== Self-test: broken fixtures MUST be rejected ==='
+    if [[ ! -d "$broken_dir" ]]; then
+        echo "FAIL [self-test] missing broken-fixture directory: tests/workflow-defs/broken"
+        self_failures=$((self_failures + 1))
+    else
+        local bf
+        while IFS= read -r -d '' bf; do
+            local bf_label
+            bf_label="${bf#"$REPO_ROOT"/}"
+            # Run the validator in a subshell so its FAILURES/exit do not affect us,
+            # capturing only its exit code. A correctly-rejecting validator exits 1.
+            local rc=0
+            ( FAILURES=0; validate_workflow_definition "$bf"; [[ "$FAILURES" -gt 0 ]] ) >/dev/null 2>&1 || rc=$?
+            if [[ "$rc" -eq 0 ]]; then
+                # Re-run visibly to show WHY it was rejected.
+                local detail
+                detail="$( FAILURES=0; validate_workflow_definition "$bf" 2>&1 | grep '^FAIL' || true )"
+                echo "PASS [self-test] correctly rejected: $bf_label"
+                while IFS= read -r d; do [[ -n "$d" ]] && echo "    $d"; done <<< "$detail"
+            else
+                echo "FAIL [self-test] broken fixture was NOT rejected: $bf_label"
+                self_failures=$((self_failures + 1))
+            fi
+        done < <(find "$broken_dir" -maxdepth 1 -name '*.json' -type f -print0 | sort -z)
+    fi
+
+    echo ''
+    echo '=== Self-test: valid fixtures MUST pass ==='
+    if [[ -d "$valid_dir" ]]; then
+        local vf
+        while IFS= read -r -d '' vf; do
+            local vf_label
+            vf_label="${vf#"$REPO_ROOT"/}"
+            local rc=0
+            ( FAILURES=0; validate_workflow_definition "$vf"; [[ "$FAILURES" -eq 0 ]] ) >/dev/null 2>&1 || rc=$?
+            if [[ "$rc" -eq 0 ]]; then
+                echo "PASS [self-test] valid fixture accepted: $vf_label"
+            else
+                echo "FAIL [self-test] valid fixture was rejected: $vf_label"
+                ( FAILURES=0; validate_workflow_definition "$vf" 2>&1 | grep '^FAIL' || true ) \
+                    | while IFS= read -r d; do [[ -n "$d" ]] && echo "    $d"; done
+                self_failures=$((self_failures + 1))
+            fi
+        done < <(find "$valid_dir" -maxdepth 1 -name '*.json' -type f -print0 | sort -z)
+    else
+        echo '[SKIP] tests/workflow-defs/valid/ does not exist'
+    fi
+
+    echo ''
+    echo '=== Self-test summary ==='
+    if [[ "$self_failures" -gt 0 ]]; then
+        echo "Self-test: $self_failures failure(s) — the validator did not behave as required."
+        exit 1
+    fi
+    echo "Self-test: every broken fixture rejected and every valid fixture accepted."
+    exit 0
+}
+
+if [[ "$SELF_TEST" == true ]]; then
+    run_self_test
+fi
+
+# ── Drive the real workflow definitions ─────────────────────────────────────────
+
+echo '=== Workflow definitions: plugin/workflows/*.json ==='
+if [[ ! -d "$WORKFLOWS_DIR" ]]; then
+    fail "plugin/workflows" "directory does not exist"
+else
+    declare -a def_files=()
+    while IFS= read -r -d '' f; do
+        def_files+=("$f")
+    done < <(find "$WORKFLOWS_DIR" -maxdepth 1 -name '*.json' -type f -print0 | sort -z)
+
+    if [[ ${#def_files[@]} -eq 0 ]]; then
+        fail "plugin/workflows" "no *.json workflow definitions found"
+    else
+        for f in "${def_files[@]}"; do
+            validate_workflow_definition "$f"
+        done
+    fi
+fi
+
+# ── Drive the run-ledger fixtures (shape only) ──────────────────────────────────
+
+echo ''
+echo '=== Run-ledger fixtures: tests/engine/*.json ==='
+if [[ -d "$ENGINE_FIXTURES_DIR" ]]; then
+    declare -a ledger_files=()
+    while IFS= read -r -d '' f; do
+        ledger_files+=("$f")
+    done < <(find "$ENGINE_FIXTURES_DIR" -maxdepth 1 -name 'ledger-*.json' -type f -print0 | sort -z)
+
+    if [[ ${#ledger_files[@]} -eq 0 ]]; then
+        echo '[SKIP] No ledger-*.json fixtures found in tests/engine/'
+    else
+        for f in "${ledger_files[@]}"; do
+            validate_ledger_fixture "$f"
+        done
+    fi
+else
+    echo '[SKIP] tests/engine/ does not exist'
+fi
+
+# ── Summary ─────────────────────────────────────────────────────────────────
+
+echo ''
+echo '=== Summary ==='
+if [[ "$FAILURES" -gt 0 ]]; then
+    echo "Workflow validation: $FAILURES failure(s)."
+    exit 1
+fi
+echo "Workflow validation: all definitions and ledger fixtures valid."
+exit 0

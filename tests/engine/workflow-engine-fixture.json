@@ -1,0 +1,29 @@
+{
+  "id": "engine-fixture",
+  "version": 1,
+  "start": "plan",
+  "terminal": ["complete", "blocked", "cancelled"],
+  "states": {
+    "plan": {
+      "type": "agent",
+      "description": "Engine-test fixture start state. Legal outcomes: advance to build, or blocked.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "ready": "build",
+        "blocked": "blocked"
+      }
+    },
+    "build": {
+      "type": "agent",
+      "description": "Engine-test work state. Legal outcomes: complete (terminal), or blocked.",
+      "allowed_agents": ["hivemind:drone"],
+      "transitions": {
+        "done": "complete",
+        "blocked": "blocked"
+      }
+    },
+    "complete": { "type": "terminal" },
+    "blocked": { "type": "terminal" },
+    "cancelled": { "type": "terminal" }
+  }
+}
