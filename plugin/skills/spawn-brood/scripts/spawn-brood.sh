@@ -483,12 +483,6 @@ for idx in $(seq 0 $((strain_count - 1))); do
     # reserved for filesystem-derived run ids/paths only; using it here would record a
     # different identifier in the child than the manifest carries (lineage mismatch).
     printf '  brood_id: |-\n';          printf '%s\n' "$brood_id"            | sed 's/^/    /'
-    # brood_id_ledger is the LEDGER-SAFE form (colons->dashes) the child MUST pass to
-    # init-run-ledger --parent-brood-id, which rejects colons (charset [A-Za-z0-9._-]).
-    # parent.brood_id above stays CANONICAL for lineage/display; this sibling is the only
-    # value safe as a run-id component, and it reconciles with run.suggested_id below
-    # (both are brood_id_safe--<short>). The instructions: block directs the child to it.
-    printf '  brood_id_ledger: |-\n';   printf '%s\n' "$brood_id_safe"       | sed 's/^/    /'
     printf '  hatchery_run_id: |-\n';   printf '%s\n' "$hatchery_run_id"     | sed 's/^/    /'
     printf '  hatchery_manifest: |-\n'; printf '%s\n' "$repo_root/.hivemind/brood/manifest.yaml" | sed 's/^/    /'
     printf 'strain:\n'
@@ -505,8 +499,8 @@ for idx in $(seq 0 $((strain_count - 1))); do
     printf '  - Use the normal workflow router and workflow state machine.\n'
     printf '  - Initialize your OWN run ledger in this worktree (suggested path under run.suggested_ledger).\n'
     printf '  - Set parent.kind = brood in your ledger.\n'
-    printf '  - When you call init-run-ledger --parent-brood-id, pass parent.brood_id_ledger (the ledger-safe form), NOT parent.brood_id; parent.brood_id is canonical lineage/display only and its colons are rejected by the ledger id charset.\n'
-    printf '  - Pass strain.id as --parent-strain-id; your run id will be <brood_id_ledger>--<strain.id>, matching run.suggested_id.\n'
+    printf '  - When you call init-run-ledger --parent-brood-id, pass the CANONICAL parent.brood_id verbatim; init-run-ledger persists it verbatim into .parent.brood_id (so child ledger reconciles with the manifest) and sanitizes it internally (colons->dashes) only to derive the filesystem-safe run id.\n'
+    printf '  - Pass strain.id as --parent-strain-id; your run id will be <sanitized-brood-id>--<strain.id>, matching run.suggested_id.\n'
     printf '  - Do NOT write the hatchery manifest.\n'
     printf '  - Do NOT write the hatchery run ledger.\n'
     printf 'task:\n'

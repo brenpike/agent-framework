@@ -73,7 +73,7 @@ Ledger schema version. Distinct from `run.workflow_version`, which tracks the wo
 
 ### `parent.*`
 
-Identifies the run's relationship to a brood. The `kind` field selects the variant; see [Parent-block variants](#parent-block-variants).
+Identifies the run's relationship to a brood. The `kind` field selects the variant; see [Parent-block variants](#parent-block-variants). For a `brood` child, `brood_id` holds the CANONICAL brood id — the manifest's colon-bearing ISO-8601 timestamp — persisted verbatim so the child ledger reconciles 1:1 with the coordinator manifest's `brood_id`. `init-run-ledger --parent-brood-id` accepts this canonical form and sanitizes it internally (colons -> dashes) only to derive the filesystem-safe run id (`<sanitized-brood-id>--<strain-id>`); the run path is sanitized, `.parent.brood_id` is canonical.
 
 ### `request.*`
 
@@ -164,7 +164,7 @@ A spawned strain. Populated from the injected child-task metadata; lives inside 
   "parent": {
     "kind": "brood",
     "run_id": "2026-05-30T22-10-00Z-hatchery",
-    "brood_id": "2026-05-30T22-10-00Z",
+    "brood_id": "2026-05-30T22:10:00Z",
     "strain_id": "api",
     "manifest": "/repo/.hivemind/brood/manifest.yaml"
   }
@@ -186,7 +186,7 @@ The hatchery is itself a normal root run, so its `parent.kind` is `none`. Its re
   },
   "artifacts": {
     "brood": {
-      "id": "2026-05-30T22-10-00Z",
+      "id": "2026-05-30T22:10:00Z",
       "manifest": ".hivemind/brood/manifest.yaml"
     }
   }

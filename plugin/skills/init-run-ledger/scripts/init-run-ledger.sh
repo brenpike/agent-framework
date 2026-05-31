@@ -33,7 +33,11 @@
 #   --normalized <text>        (required) overlord's normalized summary of the request
 #   --parent-kind <kind>       (optional) none|brood ; default none
 #   --parent-run-id <id>       (required when --parent-kind=brood) parent run id
-#   --parent-brood-id <id>     (required when --parent-kind=brood) brood id
+#   --parent-brood-id <id>     (required when --parent-kind=brood) CANONICAL brood id —
+#                              the manifest's colon-bearing ISO-8601 timestamp. Persisted
+#                              VERBATIM into .parent.brood_id (so the child ledger reconciles
+#                              with the manifest's canonical brood_id). The run id/path is
+#                              derived by sanitizing it internally (colons->dashes).
 #   --parent-strain-id <id>    (required when --parent-kind=brood) strain id
 #   --parent-manifest <path>   (required when --parent-kind=brood) manifest path
 #   --suggested-run-id <id>    (optional) caller-suggested run id; used verbatim only if
@@ -47,8 +51,10 @@
 #                              for plan.path. Default null.
 #
 # RUN-ID DERIVATION:
-#   - --parent-kind=brood: child form <brood-id>--<strain-id> (both required, both must
-#     match the safe charset).
+#   - --parent-kind=brood: child form <sanitized-brood-id>--<strain-id>. The brood id is the
+#     CANONICAL ISO-8601 form (colons allowed); it is persisted verbatim into .parent.brood_id
+#     and sanitized internally (colons->dashes, matching spawn-brood's brood_id_safe transform)
+#     ONLY to derive the filesystem-safe run id. strain id must match the safe charset.
 #   - else if --suggested-run-id is safe (^[A-Za-z0-9._-]+$): use it verbatim.
 #   - else derived: <utc-timestamp>-<workflow-id> (timestamp colons mapped to dashes so
 #     the id is a safe directory name).
@@ -149,9 +155,20 @@ if [ "$parent_kind" = "brood" ]; then
   # reconciliation trail — so require both non-empty before creating the ledger.
   [ -n "$parent_run_id" ]    || blocker "--parent-kind=brood requires --parent-run-id"
   [ -n "$parent_manifest" ]  || blocker "--parent-kind=brood requires --parent-manifest"
-  case "$parent_brood_id"  in *[!A-Za-z0-9._-]*) blocker "--parent-brood-id contains characters outside [A-Za-z0-9._-]: $parent_brood_id" ;; esac
+  # --parent-brood-id is the CANONICAL brood id (the manifest's ISO-8601 timestamp, e.g.
+  # 2026-05-31T17:30:00Z). Accept the ISO form — [A-Za-z0-9._-] PLUS ':' (the ISO time
+  # separator) — while still rejecting genuinely unsafe bytes (path separators, control
+  # bytes, shell metacharacters). It is persisted VERBATIM into .parent.brood_id so the
+  # child ledger reconciles with the manifest's canonical brood_id; only the derived run id
+  # is sanitized below.
+  case "$parent_brood_id"  in *[!A-Za-z0-9._:-]*) blocker "--parent-brood-id contains characters outside [A-Za-z0-9._:-]: $parent_brood_id" ;; esac
   case "$parent_strain_id" in *[!A-Za-z0-9._-]*) blocker "--parent-strain-id contains characters outside [A-Za-z0-9._-]: $parent_strain_id" ;; esac
-  run_id="${parent_brood_id}--${parent_strain_id}"
+  # Sanitize the canonical brood id (colons->dashes, same transform as spawn-brood's
+  # brood_id_safe) ONLY for the filesystem run-id component. parent_brood_id stays canonical
+  # for verbatim persistence below. Result equals the manifest's run.suggested_id form
+  # (<brood_id_safe>--<short>).
+  parent_brood_id_safe="$(printf '%s' "$parent_brood_id" | tr ':' '-')"
+  run_id="${parent_brood_id_safe}--${parent_strain_id}"
 elif [ -n "$suggested_run_id" ] && printf '%s' "$suggested_run_id" | grep -Eq "$SAFE_ID_RE"; then
   run_id="$suggested_run_id"
 else

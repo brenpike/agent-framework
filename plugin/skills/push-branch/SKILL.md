@@ -21,10 +21,12 @@ Before:
 - [ ] Git state not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State)
 
 After:
-- [ ] Working branch is on its remote (push succeeded or warn-and-continue on auth/protected)
+- [ ] Working branch is on its remote — push SUCCEEDED, or the skill returned `blocked` (exit 1)
 - [ ] Final action is a Bash tool call (exit 0 = pushed/routing emitted, exit 1 = blocked)
 
 Push the current working branch to its remote. This skill does NOT create a pull request — its sole job is to place remediation commits on the remote so an in-flight review loop can resume against the updated branch.
+
+Contract: **the push succeeds or the skill returns `blocked`.** There is no warn-and-continue path. In the post-PR `push_remediation` flow a failed push means the review loop would resume against the UNCHANGED remote and could repeat the same finding forever (no `gh pr create` fallback exists here, unlike `hivemind:open-plan-pr`). Any push failure — auth, read-only, protected branch, hook policy, `[remote rejected]`, or a non-fast-forward that force-with-lease cannot resolve — is therefore a terminal `blocked` (exit 1), never a warning.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/governance/workflow.md`.
 
@@ -52,7 +54,7 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
        Run `git push --force-with-lease <remote> HEAD:<upstream_branch>`. The explicit `HEAD:<upstream_branch>` refspec targets the actual tracked branch — not the same-named branch on the remote, which may differ when the local branch tracks a renamed upstream (`push.default=upstream` or explicit branch mapping). Force-with-lease without a value uses the remote-tracking ref as expected, so it succeeds only when the remote tip matches what the local clone last fetched, which covers intentional history rewrites (rebase, amend) without overwriting concurrent pushes.
        - on FWL success: continue.
        - on FWL failure: exit 1 with blocker. Remote has commits the local clone has not seen.
-     - on **auth / read-only / protected branch / hook-policy** failure: record warning and continue. The branch may already be on a usable remote, or the review loop may target an alternate remote. Treat as auth/read-only/protected/hook-policy when stderr contains any of: `Permission denied`, `remote: Permission`, `protected branch`, `403`, `401`, `[remote rejected]`, `remote rejected`, `pre-receive hook`, `update hook`, `push declined`. Treat as non-fast-forward only when stderr contains `non-fast-forward` OR `(fetch first)`. Bare `rejected` is not a non-fast-forward marker on its own (`[remote rejected]` is server-side and is not resolved by force-with-lease).
+     - on **any other** failure (auth, read-only, protected branch, hook policy, `[remote rejected]`): exit 1 with blocker. Do NOT warn and continue — a failed push leaves the remote unchanged, so the post-PR review loop would resume against stale commits and could repeat the same finding indefinitely (there is no PR-creation fallback in this skill). Classify the failure for the blocker message: treat as auth/read-only/protected/hook-policy when stderr contains any of `Permission denied`, `remote: Permission`, `protected branch`, `403`, `401`, `[remote rejected]`, `remote rejected`, `pre-receive hook`, `update hook`, `push declined`; treat as non-fast-forward (eligible for the force-with-lease retry above) only when stderr contains `non-fast-forward` OR `(fetch first)`. Bare `rejected` is not a non-fast-forward marker on its own (`[remote rejected]` is server-side and is not resolved by force-with-lease). Whichever class it is, the result is `blocked`.
    - else (no upstream, no `push_remote`): exit 1 with blocker. There is no remote to push to and none was supplied; the orchestrator must resolve a remote before the review loop can resume.
 5. **Final Bash tool call.** Emit YAML routing data to stdout (substitute the literal captured branch name and SHA from steps 1 and 3 — each Bash call is independent, use literal values not shell variables):
 

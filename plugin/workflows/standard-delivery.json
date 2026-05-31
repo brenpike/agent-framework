@@ -211,12 +211,12 @@
     },
     "review_remediation_plan_postpr": {
       "type": "agent",
-      "description": "Post-PR remediation re-plan: cerebrate re-plans when GitHub review escalates to the planner after the PR is open. Declares every cerebrate outcome (single|multi|brood|open_questions|blocked); a re-plan that yields steps routes to the post-PR implementation loop, brood routes to the brood_confirm gate, open_questions/blocked surface to the user. The post-PR loop pushes remediation commits and re-enters the existing review loop — it never re-creates the PR.",
+      "description": "Post-PR remediation re-plan: cerebrate re-plans when GitHub review escalates to the planner after the PR is open. Declares every cerebrate outcome (single|multi|brood|open_questions|blocked); a re-plan that yields steps routes to the post-PR implementation loop, open_questions/blocked surface to the user. The post-PR loop pushes remediation commits and re-enters the existing review loop — it never re-creates the PR. brood is BLOCKED in this post-PR context: a brood routes through brood_confirm -> spawn_brood -> hatchery_monitor (terminal), which would strand the already-open PR before it could reach validate_postpr -> push_remediation -> github_review_loop. Brood-shaped post-PR remediation must be surfaced to the user (matching pr-feedback-remediation's handling of brood in a post-PR context).",
       "agent": "hivemind:cerebrate",
       "transitions": {
         "single": "implement_next_step_postpr",
         "multi": "implement_next_step_postpr",
-        "brood": "brood_confirm",
+        "brood": "blocked",
         "open_questions": "blocked",
         "blocked": "blocked"
       }

@@ -32,10 +32,13 @@
 #                           writes the ledger under <repo-root>/.hivemind/runs/<id>/state.json
 #                           and NOT under <subdir>/.hivemind. Regression for the CWD-relative
 #                           run_dir that misplaced the ledger and caused duplicate runs (F-E).
-#   L. ledger-safe brood id -> init-run-ledger.sh --parent-kind brood with a COLON-FREE
-#                           ledger-safe --parent-brood-id succeeds (exit 0) and derives run-id
-#                           <safe>--<short>. Proves the ledger-safe parent id spawn-brood now
-#                           injects is accepted without a colon blocker (F-D).
+#   L. canonical brood id -> init-run-ledger.sh --parent-kind brood with a CANONICAL
+#                           colon-bearing ISO-8601 --parent-brood-id succeeds (exit 0),
+#                           PERSISTS .parent.brood_id VERBATIM (colons intact, reconciles with
+#                           the manifest's canonical brood_id), and derives the sanitized run-id
+#                           <dashed-brood-id>--<short>. Proves init-run-ledger accepts the
+#                           canonical id spawn-brood now injects and sanitizes internally for
+#                           the run path only (F-D round-3: child ledger <-> manifest reconcile).
 #   M. cerebrate-name-agnostic authz -> record-state-result.sh --plan-steps at a SECOND
 #                           cerebrate state whose name is NOT `plan` (review_remediation_plan,
 #                           agent==hivemind:cerebrate) is ACCEPTED (exit 0, steps persisted).
@@ -418,16 +421,22 @@ assert_init_anchored_to_checkout_root() {
     fi
 }
 
-# ── L. ledger-safe brood id accepted; run-id <safe>--<short> (F-D regression) ─
+# ── L. canonical brood id persisted verbatim; run-id sanitized (F-D round-3) ──
 
-assert_brood_child_ledger_safe_id() {
-    local name="L:brood-child-ledger-safe-id"
-    # Brood child init with a COLON-FREE ledger-safe --parent-brood-id (the form spawn-brood
-    # now injects as parent.brood_id_ledger). Must succeed and derive run-id <safe>--<short>.
+assert_brood_child_canonical_id() {
+    local name="L:brood-child-canonical-id"
+    # Brood child init with the CANONICAL colon-bearing --parent-brood-id (the value spawn-brood
+    # now injects as parent.brood_id, identical to the coordinator manifest's brood_id). Must:
+    #   (1) succeed (exit 0) — init accepts the ISO colon form, no charset blocker,
+    #   (2) PERSIST .parent.brood_id VERBATIM with colons (so child ledger <-> manifest reconcile),
+    #   (3) derive the sanitized filesystem run-id <dashed-brood-id>--<short> (colons->dashes),
+    #       matching the manifest's run.suggested_id form.
     local repo="$WORKDIR/l-repo"
     mkdir -p "$repo"
     git -C "$repo" init -q
-    local safe="2026-05-31T17-30-00Z" short="my-strain"
+    # canonical = the manifest-style colon-bearing ISO-8601 brood id; safe = its sanitized form.
+    local canonical="2026-05-31T17:30:00Z" short="my-strain"
+    local safe="${canonical//:/-}"
     local rc=0 out
     out="$(cd "$repo" && bash "$INIT_ENGINE" \
         --workflow engine-fixture \
@@ -436,28 +445,32 @@ assert_brood_child_ledger_safe_id() {
         --user-request "engine test brood child" \
         --normalized "engine test brood child" \
         --parent-kind brood \
-        --parent-brood-id "$safe" \
+        --parent-brood-id "$canonical" \
         --parent-strain-id "$short" \
         --parent-run-id "$safe-hatchery" \
         --parent-manifest "$repo/.hivemind/brood/manifest.yaml" 2>&1)" || rc=$?
 
     if [[ "$rc" -ne 0 ]]; then
-        failed "$name" "init engine exited $rc on a ledger-safe brood id (expected 0): $out"
+        failed "$name" "init engine exited $rc on a canonical colon-bearing brood id (expected 0): $out"
         return
     fi
 
     local run_id ledger brood_id
     run_id="$(printf '%s\n' "$out" | sed -n 's/^run_id: //p')"
     ledger="$(printf '%s\n' "$out" | sed -n 's/^ledger: //p')"
+    # (3) run-id is the SANITIZED dashed form, NOT the canonical colon form.
     if [[ "$run_id" != "$safe--$short" ]]; then
-        failed "$name" "expected run-id $safe--$short, got $run_id"
+        failed "$name" "expected sanitized run-id $safe--$short, got $run_id"
         return
     fi
     brood_id="$(jq -r '.parent.brood_id' "$ledger")"
-    if [[ -f "$ledger" && "$brood_id" == "$safe" ]]; then
-        pass "$name" "ledger-safe brood id accepted: run-id=$run_id, parent.brood_id round-trips"
+    # (2) .parent.brood_id is the CANONICAL colon-bearing id (reconciles with manifest brood_id).
+    #     An assertion against the literal manifest-style canonical value proves child<->manifest
+    #     identity: the child persists exactly what the coordinator manifest carries.
+    if [[ -f "$ledger" && "$brood_id" == "$canonical" ]]; then
+        pass "$name" "canonical brood id persisted verbatim (parent.brood_id=$brood_id, manifest-reconcilable); run-id sanitized to $run_id"
     else
-        failed "$name" "expected ledger at $ledger with parent.brood_id=$safe, got brood_id=$brood_id"
+        failed "$name" "expected ledger at $ledger with canonical parent.brood_id=$canonical (colons intact), got brood_id=$brood_id"
     fi
 }
 
@@ -509,7 +522,7 @@ assert_version_mismatch_unchanged
 assert_plan_steps_record_time
 assert_plan_write_unauthorized_unchanged
 assert_init_anchored_to_checkout_root
-assert_brood_child_ledger_safe_id
+assert_brood_child_canonical_id
 assert_plan_write_remediation_state_authorized
 
 echo ''
