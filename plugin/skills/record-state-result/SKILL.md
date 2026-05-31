@@ -4,6 +4,7 @@ description: Record the outcome of the current workflow state into the run ledge
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh *)
   - Read
+  - Write   # scoped: ONLY to author the record inputs file (.hivemind/runs/.record-inputs.json)
 shell: bash
 ---
 
@@ -13,9 +14,9 @@ Record the outcome of the current workflow state into the run ledger, append a l
 event, validate the transition against the workflow definition, and advance
 `state.current` to the legal next state. The deterministic engine is the committed script
 `${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh`; this
-body is a navigator that builds the flags and runs the script once. The allowed-result
-set is read DIRECTLY from the workflow definition by the script — the model NEVER supplies
-it (ADR-0018 §C).
+body is a navigator that authors a single JSON inputs file and runs the script once. The
+allowed-result set is read DIRECTLY from the workflow definition by the script — the model
+NEVER supplies it (ADR-0018 §C).
 
 Rules: ADR-0018 §C (engine is the committed script, reads the allowed-set); §A (ledger and
 definitions are JSON); §I (engine hard-rejects a non-binding id/version mismatch and exposes
@@ -46,54 +47,74 @@ the plan block, with no maintained converter. The PRIMARY, live persistence path
 planning state runs, so an init-time seed would be empty at runtime. When the overlord
 records any cerebrate planning state result (`plan` / `review_remediation_plan` /
 `review_remediation_plan_postpr` / `brood_plan`, after cerebrate returns), it reformats
-cerebrate's YAML plan `steps` into a JSON array and passes `--plan-steps` (and optionally
-`--plan-path`); the script sets `.plan.steps = $plan_steps` (and `.plan.path`). When the
-flags are ABSENT, `.plan.*` is left UNTOUCHED — never clobbered to `[]`.
+cerebrate's YAML plan `steps` into a JSON array and includes `plan_steps` (and optionally
+`plan_path`) in the inputs file; the script sets `.plan.steps = $plan_steps` (and
+`.plan.path`). When those keys are ABSENT (missing or null), `.plan.*` is left UNTOUCHED —
+never clobbered to `[]`.
 
-`init-run-ledger --plan-steps` remains a writer ONLY for the child/resume SEED path (default
-`[]`); it is no longer the primary live writer (see that skill's §A Plan-Steps Seam).
+`init-run-ledger`'s `plan_steps` remains a writer ONLY for the child/resume SEED path
+(default `[]`); it is no longer the primary live writer (see that skill's §A Plan-Steps Seam).
 
-`--outputs` here is the event's free-form `outputs` object — it is NOT a plan-steps writer;
-use `--plan-steps` for that.
+The `outputs` field here is the event's free-form `outputs` object — it is NOT a plan-steps
+writer; use `plan_steps` for that.
 
-## Script Flag Interface
+## Inputs JSON
 
-```text
---ledger <path>      (required) path to the run ledger state.json
---workflow <path>    (required) path to the workflow definition JSON
---state <state>      (required) state the run is currently in (must match ledger)
---result <outcome>   (required) named outcome to record (must be a legal transition)
---summary <text>     (required) human-readable summary (UNTRUSTED, serialized only)
---outputs <json>     (optional) JSON object of named outputs (UNTRUSTED, serialized only)
---plan-steps <json>  (optional) cerebrate plan steps as a JSON array (sets plan.steps;
-                     UNTRUSTED, serialized only via --argjson). Absent -> plan.steps untouched.
---plan-path <text>   (optional) path to the cerebrate directive (sets plan.path; UNTRUSTED,
-                     serialized only via --arg). Absent -> plan.path untouched.
+The script owns deterministic read -> validate -> mutate -> atomic-write; the navigator
+authors a single JSON inputs file and passes its path as the one positional argument. Every
+value is inert data — the script reads each field with `jq` into a shell variable and never
+interpolates it into shell source or the jq program source. Shape:
+
+```json
+{
+  "ledger": "<required> path to the run ledger state.json",
+  "workflow": "<required> path to the workflow definition JSON",
+  "state": "<required> state the run is currently in (must match ledger.state.current)",
+  "result": "<required> named outcome to record (must be a legal transition key)",
+  "summary": "<required> human-readable summary (UNTRUSTED, serialized only)",
+  "outputs": {},
+  "plan_steps": [],
+  "plan_path": "<optional> path to the cerebrate directive (sets plan.path)"
+}
 ```
+
+Field rules:
+- `ledger`, `workflow`, `state`, `result`, `summary` are required non-empty strings.
+- `outputs` is optional. KEY-PRESENCE semantics: a MISSING key OR a present-but-null value
+  is ABSENT (the event's `outputs` defaults to `{}`); a present non-null value MUST be a JSON
+  object and is recorded verbatim. UNTRUSTED — serialized only via `--argjson`.
+- `plan_steps` is optional (cerebrate plan steps as a JSON array; sets `.plan.steps`).
+  KEY-PRESENCE semantics: a MISSING key OR a present-but-null value is ABSENT -> `.plan.*`
+  left UNTOUCHED (never clobbered to `[]`); a present non-null value MUST be a JSON array.
+  UNTRUSTED — serialized only via `--argjson`.
+- `plan_path` is optional (sets `.plan.path`). KEY-PRESENCE semantics: a MISSING key OR a
+  present-but-null value is ABSENT -> `.plan.path` left UNTOUCHED; a present non-null value
+  is the (nullable) text. UNTRUSTED — serialized only via `--arg`.
+- Every value is data. None is interpolated into generated shell command source.
 
 The script validates, in order, ALL before any write:
 
-1. `--outputs` (if present) must be a JSON object; `--plan-steps` (if present) must be a JSON
-   array — both validated up front for a clear blocker before any temp-write.
+1. `outputs` (if present and non-null) must be a JSON object; `plan_steps` (if present and
+   non-null) must be a JSON array — both validated up front for a clear blocker before any temp-write.
 2. `definition.id == ledger.run.workflow` — BINDING GUARD (engine hard-reject; ledger unchanged).
 3. `definition.version == ledger.run.workflow_version` — BINDING GUARD. The engine HARD-REJECTS
    an id/version mismatch and exposes NO rebind; the overlord resume-on-start gate owns the
    TWO version-skew DOORS (start fresh / proceed intent-driven). There is NO deterministic-resume
    door. The engine never reconciles skew — it rejects a non-binding definition outright.
-4. `ledger.state.current == --state`.
-5. `--state` exists in `definition.states` (state-existence — a renamed/removed state never
+4. `ledger.state.current == state`.
+5. `state` exists in `definition.states` (state-existence — a renamed/removed state never
    guesses; this is NOT version-skew).
-6. `--result` is a key under `states.<state>.transitions`; resolves `next_state`.
-7. PLAN-WRITE AUTHORIZATION — if `--plan-steps` or `--plan-path` was supplied, the recording
-   state MUST be a cerebrate planning state (`states.<state>.agent == "hivemind:cerebrate"`,
-   i.e. `plan` / `review_remediation_plan` / `review_remediation_plan_postpr` / `brood_plan`);
-   otherwise the engine rejects (exit 1,
-   ledger byte-unchanged). Flag presence alone does NOT authorize a plan write — only a cerebrate
+6. `result` is a key under `states.<state>.transitions`; resolves `next_state`.
+7. PLAN-WRITE AUTHORIZATION — if `plan_steps` or `plan_path` was supplied (present and
+   non-null), the recording state MUST be a cerebrate planning state
+   (`states.<state>.agent == "hivemind:cerebrate"`, i.e. `plan` / `review_remediation_plan` /
+   `review_remediation_plan_postpr` / `brood_plan`); otherwise the engine rejects (exit 1,
+   ledger byte-unchanged). Key presence alone does NOT authorize a plan write — only a cerebrate
    agent state may persist `plan.steps` / `plan.path`.
 
 Then it appends the event; updates `state.previous`/`state.current`/`state.status`,
-`run.updated_at`, (if `next_state` is terminal) `run.status`, and — when `--plan-steps` /
-`--plan-path` are present — `plan.steps` / `plan.path`. Terminal `run.status` mapping
+`run.updated_at`, (if `next_state` is terminal) `run.status`, and — when `plan_steps` /
+`plan_path` are present (non-null) — `plan.steps` / `plan.path`. Terminal `run.status` mapping
 (schema enum `running|complete|blocked|cancelled`): `complete`→`complete`,
 `blocked`→`blocked`, `cancelled`→`cancelled`, the human-intervention terminals
 (`user_input_required` / `review_rejected` / `review_exhausted`)→`blocked` (stopped, needs
@@ -103,22 +124,24 @@ on-disk ledger is byte-unchanged.
 
 ## Procedure
 
-1. **Gather the Required Inputs** from the overlord's run context. When recording any cerebrate
-   planning state result (`plan` / `review_remediation_plan` / `review_remediation_plan_postpr`
-   / `brood_plan`), reformat cerebrate's YAML plan `steps` into a JSON array per the §A seam and
-   pass it via `--plan-steps` (and `--plan-path` if known) — this is the primary, live writer of
-   `ledger.plan.steps`.
-2. **Pass the reformatted outputs inline** via `--outputs` / `--plan-steps`. The navigator
-   builds the flag values in-message and never itself writes a file — every ledger write
-   (atomic temp + rename) is performed by the script.
-3. **Execute the script** with one Bash call:
+1. **Build the inputs object** in your reasoning from the Required Inputs. When recording any
+   cerebrate planning state result (`plan` / `review_remediation_plan` /
+   `review_remediation_plan_postpr` / `brood_plan`), reformat cerebrate's YAML plan `steps`
+   into a JSON array per the §A seam and include it as `plan_steps` (and `plan_path` if known)
+   — this is the primary, live writer of `ledger.plan.steps`. Each untrusted value (`summary`,
+   `outputs`, `plan_steps`, `plan_path`) is structured JSON data, never spliced into command
+   source.
+
+2. **Write the inputs file** via the Write tool to the fixed gitignored path
+   `.hivemind/runs/.record-inputs.json`. `file_path` = `.hivemind/runs/.record-inputs.json`,
+   `content` = the JSON object from step 1. The leading-dot filename keeps it OUT of the
+   `runs/<run-id>/` glob (it is a sibling of the run dirs, not one of them), and `.hivemind/`
+   is gitignored. Write performs no shell parsing of the values, so untrusted `summary` /
+   `outputs` / `plan_steps` / `plan_path` text is inert.
+
+3. **Execute the script** with one Bash call, passing the inputs file path:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh \
-     --ledger .hivemind/runs/<run-id>/state.json \
-     --workflow ${CLAUDE_PLUGIN_ROOT}/workflows/standard-delivery.json \
-     --state plan \
-     --result single \
-     --summary "Cerebrate returned a single-delivery plan."
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh .hivemind/runs/.record-inputs.json
    ```
    EXECUTE (do not Read) the script — it owns the deterministic read -> validate -> mutate
    -> atomic-write and reads the allowed-result set directly from the definition.
@@ -143,8 +166,9 @@ on-disk ledger is byte-unchanged.
 This is a pipeline skill:
 
 - Produce zero chat text during execution. Outputs are tool calls only.
-- The navigator builds flag values in-message and never writes a file — the only tool call
-  is the Bash script invocation (step 3), which performs every atomic ledger write.
+- The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat text and
+  authors ONLY the inputs file (`.hivemind/runs/.record-inputs.json`). The final action is
+  the Bash script call (step 3), which performs every atomic ledger write.
 - Exit 0 = overlord advances to `current_state`; routing data is on stdout.
   Exit 1 = blocked; the reason is on stderr and the ledger is unchanged.
 
@@ -154,5 +178,7 @@ This is a pipeline skill:
   definition.
 - advance to any state other than the `current_state` the script returns.
 - mutate the ledger by hand or with any tool other than the script.
+- use the Write tool for anything other than the `.hivemind/runs/.record-inputs.json`
+  inputs file.
 - commit, push, or open a PR.
-- Read or reconstruct the script body — invoke it with the documented flags.
+- Read or reconstruct the script body — invoke it with the documented inputs file path.

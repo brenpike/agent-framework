@@ -41,26 +41,45 @@
 # failure the on-disk ledger is byte-unchanged — no partial write ever occurs (all
 # validation runs BEFORE the temp file is created).
 #
-# INJECTION POSTURE: the untrusted fields --summary, --outputs, --plan-steps, and
-# --plan-path are serialized via jq --arg / --argjson ONLY; they never enter the jq
-# program or any shell command source. --plan-steps reaches jq solely as an --argjson
-# binding; --plan-path solely as an --arg binding.
+# INJECTION POSTURE: the untrusted fields summary, outputs, plan_steps, and plan_path are
+# read from the inputs file with jq into inert shell variables and serialized via jq
+# --arg / --argjson ONLY; they never enter the jq program or any shell command source.
+# plan_steps reaches jq solely as an --argjson binding; plan_path solely as an --arg
+# binding. The ONLY value passed on the command line is the trusted inputs-file path.
 #
-# FLAG INTERFACE:
-#   --ledger <path>      (required) path to the run ledger state.json
-#   --workflow <path>    (required) path to the workflow definition JSON
-#   --state <state>      (required) the state the run is currently in (must match ledger)
-#   --result <outcome>   (required) the named outcome to record (must be a legal transition)
-#   --summary <text>     (required) human-readable summary — UNTRUSTED, serialized only
-#   --outputs <json>     (optional) JSON object of named outputs — UNTRUSTED, serialized only
-#   --plan-steps <json>  (optional) cerebrate's plan steps reformatted to a JSON array. This
-#                        is the PRIMARY, live writer of ledger.plan.steps: the overlord passes
-#                        it when recording the `plan` state result (after cerebrate returns).
-#                        When present, .plan.steps = the array. When ABSENT, .plan.* is left
-#                        UNTOUCHED (never clobbered to []). UNTRUSTED step text — enters jq
-#                        ONLY via --argjson (pre-validated JSON), never the program/shell SOURCE.
-#   --plan-path <text>   (optional) path to the cerebrate directive. When present, .plan.path =
-#                        this (nullable) text. UNTRUSTED — enters jq ONLY via --arg.
+# INPUT (single positional argument):
+#   $1  Absolute or repo-relative path to a JSON inputs file authored by the agent via the
+#       Write tool. The agent writes structured data; this script parses it with jq into
+#       shell VARIABLES. Untrusted bytes in the JSON are read into variables and referenced
+#       only as "$var" — bash does not re-evaluate command substitution from variable
+#       contents, so the command-substitution injection class is structurally absent (the
+#       values never enter generated command SOURCE). Mirrors spawn-brood.sh and
+#       init-run-ledger.sh; rationale: docs/adr/0017-brood-spawn-mechanism.md amendment.
+#
+#   Inputs JSON shape (authoritative schema in SKILL.md § Inputs JSON):
+#     {
+#       "ledger":     "<required> path to the run ledger state.json",
+#       "workflow":   "<required> path to the workflow definition JSON",
+#       "state":      "<required> state the run is currently in (must match ledger)",
+#       "result":     "<required> named outcome to record (must be a legal transition)",
+#       "summary":    "<required> human-readable summary — UNTRUSTED, serialized only",
+#       "outputs":    { ... },   // optional JSON object of named outputs — UNTRUSTED,
+#                                // serialized only. KEY-PRESENCE semantics: a MISSING key OR
+#                                // a present-but-null value is ABSENT (-> defaults to {}); a
+#                                // present non-null value is SUPPLIED.
+#       "plan_steps": [ ... ],   // optional cerebrate plan steps as a JSON array. This is the
+#                                // PRIMARY, live writer of ledger.plan.steps: the overlord
+#                                // supplies it when recording the `plan` state result (after
+#                                // cerebrate returns). KEY-PRESENCE semantics: MISSING key OR
+#                                // null value is ABSENT (-> .plan.* left UNTOUCHED, never
+#                                // clobbered to []); a present non-null value is SUPPLIED ->
+#                                // .plan.steps = the array. UNTRUSTED step text — enters jq
+#                                // ONLY via --argjson (pre-validated JSON).
+#       "plan_path":  "<optional> path to the cerebrate directive. KEY-PRESENCE semantics: a
+#                      MISSING key OR null value is ABSENT (-> .plan.path UNTOUCHED); a present
+#                      non-null value is SUPPLIED -> .plan.path = the (nullable) text.
+#                      UNTRUSTED — enters jq ONLY via --arg."
+#     }
 #
 # OUTPUT:
 #   - On success: writes the mutated ledger atomically and prints YAML routing lines:
@@ -76,8 +95,8 @@
 #   0  transition recorded + ledger advanced
 #   1  validation failure / illegal transition (ledger UNCHANGED)
 #
-# set -u: an unset variable is a programming error (every value is parsed from flags).
-# No `set -e`: failures route through blocker() with a verbose reason.
+# set -u: an unset variable is a programming error (every value is parsed from the inputs
+# file). No `set -e`: failures route through blocker() with a verbose reason.
 
 set -u
 
@@ -87,44 +106,66 @@ blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 \
   || blocker "jq is required to read and write the run ledger but is not installed"
 
-# ── Flag parse into inert variables ───────────────────────────────────────────
-ledger=""
-workflow=""
-state=""
-result=""
-summary=""
-outputs=""
-have_outputs=false
-plan_steps=""
-have_plan_steps=false
-plan_path=""
-have_plan_path=false
+# ── Inputs file ───────────────────────────────────────────────────────────────
+# Single positional argument: the path to a JSON inputs file the agent authored via the
+# Write tool. The path is the ONLY value passed on the command line; every field (including
+# the untrusted summary/outputs/plan_steps/plan_path) is read with jq into inert variables
+# below — never interpolated into bash source or the jq program SOURCE.
+INPUTS_FILE="${1:-}"
+[ -n "$INPUTS_FILE" ] \
+  || blocker "missing required argument: path to record-state-result inputs JSON file (\$1)"
+[ -f "$INPUTS_FILE" ] \
+  || blocker "record-state-result inputs file $INPUTS_FILE does not exist"
+jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
+  || blocker "record-state-result inputs file $INPUTS_FILE is not valid JSON"
 
-# require_value: every valued flag must be followed by an argument. A trailing valued flag
-# with no value would otherwise consume "" and `shift 2` would fail against a single remaining
-# positional — silently mis-parsing under set -u (no set -e). Reject with a clear blocker.
-require_value() { [ "$#" -ge 2 ] || blocker "flag $1 requires a value"; }
+# ── Parse fields into inert variables ─────────────────────────────────────────
+# Required strings via `jq -r '.field // ""'`. The presence bools derive from KEY-PRESENCE on
+# the inputs object: a MISSING key OR a present-but-null value is ABSENT; a present non-null
+# value is SUPPLIED. This preserves EXACTLY the prior flag semantics — absent outputs defaults
+# to {}, absent plan_steps/plan_path leaves .plan.* UNTOUCHED (never clobbered to []).
+ledger="$(jq -r '.ledger // ""' "$INPUTS_FILE")"
+workflow="$(jq -r '.workflow // ""' "$INPUTS_FILE")"
+state="$(jq -r '.state // ""' "$INPUTS_FILE")"
+result="$(jq -r '.result // ""' "$INPUTS_FILE")"
+summary="$(jq -r '.summary // ""' "$INPUTS_FILE")"
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --ledger)     require_value "$@"; ledger="$2"; shift 2 ;;
-    --workflow)   require_value "$@"; workflow="$2"; shift 2 ;;
-    --state)      require_value "$@"; state="$2"; shift 2 ;;
-    --result)     require_value "$@"; result="$2"; shift 2 ;;
-    --summary)    require_value "$@"; summary="$2"; shift 2 ;;
-    --outputs)    require_value "$@"; outputs="$2"; have_outputs=true; shift 2 ;;
-    --plan-steps) require_value "$@"; plan_steps="$2"; have_plan_steps=true; shift 2 ;;
-    --plan-path)  require_value "$@"; plan_path="$2"; have_plan_path=true; shift 2 ;;
-    *) blocker "unknown argument: $1" ;;
-  esac
-done
+# have_outputs: outputs key present AND non-null. When supplied, read the raw JSON value
+# (preserving its type for the up-front object check and the --argjson serialization).
+if jq -e 'has("outputs") and .outputs != null' "$INPUTS_FILE" >/dev/null 2>&1; then
+  have_outputs=true
+  outputs="$(jq -c '.outputs' "$INPUTS_FILE")"
+else
+  have_outputs=false
+  outputs=""
+fi
+
+# have_plan_steps: plan_steps key present AND non-null (-> .plan.steps written). Absent ->
+# .plan.* left untouched. UNTRUSTED step text reaches jq ONLY via --argjson below.
+if jq -e 'has("plan_steps") and .plan_steps != null' "$INPUTS_FILE" >/dev/null 2>&1; then
+  have_plan_steps=true
+  plan_steps="$(jq -c '.plan_steps' "$INPUTS_FILE")"
+else
+  have_plan_steps=false
+  plan_steps=""
+fi
+
+# have_plan_path: plan_path key present AND non-null (-> .plan.path written). Absent ->
+# .plan.path left untouched. UNTRUSTED — reaches jq ONLY via --arg below.
+if jq -e 'has("plan_path") and .plan_path != null' "$INPUTS_FILE" >/dev/null 2>&1; then
+  have_plan_path=true
+  plan_path="$(jq -r '.plan_path' "$INPUTS_FILE")"
+else
+  have_plan_path=false
+  plan_path=""
+fi
 
 # ── Required-input validation ─────────────────────────────────────────────────
-[ -n "$ledger" ]   || blocker "missing required --ledger"
-[ -n "$workflow" ] || blocker "missing required --workflow"
-[ -n "$state" ]    || blocker "missing required --state"
-[ -n "$result" ]   || blocker "missing required --result"
-[ -n "$summary" ]  || blocker "missing required --summary"
+[ -n "$ledger" ]   || blocker "inputs file is missing required ledger"
+[ -n "$workflow" ] || blocker "inputs file is missing required workflow"
+[ -n "$state" ]    || blocker "inputs file is missing required state"
+[ -n "$result" ]   || blocker "inputs file is missing required result"
+[ -n "$summary" ]  || blocker "inputs file is missing required summary"
 
 [ -f "$ledger" ]   || blocker "ledger file does not exist: $ledger"
 [ -f "$workflow" ] || blocker "workflow definition file does not exist: $workflow"
