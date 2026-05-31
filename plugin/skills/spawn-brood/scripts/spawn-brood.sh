@@ -317,7 +317,12 @@ git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
 # that window. INVARIANT: this gate refuses a SECOND same-brood_id spawn in the same
 # checkout while the first holds the reservation; a stale .reservation dir from a
 # crashed prior spawn is removed by the operator (gitignored runtime state).
-STATE="$(pwd)/.hivemind/brood/$brood_slug"
+# Anchor STATE to the CHECKOUT ROOT (repo_root, resolved above), NOT $(pwd): when the
+# skill is invoked from a repo subdirectory, a pwd-relative manifest would land under
+# that subdir, but hivemind:brood-status only globs <main_checkout>/.hivemind/brood/*/
+# manifest.yaml — a pwd-anchored manifest would make the live brood invisible to
+# monitoring. repo_root is the same checkout root brood-status resolves.
+STATE="$repo_root/.hivemind/brood/$brood_slug"
 mkdir -p "$STATE"
 if ! mkdir "$STATE/.reservation" 2>/dev/null; then
   printf 'blocker: brood %s already active (reservation %s exists); refusing to spawn a second same-brood_id brood in this checkout\n' "$brood_slug" "$STATE/.reservation" >&2
