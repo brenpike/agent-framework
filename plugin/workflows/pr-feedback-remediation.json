@@ -1,0 +1,93 @@
+{
+  "id": "pr-feedback-remediation",
+  "version": 1,
+  "start": "intake",
+  "terminal": ["complete", "blocked", "cancelled"],
+  "states": {
+    "intake": {
+      "type": "decision",
+      "description": "Within-workflow decision: watch the PR review loop or run a one-shot reviewer fix.",
+      "owner": "overlord",
+      "transitions": {
+        "watch": "github_review_loop",
+        "fix": "github_reviewer_fix",
+        "blocked": "blocked"
+      }
+    },
+    "github_review_loop": {
+      "type": "skill",
+      "description": "Watch the PR and remediate review feedback until a terminal condition; reviewer-return outcomes are named transitions.",
+      "skill": "hivemind:github-review-loop",
+      "transitions": {
+        "clean": "complete",
+        "pr_merged": "complete",
+        "user_input_required": "blocked",
+        "planner_escalation": "review_remediation_plan",
+        "blocked": "blocked"
+      }
+    },
+    "github_reviewer_fix": {
+      "type": "agent",
+      "description": "One-shot GitHub reviewer fix pass; reviewer-return outcomes are named transitions.",
+      "agent": "hivemind:github-reviewer",
+      "transitions": {
+        "clean": "complete",
+        "pr_merged": "complete",
+        "user_input_required": "blocked",
+        "planner_escalation": "review_remediation_plan",
+        "blocked": "blocked"
+      }
+    },
+    "review_remediation_plan": {
+      "type": "agent",
+      "description": "Cerebrate re-plans remediation when review escalates to the planner.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "complete": "implement_next_step",
+        "blocked": "blocked"
+      }
+    },
+    "implement_next_step": {
+      "type": "decision",
+      "description": "Explicit loop head: branch back to implement_step while steps remain, forward to validate when all steps complete.",
+      "owner": "overlord",
+      "transitions": {
+        "has_next_step": "implement_step",
+        "all_steps_complete": "validate",
+        "blocked": "blocked"
+      }
+    },
+    "implement_step": {
+      "type": "agent",
+      "description": "Overlord delegates the current remediation step to a static-allowed bioform, picked by intent.",
+      "allowed_agents": ["hivemind:drone", "hivemind:changeling"],
+      "transitions": {
+        "complete": "checkpoint",
+        "blocked": "blocked",
+        "needs_replan": "review_remediation_plan"
+      }
+    },
+    "checkpoint": {
+      "type": "skill",
+      "description": "Molt a checkpoint commit after the completed remediation step.",
+      "skill": "hivemind:molt",
+      "transitions": {
+        "complete": "implement_next_step",
+        "blocked": "blocked"
+      }
+    },
+    "validate": {
+      "type": "decision",
+      "description": "Overlord runs validation and judges pass/fail before returning to the review loop.",
+      "owner": "overlord",
+      "transitions": {
+        "passed": "github_review_loop",
+        "failed": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "complete": { "type": "terminal" },
+    "blocked": { "type": "terminal" },
+    "cancelled": { "type": "terminal" }
+  }
+}

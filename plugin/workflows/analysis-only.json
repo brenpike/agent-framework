@@ -1,0 +1,30 @@
+{
+  "id": "analysis-only",
+  "version": 1,
+  "start": "analyze",
+  "terminal": ["complete", "blocked", "cancelled"],
+  "states": {
+    "analyze": {
+      "type": "agent",
+      "description": "Cerebrate performs read-only analysis, review, interrogation, or recommendation. No branch, no commit, no PR, no implementation agents.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "complete": "report",
+        "open_questions": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "report": {
+      "type": "decision",
+      "description": "Overlord delivers the analysis to the user. Terminal — never escalates into implementation unless a new workflow is explicitly selected.",
+      "owner": "overlord",
+      "transitions": {
+        "complete": "complete",
+        "blocked": "blocked"
+      }
+    },
+    "complete": { "type": "terminal" },
+    "blocked": { "type": "terminal" },
+    "cancelled": { "type": "terminal" }
+  }
+}

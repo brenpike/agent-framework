@@ -1,0 +1,203 @@
+{
+  "id": "standard-delivery",
+  "version": 1,
+  "start": "plan",
+  "terminal": ["complete", "blocked", "cancelled", "hatchery_monitor"],
+  "states": {
+    "plan": {
+      "type": "agent",
+      "description": "Cerebrate produces the directive and delivery shape (single/multi/brood).",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "single": "git_preflight",
+        "multi": "git_preflight",
+        "brood": "brood_confirm",
+        "open_questions": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "brood_confirm": {
+      "type": "user_gate",
+      "description": "Surface normalized strain task text for explicit user approval before dispatching the brood.",
+      "transitions": {
+        "approved": "spawn_brood",
+        "rejected": "blocked",
+        "cancelled": "cancelled"
+      }
+    },
+    "spawn_brood": {
+      "type": "skill",
+      "description": "Launch child overlord instances via the deterministic spawn substrate, then enter hatchery monitor mode.",
+      "skill": "hivemind:spawn-brood",
+      "transitions": {
+        "complete": "hatchery_monitor",
+        "blocked": "blocked"
+      }
+    },
+    "hatchery_monitor": { "type": "terminal" },
+    "git_preflight": {
+      "type": "decision",
+      "description": "Overlord verifies git state is safe before branch creation.",
+      "owner": "overlord",
+      "transitions": {
+        "ready": "branch",
+        "user_decision_required": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "branch": {
+      "type": "skill",
+      "description": "Create or confirm the compliant working branch.",
+      "skill": "hivemind:create-working-branch",
+      "transitions": {
+        "complete": "implement_next_step",
+        "blocked": "blocked"
+      }
+    },
+    "implement_next_step": {
+      "type": "decision",
+      "description": "Explicit loop head replacing a generic foreach: branch back to implement_step while steps remain, forward when all steps complete.",
+      "owner": "overlord",
+      "transitions": {
+        "has_next_step": "implement_step",
+        "all_steps_complete": "version_bump_decision",
+        "blocked": "blocked"
+      }
+    },
+    "implement_step": {
+      "type": "agent",
+      "description": "Overlord delegates the current step to a static-allowed bioform, picked by intent (no dynamic agent resolution).",
+      "allowed_agents": ["hivemind:drone", "hivemind:changeling"],
+      "transitions": {
+        "complete": "checkpoint",
+        "blocked": "blocked",
+        "needs_replan": "plan"
+      }
+    },
+    "checkpoint": {
+      "type": "skill",
+      "description": "Molt a checkpoint commit after the completed step.",
+      "skill": "hivemind:molt",
+      "transitions": {
+        "complete": "implement_next_step",
+        "blocked": "blocked"
+      }
+    },
+    "version_bump_decision": {
+      "type": "decision",
+      "description": "Overlord judges whether a version bump is required.",
+      "owner": "overlord",
+      "transitions": {
+        "required": "version_bump",
+        "not_required": "validate",
+        "ambiguous": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "version_bump": {
+      "type": "agent",
+      "description": "Drone applies the version bump across artifacts.",
+      "agent": "hivemind:drone",
+      "transitions": {
+        "complete": "version_checkpoint",
+        "blocked": "blocked"
+      }
+    },
+    "version_checkpoint": {
+      "type": "skill",
+      "description": "Molt a checkpoint commit for the version bump.",
+      "skill": "hivemind:molt",
+      "transitions": {
+        "complete": "validate",
+        "blocked": "blocked"
+      }
+    },
+    "validate": {
+      "type": "decision",
+      "description": "Overlord runs validation and judges pass/fail.",
+      "owner": "overlord",
+      "transitions": {
+        "passed": "local_review_decision",
+        "failed": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "local_review_decision": {
+      "type": "decision",
+      "description": "Overlord decides whether local pre-PR review runs (Codex present and opted in) or is skipped.",
+      "owner": "overlord",
+      "transitions": {
+        "required": "local_review",
+        "skipped": "open_pr",
+        "blocked": "blocked"
+      }
+    },
+    "local_review": {
+      "type": "agent",
+      "description": "Local reviewer runs the pre-PR adaptation cycle; reviewer-return outcomes are named transitions, not overlord prose.",
+      "agent": "hivemind:local-reviewer",
+      "transitions": {
+        "clean": "open_pr",
+        "clean_with_fix_commits": "version_bump_decision",
+        "planner_escalation": "review_remediation_plan",
+        "blocked": "blocked"
+      }
+    },
+    "review_remediation_plan": {
+      "type": "agent",
+      "description": "Cerebrate re-plans remediation when review escalates to the planner.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "complete": "implement_next_step",
+        "blocked": "blocked"
+      }
+    },
+    "open_pr": {
+      "type": "skill",
+      "description": "Open the pull request for the completed plan.",
+      "skill": "hivemind:open-plan-pr",
+      "transitions": {
+        "complete": "github_review_decision",
+        "blocked": "blocked"
+      }
+    },
+    "github_review_decision": {
+      "type": "decision",
+      "description": "Overlord decides how to handle GitHub review: watch loop, one-shot fix, or none.",
+      "owner": "overlord",
+      "transitions": {
+        "watch_requested": "github_review_loop",
+        "fix_requested": "github_reviewer_fix",
+        "not_requested": "complete",
+        "blocked": "blocked"
+      }
+    },
+    "github_review_loop": {
+      "type": "skill",
+      "description": "Watch the PR and remediate review feedback until a terminal condition; reviewer-return outcomes are named transitions.",
+      "skill": "hivemind:github-review-loop",
+      "transitions": {
+        "clean": "complete",
+        "pr_merged": "complete",
+        "user_input_required": "blocked",
+        "planner_escalation": "review_remediation_plan",
+        "blocked": "blocked"
+      }
+    },
+    "github_reviewer_fix": {
+      "type": "agent",
+      "description": "One-shot GitHub reviewer fix pass; reviewer-return outcomes are named transitions.",
+      "agent": "hivemind:github-reviewer",
+      "transitions": {
+        "clean": "complete",
+        "pr_merged": "complete",
+        "user_input_required": "blocked",
+        "planner_escalation": "review_remediation_plan",
+        "blocked": "blocked"
+      }
+    },
+    "complete": { "type": "terminal" },
+    "blocked": { "type": "terminal" },
+    "cancelled": { "type": "terminal" }
+  }
+}

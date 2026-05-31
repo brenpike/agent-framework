@@ -1,0 +1,39 @@
+{
+  "id": "hatchery-dispatch",
+  "version": 1,
+  "start": "brood_plan",
+  "terminal": ["hatchery_monitor", "blocked", "cancelled"],
+  "states": {
+    "brood_plan": {
+      "type": "agent",
+      "description": "Cerebrate produces a brood-plan decomposing work into independent strains. Parent-side dispatch only; children run the shared engine themselves.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "brood": "brood_confirm",
+        "open_questions": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "brood_confirm": {
+      "type": "user_gate",
+      "description": "Surface normalized strain task text for explicit user approval before dispatching the brood.",
+      "transitions": {
+        "approved": "spawn_brood",
+        "rejected": "blocked",
+        "cancelled": "cancelled"
+      }
+    },
+    "spawn_brood": {
+      "type": "skill",
+      "description": "Launch child overlord instances via the deterministic spawn substrate, then enter hatchery monitor mode.",
+      "skill": "hivemind:spawn-brood",
+      "transitions": {
+        "complete": "hatchery_monitor",
+        "blocked": "blocked"
+      }
+    },
+    "hatchery_monitor": { "type": "terminal" },
+    "blocked": { "type": "terminal" },
+    "cancelled": { "type": "terminal" }
+  }
+}
