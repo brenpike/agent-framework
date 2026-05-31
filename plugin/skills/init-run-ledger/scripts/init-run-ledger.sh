@@ -31,6 +31,11 @@
 #   --parent-manifest <path>   (optional) manifest path when --parent-kind=brood
 #   --suggested-run-id <id>    (optional) caller-suggested run id; used verbatim only if
 #                              it matches ^[A-Za-z0-9._-]+$, else a derived id is used.
+#   --plan-steps <json-array>  (optional) cerebrate's plan steps reformatted to a JSON
+#                              array (seeds plan.steps). UNTRUSTED step text — enters jq
+#                              ONLY via --argjson (pre-validated JSON). Default [].
+#   --plan-path <text>         (optional) path to the cerebrate directive (seeds plan.path).
+#                              Default null.
 #
 # RUN-ID DERIVATION:
 #   - --parent-kind=brood: child form <brood-id>--<strain-id> (both required, both must
@@ -77,6 +82,8 @@ parent_brood_id=""
 parent_strain_id=""
 parent_manifest=""
 suggested_run_id=""
+plan_steps="[]"
+plan_path=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -91,6 +98,8 @@ while [ "$#" -gt 0 ]; do
     --parent-strain-id)  parent_strain_id="${2:-}"; shift 2 ;;
     --parent-manifest)   parent_manifest="${2:-}"; shift 2 ;;
     --suggested-run-id)  suggested_run_id="${2:-}"; shift 2 ;;
+    --plan-steps)        plan_steps="${2:-}"; shift 2 ;;
+    --plan-path)         plan_path="${2:-}"; shift 2 ;;
     *) blocker "unknown argument: $1" ;;
   esac
 done
@@ -112,6 +121,12 @@ case "$parent_kind" in
   none|brood) : ;;
   *) blocker "--parent-kind must be none|brood, got: $parent_kind" ;;
 esac
+
+# --plan-steps (default []) must be a JSON array. Validated up front for a clear blocker
+# rather than a downstream --argjson parse error. UNTRUSTED step text never enters the jq
+# program SOURCE — only as the named --argjson binding below.
+printf '%s' "$plan_steps" | jq -e 'type=="array"' >/dev/null 2>&1 \
+  || blocker "--plan-steps must be a JSON array"
 
 # ── Run-id derivation ─────────────────────────────────────────────────────────
 run_id=""
@@ -176,6 +191,8 @@ jq -n \
   --arg request_raw "$user_request" \
   --arg request_normalized "$normalized" \
   --arg start_state "$start_state" \
+  --argjson plan_steps "$plan_steps" \
+  --arg plan_path "$plan_path" \
   '
   def nz(s): if s == "" then null else s end;
   {
@@ -211,9 +228,9 @@ jq -n \
       pr: null
     },
     plan: {
-      path: null,
+      path: nz($plan_path),
       current_step: null,
-      steps: []
+      steps: $plan_steps
     },
     artifacts: {},
     events: [],

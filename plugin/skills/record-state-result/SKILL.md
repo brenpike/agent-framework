@@ -19,7 +19,8 @@ set is read DIRECTLY from the workflow definition by the script — the model NE
 it (ADR-0018 §C).
 
 Rules: ADR-0018 §C (engine is the committed script, reads the allowed-set); §A (ledger and
-definitions are JSON); §I (version-skew engine guard).
+definitions are JSON); §I (engine hard-rejects a non-binding definition; the overlord resume
+gate owns the three version-skew doors).
 
 ## Required Inputs
 
@@ -36,13 +37,12 @@ The overlord resolves and passes these; the skill does not invent them.
 ## The §A Plan-Steps Seam
 
 The ledger and workflow definitions are JSON; cerebrate's plan `steps` arrive as YAML in
-the plan block. There is no maintained converter. At this boundary the overlord/skill
-**reformats cerebrate's YAML plan `steps` into JSON** for `ledger.plan.steps`, then passes
-it as the `--outputs` JSON object (or writes it into the ledger before recording). The
-script does NOT parse YAML — it validates JSON structure only and rejects a non-object
-`--outputs`. When you must materialize the reformatted JSON before the script call, use the
-Write tool (a permitted NON-FINAL step that emits no chat text); the final action remains
-the Bash script call.
+the plan block, with no maintained converter. `record-state-result` does **NOT** persist
+`plan.steps` — it neither writes them via `--outputs` nor exposes a `--plan-update` path.
+`plan.steps` is seeded ONCE, at init time, by `init-run-ledger --plan-steps` (see that
+skill's §A Plan-Steps Seam); that is the real persistence path. This skill only appends
+events and advances `state.current`. `--outputs` here is the event's free-form `outputs`
+object — it is NOT a plan-steps writer.
 
 ## Script Flag Interface
 
@@ -55,10 +55,19 @@ the Bash script call.
 --outputs <json>     (optional) JSON object of named outputs (UNTRUSTED, serialized only)
 ```
 
-The script validates, in order, ALL before any write: `ledger.state.current == --state`;
-`--state` exists in `definition.states` (§I version-skew guard — a renamed/removed state
-never guesses); `--result` is a key under `states.<state>.transitions`; resolves
-`next_state`; appends the event; updates `state.previous`/`state.current`/`state.status`,
+The script validates, in order, ALL before any write:
+
+1. `definition.id == ledger.run.workflow` — BINDING GUARD (engine hard-reject; ledger unchanged).
+2. `definition.version == ledger.run.workflow_version` — BINDING GUARD. This is the engine
+   HARD-REJECT half of the §I version-skew policy; the overlord resume-on-start gate owns the
+   three version-skew DOORS (start fresh / deterministic resume / proceed intent-driven). The
+   engine never reconciles skew — it rejects a non-binding definition outright.
+3. `ledger.state.current == --state`.
+4. `--state` exists in `definition.states` (state-existence — a renamed/removed state never
+   guesses; this is NOT version-skew).
+5. `--result` is a key under `states.<state>.transitions`; resolves `next_state`.
+
+Then it appends the event; updates `state.previous`/`state.current`/`state.status`,
 `run.updated_at`, and (if `next_state` is terminal) `run.status`. Every write is
 temp-write + atomic rename; on ANY validation failure the on-disk ledger is byte-unchanged.
 

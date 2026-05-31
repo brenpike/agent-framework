@@ -15,6 +15,11 @@
 #   D. terminal target   -> run.status updated to the mapped terminal status.
 #   E. atomicity         -> a forced write failure (unwritable target dir) leaves the
 #                           prior ledger byte-intact.
+#   F. plan-steps seed   -> init-run-ledger.sh --plan-steps writes plan.steps into the new
+#                           ledger (length + id round-trip).
+#   G. id mismatch       -> definition.id != ledger.run.workflow -> non-zero, byte-UNCHANGED.
+#   H. version mismatch  -> definition.version != ledger.run.workflow_version -> non-zero,
+#                           byte-UNCHANGED.
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -28,10 +33,13 @@ set -euo pipefail
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 ENGINE="$REPO_ROOT/plugin/skills/record-state-result/scripts/record-state-result.sh"
+INIT_ENGINE="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
 FIXTURES_DIR="$REPO_ROOT/tests/engine"
 WORKFLOW_DEF="$FIXTURES_DIR/workflow-engine-fixture.json"
 LEDGER_AT_PLAN="$FIXTURES_DIR/ledger-at-plan.json"
 LEDGER_AT_BUILD="$FIXTURES_DIR/ledger-at-build.json"
+LEDGER_WRONG_WORKFLOW="$FIXTURES_DIR/ledger-wrong-workflow.json"
+LEDGER_WRONG_VERSION="$FIXTURES_DIR/ledger-wrong-version.json"
 
 # ── Dependency / fixture preflight ──────────────────────────────────────────
 
@@ -40,7 +48,8 @@ for dep in jq sha256sum; do
         || { echo "FAIL: required dependency '$dep' is not installed" >&2; exit 2; }
 done
 
-for required in "$ENGINE" "$WORKFLOW_DEF" "$LEDGER_AT_PLAN" "$LEDGER_AT_BUILD"; do
+for required in "$ENGINE" "$INIT_ENGINE" "$WORKFLOW_DEF" "$LEDGER_AT_PLAN" \
+    "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required input missing: $required" >&2; exit 2; }
 done
@@ -199,6 +208,93 @@ assert_atomicity_on_write_failure() {
     fi
 }
 
+# ── F. init-run-ledger --plan-steps seeds plan.steps ────────────────────────
+
+assert_plan_steps_seed() {
+    local name="F:plan-steps-seed"
+    # Run the init engine in a disposable temp CWD so it writes under
+    # <temp>/.hivemind/runs/<run-id>/state.json — NEVER a ledger into the repo.
+    local initdir="$WORKDIR/f-init"
+    mkdir -p "$initdir"
+    local rc=0 out
+    out="$(cd "$initdir" && bash "$INIT_ENGINE" \
+        --workflow engine-fixture \
+        --workflow-version 1 \
+        --start-state plan \
+        --user-request "engine test plan-steps seed" \
+        --normalized "engine test plan-steps seed" \
+        --plan-steps '[{"id":"STEP-001","status":"pending"}]' 2>&1)" || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "init engine exited $rc seeding plan steps (expected 0): $out"
+        return
+    fi
+
+    local ledger steps_len step_id
+    ledger="$initdir/$(printf '%s\n' "$out" | sed -n 's/^ledger: //p')"
+    if [[ ! -f "$ledger" ]]; then
+        failed "$name" "init engine did not write a ledger at $ledger"
+        return
+    fi
+    steps_len="$(jq -r '.plan.steps | length' "$ledger")"
+    step_id="$(jq -r '.plan.steps[0].id' "$ledger")"
+    if [[ "$steps_len" -eq 1 && "$step_id" == "STEP-001" ]]; then
+        pass "$name" "plan.steps seeded: length=1, step id round-trips (STEP-001)"
+    else
+        failed "$name" "expected length=1/id=STEP-001, got length=$steps_len/id=$step_id"
+    fi
+}
+
+# ── G. definition.id mismatch -> non-zero, ledger byte-unchanged ────────────
+
+assert_id_mismatch_unchanged() {
+    local name="G:id-mismatch-unchanged"
+    # Ledger run.workflow=other-workflow; definition id=engine-fixture. Binding guard rejects.
+    local ledger="$WORKDIR/g-ledger.json"
+    cp "$LEDGER_WRONG_WORKFLOW" "$ledger"
+    local before after rc=0
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    bash "$ENGINE" \
+        --ledger "$ledger" \
+        --workflow "$WORKFLOW_DEF" \
+        --state plan \
+        --result ready \
+        --summary "engine test id mismatch" >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "id-mismatch rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── H. definition.version mismatch -> non-zero, ledger byte-unchanged ───────
+
+assert_version_mismatch_unchanged() {
+    local name="H:version-mismatch-unchanged"
+    # Ledger run.workflow_version=2; definition version=1. Binding guard rejects.
+    local ledger="$WORKDIR/h-ledger.json"
+    cp "$LEDGER_WRONG_VERSION" "$ledger"
+    local before after rc=0
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    bash "$ENGINE" \
+        --ledger "$ledger" \
+        --workflow "$WORKFLOW_DEF" \
+        --state plan \
+        --result ready \
+        --summary "engine test version mismatch" >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "version-mismatch rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: record-state-result.sh against tests/engine/ fixtures ==='
@@ -207,6 +303,9 @@ assert_illegal_result_unchanged
 assert_stale_state_unchanged
 assert_terminal_status_update
 assert_atomicity_on_write_failure
+assert_plan_steps_seed
+assert_id_mismatch_unchanged
+assert_version_mismatch_unchanged
 
 echo ''
 echo '=== Summary ==='

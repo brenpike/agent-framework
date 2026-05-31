@@ -92,9 +92,9 @@ Reconciliation anchors derived from git observables: `branch`, `base`, `pr`.
 
 ### `plan.*`
 
-- `path` — path to the cerebrate directive, or `null`.
+- `path` — path to the cerebrate directive, or `null`. Seeded at init by `init-run-ledger --plan-path`.
 - `current_step` — the step id currently executing, or `null`.
-- `steps` — array reformatted from the cerebrate YAML plan block at the boundary (no maintained converter; the receiving script validates structure).
+- `steps` — array reformatted from the cerebrate YAML plan block at the §A boundary (no maintained converter). The WRITER is `init-run-ledger --plan-steps`, which seeds `plan.steps` at init time (validated as a JSON array, bound via `--argjson`); absent the flag it defaults to `[]`. No engine path mutates `plan.steps` after init.
 
 ### `artifacts` (object)
 

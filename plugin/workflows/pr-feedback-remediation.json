@@ -2,7 +2,7 @@
   "id": "pr-feedback-remediation",
   "version": 1,
   "start": "intake",
-  "terminal": ["complete", "blocked", "cancelled"],
+  "terminal": ["complete", "blocked", "cancelled", "user_input_required", "review_rejected", "review_exhausted"],
   "states": {
     "intake": {
       "type": "decision",
@@ -16,25 +16,30 @@
     },
     "github_review_loop": {
       "type": "skill",
-      "description": "Watch the PR and remediate review feedback until a terminal condition; reviewer-return outcomes are named transitions.",
+      "description": "Watch the PR and remediate review feedback until a terminal condition; reviewer-return outcomes are named transitions matching the github-review-loop terminal exit_reason vocabulary.",
       "skill": "hivemind:github-review-loop",
       "transitions": {
         "clean": "complete",
-        "pr_merged": "complete",
-        "user_input_required": "blocked",
-        "planner_escalation": "review_remediation_plan",
+        "pr-merged": "complete",
+        "pr-closed": "complete",
+        "max-cycles-reached": "review_exhausted",
+        "planner-escalation": "review_remediation_plan",
+        "injection-suspect": "blocked",
+        "high-severity-rejection": "review_rejected",
+        "user-input-required": "user_input_required",
         "blocked": "blocked"
       }
     },
     "github_reviewer_fix": {
       "type": "agent",
-      "description": "One-shot GitHub reviewer fix pass; reviewer-return outcomes are named transitions.",
+      "description": "One-shot GitHub reviewer fix pass; reviewer-return outcomes are named transitions matching the github-reviewer fix-mode exit_reason vocabulary.",
       "agent": "hivemind:github-reviewer",
       "transitions": {
         "clean": "complete",
-        "pr_merged": "complete",
-        "user_input_required": "blocked",
-        "planner_escalation": "review_remediation_plan",
+        "planner-escalation": "review_remediation_plan",
+        "injection-suspect": "blocked",
+        "high-severity-rejection": "review_rejected",
+        "user-input-required": "user_input_required",
         "blocked": "blocked"
       }
     },
@@ -88,6 +93,9 @@
     },
     "complete": { "type": "terminal" },
     "blocked": { "type": "terminal" },
-    "cancelled": { "type": "terminal" }
+    "cancelled": { "type": "terminal" },
+    "user_input_required": { "type": "terminal" },
+    "review_rejected": { "type": "terminal" },
+    "review_exhausted": { "type": "terminal" }
   }
 }

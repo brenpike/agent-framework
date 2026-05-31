@@ -2,7 +2,7 @@
   "id": "standard-delivery",
   "version": 1,
   "start": "plan",
-  "terminal": ["complete", "blocked", "cancelled", "hatchery_monitor"],
+  "terminal": ["complete", "blocked", "cancelled", "hatchery_monitor", "user_input_required", "review_rejected", "review_exhausted"],
   "states": {
     "plan": {
       "type": "agent",
@@ -134,12 +134,17 @@
     },
     "local_review": {
       "type": "agent",
-      "description": "Local reviewer runs the pre-PR adaptation cycle; reviewer-return outcomes are named transitions, not overlord prose.",
+      "description": "Local reviewer runs the pre-PR adaptation cycle; reviewer-return outcomes are named transitions matching the local-reviewer exit_reason vocabulary. On the 'clean' outcome the overlord consults the reviewer's fix_commits_exist flag to decide whether to re-evaluate the version bump, but the 'clean' transition target remains open_pr; fix_commits_exist is a scalar field, not an exit_reason, so it is not a transition key.",
       "agent": "hivemind:local-reviewer",
       "transitions": {
         "clean": "open_pr",
-        "clean_with_fix_commits": "version_bump_decision",
-        "planner_escalation": "review_remediation_plan",
+        "planner-escalation": "review_remediation_plan",
+        "max-iterations-reached": "review_exhausted",
+        "break-fix-break": "review_exhausted",
+        "diminishing-returns": "open_pr",
+        "injection-suspect": "blocked",
+        "user-input-required": "user_input_required",
+        "high-severity-rejection": "review_rejected",
         "blocked": "blocked"
       }
     },
@@ -174,30 +179,38 @@
     },
     "github_review_loop": {
       "type": "skill",
-      "description": "Watch the PR and remediate review feedback until a terminal condition; reviewer-return outcomes are named transitions.",
+      "description": "Watch the PR and remediate review feedback until a terminal condition; reviewer-return outcomes are named transitions matching the github-review-loop terminal exit_reason vocabulary.",
       "skill": "hivemind:github-review-loop",
       "transitions": {
         "clean": "complete",
-        "pr_merged": "complete",
-        "user_input_required": "blocked",
-        "planner_escalation": "review_remediation_plan",
+        "pr-merged": "complete",
+        "pr-closed": "complete",
+        "max-cycles-reached": "review_exhausted",
+        "planner-escalation": "review_remediation_plan",
+        "injection-suspect": "blocked",
+        "high-severity-rejection": "review_rejected",
+        "user-input-required": "user_input_required",
         "blocked": "blocked"
       }
     },
     "github_reviewer_fix": {
       "type": "agent",
-      "description": "One-shot GitHub reviewer fix pass; reviewer-return outcomes are named transitions.",
+      "description": "One-shot GitHub reviewer fix pass; reviewer-return outcomes are named transitions matching the github-reviewer fix-mode exit_reason vocabulary.",
       "agent": "hivemind:github-reviewer",
       "transitions": {
         "clean": "complete",
-        "pr_merged": "complete",
-        "user_input_required": "blocked",
-        "planner_escalation": "review_remediation_plan",
+        "planner-escalation": "review_remediation_plan",
+        "injection-suspect": "blocked",
+        "high-severity-rejection": "review_rejected",
+        "user-input-required": "user_input_required",
         "blocked": "blocked"
       }
     },
     "complete": { "type": "terminal" },
     "blocked": { "type": "terminal" },
-    "cancelled": { "type": "terminal" }
+    "cancelled": { "type": "terminal" },
+    "user_input_required": { "type": "terminal" },
+    "review_rejected": { "type": "terminal" },
+    "review_exhausted": { "type": "terminal" }
   }
 }

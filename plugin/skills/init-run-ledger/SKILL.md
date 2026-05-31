@@ -36,6 +36,17 @@ Optional (brood child / id control):
   the `brood` variant (brood/strain ids must match `[A-Za-z0-9._-]`).
 - `suggested_run_id`: caller-suggested run id, used verbatim only if it matches
   `[A-Za-z0-9._-]`, else a derived id is used.
+- `plan_steps`: cerebrate's plan `steps` reformatted to a JSON array (seeds
+  `ledger.plan.steps`). UNTRUSTED step text — serialized only. Default `[]`.
+- `plan_path`: path to the cerebrate directive (seeds `ledger.plan.path`). Default `null`.
+
+### The §A Plan-Steps Seam
+
+The ledger and workflow definitions are JSON; cerebrate's plan `steps` arrive as YAML in the
+plan block, with no maintained converter. At the §A boundary the overlord reformats
+cerebrate's YAML plan `steps` into a JSON array and passes it via `--plan-steps` at init —
+this is the SOLE writer of `plan.steps` (no engine path mutates it after init). The brood/child
+path omits the flag, preserving the default `[]`.
 
 ## Script Flag Interface
 
@@ -54,6 +65,8 @@ data — none is interpolated into shell source):
 --parent-strain-id <id>    (optional) strain id when --parent-kind=brood
 --parent-manifest <path>   (optional) manifest path when --parent-kind=brood
 --suggested-run-id <id>    (optional) caller-suggested run id; verbatim only if safe
+--plan-steps <json-array>  (optional) cerebrate plan steps as a JSON array (seeds plan.steps); default []
+--plan-path <text>         (optional) path to the cerebrate directive (seeds plan.path); default null
 ```
 
 Run-id derivation: `brood` -> `<brood-id>--<strain-id>`; else a safe `suggested_run_id`

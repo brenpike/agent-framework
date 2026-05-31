@@ -80,6 +80,33 @@ fi
 # v1 legal state types (workflow-state-machine.md → V1 state types).
 V1_STATE_TYPES='["decision","agent","skill","user_gate","terminal"]'
 
+# ── Producer-to-workflow contract vocabularies ──────────────────────────────────
+#
+# Source of truth — the producer exit_reason vocabularies these reviewer states
+# must fully map. Keys are the EXACT producer exit_reason strings (hyphen form,
+# = what the overlord passes as --result). If a producer emits an outcome that a
+# reviewer state does not declare as a transition key, the workflow cannot route
+# that outcome and the run would dead-end. This contract check fails on any such
+# gap. Keep these arrays in lockstep with the producer files:
+#   - LOCAL_REVIEWER_SET : plugin/agents/local-reviewer.md (Output Contract exit_reason)
+#                          NOTE: fix_commits_exist is a scalar field, NOT an
+#                          exit_reason — it is intentionally absent here.
+#   - REVIEW_LOOP_SET    : plugin/skills/github-review-loop/SKILL.md (terminal exit_reason)
+#   - REVIEWER_FIX_SET   : plugin/agents/github-reviewer.md (fix-mode Output Contract exit_reason)
+LOCAL_REVIEWER_SET=(clean max-iterations-reached break-fix-break diminishing-returns injection-suspect user-input-required planner-escalation high-severity-rejection blocked)
+REVIEW_LOOP_SET=(clean pr-merged pr-closed max-cycles-reached planner-escalation blocked injection-suspect high-severity-rejection user-input-required)
+REVIEWER_FIX_SET=(clean injection-suspect user-input-required planner-escalation high-severity-rejection blocked)
+
+# Contract rows: "<state-name>:<set-var-name>". A reviewer state with the given
+# name in a workflow definition must declare every outcome in the named set as a
+# transition key. State names are matched only when present in the definition, so
+# the same row table applies to both real definitions and contract-class fixtures.
+CONTRACT_ROWS=(
+    "local_review:LOCAL_REVIEWER_SET"
+    "github_review_loop:REVIEW_LOOP_SET"
+    "github_reviewer_fix:REVIEWER_FIX_SET"
+)
+
 # ── State ─────────────────────────────────────────────────────────────────────
 
 FAILURES=0
@@ -188,6 +215,51 @@ validate_workflow_definition() {
     fi
 }
 
+# ── Producer-to-workflow contract validation ────────────────────────────────────
+#
+# For each contract row, if the workflow declares the named reviewer state, assert
+# every producer outcome in the row's set is a transition key of that state. Fails
+# (increments FAILURES) on any unmapped producer outcome. This is the check that
+# would have caught F1: a reviewer state whose transition keys diverge from the
+# producer's emitted exit_reason vocabulary.
+validate_producer_contract() {
+    local def_file="$1"
+    local label
+    label="${def_file#"$REPO_ROOT"/}"
+    local file_failures_before="$FAILURES"
+
+    # Skip non-JSON — structural validation already reports that.
+    if ! jq -e . "$def_file" >/dev/null 2>&1; then
+        return
+    fi
+
+    local row state_name set_var
+    for row in "${CONTRACT_ROWS[@]}"; do
+        state_name="${row%%:*}"
+        set_var="${row##*:}"
+
+        # Only check states that actually exist in this definition.
+        local state_present
+        state_present="$(jq -r --arg s "$state_name" '.states | has($s)' "$def_file" 2>/dev/null || echo "false")"
+        [[ "$state_present" == "true" ]] || continue
+
+        # Resolve the named set into a local array (indirect expansion).
+        local -n producer_set="$set_var"
+
+        local outcome present
+        for outcome in "${producer_set[@]}"; do
+            present="$(jq -r --arg st "$state_name" --arg o "$outcome" \
+                '(.states[$st].transitions // {}) | has($o)' "$def_file" 2>/dev/null || echo "false")"
+            [[ "$present" == "true" ]] \
+                || fail "$label" "producer-contract violation: state '$state_name' does not declare producer outcome '$outcome' (set $set_var) as a transition key"
+        done
+    done
+
+    if [[ "$FAILURES" -eq "$file_failures_before" ]]; then
+        echo "PASS [$label] producer-to-workflow contract satisfied"
+    fi
+}
+
 # ── Run-ledger fixture shape validation ─────────────────────────────────────────
 
 validate_ledger_fixture() {
@@ -251,12 +323,16 @@ run_self_test() {
             bf_label="${bf#"$REPO_ROOT"/}"
             # Run the validator in a subshell so its FAILURES/exit do not affect us,
             # capturing only its exit code. A correctly-rejecting validator exits 1.
+            # A broken fixture is rejected if EITHER the structural rules OR the
+            # producer-to-workflow contract check flag it — contract-class fixtures
+            # (e.g. missing-producer-outcome.json) are structurally valid and are
+            # caught only by validate_producer_contract.
             local rc=0
-            ( FAILURES=0; validate_workflow_definition "$bf"; [[ "$FAILURES" -gt 0 ]] ) >/dev/null 2>&1 || rc=$?
+            ( FAILURES=0; validate_workflow_definition "$bf"; validate_producer_contract "$bf"; [[ "$FAILURES" -gt 0 ]] ) >/dev/null 2>&1 || rc=$?
             if [[ "$rc" -eq 0 ]]; then
                 # Re-run visibly to show WHY it was rejected.
                 local detail
-                detail="$( FAILURES=0; validate_workflow_definition "$bf" 2>&1 | grep '^FAIL' || true )"
+                detail="$( FAILURES=0; validate_workflow_definition "$bf"; validate_producer_contract "$bf" 2>&1 | grep '^FAIL' || true )"
                 echo "PASS [self-test] correctly rejected: $bf_label"
                 while IFS= read -r d; do [[ -n "$d" ]] && echo "    $d"; done <<< "$detail"
             else
@@ -318,6 +394,12 @@ else
     else
         for f in "${def_files[@]}"; do
             validate_workflow_definition "$f"
+        done
+
+        echo ''
+        echo '=== Producer-to-workflow contract: reviewer-state transitions ==='
+        for f in "${def_files[@]}"; do
+            validate_producer_contract "$f"
         done
     fi
 fi

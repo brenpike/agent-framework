@@ -13,20 +13,24 @@
 #
 # DETERMINISM CONTRACT (per ADR-0018 + plan §C/§I):
 #   1. ledger.state.current MUST equal --state, else blocker + exit 1, ledger UNCHANGED.
-#   2. --state MUST exist in definition.states (the §I version-skew engine guard:
-#      a renamed/removed state never guesses), else blocker + exit 1, UNCHANGED.
-#   3. The allowed-result set is read DIRECTLY from definition.states[<state>].transitions
+#   2. BINDING GUARD: definition.id MUST equal ledger.run.workflow AND definition.version
+#      MUST equal ledger.run.workflow_version, else blocker + exit 1, ledger UNCHANGED. The
+#      engine HARD-REJECTS a non-binding definition; the §I version-skew DOORS (start fresh /
+#      deterministic resume / proceed intent-driven) are owned by the overlord resume gate.
+#   3. --state MUST exist in definition.states (a renamed/removed state never guesses —
+#      this is state-existence, NOT version-skew), else blocker + exit 1, UNCHANGED.
+#   5. The allowed-result set is read DIRECTLY from definition.states[<state>].transitions
 #      (keys). --result MUST be one of those keys, else blocker + exit 1, UNCHANGED.
-#   4. next_state = transitions[result].
-#   5. Append an event {at,state,result,next_state,summary,outputs}.
-#   6. Update state.previous=state, state.current=next_state, state.status.
-#   7. Update run.updated_at.
-#   8. If next_state is a declared terminal, set run.status + state.status to the
+#   6. next_state = transitions[result].
+#   7. Append an event {at,state,result,next_state,summary,outputs}.
+#   8. Update state.previous=state, state.current=next_state, state.status.
+#   9. Update run.updated_at.
+#  10. If next_state is a declared terminal, set run.status + state.status to the
 #      matching terminal status (complete->complete, blocked->blocked,
 #      cancelled->cancelled; any other terminal e.g. hatchery_monitor -> complete-
 #      equivalent per the schema doc, which constrains run.status to
 #      running|complete|blocked|cancelled).
-#   9. Write via temp file + atomic mv so a concurrent hatchery reader never sees a
+#  11. Write via temp file + atomic mv so a concurrent hatchery reader never sees a
 #      torn file.
 #
 # CRITICAL ATOMICITY: every write is temp-write + atomic rename. On ANY validation
@@ -119,28 +123,46 @@ ledger_current="$(jq -r '.state.current // ""' "$ledger")"
 [ "$ledger_current" = "$state" ] \
   || blocker "ledger state.current '$ledger_current' does not match --state '$state'; ledger unchanged"
 
-# Workflow id for clear error messages.
+# Workflow id for clear error messages and the definition<->ledger binding guard.
 workflow_id="$(jq -r '.id // ""' "$workflow")"
 
-# (2) --state must exist in definition.states (§I version-skew engine guard).
+# (2) BINDING GUARD: the supplied definition MUST bind to this ledger. The engine
+# HARD-REJECTS a non-binding definition (exit 1, ledger byte-unchanged); it does NOT
+# attempt to reconcile. Version-skew reconciliation is owned by the overlord resume-on-start
+# gate's three doors (start fresh / deterministic resume / proceed intent-driven), NOT here.
+# These checks run BEFORE the state-existence check and BEFORE any temp-file creation, so a
+# binding failure never mutates a byte of the on-disk ledger.
+#   (2a) definition.id == ledger.run.workflow.
+ledger_workflow="$(jq -r '.run.workflow // ""' "$ledger")"
+[ "$workflow_id" = "$ledger_workflow" ] \
+  || blocker "workflow definition id '$workflow_id' does not match ledger run.workflow '$ledger_workflow'; ledger unchanged"
+#   (2b) definition.version == ledger.run.workflow_version (engine hard-reject half of the
+#   §I policy; the overlord resume gate owns the three version-skew doors).
+ledger_wf_version="$(jq -r '.run.workflow_version // empty' "$ledger")"
+def_version="$(jq -r '.version // empty' "$workflow")"
+[ "$def_version" = "$ledger_wf_version" ] \
+  || blocker "workflow definition version '$def_version' does not match ledger run.workflow_version '$ledger_wf_version'; ledger unchanged (resume gate owns version-skew doors)"
+
+# (3) --state must exist in definition.states (named state must exist in the definition;
+# a renamed/removed state is never guessed). This is state-existence, NOT version-skew.
 state_exists="$(jq --arg s "$state" '.states | has($s)' "$workflow")"
 [ "$state_exists" = "true" ] \
   || blocker "state '$state' not found in workflow '$workflow_id'"
 
-# (3) read the allowed-set DIRECTLY from definition.states[state].transitions; --result
+# (4) read the allowed-set DIRECTLY from definition.states[state].transitions; --result
 # must be a key. The model never supplies this set.
 result_valid="$(jq --arg s "$state" --arg r "$result" \
   '(.states[$s].transitions // {}) | has($r)' "$workflow")"
 [ "$result_valid" = "true" ] \
   || blocker "result '$result' not valid from state '$state'"
 
-# (4) resolve next_state.
+# (5) resolve next_state.
 next_state="$(jq -r --arg s "$state" --arg r "$result" \
   '.states[$s].transitions[$r]' "$workflow")"
 [ -n "$next_state" ] && [ "$next_state" != "null" ] \
   || blocker "transition '$result' from state '$state' resolves to an empty target"
 
-# (8 pre-compute) determine whether next_state is a declared terminal and map its
+# (10 pre-compute) determine whether next_state is a declared terminal and map its
 # run/state status. The schema constrains run.status to running|complete|blocked|
 # cancelled, so any terminal other than blocked/cancelled is complete-equivalent.
 is_terminal="$(jq --arg n "$next_state" '(.terminal // []) | index($n) != null' "$workflow")"
