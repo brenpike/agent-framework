@@ -113,6 +113,12 @@ overlap_details="$(jq -r '.overlap_details // ""' "$INPUTS_FILE")"
 [ -n "$brood_id" ]     || { printf 'blocker: inputs file is missing brood_id\n' >&2; exit 1; }
 [ -n "$base" ]         || { printf 'blocker: inputs file is missing base\n' >&2; exit 1; }
 [ -n "$overlap_risk" ] || { printf 'blocker: inputs file is missing overlap_risk\n' >&2; exit 1; }
+# overlap_details is a required input per the contract; reject empty/whitespace-only
+# BEFORE any worktree/session is created.
+case "$overlap_details" in
+  *[![:space:]]*) : ;;
+  *) blocker "overlap_details is required and must be non-empty" ;;
+esac
 
 # Shape-validate the two overlord-generated scalars that are emitted into the
 # manifest. Although overlord-authored, a malformed value could corrupt YAML — reject
@@ -190,6 +196,13 @@ validate_ref() {
       printf 'blocker: %s %s contains characters outside the safe allowlist [A-Za-z0-9._/-]; reject as injection-suspect\n' "$label" "$value" >&2
       return 1 ;;
   esac
+  # Shape gate on the already-charset-clean value: reject names git itself rejects
+  # (trailing/leading/doubled separators, .lock suffix, leading-dot components).
+  # Runs AFTER the charset allowlist so raw bytes never reach this subshell.
+  if ! git check-ref-format --branch "$value" >/dev/null 2>&1; then
+    printf 'blocker: %s %s is not a valid git branch name\n' "$label" "$value" >&2
+    return 1
+  fi
   return 0
 }
 
@@ -236,6 +249,23 @@ for i in $(seq 0 $((strain_count - 1))); do
     if [ "${S_SHORT[$i]}" = "${S_SHORT[$j]}" ]; then
       printf 'blocker: strain names %s and %s collide on sanitized short name %s\n' \
         "${S_NAME[$i]}" "${S_NAME[$j]}" "${S_SHORT[$i]}" >&2
+      exit 1
+    fi
+    # Branch collision across the set: distinct strain names may carry the SAME (or a
+    # path-prefix-conflicting) branch, which would pass short-name dedup yet make the
+    # second `git worktree add -b` fail → partial brood. Reject exact duplicates and
+    # git ref prefix conflicts (one branch being a path-prefix of another) up front.
+    bi="${S_BRANCH[$i]}"; bj="${S_BRANCH[$j]}"
+    branch_conflict=false
+    if [ "$bi" = "$bj" ]; then
+      branch_conflict=true
+    else
+      case "$bj" in "$bi"/*) branch_conflict=true ;; esac
+      case "$bi" in "$bj"/*) branch_conflict=true ;; esac
+    fi
+    if [ "$branch_conflict" = true ]; then
+      printf 'blocker: strains %s and %s collide on branch %s\n' \
+        "${S_NAME[$i]}" "${S_NAME[$j]}" "$bi" >&2
       exit 1
     fi
   done
@@ -336,9 +366,21 @@ for idx in $(seq 0 $((strain_count - 1))); do
   # except TAB (0x09) and LF (0x0a), plus DEL (0x7f), before writing. No control byte
   # is load-bearing in a task description; removing them cannot break a paste boundary.
   desc="$(printf '%s' "$desc" | tr -d '\000-\010\013-\037\177')"
-  mkdir -p "$wt/.hivemind/brood"
   task_file="$wt/.hivemind/brood/task.md"
-  printf '%s\n\n%s\n' "$PREAMBLE" "$desc" > "$task_file"
+  # Guard task-file provisioning BEFORE launching a privileged child: a failed mkdir
+  # or write (full FS, permissions, conflicting path) is a HARD pre-launch failure —
+  # same class as `git worktree add` failure. Clean up what this invocation created
+  # and skip the session launch rather than leave an idle privileged child.
+  if ! mkdir -p "$wt/.hivemind/brood" 2>/dev/null \
+     || ! printf '%s\n\n%s\n' "$PREAMBLE" "$desc" > "$task_file" 2>/dev/null; then
+    printf 'warning: task-file provisioning failed for strain %s\n' "${S_NAME[$idx]}" >&2
+    mark_failed "$idx"
+    if [ "$created_worktree" = true ]; then
+      git worktree remove --force "$wt" >/dev/null 2>&1 || true
+      git branch -D "$branch" >/dev/null 2>&1 || true
+    fi
+    continue
+  fi
 
   # 3d: launch a DETACHED tmux session running claude (tmux supplies the pty the
   # Bash context lacks). Pre-accept the bypass-permissions trust gate.
@@ -394,6 +436,18 @@ inject_strain() {
   return 0
 }
 
+# Interruption guard over the readiness wait: Pass 1 has launched detached sessions
+# but no manifest exists yet, so a cancelled Bash call / SIGTERM during the up-to-90s
+# poll would orphan live sessions+worktrees+branches with nothing for brood-status or
+# the liveness guard to find. Emit the launched session names in the SAME recovery:
+# format used on the manifest-write-failure path, then exit nonzero. No lock, no
+# reservation — pure best-effort visibility. Cleared before the normal manifest write.
+brood_interrupt_trap() {
+  printf 'recovery: spawn interrupted; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
+  exit 1
+}
+trap brood_interrupt_trap INT TERM
+
 # ── Pass 2: wait ready + inject task (ONE shared deadline) ──────────────────────
 # All Pass-1 sessions boot concurrently. A single shared deadline (NOT N×timeout) is
 # what makes the total wait ≈ the slowest single strain: pending strains are polled
@@ -436,6 +490,11 @@ done
 #       trailing newline is harmless.
 # Any embedded newline in an untrusted value is reproduced at the block-scalar
 # content indent. Field names MUST NOT be renamed (brood-status consumes them).
+# The launched sessions are about to be recorded in the manifest; the interruption
+# guard is no longer needed (and must not fire over the manifest write itself, which
+# has its own recovery: path).
+trap - INT TERM
+
 manifest_path="$STATE/manifest.yaml"
 hatchery_session="${TMUX:-}"   # current tmux session identifier, if any; inert literal
 
@@ -463,13 +522,18 @@ emit_block() {
   emit_block '|-' 'hatchery_session' "$hatchery_session" 0 2
   emit_block '|-' 'base' "$base" 0 2
   emit_block '|-' 'overlap_risk' "$overlap_risk" 0 2
-  emit_block '|' 'overlap_details' "$overlap_details" 0 2
+  # Strip C0 control bytes (except TAB/LF) + DEL from free-text manifest values so an
+  # issue-sourced control byte can never produce an unreadable manifest brood-status
+  # then fails to parse. Same expression already applied to the task-file description.
+  overlap_details_clean="$(printf '%s' "$overlap_details" | tr -d '\000-\010\013-\037\177')"
+  emit_block '|' 'overlap_details' "$overlap_details_clean" 0 2
   printf 'strains:\n'
   for idx in $(seq 0 $((strain_count - 1))); do
+    desc_clean="$(printf '%s' "${S_DESC[$idx]}" | tr -d '\000-\010\013-\037\177')"
     printf '  - name: |-\n'
     printf '%s\n' "${S_NAME[$idx]}"   | sed 's/^/      /'
     printf '    description: |\n'
-    printf '%s\n' "${S_DESC[$idx]}"   | sed 's/^/      /'
+    printf '%s\n' "$desc_clean"        | sed 's/^/      /'
     printf '    worktree_path: |-\n'
     printf '%s\n' "${S_WT[$idx]}"     | sed 's/^/      /'
     printf '    branch: |-\n'

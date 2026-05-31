@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.4] - 2026-05-30
+
+### Fixed
+
+- **`spawn-brood` preflight rejects git-invalid branch names via `git check-ref-format --branch` after the charset allowlist.** Names like `feat/`, `.feat`, and `feat.lock` pass the `^[A-Za-z0-9._/-]+$` charset gate but are rejected by git itself; a partial brood would launch and fail mid-spawn. The additional `git check-ref-format --branch` check now runs on each strain branch after the allowlist passes, blocking before any worktree or session is created.
+- **`spawn-brood` preflight rejects duplicate and prefix-conflicting branch names across the strain set.** Previously only sanitized short names were deduped; two strains could produce distinct short names but identical full branch names, or a branch like `feat/foo` would conflict with `feat/foo/bar` (git namespace collision). The preflight now deduplicates the full branch set and checks for prefix conflicts before Pass 1.
+- **`spawn-brood` validates `overlap_details` is non-empty.** `overlap_details` was the only required scalar input not checked for emptiness; a blank value produced a manifest with an empty block scalar. It is now validated alongside the other required inputs, emitting a blocker on empty.
+- **`spawn-brood` strips C0 control bytes from `description` and `overlap_details` at manifest emission.** An issue-sourced control byte (e.g. embedded ESC) in either field was written verbatim to the manifest, producing a YAML file that some parsers cannot read. Both fields are now passed through `tr -d '\000-\010\013-\037\177'` before the block-scalar emit, matching the existing `task.md` sanitization discipline.
+- **`spawn-brood` treats per-strain task-file provisioning (mkdir + write) as a hard pre-launch failure with cleanup.** The mkdir and task-file write for each strain ran without a checked error path; a provisioning failure silently fell through to the `tmux new-session` launch of a privileged `--dangerously-skip-permissions` child with no task file. The guard now runs before each launch: failure emits a blocker, kills any already-started sessions for this invocation, and exits 1.
+- **`spawn-brood` installs an INT/TERM trap over the readiness-wait window that emits launched session names for recovery.** If the spawn is interrupted (Ctrl-C or SIGTERM) between Pass 1 completing and the manifest being written, the launched sessions were orphaned with no record. The trap now prints each launched session name to stderr before exiting, giving the operator enough information to kill or adopt them.
+- **`brood-status` honors `status: failed` in the manifest (injection-failed session left alive for debugging).** A strain whose manifest carried `status: failed` was reported as `running` because the status probe checked only tmux liveness, ignoring the recorded status field. `brood-status` now reads the manifest status first and reports `failed` without a live-session probe when the field is set.
+- **`brood-status` manifest lookup prefers the current checkout's manifest before falling back to the main checkout.** When invoked from inside a brood worktree (recursive-brood support), the skill previously always resolved to the main-checkout manifest path, making the current-worktree brood invisible. The lookup now checks the current checkout's `.hivemind/brood/manifest.yaml` first and falls back to the main-checkout path only when absent.
+
 ## [2.18.3] - 2026-05-30
 
 ### Removed
