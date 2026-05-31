@@ -25,37 +25,50 @@
 # The ledger is written to a temp file and atomically renamed into place so a
 # concurrent reader (the hatchery reading a child ledger) never sees a torn file.
 #
-# FLAG INTERFACE:
-#   --workflow <id>            (required) selected workflow id; matches plugin/workflows/<id>.json
-#   --workflow-version <int>   (required) the definition version at init time
-#   --start-state <state>      (required) the workflow's start state (state.current at init)
-#   --user-request <text>      (required) raw user request — UNTRUSTED data, serialized only
-#   --normalized <text>        (required) overlord's normalized summary of the request
-#   --parent-kind <kind>       (optional) none|brood ; default none
-#   --parent-run-id <id>       (required when --parent-kind=brood) parent run id
-#   --parent-brood-id <id>     (required when --parent-kind=brood) CANONICAL brood id —
-#                              the manifest's colon-bearing ISO-8601 timestamp. Persisted
-#                              VERBATIM into .parent.brood_id (so the child ledger reconciles
-#                              with the manifest's canonical brood_id). The run id/path is
-#                              derived by sanitizing it internally (colons->dashes).
-#   --parent-strain-id <id>    (required when --parent-kind=brood) strain id
-#   --parent-manifest <path>   (required when --parent-kind=brood) manifest path
-#   --suggested-run-id <id>    (optional) caller-suggested run id; used verbatim only if
-#                              it matches ^[A-Za-z0-9._-]+$, else a derived id is used.
-#   --plan-steps <json-array>  (optional) cerebrate's plan steps reformatted to a JSON
-#                              array — the child/resume SEED path for plan.steps (NOT the
-#                              primary live writer; record-state-result --plan-steps at the
-#                              `plan` state is primary). UNTRUSTED step text — enters jq ONLY
-#                              via --argjson (pre-validated JSON). Default [].
-#   --plan-path <text>         (optional) path to the cerebrate directive — child/resume seed
-#                              for plan.path. Default null.
+# INPUT (single positional argument):
+#   $1  Absolute or repo-relative path to a JSON inputs file authored by the agent
+#       via the Write tool. The agent writes structured data; this script parses it
+#       with jq into shell VARIABLES. Untrusted bytes in the JSON are read into
+#       variables and referenced only as "$var" — bash does not re-evaluate command
+#       substitution from variable contents, so the command-substitution injection
+#       class is structurally absent (the values never enter generated command
+#       SOURCE). Mirrors spawn-brood.sh; rationale: docs/adr/0017-brood-spawn-mechanism.md.
+#
+#   Inputs JSON shape (authoritative schema in SKILL.md § Inputs JSON):
+#     {
+#       "workflow":         "<selected workflow id; matches plugin/workflows/<id>.json>",
+#       "workflow_version": <int — definition version at init time>,
+#       "start_state":      "<workflow's start state (state.current at init)>",
+#       "user_request":     "<raw user request — UNTRUSTED data, serialized only>",
+#       "normalized":       "<overlord's normalized summary of the request>",
+#       "parent": {
+#         "kind":      "none|brood",   // default none
+#         "run_id":    "<required when kind=brood> parent run id",
+#         "brood_id":  "<required when kind=brood> CANONICAL brood id — the manifest's
+#                       colon-bearing ISO-8601 timestamp. Persisted VERBATIM into
+#                       .parent.brood_id (so the child ledger reconciles with the
+#                       manifest's canonical brood_id). The run id/path is derived by
+#                       sanitizing it internally (colons->dashes).",
+#         "strain_id": "<required when kind=brood> strain id",
+#         "manifest":  "<required when kind=brood> manifest path"
+#       },
+#       "suggested_run_id": "<optional> caller-suggested run id; used verbatim only if it
+#                            matches ^[A-Za-z0-9._-]+$, else a derived id is used.",
+#       "plan_steps": [ ... ],   // optional; cerebrate's plan steps as a JSON array — the
+#                                // child/resume SEED path for plan.steps (NOT the primary
+#                                // live writer; record-state-result --plan-steps at the
+#                                // `plan` state is primary). UNTRUSTED step text — enters jq
+#                                // ONLY via --argjson (pre-validated JSON). Default [].
+#       "plan_path": "<optional> path to the cerebrate directive — child/resume seed for
+#                     plan.path. Default null."
+#     }
 #
 # RUN-ID DERIVATION:
-#   - --parent-kind=brood: child form <sanitized-brood-id>--<strain-id>. The brood id is the
+#   - parent.kind=brood: child form <sanitized-brood-id>--<strain-id>. The brood id is the
 #     CANONICAL ISO-8601 form (colons allowed); it is persisted verbatim into .parent.brood_id
 #     and sanitized internally (colons->dashes, matching spawn-brood's brood_id_safe transform)
 #     ONLY to derive the filesystem-safe run id. strain id must match the safe charset.
-#   - else if --suggested-run-id is safe (^[A-Za-z0-9._-]+$): use it verbatim.
+#   - else if suggested_run_id is safe (^[A-Za-z0-9._-]+$): use it verbatim.
 #   - else derived: <utc-timestamp>-<workflow-id> (timestamp colons mapped to dashes so
 #     the id is a safe directory name).
 #
@@ -71,8 +84,8 @@
 #   1  pre-flight blocker (missing/invalid inputs, unsafe ids, fs failure)
 #
 # set -u: an unset variable is a programming error here (every value is parsed
-# explicitly from flags). We do NOT use `set -e`: failures are routed through the
-# blocker() helper with a verbose reason rather than a bubbled raw tool error.
+# explicitly from the inputs file). We do NOT use `set -e`: failures are routed through
+# the blocker() helper with a verbose reason rather than a bubbled raw tool error.
 
 set -u
 
@@ -85,89 +98,82 @@ SAFE_ID_RE='^[A-Za-z0-9._-]+$'
 command -v jq >/dev/null 2>&1 \
   || blocker "jq is required to write the run ledger but is not installed"
 
-# ── Flag parse into inert variables ───────────────────────────────────────────
-workflow=""
-workflow_version=""
-start_state=""
-user_request=""
-normalized=""
-parent_kind="none"
-parent_run_id=""
-parent_brood_id=""
-parent_strain_id=""
-parent_manifest=""
-suggested_run_id=""
-plan_steps="[]"
-plan_path=""
+# ── Inputs file ───────────────────────────────────────────────────────────────
+# Single positional argument: the path to a JSON inputs file the agent authored via
+# the Write tool. The path is the ONLY value passed on the command line; every field
+# (including the untrusted ones) is read with jq into inert variables below — never
+# interpolated into bash source or the jq program SOURCE.
+INPUTS_FILE="${1:-}"
+[ -n "$INPUTS_FILE" ] \
+  || blocker "missing required argument: path to run-ledger inputs JSON file (\$1)"
+[ -f "$INPUTS_FILE" ] \
+  || blocker "run-ledger inputs file $INPUTS_FILE does not exist"
+jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
+  || blocker "run-ledger inputs file $INPUTS_FILE is not valid JSON"
 
-# require_value: every valued flag must be followed by an argument. A trailing valued flag
-# with no value would otherwise consume "" and `shift 2` would fail against a single remaining
-# positional — silently mis-parsing under set -u. Reject with a clear blocker instead.
-require_value() { [ "$#" -ge 2 ] || blocker "flag $1 requires a value"; }
-
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --workflow)          require_value "$@"; workflow="$2"; shift 2 ;;
-    --workflow-version)  require_value "$@"; workflow_version="$2"; shift 2 ;;
-    --start-state)       require_value "$@"; start_state="$2"; shift 2 ;;
-    --user-request)      require_value "$@"; user_request="$2"; shift 2 ;;
-    --normalized)        require_value "$@"; normalized="$2"; shift 2 ;;
-    --parent-kind)       require_value "$@"; parent_kind="$2"; shift 2 ;;
-    --parent-run-id)     require_value "$@"; parent_run_id="$2"; shift 2 ;;
-    --parent-brood-id)   require_value "$@"; parent_brood_id="$2"; shift 2 ;;
-    --parent-strain-id)  require_value "$@"; parent_strain_id="$2"; shift 2 ;;
-    --parent-manifest)   require_value "$@"; parent_manifest="$2"; shift 2 ;;
-    --suggested-run-id)  require_value "$@"; suggested_run_id="$2"; shift 2 ;;
-    --plan-steps)        require_value "$@"; plan_steps="$2"; shift 2 ;;
-    --plan-path)         require_value "$@"; plan_path="$2"; shift 2 ;;
-    *) blocker "unknown argument: $1" ;;
-  esac
-done
+# Parse every field into the SAME inert variables the downstream logic already uses.
+# Strings via `jq -r '.field // ""'`; the workflow_version stays a JSON number (read as
+# its string form here, then integer-guarded below before becoming an --argjson number);
+# plan_steps is read as a JSON array via `jq '.plan_steps // []'` (preserving its JSON
+# type for the --argjson serialization). parent.kind defaults to "none" when absent.
+workflow="$(jq -r '.workflow // ""' "$INPUTS_FILE")"
+workflow_version="$(jq -r '.workflow_version // ""' "$INPUTS_FILE")"
+start_state="$(jq -r '.start_state // ""' "$INPUTS_FILE")"
+user_request="$(jq -r '.user_request // ""' "$INPUTS_FILE")"
+normalized="$(jq -r '.normalized // ""' "$INPUTS_FILE")"
+parent_kind="$(jq -r '.parent.kind // "none"' "$INPUTS_FILE")"
+parent_run_id="$(jq -r '.parent.run_id // ""' "$INPUTS_FILE")"
+parent_brood_id="$(jq -r '.parent.brood_id // ""' "$INPUTS_FILE")"
+parent_strain_id="$(jq -r '.parent.strain_id // ""' "$INPUTS_FILE")"
+parent_manifest="$(jq -r '.parent.manifest // ""' "$INPUTS_FILE")"
+suggested_run_id="$(jq -r '.suggested_run_id // ""' "$INPUTS_FILE")"
+plan_steps="$(jq -c '.plan_steps // []' "$INPUTS_FILE")"
+plan_path="$(jq -r '.plan_path // ""' "$INPUTS_FILE")"
 
 # ── Required-input validation ─────────────────────────────────────────────────
-[ -n "$workflow" ]         || blocker "missing required --workflow"
-[ -n "$workflow_version" ] || blocker "missing required --workflow-version"
-[ -n "$start_state" ]      || blocker "missing required --start-state"
-[ -n "$user_request" ]     || blocker "missing required --user-request"
-[ -n "$normalized" ]       || blocker "missing required --normalized"
+[ -n "$workflow" ]         || blocker "inputs file is missing required workflow"
+[ -n "$workflow_version" ] || blocker "inputs file is missing required workflow_version"
+[ -n "$start_state" ]      || blocker "inputs file is missing required start_state"
+[ -n "$user_request" ]     || blocker "inputs file is missing required user_request"
+[ -n "$normalized" ]       || blocker "inputs file is missing required normalized"
 
 # workflow_version must be an integer (it becomes a JSON number via --argjson).
 case "$workflow_version" in
-  ''|*[!0-9]*) blocker "--workflow-version must be a non-negative integer, got: $workflow_version" ;;
+  ''|*[!0-9]*) blocker "workflow_version must be a non-negative integer, got: $workflow_version" ;;
 esac
 
-# parent_kind selects the parent variant.
+# parent.kind selects the parent variant.
 case "$parent_kind" in
   none|brood) : ;;
-  *) blocker "--parent-kind must be none|brood, got: $parent_kind" ;;
+  *) blocker "parent.kind must be none|brood, got: $parent_kind" ;;
 esac
 
-# --plan-steps (default []) must be a JSON array. Validated up front for a clear blocker
+# plan_steps (default []) must be a JSON array. Validated up front for a clear blocker
 # rather than a downstream --argjson parse error. UNTRUSTED step text never enters the jq
 # program SOURCE — only as the named --argjson binding below.
 printf '%s' "$plan_steps" | jq -e 'type=="array"' >/dev/null 2>&1 \
-  || blocker "--plan-steps must be a JSON array"
+  || blocker "plan_steps must be a JSON array"
 
 # ── Run-id derivation ─────────────────────────────────────────────────────────
 run_id=""
 if [ "$parent_kind" = "brood" ]; then
   # Child form <brood-id>--<strain-id>; both components required and safe.
-  [ -n "$parent_brood_id" ]  || blocker "--parent-kind=brood requires --parent-brood-id"
-  [ -n "$parent_strain_id" ] || blocker "--parent-kind=brood requires --parent-strain-id"
-  # parent_run_id and parent_manifest identify the hatchery relationship (run-ledger-schema
+  [ -n "$parent_brood_id" ]  || blocker "parent.kind=brood requires parent.brood_id"
+  [ -n "$parent_strain_id" ] || blocker "parent.kind=brood requires parent.strain_id"
+  # parent.run_id and parent.manifest identify the hatchery relationship (run-ledger-schema
   # brood variant). A child that omits either while translating its injected metadata would
   # otherwise write a brood ledger with null ancestry fields, silently breaking the
   # reconciliation trail — so require both non-empty before creating the ledger.
-  [ -n "$parent_run_id" ]    || blocker "--parent-kind=brood requires --parent-run-id"
-  [ -n "$parent_manifest" ]  || blocker "--parent-kind=brood requires --parent-manifest"
-  # --parent-brood-id is the CANONICAL brood id (the manifest's ISO-8601 timestamp, e.g.
+  [ -n "$parent_run_id" ]    || blocker "parent.kind=brood requires parent.run_id"
+  [ -n "$parent_manifest" ]  || blocker "parent.kind=brood requires parent.manifest"
+  # parent.brood_id is the CANONICAL brood id (the manifest's ISO-8601 timestamp, e.g.
   # 2026-05-31T17:30:00Z). Accept the ISO form — [A-Za-z0-9._-] PLUS ':' (the ISO time
   # separator) — while still rejecting genuinely unsafe bytes (path separators, control
   # bytes, shell metacharacters). It is persisted VERBATIM into .parent.brood_id so the
   # child ledger reconciles with the manifest's canonical brood_id; only the derived run id
   # is sanitized below.
-  case "$parent_brood_id"  in *[!A-Za-z0-9._:-]*) blocker "--parent-brood-id contains characters outside [A-Za-z0-9._:-]: $parent_brood_id" ;; esac
-  case "$parent_strain_id" in *[!A-Za-z0-9._-]*) blocker "--parent-strain-id contains characters outside [A-Za-z0-9._-]: $parent_strain_id" ;; esac
+  case "$parent_brood_id"  in *[!A-Za-z0-9._:-]*) blocker "parent.brood_id contains characters outside [A-Za-z0-9._:-]: $parent_brood_id" ;; esac
+  case "$parent_strain_id" in *[!A-Za-z0-9._-]*) blocker "parent.strain_id contains characters outside [A-Za-z0-9._-]: $parent_strain_id" ;; esac
   # Sanitize the canonical brood id (colons->dashes, same transform as spawn-brood's
   # brood_id_safe) ONLY for the filesystem run-id component. parent_brood_id stays canonical
   # for verbatim persistence below. Result equals the manifest's run.suggested_id form
@@ -180,7 +186,7 @@ else
   # Derived form <utc-timestamp>-<workflow-id>. Map colons to dashes for a safe dir name.
   utc_ts="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
   # Reject a workflow id that would make an unsafe directory component.
-  case "$workflow" in *[!A-Za-z0-9._-]*) blocker "--workflow contains characters outside [A-Za-z0-9._-]; cannot derive a safe run id: $workflow" ;; esac
+  case "$workflow" in *[!A-Za-z0-9._-]*) blocker "workflow contains characters outside [A-Za-z0-9._-]; cannot derive a safe run id: $workflow" ;; esac
   run_id="${utc_ts}-${workflow}"
 fi
 
