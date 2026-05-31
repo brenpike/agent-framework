@@ -327,6 +327,11 @@ mark_failed() { S_STATUS[$1]="failed"; }
 
 # ── Pass 1: create worktree + launch detached session (non-blocking) ────────────
 launched_sessions=""
+# In-progress-strain markers, initialised BEFORE the trap is armed so the handler can
+# reference them under `set -u` even if a signal arrives before the loop's first reset.
+cur_wt=""
+cur_branch=""
+cur_session=""
 settings_local="$repo_root/.claude/settings.local.json"
 
 # Interruption guard over BOTH the Pass-1 launch loop and the Pass-2 readiness wait:
@@ -341,6 +346,13 @@ settings_local="$repo_root/.claude/settings.local.json"
 # before the normal manifest write.
 brood_interrupt_trap() {
   printf 'recovery: spawn interrupted; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
+  # The strain mid-provision when the signal arrived is NOT yet in launched_sessions:
+  # its worktree/branch (post worktree-add) and/or its live privileged session (post
+  # new-session, pre-append) would otherwise go unreported. Emit them too. Emit-only —
+  # NO git/tmux/rm in the handler; the operator verifies and cleans manually.
+  if [ -n "$cur_wt" ] || [ -n "$cur_session" ]; then
+    printf 'recovery: spawn interrupted mid-provision; in-progress strain may have leaked resources — worktree: %s branch: %s session: %s (verify with '\''git worktree list'\'' / '\''tmux ls'\'' and clean manually)\n' "$cur_wt" "$cur_branch" "$cur_session" >&2
+  fi
   exit 1
 }
 trap brood_interrupt_trap INT TERM
@@ -354,6 +366,14 @@ for idx in $(seq 0 $((strain_count - 1))); do
   created_worktree=false
   created_session=false
 
+  # In-progress-strain tracking for the interrupt trap. Reset to empty at the TOP of
+  # every iteration so the trap only ever reports resources created-and-not-cleaned in
+  # THIS iteration. Set as each provisional resource comes into existence; cleared at
+  # loop bottom once the strain is fully tracked in launched_sessions.
+  cur_wt=""
+  cur_branch=""
+  cur_session=""
+
   # 3a: explicit worktree + exact strain branch off base. Do NOT use claude
   # --worktree (mangles names / creates worktree-<name>).
   if ! git worktree add -b "$branch" "$wt" "$base" >/dev/null 2>&1; then
@@ -364,6 +384,8 @@ for idx in $(seq 0 $((strain_count - 1))); do
     continue
   fi
   created_worktree=true
+  cur_wt="$wt"
+  cur_branch="$branch"
 
   # 3b: propagate config into the new worktree, if present.
   if [ -f "$settings_local" ]; then
@@ -399,6 +421,9 @@ for idx in $(seq 0 $((strain_count - 1))); do
       git worktree remove --force "$wt" >/dev/null 2>&1 || true
       git branch -D "$branch" >/dev/null 2>&1 || true
     fi
+    # Worktree+branch removed; clear so the trap does not report them as a leak.
+    cur_wt=""
+    cur_branch=""
     continue
   fi
 
@@ -414,11 +439,20 @@ for idx in $(seq 0 $((strain_count - 1))); do
       git worktree remove --force "$wt" >/dev/null 2>&1 || true
       git branch -D "$branch" >/dev/null 2>&1 || true
     fi
+    # Worktree+branch removed; no session launched. Clear so the trap reports nothing.
+    cur_wt=""
+    cur_branch=""
     continue
   fi
   created_session=true
+  cur_session="$tmux_session"
   launched_sessions="${launched_sessions:+$launched_sessions }$tmux_session"
   : "$created_session"  # session confirmed launched; provisionally running
+  # Strain now fully tracked in launched_sessions; clear the in-progress markers so the
+  # trap does not double-report a strain already accounted for in launched_sessions.
+  cur_wt=""
+  cur_branch=""
+  cur_session=""
 done
 
 # inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted

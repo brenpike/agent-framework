@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.6] - 2026-05-30
+
+### Fixed
+
+- `spawn-brood`'s INT/TERM interrupt-recovery trap now reports the current in-progress strain's provisional resources (worktree, branch, and live session) in addition to fully-launched sessions. Previously an interrupt landing after a strain's `git worktree add` or `tmux new-session` but before its session name was appended to the recovery list left those resources — including a live `--dangerously-skip-permissions` child — unreported. The trap remains emit-only (no cleanup commands in the signal handler); in-progress markers are initialized before the trap is armed for `set -u` safety.
+
 ## [2.18.5] - 2026-05-30
 
 ### Fixed
