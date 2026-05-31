@@ -43,15 +43,23 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
 1. Confirm current branch matches `head` and is not `base` (GIT-01 — never push trunk). On mismatch or trunk match, exit 1 with blocker.
 2. Confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State). On unsafe state, exit 1 with blocker.
 3. Capture local HEAD SHA: `git rev-parse HEAD`.
-4. Place the working branch on its remote:
-   - if `push_remote` is provided: `git push -u <push_remote> <head>`. On failure, exit 1 with blocker.
-   - else if upstream tracking is set: run `git push`.
+4. Place the working branch on its remote. **No untrusted remote or branch byte may enter model-authored Bash source.** `push_remote`, `head`, the configured remote name, and the upstream branch are all derived OUT-OF-BAND — captured into shell variables via command substitution inside the Bash call, then referenced only as `"$var"`. Bash does not re-evaluate command substitution (`$(...)`, backticks, `${...}`) from variable *contents*, so a ref/remote carrying those bytes cannot execute even though `git check-ref-format` accepts it; double-quoting alone is NOT sufficient because the bytes would still expand if pasted as literal command *source* (the ADR-0017 out-of-band discipline, identical to spawn-brood's ref handling). Never paste a `push_remote`/`head`/`<remote>`/`<upstream_branch>` literal value into command text.
+   - if `push_remote` is provided: FIRST, in your OWN reasoning BEFORE any Bash call, validate the `push_remote` value against the allowlist `^[A-Za-z0-9._/-]+$` (non-empty, no leading `-`, no `..`) — identical to spawn-brood's pre-Bash ref gate (`${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md`, Brood Spawn Bypass-Mode Mitigation, control 3). If the value fails the allowlist, exit 1 with `blocker: push_remote contains characters outside the safe allowlist`; the raw bytes never reach generated shell source. Only an allowlist-clean remote name — which by construction contains no `$`, backtick, `(`, `)`, `{`, `}`, or whitespace — is then placed in the push, and the branch is derived out-of-band as HEAD (confirmed `== head` in step 1) so no branch bytes are re-pasted:
+     ```bash
+     b="$(git rev-parse --abbrev-ref HEAD)"; git push -u <allowlist-validated-remote> "HEAD:$b"
+     ```
+     On failure, exit 1 with blocker.
+   - else if upstream tracking is set: run `git push` (no remote/branch argument — nothing to interpolate).
      - on success: continue with that remote.
-     - on **non-fast-forward** failure: retry once with a refspec-scoped force-with-lease against the tracked upstream ref. Read remote and upstream ref via git plumbing (string-splitting on `/` is unsafe — branch names like `feature/foo` and rare remote names with `/` make any single-slash split incorrect):
-       - `<remote>` = `git config --get branch.<head>.remote`
-       - `<upstream_ref>` = `git config --get branch.<head>.merge` (yields `refs/heads/<upstream_branch>`)
-       - `<upstream_branch>` = `<upstream_ref>` with the `refs/heads/` prefix stripped
-       Run `git push --force-with-lease <remote> HEAD:<upstream_branch>`. The explicit `HEAD:<upstream_branch>` refspec targets the actual tracked branch — not the same-named branch on the remote, which may differ when the local branch tracks a renamed upstream (`push.default=upstream` or explicit branch mapping). Force-with-lease without a value uses the remote-tracking ref as expected, so it succeeds only when the remote tip matches what the local clone last fetched, which covers intentional history rewrites (rebase, amend) without overwriting concurrent pushes.
+     - on **non-fast-forward** failure: retry once with a refspec-scoped force-with-lease against the tracked upstream ref. Capture the remote and upstream branch out-of-band via git plumbing into shell vars in the SAME Bash call, then reference only `"$rem"` / `"$ub"` in the push (string-splitting on `/` is unsafe — branch names like `feature/foo` and rare remote names with `/` make any single-slash split incorrect; the `refs/heads/` strip is a fixed-prefix parameter expansion, not a re-paste of ref bytes):
+       ```bash
+       b="$(git rev-parse --abbrev-ref HEAD)"
+       rem="$(git config --get "branch.$b.remote")"
+       ref="$(git config --get "branch.$b.merge")"   # refs/heads/<upstream_branch>
+       ub="${ref#refs/heads/}"
+       git push --force-with-lease "$rem" "HEAD:$ub"
+       ```
+       The explicit `HEAD:"$ub"` refspec targets the actual tracked branch — not the same-named branch on the remote, which may differ when the local branch tracks a renamed upstream (`push.default=upstream` or explicit branch mapping). Force-with-lease without a value uses the remote-tracking ref as expected, so it succeeds only when the remote tip matches what the local clone last fetched, which covers intentional history rewrites (rebase, amend) without overwriting concurrent pushes.
        - on FWL success: continue.
        - on FWL failure: exit 1 with blocker. Remote has commits the local clone has not seen.
      - on **any other** failure (auth, read-only, protected branch, hook policy, `[remote rejected]`): exit 1 with blocker. Do NOT warn and continue — a failed push leaves the remote unchanged, so the post-PR review loop would resume against stale commits and could repeat the same finding indefinitely (there is no PR-creation fallback in this skill). Classify the failure for the blocker message: treat as auth/read-only/protected/hook-policy when stderr contains any of `Permission denied`, `remote: Permission`, `protected branch`, `403`, `401`, `[remote rejected]`, `remote rejected`, `pre-receive hook`, `update hook`, `push declined`; treat as non-fast-forward (eligible for the force-with-lease retry above) only when stderr contains `non-fast-forward` OR `(fetch first)`. Bare `rejected` is not a non-fast-forward marker on its own (`[remote rejected]` is server-side and is not resolved by force-with-lease). Whichever class it is, the result is `blocked`.
