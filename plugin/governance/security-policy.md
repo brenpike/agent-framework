@@ -111,6 +111,18 @@ This policy applies to:
 
 User-driven skills carrying `Write`/`Edit` in `allowed-tools` (e.g. `tdd`, `refactor-to-depth`) cannot mutate source outside the branch → checkpoint → review → PR lifecycle: the user reaches only the orchestrator, whose `tools:` carry no `Write`/`Edit`, and write-capable executors (`drone`, `changeling`) are spawned only after git preflight inside an established working branch. Containment is structural — agent tool grants plus spawn topology — so it holds for all present and future write/edit skills with no per-skill governance preflight.
 
+### Inert Inputs-File Navigator Pattern
+
+A pipeline navigator skill (`hivemind:spawn-brood`, `hivemind:init-run-ledger`, `hivemind:record-state-result`) MAY carry a single unrestricted `Write` grant SOLELY to author a fixed-path `.hivemind/` inputs file consumed by its committed engine script via `jq`. The grant is sound because the Write `file_path` is a TRUSTED LITERAL CONSTANT in the trusted skill body — never derived from untrusted input — while only the file CONTENT carries untrusted fields, and that content is inert: the engine script reads each field with `jq` into shell variables referenced only as `"$var"`, so it is never interpreted as a path, Bash, or instruction (bash does not re-evaluate command substitution from variable contents). This is the same primitive accepted in ADR-0017 ("File-based Write-tool inputs parsed by jq into inert variables") and recorded for the engine navigators in ADR-0018; removing the grant was rejected because it reopens the command-substitution injection class those changes closed.
+
+The three covered skills and their fixed inputs paths:
+
+- `hivemind:spawn-brood` → `.hivemind/brood/inputs.json`
+- `hivemind:init-run-ledger` → `.hivemind/runs/.init-inputs.json`
+- `hivemind:record-state-result` → `.hivemind/runs/.record-inputs.json`
+
+Claude Code plugin frontmatter CANNOT path-scope a `Write` grant (a `Write` entry grants the whole tool), so the trailing inline comment on each skill's `allowed-tools` Write entry is DOCUMENTARY, not enforcing. The PRIMARY, landed enforcement is the trusted-constant `file_path` in the skill body (never untrusted-derived) — sound on its own, identical to the ADR-0017 precedent (`spawn-brood`), which likewise carries no script-side path assertion. See ADR-0018's inert inputs-file implementation note. This pattern is distinct from Write-Capable Skill Containment above (which contains write/edit *executors* by spawn topology) — here the navigator's Write is intentionally retained, bounded by the trusted-constant path.
+
 ### Enforcement Order
 
 1. External Content Boundary applies at content ingestion time (before classification).

@@ -4,7 +4,7 @@ description: Dispatch parallel overlord sessions as a brood. Spawns N Claude Cod
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh *)
   - Read
-  - Write
+  - Write   # inert inputs-file only: authors fixed-path .hivemind/brood/inputs.json; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0018
 shell: bash
 ---
 

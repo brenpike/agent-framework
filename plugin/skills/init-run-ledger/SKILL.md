@@ -4,7 +4,7 @@ description: Initialize the run ledger for the current overlord instance — cre
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh *)
   - Read
-  - Write   # scoped: ONLY to author the init inputs file (.hivemind/runs/.init-inputs.json)
+  - Write   # inert inputs-file only: authors fixed-path .hivemind/runs/.init-inputs.json; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0018
 shell: bash
 ---
 

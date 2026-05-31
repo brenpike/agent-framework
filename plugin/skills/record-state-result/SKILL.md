@@ -4,7 +4,7 @@ description: Record the outcome of the current workflow state into the run ledge
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh *)
   - Read
-  - Write   # scoped: ONLY to author the record inputs file (.hivemind/runs/.record-inputs.json)
+  - Write   # inert inputs-file only: authors fixed-path .hivemind/runs/.record-inputs.json; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0018
 shell: bash
 ---
 
