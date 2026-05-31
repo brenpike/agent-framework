@@ -92,10 +92,14 @@ canonical value); else a safe `suggested_run_id` verbatim; else derived
    bash ${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh \
      --workflow standard-delivery \
      --workflow-version 1 \
-     --start-state intake \
+     --start-state plan \
      --user-request "<raw user request>" \
      --normalized "<overlord summary>"
    ```
+   Note: `--start-state` MUST be the `start` value declared in the chosen workflow
+   definition (`<id>.json` under `${CLAUDE_PLUGIN_ROOT}/workflows/`) — derive it
+   from that file, not from this example, so the example cannot go stale against a
+   specific workflow.
    EXECUTE (do not Read) the script — it owns dependency check, input validation, run-id
    derivation, directory creation, and the atomic temp-write + rename of `state.json`.
 3. **Interpret the result.** Exit 0: the script printed YAML routing lines on stdout —

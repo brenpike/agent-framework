@@ -513,6 +513,8 @@ for idx in $(seq 0 $((strain_count - 1))); do
     printf '  - Set parent.kind = brood in your ledger.\n'
     printf '  - When you call init-run-ledger --parent-brood-id, pass the CANONICAL parent.brood_id verbatim; init-run-ledger persists it verbatim into .parent.brood_id (so child ledger reconciles with the manifest) and sanitizes it internally (colons->dashes) only to derive the filesystem-safe run id.\n'
     printf '  - Pass strain.id as --parent-strain-id; your run id will be <sanitized-brood-id>--<strain.id>, matching run.suggested_id.\n'
+    printf '  - Pass parent.hatchery_run_id as --parent-run-id.\n'
+    printf '  - Pass parent.hatchery_manifest as --parent-manifest.\n'
     printf '  - Do NOT write the hatchery manifest.\n'
     printf '  - Do NOT write the hatchery run ledger.\n'
     printf 'task:\n'
