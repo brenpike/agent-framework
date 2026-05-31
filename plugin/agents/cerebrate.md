@@ -174,6 +174,47 @@ Open questions:
 - None
 ```
 
+### Machine-Readable Plan Block
+
+For every non-trivial implementation plan (any plan that uses **full** output), append a machine-readable YAML `plan:` block after the prose. This is the communication contract the overlord reformats into the JSON run ledger at the §A seam (cerebrate stays read-only and writes nothing; it only emits this block as part of its report).
+
+```yaml
+plan:
+  id: "plan-<utc-timestamp>"
+  summary: ""
+  delivery:
+    mode: single            # single | multi | brood
+    overlap_risk: null      # low|medium|high — required when mode: brood
+    overlap_details: null   # text — required when mode: brood
+    strains: []             # required when mode: brood; each {name, description, branch, workflow_hint}
+  versioning:
+    impact: none            # none|possible|required|unknown
+    likely_bump: none       # major|minor|patch|none|unknown
+    artifacts: []
+  steps:
+    - id: STEP-001
+      owner: hivemind:drone   # hivemind:drone | hivemind:changeling
+      files:
+        - path/to/file
+      outcome: ""
+      depends_on: []
+      status: pending
+```
+
+The `plan:` block mirrors the prose blocks above (it does not replace them). Keep the two consistent: every prose step has a matching `steps[]` entry, and `delivery.mode` matches the prose `delivery:` value.
+
+### Plan Result Mapping
+
+The overlord maps this plan to a workflow transition result:
+
+```text
+delivery.mode = single   -> single
+delivery.mode = multi    -> multi
+delivery.mode = brood    -> brood
+open questions present   -> open_questions
+blocker                  -> blocked
+```
+
 ### Finalization Gate
 
-Do not finalize until every step has: one owner, exact file scope. Full output additionally requires: `Depends on`, full versioning block, delivery block. When the delivery block sets `delivery: brood` it must also carry `Strains`, `overlap_risk`, and `overlap_details`. Every step with a `STEP-NNN` identifier is a phase boundary for the orchestrator.
+Do not finalize until every step has: one owner, exact file scope. Full output additionally requires: `Depends on`, full versioning block, delivery block, and the machine-readable `plan:` block (with matching `steps[]`). When the delivery block sets `delivery: brood` it must also carry `Strains`, `overlap_risk`, and `overlap_details` (and `plan.delivery` must mirror them). Every step with a `STEP-NNN` identifier is a phase boundary for the orchestrator.

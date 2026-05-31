@@ -1,14 +1,13 @@
 {
   "workflow": "trivial-edit",
-  "description": "Single-file trivial change bypassing planner via fast path",
+  "description": "Single-file trivial change taken as a Reflex (ledger-skip): bypasses both the router and the run ledger, driving the short delivery tail by intent",
   "steps": [
-    { "state": "Intake", "source": { "file": "plugin/agents/overlord.md", "pattern": "Classify the task" } },
-    { "state": "Trivial Fast Path", "source": { "file": "plugin/agents/overlord.md", "pattern": "trivial-fast-path conditions are met" } },
+    { "state": "Reflex Classification", "source": { "file": "plugin/agents/overlord.md", "pattern": "A Reflex is the trivial fast path: it skips the router AND the run ledger" } },
     { "state": "Git Preflight", "source": { "file": "plugin/agents/overlord.md", "pattern": "Never begin implementation before git preflight is established" } },
     { "state": "Branch", "source": { "file": "plugin/governance/workflow.md", "pattern": "## Branch Naming" } },
     { "state": "Implement", "source": { "file": "plugin/agents/overlord.md", "pattern": "## Delegation Format" } },
-    { "state": "Validate", "source": { "file": "plugin/governance/definitions.md", "pattern": "## Validation Procedure" } },
     { "state": "Checkpoint Commit", "source": { "file": "plugin/governance/workflow.md", "pattern": "## Commit Messages" } },
+    { "state": "Validate", "source": { "file": "plugin/governance/definitions.md", "pattern": "## Validation Procedure" } },
     { "state": "PR", "source": { "file": "plugin/governance/workflow.md", "pattern": "Open PR only when: plan complete, validation passed" } },
     { "state": "Final Report", "source": { "file": "plugin/agents/overlord.md", "pattern": "Result: complete | partial | blocked" } }
   ]
