@@ -84,7 +84,7 @@ This is an **interactive skill** — it produces user-visible text output.
       deliberately leaves the session alive on injection failure for debugging).
       Apply in this order:
       1. If manifest `status:` is `failed` → `failed (injection failed; session alive for debug)` when tmux is alive, or `failed (session ended, no PR)` when tmux is dead.
-      2. Otherwise derive from tmux + PR observables, then refine with the child ledger:
+      2. Otherwise derive from tmux + PR observables:
 
       | tmux | PR | Derived Status |
       |---|---|---|
