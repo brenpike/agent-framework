@@ -12,6 +12,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.8] - 2026-05-30
+
+### Fixed
+
+- `spawn-brood` no longer force-removes a worktree or deletes a branch on the `git worktree add` failure path. When `add` fails because the worktree/branch already exists — a concurrent spawn's, or a stale leftover from a prior run that may hold uncommitted work — the prior unconditional cleanup destroyed resources this invocation never created. The failure path is now non-destructive (warn, mark the strain failed, clear the provisional markers, continue); ownership-guarded cleanup on the `tmux new-session` and task-provisioning failure paths is unchanged, since those only run after this invocation's own `git worktree add` succeeded.
+
+## [2.18.7] - 2026-05-30
+
+### Fixed
+
+- `spawn-brood`'s interrupt-recovery markers now follow mark-before-mutate ordering: each provisional resource marker (`cur_wt`/`cur_branch`/`cur_session`) is set BEFORE its resource-creating command (`git worktree add`, `tmux new-session`) and cleared on confirmed-clean failure. Bash evaluates pending INT/TERM traps at statement boundaries, so the prior set-after-success ordering could run the trap between a command returning and its marker assignment, silently omitting a just-created worktree or live privileged child. Interrupts now conservatively over-report a provisional resource for manual verification rather than under-report a real one.
+
+## [2.18.6] - 2026-05-30
+
+### Fixed
+
+- `spawn-brood`'s INT/TERM interrupt-recovery trap now reports the current in-progress strain's provisional resources (worktree, branch, and live session) in addition to fully-launched sessions. Previously an interrupt landing after a strain's `git worktree add` or `tmux new-session` but before its session name was appended to the recovery list left those resources — including a live `--dangerously-skip-permissions` child — unreported. The trap remains emit-only (no cleanup commands in the signal handler); in-progress markers are initialized before the trap is armed for `set -u` safety.
+
+## [2.18.5] - 2026-05-30
+
+### Fixed
+
+- `brood-status` resolves the current checkout root via `git rev-parse --show-toplevel` (was `--git-dir` + strip `/.git`, which points at `.git/worktrees/<name>` metadata in a linked worktree and never found a nested recursive-brood manifest).
+- `spawn-brood` aborts when the `.claude/worktrees/` git-exclude entry cannot be installed (unwritable `info/exclude`), before any `git worktree add`, instead of continuing and risking a tracked worktrees dir.
+- `spawn-brood` arms the INT/TERM interruption-recovery trap before the Pass-1 launch loop (was after), so an interrupt mid-loop still emits the already-launched session names for recovery.
+- `spawn-brood` strips C0 control bytes from the strain `name` at manifest emission (previously only `description` and `overlap_details` were stripped), preventing an issue-sourced control byte in a strain name from writing an unreadable manifest.
+
 ## [2.18.4] - 2026-05-30
 
 ### Fixed

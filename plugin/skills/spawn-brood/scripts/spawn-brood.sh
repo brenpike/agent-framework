@@ -277,8 +277,12 @@ done
 # Idempotent append-if-absent: a duplicate exclude line is harmless and
 # self-healing, so check-ignore alone is sufficient — no file scan.
 if ! git check-ignore -q .claude/worktrees/; then
-  exclude_path="$(git rev-parse --git-path info/exclude)"
-  printf '\n.claude/worktrees/\n' >> "$exclude_path"
+  exclude_path="$(git rev-parse --git-path info/exclude 2>/dev/null)" \
+    || blocker "failed to install .claude/worktrees/ git exclude; refusing to spawn"
+  [ -n "$exclude_path" ] \
+    || blocker "failed to install .claude/worktrees/ git exclude; refusing to spawn"
+  printf '\n.claude/worktrees/\n' >> "$exclude_path" \
+    || blocker "failed to install .claude/worktrees/ git exclude; refusing to spawn"
 fi
 
 # 1g base resolves ONCE, up front (one blocker instead of N cascading worktree-add
@@ -323,7 +327,35 @@ mark_failed() { S_STATUS[$1]="failed"; }
 
 # ── Pass 1: create worktree + launch detached session (non-blocking) ────────────
 launched_sessions=""
+# In-progress-strain markers, initialised BEFORE the trap is armed so the handler can
+# reference them under `set -u` even if a signal arrives before the loop's first reset.
+cur_wt=""
+cur_branch=""
+cur_session=""
 settings_local="$repo_root/.claude/settings.local.json"
+
+# Interruption guard over BOTH the Pass-1 launch loop and the Pass-2 readiness wait:
+# once a detached session launches, no manifest exists yet, so a cancelled Bash call /
+# SIGTERM — even MID-loop, after one session launched but while a later strain is
+# creating its worktree / provisioning its task / starting tmux — would orphan live
+# sessions+worktrees+branches with nothing for brood-status or the liveness guard to
+# find. Arm BEFORE the first launch so the trap reports whatever launched_sessions has
+# accumulated so far (appended incrementally per confirmed launch). Emit the launched
+# session names in the SAME recovery: format used on the manifest-write-failure path,
+# then exit nonzero. No lock, no reservation — pure best-effort visibility. Cleared
+# before the normal manifest write.
+brood_interrupt_trap() {
+  printf 'recovery: spawn interrupted; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
+  # The strain mid-provision when the signal arrived is NOT yet in launched_sessions:
+  # its worktree/branch (post worktree-add) and/or its live privileged session (post
+  # new-session, pre-append) would otherwise go unreported. Emit them too. Emit-only —
+  # NO git/tmux/rm in the handler; the operator verifies and cleans manually.
+  if [ -n "$cur_wt" ] || [ -n "$cur_session" ]; then
+    printf 'recovery: spawn interrupted mid-provision; in-progress strain may have leaked resources — worktree: %s branch: %s session: %s (verify with '\''git worktree list'\'' / '\''tmux ls'\'' and clean manually)\n' "$cur_wt" "$cur_branch" "$cur_session" >&2
+  fi
+  exit 1
+}
+trap brood_interrupt_trap INT TERM
 
 for idx in $(seq 0 $((strain_count - 1))); do
   branch="${S_BRANCH[$idx]}"
@@ -334,13 +366,34 @@ for idx in $(seq 0 $((strain_count - 1))); do
   created_worktree=false
   created_session=false
 
+  # In-progress-strain tracking for the interrupt trap. Reset to empty at the TOP of
+  # every iteration so the trap only ever reports resources created-and-not-cleaned in
+  # THIS iteration. Set as each provisional resource comes into existence; cleared at
+  # loop bottom once the strain is fully tracked in launched_sessions.
+  cur_wt=""
+  cur_branch=""
+  cur_session=""
+
   # 3a: explicit worktree + exact strain branch off base. Do NOT use claude
   # --worktree (mangles names / creates worktree-<name>).
+  # MARK-BEFORE-MUTATE: set the markers IMMEDIATELY BEFORE the mutating command, not
+  # after its success check. Bash evaluates a pending INT/TERM at statement boundaries,
+  # so a signal that becomes pending as `git worktree add` completes can fire the trap
+  # BEFORE a post-success assignment runs — the worktree would exist but go unreported.
+  # Marking first means an interrupt anywhere around the command conservatively
+  # OVER-reports a possibly-created worktree+branch for manual verification.
+  cur_wt="$wt"
+  cur_branch="$branch"
   if ! git worktree add -b "$branch" "$wt" "$base" >/dev/null 2>&1; then
     printf 'warning: git worktree add failed for strain %s\n' "${S_NAME[$idx]}" >&2
     mark_failed "$idx"
-    # HARD cleanup: worktree add did not succeed, so nothing this invocation
-    # created remains. Nothing to remove.
+    # NON-DESTRUCTIVE: add did NOT succeed — the worktree/branch either was never
+    # created by us or pre-exists (a concurrent spawn's, or a prior run's possibly-
+    # uncommitted work). Never force-remove a resource this invocation did not create.
+    # Only CLEAR the markers: this invocation did not create them, so they are not OUR
+    # provisional leak and must not be reported as ours.
+    cur_wt=""
+    cur_branch=""
     continue
   fi
   created_worktree=true
@@ -379,11 +432,19 @@ for idx in $(seq 0 $((strain_count - 1))); do
       git worktree remove --force "$wt" >/dev/null 2>&1 || true
       git branch -D "$branch" >/dev/null 2>&1 || true
     fi
+    # Worktree+branch removed; clear so the trap does not report them as a leak.
+    cur_wt=""
+    cur_branch=""
     continue
   fi
 
   # 3d: launch a DETACHED tmux session running claude (tmux supplies the pty the
   # Bash context lacks). Pre-accept the bypass-permissions trust gate.
+  # MARK-BEFORE-MUTATE: set cur_session IMMEDIATELY BEFORE new-session so an interrupt
+  # that fires as the command completes reports the possibly-live privileged session
+  # rather than omitting it (a live --dangerously-skip-permissions child must never go
+  # unreported).
+  cur_session="$tmux_session"
   if ! tmux new-session -d -s "$tmux_session" -c "$wt" \
         "claude --dangerously-skip-permissions --settings '{\"skipDangerousModePermissionPrompt\":true}'" 2>/dev/null; then
     printf 'warning: tmux new-session failed for strain %s\n' "${S_NAME[$idx]}" >&2
@@ -394,11 +455,21 @@ for idx in $(seq 0 $((strain_count - 1))); do
       git worktree remove --force "$wt" >/dev/null 2>&1 || true
       git branch -D "$branch" >/dev/null 2>&1 || true
     fi
+    # Worktree+branch removed; session did not confirm launch. Clear all markers so the
+    # trap reports nothing.
+    cur_wt=""
+    cur_branch=""
+    cur_session=""
     continue
   fi
   created_session=true
   launched_sessions="${launched_sessions:+$launched_sessions }$tmux_session"
   : "$created_session"  # session confirmed launched; provisionally running
+  # Strain now fully tracked in launched_sessions; clear the in-progress markers so the
+  # trap does not double-report a strain already accounted for in launched_sessions.
+  cur_wt=""
+  cur_branch=""
+  cur_session=""
 done
 
 # inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted
@@ -435,18 +506,6 @@ inject_strain() {
   # On success paste-buffer -d already deleted the buffer; strain stays running.
   return 0
 }
-
-# Interruption guard over the readiness wait: Pass 1 has launched detached sessions
-# but no manifest exists yet, so a cancelled Bash call / SIGTERM during the up-to-90s
-# poll would orphan live sessions+worktrees+branches with nothing for brood-status or
-# the liveness guard to find. Emit the launched session names in the SAME recovery:
-# format used on the manifest-write-failure path, then exit nonzero. No lock, no
-# reservation — pure best-effort visibility. Cleared before the normal manifest write.
-brood_interrupt_trap() {
-  printf 'recovery: spawn interrupted; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
-  exit 1
-}
-trap brood_interrupt_trap INT TERM
 
 # ── Pass 2: wait ready + inject task (ONE shared deadline) ──────────────────────
 # All Pass-1 sessions boot concurrently. A single shared deadline (NOT N×timeout) is
@@ -530,8 +589,15 @@ emit_block() {
   printf 'strains:\n'
   for idx in $(seq 0 $((strain_count - 1))); do
     desc_clean="$(printf '%s' "${S_DESC[$idx]}" | tr -d '\000-\010\013-\037\177')"
+    # Strip C0 control bytes (except TAB/LF) + DEL from the strain name at manifest
+    # emission ONLY: a valid JSON name carrying a literal control byte passes the
+    # non-empty + short-name gates, launches, then would write a raw control byte YAML
+    # 1.2 forbids → unreadable manifest. S_NAME is left untouched everywhere else (the
+    # short-id sanitization derives from the raw value); this cleans only the value
+    # written to the manifest. Same expression as desc_clean/overlap_details_clean.
+    name_clean="$(printf '%s' "${S_NAME[$idx]}" | tr -d '\000-\010\013-\037\177')"
     printf '  - name: |-\n'
-    printf '%s\n' "${S_NAME[$idx]}"   | sed 's/^/      /'
+    printf '%s\n' "$name_clean"        | sed 's/^/      /'
     printf '    description: |\n'
     printf '%s\n' "$desc_clean"        | sed 's/^/      /'
     printf '    worktree_path: |-\n'

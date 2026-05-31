@@ -28,8 +28,13 @@ This is an **interactive skill** — it produces user-visible text output.
       ```
       If the values differ, the current checkout is a worktree.
    b. Resolve the current checkout root (the directory containing `.hivemind/`):
-      use `git rev-parse --git-dir` to find the `.git` location, then derive the
-      working tree root from it (strip the trailing `/.git` component).
+      ```bash
+      git rev-parse --show-toplevel
+      ```
+      In a linked worktree `--show-toplevel` returns the child worktree's working-tree
+      root directly. (`--git-dir` / `--git-common-dir` point at metadata under the
+      main `.git/worktrees/<name>/` tree and must NOT be used here — stripping a
+      trailing `/.git` from that path does not yield the child checkout root.)
    c. Check whether the current checkout has its own brood manifest at
       `<current_checkout>/.hivemind/brood/manifest.yaml`. Manifest lookup
       precedence (single manifest selected, not multi-glob):
