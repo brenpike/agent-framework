@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.8] - 2026-05-30
+
+### Fixed
+
+- `spawn-brood` no longer force-removes a worktree or deletes a branch on the `git worktree add` failure path. When `add` fails because the worktree/branch already exists — a concurrent spawn's, or a stale leftover from a prior run that may hold uncommitted work — the prior unconditional cleanup destroyed resources this invocation never created. The failure path is now non-destructive (warn, mark the strain failed, clear the provisional markers, continue); ownership-guarded cleanup on the `tmux new-session` and task-provisioning failure paths is unchanged, since those only run after this invocation's own `git worktree add` succeeded.
+
 ## [2.18.7] - 2026-05-30
 
 ### Fixed

@@ -387,12 +387,11 @@ for idx in $(seq 0 $((strain_count - 1))); do
   if ! git worktree add -b "$branch" "$wt" "$base" >/dev/null 2>&1; then
     printf 'warning: git worktree add failed for strain %s\n' "${S_NAME[$idx]}" >&2
     mark_failed "$idx"
-    # HARD cleanup: worktree add did not succeed, but an abnormal failure can leave
-    # partially-created worktree/branch state — best-effort remove it (matching the
-    # other failure paths), then CLEAR the markers (confirmed failure + cleaned → no
-    # false leak report).
-    git worktree remove --force "$wt" >/dev/null 2>&1 || true
-    git branch -D "$branch" >/dev/null 2>&1 || true
+    # NON-DESTRUCTIVE: add did NOT succeed — the worktree/branch either was never
+    # created by us or pre-exists (a concurrent spawn's, or a prior run's possibly-
+    # uncommitted work). Never force-remove a resource this invocation did not create.
+    # Only CLEAR the markers: this invocation did not create them, so they are not OUR
+    # provisional leak and must not be reported as ours.
     cur_wt=""
     cur_branch=""
     continue
