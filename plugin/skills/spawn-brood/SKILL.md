@@ -26,8 +26,11 @@ Before:
 - [ ] `base` resolves to a real commit (the script verifies this once, up front).
 - [ ] No strain branch exists locally/remotely; no `brood-<short>` session or
       worktree path collides (the script pre-flights all of these).
-- [ ] The script rejects re-spawning the SAME `brood_id` while its sessions are live;
-      distinct `brood_id`s run concurrently (per-checkout and cross-checkout).
+- [ ] The script rejects a SECOND spawn of the SAME `brood_id` in the same checkout
+      via one atomic reservation (`mkdir "$STATE/.reservation"`); distinct `brood_id`s
+      run concurrently (same checkout and cross-checkout). `brood_id` is canonicalized
+      to a UTC instant before slugging, so two timestamps that denote the same instant
+      collide and two that denote different instants do not.
 
 After:
 - [ ] Brood manifest written to `.hivemind/brood/<brood_slug>/manifest.yaml`.

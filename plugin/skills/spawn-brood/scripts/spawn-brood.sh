@@ -9,12 +9,15 @@
 #
 # STATE NAMESPACING: each brood owns a disjoint state directory keyed by a slug
 # derived from its brood_id — .hivemind/brood/<brood_slug>/{inputs.json,manifest.yaml}.
-# Because two distinct brood_ids resolve to two distinct directories, concurrent
-# broods (same checkout or across checkouts) never collide on inputs or manifest
-# state. There is therefore NO in-flight lock and NO server-global active-brood
-# guard: disjoint per-brood paths make those unnecessary. The only guard is a
-# BROOD-SCOPED same-brood_id check (below) that refuses to re-spawn a brood whose
-# own sessions are still live.
+# The brood_id is canonicalized to a UTC instant BEFORE slugging so the slug is
+# injective on the instant (offset-equivalent timestamps that denote different
+# instants get distinct slugs; the same instant always gets the same slug). Because
+# two distinct brood_ids resolve to two distinct directories, concurrent broods (same
+# checkout or across checkouts) never collide on inputs or manifest state. There is
+# therefore NO in-flight lock and NO server-global active-brood guard: disjoint
+# per-brood paths make those unnecessary. The only guard is a BROOD-SCOPED atomic
+# reservation (below) that refuses a SECOND same-brood_id spawn in the same checkout
+# (option Y: same-checkout concurrent broods are rejected, not namespaced apart).
 #
 # INPUT (single positional argument):
 #   $1  Absolute or repo-relative path to a JSON inputs file authored by the agent
@@ -133,7 +136,19 @@ esac
 # sibling, and the tmux session suffix. Re-derived here from the PARSED brood_id —
 # the manifest sibling never trusts the inputs arg path. Mirror the ref/path guards:
 # reject an empty slug and a slug bearing '..' (traversal).
-brood_slug="$(printf '%s' "$brood_id" | tr -c 'A-Za-z0-9._-' '-')"
+#
+# INVARIANT: the slug must be INJECTIVE on the instant brood_id denotes. Sanitizing
+# the raw brood_id with `tr` alone is NOT injective across timezone offsets: the ISO
+# offsets "+01:00" and "-01:00" both map the offset punctuation to '-', collapsing
+# two DISTINCT instants to the same slug — and the slug is the disjointness key for
+# per-brood state. Canonicalize to a single UTC instant FIRST (date -u …), so
+# offset-equivalent timestamps that denote different instants get distinct slugs and
+# the SAME instant always gets the same slug. `date -d "$brood_id"` passes brood_id
+# as an inert quoted ARGUMENT — date parses it, never executes it; no command
+# substitution runs on untrusted content. If date cannot parse it (non-GNU date or a
+# format date rejects) we fall back to the raw brood_id, which still slugs safely.
+brood_canon="$(date -u -d "$brood_id" +%Y%m%dT%H%M%SZ 2>/dev/null || printf '%s' "$brood_id")"
+brood_slug="$(printf '%s' "$brood_canon" | tr -c 'A-Za-z0-9._-' '-')"
 [ -n "$brood_slug" ] || blocker "brood_id sanitizes to an empty brood_slug: $brood_id"
 case "$brood_slug" in
   *..*) blocker "brood_slug $brood_slug contains \"..\" (traversal guard)" ;;
@@ -277,29 +292,36 @@ fi
 git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
   || { printf 'blocker: base ref %s does not resolve to a commit\n' "$base" >&2; exit 1; }
 
-# ── Per-brood state directory ───────────────────────────────────────────────────
+# ── Per-brood state directory (ATOMIC RESERVATION) ──────────────────────────────
 # Each brood owns a disjoint state dir keyed by brood_slug:
 # .hivemind/brood/<brood_slug>/{inputs.json,manifest.yaml}. Two distinct brood_ids
 # resolve to two distinct directories, so concurrent broods (same checkout or across
-# checkouts) never touch each other's inputs or manifest state. Because the dirs are
-# disjoint, NO in-flight lock and NO server-global active-brood guard are needed: the
-# only collision a guard must catch is re-spawning the SAME brood_id while its own
-# sessions are still live (below).
+# checkouts) never touch each other's inputs or manifest state.
+#
+# CONCURRENCY MODEL (PR #154, option Y): cross-checkout concurrent broods already
+# work — .hivemind/ is per-checkout, so two checkouts never share this path. Two
+# SAME-checkout spawns of the SAME brood_id are REJECTED via ONE atomic reservation,
+# rather than namespacing the worktree path/branch to let them co-exist (the rejected
+# option X). The reservation is an atomic mkdir of a dedicated marker dir:
+#   - The per-brood dir $STATE itself is NOT the gate: the agent already created it
+#     when it wrote $STATE/inputs.json with the Write tool (Write makes parent dirs),
+#     so a non-`-p` mkdir on $STATE would ALWAYS fail. `mkdir -p "$STATE"` is
+#     therefore idempotent here and only ensures $STATE (and its parent) exist.
+#   - `mkdir "$STATE/.reservation"` (NON-`-p`) IS the GATE: mkdir is an atomic
+#     syscall that fails if the target already exists, so exactly one of two racing
+#     same-brood_id spawns in this checkout can create the marker. The loser fails
+#     closed with a clear error instead of both proceeding to spawn.
+# This replaces the prior post-Pass manifest-probe guard, which had an in-flight race
+# (the manifest was written only AFTER Pass 1+2, so two same-brood_id spawns both saw
+# no manifest and both launched). The reservation runs BEFORE Pass 1/2, so it closes
+# that window. INVARIANT: this gate refuses a SECOND same-brood_id spawn in the same
+# checkout while the first holds the reservation; a stale .reservation dir from a
+# crashed prior spawn is removed by the operator (gitignored runtime state).
 STATE="$(pwd)/.hivemind/brood/$brood_slug"
 mkdir -p "$STATE"
-
-# ── Same-brood_id guard (brood-scoped) ──────────────────────────────────────────
-# If this brood's own manifest already exists, refuse to overwrite it while any of
-# its recorded sessions is still live. A fresh brood MAY overwrite stale, fully-
-# completed state (no live session). Scoped to THIS brood_slug's manifest only — a
-# different brood_id's manifest in a sibling dir is never inspected.
-if [ -f "$STATE/manifest.yaml" ]; then
-  while IFS= read -r prior_session; do
-    [ -n "$prior_session" ] || continue
-    if tmux has-session -t "$prior_session" 2>/dev/null; then
-      blocker "brood $brood_id is already active (live session $prior_session); refusing to overwrite"
-    fi
-  done < <(grep -E '^[[:space:]]*tmux_session:' "$STATE/manifest.yaml" | sed -E 's/^[[:space:]]*tmux_session:[[:space:]]*"?([^"]*)"?[[:space:]]*$/\1/')
+if ! mkdir "$STATE/.reservation" 2>/dev/null; then
+  printf 'blocker: brood %s already active (reservation %s exists); refusing to spawn a second same-brood_id brood in this checkout\n' "$brood_slug" "$STATE/.reservation" >&2
+  exit 1
 fi
 
 # ── Per-strain failure helpers ──────────────────────────────────────────────────

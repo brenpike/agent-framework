@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.1] - 2026-05-30
+
+### Fixed
+
+- **`spawn-brood` `brood_slug` is now injective on the instant `brood_id` denotes (F1).** Sanitizing the raw `brood_id` with `tr -c 'A-Za-z0-9._-' '-'` alone is NOT injective across timezone offsets: the ISO offsets `+01:00` and `-01:00` both map their offset punctuation to `-`, collapsing two DISTINCT instants to the same slug — and the slug is the per-brood state disjointness key. `brood_id` is now canonicalized to a single UTC instant before slugging (`date -u -d "$brood_id" +%Y%m%dT%H%M%SZ`, falling back to the raw `brood_id` if `date` cannot parse it), so offset-equivalent timestamps denoting different instants get distinct slugs and the same instant always gets the same slug. `date -d "$brood_id"` passes `brood_id` as an inert quoted argument (parsed, never executed) — no command substitution on untrusted content.
+- **`spawn-brood` rejects a second same-`brood_id` spawn in one checkout via an atomic reservation, closing the in-flight race (F2).** The prior brood-scoped guard probed `$STATE/manifest.yaml` for live `tmux_session:` values only AFTER Pass 1+2 had written the manifest, so two same-`brood_id` spawns both saw no manifest and both launched. It is replaced by a single atomic reservation BEFORE the spawn passes: `mkdir -p "$STATE"` (idempotent — the agent already created `$STATE` writing `inputs.json`) then `mkdir "$STATE/.reservation"` (non-`-p`), an atomic syscall that fails if the marker exists. Exactly one of two racing same-`brood_id` same-checkout spawns wins; the loser fails closed with a clear blocker. Worktree path and branch are deliberately NOT slug-namespaced (rejected option X): same-checkout concurrent broods are rejected rather than allowed to co-exist — cross-checkout concurrency already works (`.hivemind/` is per-checkout) and same-checkout concurrency is rare/low-value. ADR-0017 amended.
+- **`brood-status` session-name allowlist widened to the producer's grammar (F3).** The producer emits `brood-<short>-<brood_slug>` where `brood_slug` is the canonical UTC instant `YYYYMMDDTHHMMSSZ` (uppercase `T`/`Z`, possible `.`). The expected-shape re-validation of `tmux_session` was `brood-[a-z0-9-]+`, which rejected every real session and marked every brood `blocked`, breaking multi-brood discovery. It is now `^brood-[A-Za-z0-9._-]+$` — still a strict allowlist with no shell metacharacters, now matching the emitted grammar.
+
 ## [2.18.0] - 2026-05-30
 
 ### Added
