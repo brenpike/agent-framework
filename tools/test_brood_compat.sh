@@ -2,23 +2,24 @@
 #
 # Brood manifest back-compat test (plan §J.3).
 #
-# Proves the hivemind:brood-status status-derivation logic reads BOTH manifest
+# Proves the hivemind:brood-status manifest read works on BOTH manifest
 # generations without error:
-#   - an OLD manifest (no manifest_version, no per-strain run:/ledger block) ->
-#     Ledger = unknown, Workflow State = unknown (derivation falls back to
-#     external observables alone);
-#   - a NEW manifest_version: 2 manifest whose per-strain run.suggested_ledger
-#     points at a PRESENT child JSON run ledger -> Ledger = present, Workflow
-#     State = the child ledger's state.current.
+#   - an OLD manifest (no manifest_version, no per-strain run:/ledger block);
+#   - a NEW manifest_version: 2 manifest carrying the additive run: block.
+# In both, the consumer extracts the strain's tmux_session and branch identically.
+#
+# NOTE: child-ledger workflow-state projection is DEFERRED to issue #161. brood-status
+# no longer opens/Reads/jq-projects any child state.json, so this suite no longer
+# asserts ledger-derived workflow state — only that both manifest shapes parse and
+# yield identical tmux_session/branch extraction.
 #
 # This runner replicates the manifest parse the brood-status SKILL.md prose
 # performs (sed extraction of tmux_session/branch — identical to the spawn-brood
-# liveness guard's extraction — plus run.suggested_ledger discovery and a jq read
-# of the child ledger). It does NOT shell out to tmux/git/gh: external observables
-# are out of scope for a back-compat parse test. It is READ-ONLY: it never writes
-# a manifest or a child ledger.
+# liveness guard's extraction). It does NOT shell out to tmux/git/gh: external
+# observables are out of scope for a back-compat parse test. It is READ-ONLY: it
+# never writes a manifest or a child ledger.
 #
-# Exits non-zero if EITHER manifest fails to parse or derives the wrong shape.
+# Exits non-zero if EITHER manifest fails to parse or yields the wrong extraction.
 #
 # Usage:
 #   ./tools/test_brood_compat.sh
@@ -32,9 +33,6 @@ MANIFEST_V1="$FIX_DIR/manifest-v1-old.yaml"
 MANIFEST_V2="$FIX_DIR/manifest-v2-new.yaml"
 SPAWN_SCRIPT="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
 INIT_SCRIPT="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
-
-command -v jq >/dev/null 2>&1 \
-    || { echo "FAIL: required dependency 'jq' is not installed" >&2; exit 2; }
 
 for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT"; do
     [[ -f "$required" ]] \
@@ -62,69 +60,33 @@ extract_branch() {
     ' "$1"
 }
 
-# extract_suggested_ledger: pull the first strain run.suggested_ledger value (value on
-# the line following `suggested_ledger: |-`). Empty if the field is absent (v1 manifest).
-extract_suggested_ledger() {
-    awk '
-        /^[[:space:]]*suggested_ledger:[[:space:]]*\|-[[:space:]]*$/ { grab=1; next }
-        grab { gsub(/^[[:space:]]+/, ""); print; exit }
-    ' "$1"
-}
-
-# derive_ledger_state: given a manifest, resolve the first strain ledger status and
-# workflow state per the brood-status status-derivation priority (ledger-bridge step).
-# Echoes "<ledger_status> <workflow_state>".
-derive_ledger_state() {
-    local manifest="$1"
-    local ledger_path
-    ledger_path="$(extract_suggested_ledger "$manifest")"
-    if [[ -z "$ledger_path" ]]; then
-        echo "unknown unknown"   # v1 manifest: no run: block at all
-        return 0
-    fi
-    if [[ ! -f "$ledger_path" ]]; then
-        echo "missing unknown"
-        return 0
-    fi
-    local current
-    current="$(jq -r '.state.current // "unknown"' "$ledger_path")"
-    echo "present $current"
-}
-
-# ── Assertion 1: OLD v1 manifest parses, derives unknown/unknown ────────────────
+# ── Assertion 1: OLD v1 manifest parses, yields the expected session/branch ─────
+# Child-ledger projection is deferred to issue #161; this asserts only that the v1
+# manifest (no run: block) parses and yields identical tmux_session/branch extraction.
 assert_v1_old() {
     local name="V1:old-manifest-no-ledger-fields"
-    local session branch result
+    local session branch
     session="$(extract_tmux_session "$MANIFEST_V1")"
     branch="$(extract_branch "$MANIFEST_V1")"
-    result="$(derive_ledger_state "$MANIFEST_V1")"
-    if [[ "$session" == "brood-api" && "$branch" == "feature/api-slice" && "$result" == "unknown unknown" ]]; then
-        pass "$name" "v1 manifest read without error: session=$session branch=$branch ledger/state=$result"
+    if [[ "$session" == "brood-api" && "$branch" == "feature/api-slice" ]]; then
+        pass "$name" "v1 manifest read without error: session=$session branch=$branch"
     else
-        failed "$name" "expected brood-api/feature/api-slice/'unknown unknown', got session=$session branch=$branch result='$result'"
+        failed "$name" "expected brood-api/feature/api-slice, got session=$session branch=$branch"
     fi
 }
 
-# ── Assertion 2: NEW v2 manifest parses, derives present/<state.current> ─────────
+# ── Assertion 2: NEW v2 manifest parses, yields the expected session/branch ─────
+# The additive run: block is ignored by the consumer; only tmux_session/branch are
+# extracted (child-ledger projection deferred to issue #161).
 assert_v2_new() {
-    local name="V2:new-manifest-ledger-present"
-    # The v2 fixture's suggested_ledger is a TESTS_BROOD_DIR placeholder so the present
-    # child ledger resolves regardless of checkout location. Substitute it into a temp
-    # copy (READ-ONLY toward the committed fixture; the temp copy is disposable).
-    local tmp
-    tmp="$(mktemp "${TMPDIR:-/tmp}/brood-compat-v2.XXXXXX")"
-    # shellcheck disable=SC2064
-    trap "rm -f '$tmp'" RETURN
-    sed "s#TESTS_BROOD_DIR#$FIX_DIR#" "$MANIFEST_V2" > "$tmp"
-
-    local session branch result
-    session="$(extract_tmux_session "$tmp")"
-    branch="$(extract_branch "$tmp")"
-    result="$(derive_ledger_state "$tmp")"
-    if [[ "$session" == "brood-api" && "$branch" == "feature/api-slice" && "$result" == "present implement_step" ]]; then
-        pass "$name" "v2 manifest read without error: session=$session branch=$branch ledger/state=$result"
+    local name="V2:new-manifest-additive-run-block"
+    local session branch
+    session="$(extract_tmux_session "$MANIFEST_V2")"
+    branch="$(extract_branch "$MANIFEST_V2")"
+    if [[ "$session" == "brood-api" && "$branch" == "feature/api-slice" ]]; then
+        pass "$name" "v2 manifest read without error: session=$session branch=$branch"
     else
-        failed "$name" "expected brood-api/feature/api-slice/'present implement_step', got session=$session branch=$branch result='$result'"
+        failed "$name" "expected brood-api/feature/api-slice, got session=$session branch=$branch"
     fi
 }
 

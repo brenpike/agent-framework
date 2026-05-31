@@ -99,13 +99,14 @@ The child reads this, routes via `hivemind:route-workflow`, initializes its own 
 
 ## Hatchery monitoring (read-only)
 
-The hatchery monitors a brood by reading only. It never mutates child ledgers, and `brood-status` never writes discovered ledger paths back to the manifest in v1.
+The hatchery monitors a brood by reading only. It never mutates child ledgers, and `brood-status` never writes discovered ledger paths back to the manifest.
+
+`brood-status` derives each strain's status from **external observables + the manifest's static fields**. **Reading the child ledger's workflow-state is DEFERRED to issue #161** — `brood-status` does NOT open, `Read`, or `jq`-project any child `state.json`. The manifest still carries per-strain `run.*` pointers (`suggested_id` / `suggested_ledger` / `workflow_hint`) for that future feature, and children still own and write their own ledgers; the monitor simply does not consume them today.
 
 The hatchery may read:
 
 ```text
 .hivemind/brood/manifest.yaml
-child .hivemind/runs/<run-id>/state.json
 tmux session state
 git branch existence
 PR state
@@ -117,11 +118,10 @@ When deriving a strain's status, prefer sources in this order:
 
 ```text
 1. external observables: tmux session, branch existence, PR state
-2. child run ledger (state.current, run.status) if present
-3. manifest static fields
+2. manifest static fields
 ```
 
-External observables win because they reflect ground truth even when a child ledger is stale or absent. The ledger refines status when present; manifest static fields are the last resort. A strain whose ledger is missing reports `unknown` workflow state but can still be classified `failed before ledger initialization` from observables.
+External observables win because they reflect ground truth. Manifest static fields are the last resort. The child-run-ledger refinement tier (`state.current` / `run.status`) is deferred to issue #161; until then the `Workflow State` column reads `deferred (#161)`.
 
 ## Reconciliation concept
 
