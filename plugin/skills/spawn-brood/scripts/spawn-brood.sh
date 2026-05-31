@@ -110,6 +110,22 @@ base="$(jq -r '.base // ""' "$INPUTS_FILE")"
 overlap_risk="$(jq -r '.overlap_risk // ""' "$INPUTS_FILE")"
 overlap_details="$(jq -r '.overlap_details // ""' "$INPUTS_FILE")"
 
+# ── manifest-v2 hatchery bridge fields (ADDITIVE; ledger-bridge STEP-007) ────────
+# manifest_version: 2 marks the ledger-bridge extension. Old consumers ignore unknown
+# fields, so this is back-compat. The hatchery run metadata POINTS at the coordinator's
+# own run ledger (which the hatchery overlord owns and writes in its OWN worktree — this
+# script never creates it; it only records suggested pointers). All three values are
+# either overlord-supplied scalars or derived from the already-validated brood_id, so no
+# new untrusted bytes enter here. They are emitted later through emit_block, never inline.
+manifest_version='2'
+hatchery_run_id="$(jq -r '.hatchery.run_id // ""' "$INPUTS_FILE")"
+[ -n "$hatchery_run_id" ] || hatchery_run_id="$brood_id-hatchery"
+hatchery_workflow="$(jq -r '.hatchery.workflow // ""' "$INPUTS_FILE")"
+[ -n "$hatchery_workflow" ] || hatchery_workflow="hatchery-dispatch"
+# The hatchery ledger is JSON (state.json) even though the manifest carrying the pointer
+# is YAML — format-follows-consumer (ADR-0018 §A): the ledger is jq-parsed, the manifest
+# is human/brood-status-read. Anchored to the coordinator checkout root, resolved below.
+
 [ -n "$brood_id" ]     || { printf 'blocker: inputs file is missing brood_id\n' >&2; exit 1; }
 [ -n "$base" ]         || { printf 'blocker: inputs file is missing base\n' >&2; exit 1; }
 [ -n "$overlap_risk" ] || { printf 'blocker: inputs file is missing overlap_risk\n' >&2; exit 1; }
@@ -146,6 +162,10 @@ esac
 # tmux_session / worktree path follow the same index. Untrusted values live only in
 # these variables — never interpolated into command source.
 declare -a S_NAME S_DESC S_BRANCH S_SHORT S_TMUX S_WT S_STATUS
+# ledger-bridge (STEP-007): per-strain suggested run metadata, index-aligned with the
+# arrays above. ADDITIVE — these only POINT at where the child SHOULD initialize its own
+# JSON run ledger inside its own worktree; this script never creates a child ledger.
+declare -a S_RUN_ID S_RUN_LEDGER S_RUN_HINT
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" \
   || { printf 'blocker: not inside a git repository\n' >&2; exit 1; }
@@ -168,6 +188,18 @@ for idx in $(seq 0 $((strain_count - 1))); do
   wt="$repo_root/.claude/worktrees/$short"
   tmux_session="brood-$short"
 
+  # ledger-bridge (STEP-007): derive the per-strain suggested run metadata. suggested_id
+  # combines the validated brood_id with the sanitized short; suggested_ledger is the
+  # JSON ledger path INSIDE the child worktree (.../state.json — child ledgers are JSON
+  # even though this manifest is YAML, per ADR-0018 §A). workflow_hint is an OPTIONAL
+  # overlord-supplied hint (a non-binding suggestion; the child's own router decides),
+  # defaulting to standard-delivery. Values derive only from already-validated brood_id /
+  # short / wt, so no new untrusted bytes; emitted later via emit_block, never inline.
+  run_id="$brood_id--$short"
+  run_ledger="$wt/.hivemind/runs/$run_id/state.json"
+  run_hint="$(jq -r ".strains[$idx].workflow_hint // \"\"" "$INPUTS_FILE")"
+  [ -n "$run_hint" ] || run_hint="standard-delivery"
+
   S_NAME[$idx]="$name"
   S_DESC[$idx]="$desc"
   S_BRANCH[$idx]="$branch"
@@ -175,6 +207,9 @@ for idx in $(seq 0 $((strain_count - 1))); do
   S_TMUX[$idx]="$tmux_session"
   S_WT[$idx]="$wt"
   S_STATUS[$idx]="running"
+  S_RUN_ID[$idx]="$run_id"
+  S_RUN_LEDGER[$idx]="$run_ledger"
+  S_RUN_HINT[$idx]="$run_hint"
 done
 
 # ── Allowlist gate (defense-in-depth) ───────────────────────────────────────────
@@ -420,12 +455,51 @@ for idx in $(seq 0 $((strain_count - 1))); do
   # is load-bearing in a task description; removing them cannot break a paste boundary.
   desc="$(printf '%s' "$desc" | tr -d '\000-\010\013-\037\177')"
   task_file="$wt/.hivemind/brood/task.md"
+  # ── ledger-bridge child-task metadata (STEP-007, ADDITIVE) ────────────────────
+  # Prepend the inter-agent brood metadata ABOVE the existing data-boundary preamble +
+  # description. The metadata is YAML (an inter-agent contract — ADR-0018 §A keeps human/
+  # agent-read contracts as YAML); it tells the child it is a normal hivemind:overlord
+  # owning its OWN run ledger in this worktree, points at its suggested run id/ledger, and
+  # forbids it from touching the hatchery manifest/ledger (RUN-OWNERSHIP-01). Untrusted
+  # values (strain name, branch, worktree path, description copy) are emitted with the
+  # SAME block-scalar discipline used by the manifest emitter below: |- (strip) for
+  # exact-value fields, | (clip) for the free-text description, each reproduced at its
+  # block-scalar content indent via printf %s | sed. Control bytes are already stripped
+  # from desc above; name is stripped here for the same YAML-validity reason. The metadata
+  # then becomes the FRONT of the same single-write primitive — the existing preamble +
+  # description tail is preserved byte-for-byte as the child's actual prompt payload.
+  name_meta="$(printf '%s' "$name" | tr -d '\000-\010\013-\037\177')"
+  brood_meta="$( {
+    printf 'parent:\n'
+    printf '  kind: brood\n'
+    printf '  brood_id: |-\n';          printf '%s\n' "$brood_id"            | sed 's/^/    /'
+    printf '  hatchery_run_id: |-\n';   printf '%s\n' "$hatchery_run_id"     | sed 's/^/    /'
+    printf '  hatchery_manifest: |-\n'; printf '%s\n' "$repo_root/.hivemind/brood/manifest.yaml" | sed 's/^/    /'
+    printf 'strain:\n'
+    printf '  id: |-\n';            printf '%s\n' "$short"          | sed 's/^/    /'
+    printf '  name: |-\n';          printf '%s\n' "$name_meta"      | sed 's/^/    /'
+    printf '  branch: |-\n';        printf '%s\n' "$branch"         | sed 's/^/    /'
+    printf '  worktree_path: |-\n'; printf '%s\n' "$wt"             | sed 's/^/    /'
+    printf 'run:\n'
+    printf '  suggested_id: |-\n';      printf '%s\n' "${S_RUN_ID[$idx]}"     | sed 's/^/    /'
+    printf '  suggested_ledger: |-\n';  printf '%s\n' "${S_RUN_LEDGER[$idx]}" | sed 's/^/    /'
+    printf '  workflow_hint: |-\n';     printf '%s\n' "${S_RUN_HINT[$idx]}"   | sed 's/^/    /'
+    printf 'instructions:\n'
+    printf '  - You are a normal hivemind:overlord instance assigned to one strain of a brood.\n'
+    printf '  - Use the normal workflow router and workflow state machine.\n'
+    printf '  - Initialize your OWN run ledger in this worktree (suggested path under run.suggested_ledger).\n'
+    printf '  - Set parent.kind = brood in your ledger.\n'
+    printf '  - Do NOT write the hatchery manifest.\n'
+    printf '  - Do NOT write the hatchery run ledger.\n'
+    printf 'task:\n'
+    printf '  description: |\n';     printf '%s\n' "$desc"          | sed 's/^/    /'
+  } )"
   # Guard task-file provisioning BEFORE launching a privileged child: a failed mkdir
   # or write (full FS, permissions, conflicting path) is a HARD pre-launch failure —
   # same class as `git worktree add` failure. Clean up what this invocation created
   # and skip the session launch rather than leave an idle privileged child.
   if ! mkdir -p "$wt/.hivemind/brood" 2>/dev/null \
-     || ! printf '%s\n\n%s\n' "$PREAMBLE" "$desc" > "$task_file" 2>/dev/null; then
+     || ! printf '%s\n\n%s\n\n%s\n' "$brood_meta" "$PREAMBLE" "$desc" > "$task_file" 2>/dev/null; then
     printf 'warning: task-file provisioning failed for strain %s\n' "${S_NAME[$idx]}" >&2
     mark_failed "$idx"
     if [ "$created_worktree" = true ]; then
@@ -569,6 +643,10 @@ emit_block() {
 }
 
 {
+  # ledger-bridge (STEP-007, ADDITIVE): manifest_version marks the v2 extension. It is a
+  # fixed trusted literal '2', but routed through emit_block for one YAML-safe path.
+  # OLD consumers ignore this and the hatchery:/run: blocks below (back-compat).
+  emit_block '|-' 'manifest_version' "$manifest_version" 0 2
   # brood_id and overlap_risk are pre-flight-validated, but routed through the
   # block-scalar helper (not emitted inline) so every untrusted/exact-value scalar
   # uses one YAML-safe emission path. brood_id is an exact value (|-); overlap_risk
@@ -580,6 +658,15 @@ emit_block() {
   # same block-scalar discipline as every other exact-value field. |- (STRIP).
   emit_block '|-' 'hatchery_session' "$hatchery_session" 0 2
   emit_block '|-' 'base' "$base" 0 2
+  # ledger-bridge (STEP-007, ADDITIVE): hatchery run metadata. POINTS at the coordinator
+  # overlord's own run ledger (JSON state.json inside ITS worktree — this script never
+  # creates it). All three fields are exact values (|-). The ledger path is derived here
+  # (repo_root in scope) and anchored to the coordinator checkout root.
+  hatchery_ledger=".hivemind/runs/$hatchery_run_id/state.json"
+  printf 'hatchery:\n'
+  emit_block '|-' 'run_id'   "$hatchery_run_id"  2 4
+  emit_block '|-' 'ledger'   "$hatchery_ledger"  2 4
+  emit_block '|-' 'workflow' "$hatchery_workflow" 2 4
   emit_block '|-' 'overlap_risk' "$overlap_risk" 0 2
   # Strip C0 control bytes (except TAB/LF) + DEL from free-text manifest values so an
   # issue-sourced control byte can never produce an unreadable manifest brood-status
@@ -609,6 +696,14 @@ emit_block() {
     printf '    pr: null\n'
     printf '    merged: false\n'
     printf '    rebased_after: []\n'
+    # ledger-bridge (STEP-007, ADDITIVE): per-strain suggested run metadata. POINTS at
+    # where the child SHOULD init its own JSON run ledger; this script never creates it.
+    # `run:` key at the strain's 4-space content indent; its fields at 6, values at 8.
+    # All exact values (|-). suggested_ledger ends in state.json (child ledger is JSON).
+    printf '    run:\n'
+    emit_block '|-' 'suggested_id'     "${S_RUN_ID[$idx]}"     6 8
+    emit_block '|-' 'suggested_ledger' "${S_RUN_LEDGER[$idx]}" 6 8
+    emit_block '|-' 'workflow_hint'    "${S_RUN_HINT[$idx]}"   6 8
   done
   printf 'merge_order: []\n'
 } > "$manifest_path" || {

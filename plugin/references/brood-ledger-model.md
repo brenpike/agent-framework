@@ -47,6 +47,17 @@ merge_order: []
 
 The two additive blocks are `hatchery:` (the dispatching coordinator's run metadata) and the per-strain `run:` block (suggested run id, suggested ledger path, and workflow hint). The `run.suggested_ledger` path ends in `state.json` — the child ledger is JSON even though the manifest carrying the pointer is YAML.
 
+Field derivation (emitted by `spawn-brood.sh` through the existing `emit_block` block-scalar discipline, all exact-value `|-` fields except free-text `overlap_details`/`description` which use `|`):
+
+- `hatchery.run_id` — overlord-supplied, or defaults to `<brood_id>-hatchery`.
+- `hatchery.ledger` — `.hivemind/runs/<hatchery.run_id>/state.json`, anchored to the coordinator checkout root.
+- `hatchery.workflow` — overlord-supplied, or defaults to `hatchery-dispatch`.
+- `run.suggested_id` — `<brood_id>--<short>`, where `<short>` is the strain name sanitized to `[a-z0-9-]`.
+- `run.suggested_ledger` — `<worktree_path>/.hivemind/runs/<suggested_id>/state.json` (inside the child worktree).
+- `run.workflow_hint` — an OPTIONAL, NON-BINDING suggestion (overlord-supplied per strain, default `standard-delivery`); the child's own `hivemind:route-workflow` makes the actual selection.
+
+None of these fields point at a ledger the hatchery creates — they are pointers only. The child creates its own ledger; the hatchery creates only its own.
+
 ## Injected child-task metadata
 
 The task injected into each child strain carries metadata above the task description. This is an inter-agent contract, so it is YAML.
@@ -81,6 +92,8 @@ task:
   description: |-
     Implement the API slice.
 ```
+
+`spawn-brood.sh` prepends this YAML metadata block ABOVE the canonical external-content data-boundary preamble and the (untrusted) task description in the child's injected `task.md`, using the same block-scalar discipline as the manifest emitter (`|-` for exact-value fields, `|` for the free-text `task.description`). The untrusted strain name/branch/worktree-path/description are reproduced at each block-scalar's content indent and stripped of C0 control bytes, so an issue-sourced value cannot break the metadata's YAML validity or the paste boundary.
 
 The child reads this, routes via `hivemind:route-workflow`, initializes its own JSON run ledger (with `parent.kind: brood` populated from this metadata — see run-ledger-schema.md), and executes the selected workflow normally. The child owns its ledger; it does not write the hatchery manifest or hatchery ledger.
 

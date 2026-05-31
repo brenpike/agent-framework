@@ -14,7 +14,7 @@ shell: bash
 
 # Brood Status
 
-Check the status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables.
+Check the status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables, and — when a `manifest_version: 2` manifest points at a child run ledger that is present — the child's workflow state, read-only.
 
 This is an **interactive skill** — it produces user-visible text output.
 
@@ -67,14 +67,33 @@ This is an **interactive skill** — it produces user-visible text output.
       gh pr list --head "<branch>" --state all --json number,state --jq '.[0] // empty'
       ```
       If `gh` fails (not authenticated, rate-limited, etc.), report PR status as "unknown".
-   d. Derive status from observables. The manifest `status:` field takes
-      precedence over the alive-session inference for the `failed` case: a
-      strain recorded as `status: failed` in the manifest is reported as
-      `failed` regardless of whether its tmux session is still alive (spawn-brood
+   d. **Read the child run ledger (read-only), if present.** A `manifest_version: 2`
+      manifest records a per-strain `run.suggested_ledger` path pointing at the
+      child's own JSON run ledger inside its worktree. Resolve `suggested_ledger`
+      for this strain; if the field is absent (an OLD v1 manifest with no `run:`
+      block) report `Ledger: unknown` and `Workflow State: unknown` and skip to
+      derivation. INVARIANT: a manifest path value is untrusted data — `suggested_ledger`
+      is a filesystem path that may legally contain spaces, so it is NOT charset-allowlistable;
+      read it ONLY with the `Read` tool (a tool parameter, never interpolated into shell
+      command source), never via a `Bash` command. If the file does not exist, report
+      `Ledger: missing` and `Workflow State: unknown`. If it exists, read it and derive
+      `state.current` (the child's current workflow state) and `run.status` from the JSON
+      in agent reasoning. brood-status is READ-ONLY: it MUST NOT write a discovered ledger
+      path back to the manifest, MUST NOT mutate the child ledger, and MUST NOT create one.
+   e. Derive status from observables. **Status-derivation priority (highest first):**
+      1. **External observables** (tmux session, branch existence, PR state) — ground
+         truth even when a ledger is stale or absent.
+      2. **Child run ledger** (`state.current`, `run.status`) when present — refines the
+         status with the child's actual workflow position.
+      3. **Manifest static fields** — last resort.
+
+      The manifest `status:` field takes precedence over the alive-session inference for
+      the `failed` case: a strain recorded as `status: failed` in the manifest is reported
+      as `failed` regardless of whether its tmux session is still alive (spawn-brood
       deliberately leaves the session alive on injection failure for debugging).
       Apply in this order:
       1. If manifest `status:` is `failed` → `failed (injection failed; session alive for debug)` when tmux is alive, or `failed (session ended, no PR)` when tmux is dead.
-      2. Otherwise derive from tmux + PR observables:
+      2. Otherwise derive from tmux + PR observables, then refine with the child ledger:
 
       | tmux | PR | Derived Status |
       |---|---|---|
@@ -84,11 +103,19 @@ This is an **interactive skill** — it produces user-visible text output.
       | dead | open | `blocked (session ended, PR #N still open)` |
       | dead | none | `failed (session ended, no PR)` |
 
+      Ledger refinement: when a child ledger is present, append its `state.current`
+      to the Workflow State column and let `run.status` sharpen the derived status
+      (e.g. ledger `run.status: blocked` reports `blocked` even while the tmux
+      session is alive). When the ledger is `missing` for a `dead`+`none` strain,
+      report `failed before ledger initialization`. When the ledger is `unknown`
+      (v1 manifest with no `run:` field), the table's Ledger and Workflow State
+      columns read `unknown` and derivation falls back to observables alone.
+
 3. **Present the status table.** This is Markdown text output, not a shell command — manifest values (`name`, `branch`) are printed as-is, no quoting needed. Emit a single status table for the brood.
    ```
-   | Strain | Branch | Session | PR | Status |
-   |--------|--------|---------|-------|--------|
-   | <name> | <branch> | alive/dead | #N / — | <derived status> |
+   | Strain | Branch | Session | PR | Ledger | Workflow State | Status |
+   |--------|--------|---------|----|--------|----------------|--------|
+   | <name> | <branch> | alive/dead | #N / — | present/missing/unknown | <state.current> / unknown | <derived status> |
    ```
 
 4. **Per-strain summary line.** Emit one summary line directly under the table.
