@@ -35,19 +35,21 @@ The overlord resolves and passes these; the skill does not invent them.
 - `summary`: human-readable summary of the outcome — UNTRUSTED, serialized only.
 - `outputs` (optional): a JSON object of named outputs — UNTRUSTED, serialized only.
 - `plan_steps` (optional): cerebrate's plan `steps` reformatted to a JSON array — UNTRUSTED,
-  serialized only. Pass this when recording the `plan` state result (see §A below).
+  serialized only. Pass this when recording any cerebrate planning state result (`plan` /
+  `review_remediation_plan` / `review_remediation_plan_postpr` / `brood_plan`; see §A below).
 - `plan_path` (optional): path to the cerebrate directive — UNTRUSTED, serialized only.
 
 ## The §A Plan-Steps Seam
 
 The ledger and workflow definitions are JSON; cerebrate's plan `steps` arrive as YAML in
 the plan block, with no maintained converter. The PRIMARY, live persistence path for
-`plan.steps` is **record-time, here**: the overlord inits the ledger BEFORE the `plan`
-(cerebrate) state runs, so an init-time seed would be empty at runtime. When the overlord
-records the `plan` state result (after cerebrate returns), it reformats cerebrate's YAML
-plan `steps` into a JSON array and passes `--plan-steps` (and optionally `--plan-path`); the
-script sets `.plan.steps = $plan_steps` (and `.plan.path`). When the flags are ABSENT,
-`.plan.*` is left UNTOUCHED — never clobbered to `[]`.
+`plan.steps` is **record-time, here**: the overlord inits the ledger BEFORE any cerebrate
+planning state runs, so an init-time seed would be empty at runtime. When the overlord
+records any cerebrate planning state result (`plan` / `review_remediation_plan` /
+`review_remediation_plan_postpr` / `brood_plan`, after cerebrate returns), it reformats
+cerebrate's YAML plan `steps` into a JSON array and passes `--plan-steps` (and optionally
+`--plan-path`); the script sets `.plan.steps = $plan_steps` (and `.plan.path`). When the
+flags are ABSENT, `.plan.*` is left UNTOUCHED — never clobbered to `[]`.
 
 `init-run-ledger --plan-steps` remains a writer ONLY for the child/resume SEED path (default
 `[]`); it is no longer the primary live writer (see that skill's §A Plan-Steps Seam).
@@ -85,7 +87,8 @@ The script validates, in order, ALL before any write:
 6. `--result` is a key under `states.<state>.transitions`; resolves `next_state`.
 7. PLAN-WRITE AUTHORIZATION — if `--plan-steps` or `--plan-path` was supplied, the recording
    state MUST be a cerebrate planning state (`states.<state>.agent == "hivemind:cerebrate"`,
-   i.e. `plan` / `review_remediation_plan` / `brood_plan`); otherwise the engine rejects (exit 1,
+   i.e. `plan` / `review_remediation_plan` / `review_remediation_plan_postpr` / `brood_plan`);
+   otherwise the engine rejects (exit 1,
    ledger byte-unchanged). Flag presence alone does NOT authorize a plan write — only a cerebrate
    agent state may persist `plan.steps` / `plan.path`.
 
@@ -96,10 +99,11 @@ rename; on ANY validation failure the on-disk ledger is byte-unchanged.
 
 ## Procedure
 
-1. **Gather the Required Inputs** from the overlord's run context. When recording the `plan`
-   (cerebrate) state result, reformat cerebrate's YAML plan `steps` into a JSON array per the
-   §A seam and pass it via `--plan-steps` (and `--plan-path` if known) — this is the primary,
-   live writer of `ledger.plan.steps`.
+1. **Gather the Required Inputs** from the overlord's run context. When recording any cerebrate
+   planning state result (`plan` / `review_remediation_plan` / `review_remediation_plan_postpr`
+   / `brood_plan`), reformat cerebrate's YAML plan `steps` into a JSON array per the §A seam and
+   pass it via `--plan-steps` (and `--plan-path` if known) — this is the primary, live writer of
+   `ledger.plan.steps`.
 2. **(Conditional) Write the reformatted outputs** via the Write tool only if they must be
    materialized to a file before the script call — otherwise pass them inline via
    `--outputs` / `--plan-steps`. This is a permitted NON-FINAL tool call.

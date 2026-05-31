@@ -22,6 +22,15 @@
         "blocked": "blocked"
       }
     },
+    "review_remediation_plan": {
+      "type": "agent",
+      "description": "Engine-test SECOND cerebrate planning state (remediation-style name). Proves the engine's plan-write authorization is agent==cerebrate, not name==plan: a cerebrate state under a different name may persist plan.steps.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "ready": "build",
+        "blocked": "blocked"
+      }
+    },
     "complete": { "type": "terminal" },
     "blocked": { "type": "terminal" },
     "cancelled": { "type": "terminal" }

@@ -134,7 +134,7 @@
     },
     "local_review": {
       "type": "agent",
-      "description": "Local reviewer runs the pre-PR adaptation cycle; reviewer-return outcomes are named transitions matching the local-reviewer exit_reason vocabulary. On the 'clean' outcome the overlord consults the reviewer's fix_commits_exist flag to decide whether to re-evaluate the version bump, but the 'clean' transition target remains open_pr; fix_commits_exist is a scalar field, not an exit_reason, so it is not a transition key.",
+      "description": "Local reviewer runs the pre-PR adaptation cycle; reviewer-return outcomes are named transitions matching the local-reviewer exit_reason vocabulary. The reviewer's fix_commits_exist flag is surfaced for operator awareness only — it is a scalar field, not an exit_reason, so it is NOT a transition key and does NOT alter the deterministic route: 'clean' (and 'diminishing-returns') always target open_pr. The deterministic executor can only advance to the returned state. A post-review version re-evaluation, if the operator wants one when fix commits exist, is a separate user-initiated action outside this workflow's automatic routing.",
       "agent": "hivemind:local-reviewer",
       "transitions": {
         "clean": "open_pr",
@@ -189,7 +189,7 @@
         "pr-merged": "complete",
         "pr-closed": "complete",
         "max-cycles-reached": "review_exhausted",
-        "planner-escalation": "review_remediation_plan",
+        "planner-escalation": "review_remediation_plan_postpr",
         "injection-suspect": "blocked",
         "high-severity-rejection": "review_rejected",
         "user-input-required": "user_input_required",
@@ -202,10 +202,70 @@
       "agent": "hivemind:github-reviewer",
       "transitions": {
         "clean": "complete",
-        "planner-escalation": "review_remediation_plan",
+        "planner-escalation": "review_remediation_plan_postpr",
         "injection-suspect": "blocked",
         "high-severity-rejection": "review_rejected",
         "user-input-required": "user_input_required",
+        "blocked": "blocked"
+      }
+    },
+    "review_remediation_plan_postpr": {
+      "type": "agent",
+      "description": "Post-PR remediation re-plan: cerebrate re-plans when GitHub review escalates to the planner after the PR is open. Declares every cerebrate outcome (single|multi|brood|open_questions|blocked); a re-plan that yields steps routes to the post-PR implementation loop, brood routes to the brood_confirm gate, open_questions/blocked surface to the user. The post-PR loop pushes remediation commits and re-enters the existing review loop — it never re-creates the PR.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "single": "implement_next_step_postpr",
+        "multi": "implement_next_step_postpr",
+        "brood": "brood_confirm",
+        "open_questions": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "implement_next_step_postpr": {
+      "type": "decision",
+      "description": "Post-PR loop head: branch back to implement_step_postpr while remediation steps remain, forward to validate_postpr when all steps complete.",
+      "owner": "overlord",
+      "transitions": {
+        "has_next_step": "implement_step_postpr",
+        "all_steps_complete": "validate_postpr",
+        "blocked": "blocked"
+      }
+    },
+    "implement_step_postpr": {
+      "type": "agent",
+      "description": "Overlord delegates the current post-PR remediation step to a static-allowed bioform, picked by intent.",
+      "allowed_agents": ["hivemind:drone", "hivemind:changeling"],
+      "transitions": {
+        "complete": "checkpoint_postpr",
+        "blocked": "blocked",
+        "needs_replan": "review_remediation_plan_postpr"
+      }
+    },
+    "checkpoint_postpr": {
+      "type": "skill",
+      "description": "Molt a checkpoint commit after the completed post-PR remediation step.",
+      "skill": "hivemind:molt",
+      "transitions": {
+        "complete": "implement_next_step_postpr",
+        "blocked": "blocked"
+      }
+    },
+    "validate_postpr": {
+      "type": "decision",
+      "description": "Overlord runs validation and judges pass/fail before pushing post-PR remediation commits.",
+      "owner": "overlord",
+      "transitions": {
+        "passed": "push_remediation",
+        "failed": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "push_remediation": {
+      "type": "skill",
+      "description": "Push the post-PR remediation commits to the working branch's remote (no PR creation) so the in-flight GitHub review loop resumes against the updated branch — the PR is never re-created.",
+      "skill": "hivemind:push-branch",
+      "transitions": {
+        "complete": "github_review_loop",
         "blocked": "blocked"
       }
     },

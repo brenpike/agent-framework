@@ -4,7 +4,14 @@
 # hivemind:init-run-ledger skill.
 #
 # Creates the per-run state directory and writes the initial run ledger
-# (.hivemind/runs/<run-id>/state.json) per ${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md.
+# (<checkout-root>/.hivemind/runs/<run-id>/state.json) per
+# ${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md. The run dir is anchored to the
+# git checkout ROOT (git rev-parse --show-toplevel), NOT $(pwd): a CWD-relative dir placed
+# the ledger under whatever subdir the script ran from, so resume-on-start (which looks at
+# the checkout-root location) could not find it and spawned a DUPLICATE run. In a LINKED
+# worktree --show-toplevel resolves to the worktree root (correct — a brood child's ledger
+# lives in the child worktree, matching spawn-brood's per-strain suggested ledger path).
+# Init now REQUIRES being inside a git checkout (the overlord only inits inside one).
 # This script OWNS the deterministic create-and-write; the skill body is a thin
 # navigator that gathers inputs and calls this script once. Mirrors the
 # spawn-brood.sh committed-script precedent (shebang, set -u, blocker() helper, jq
@@ -47,10 +54,10 @@
 #     the id is a safe directory name).
 #
 # OUTPUT:
-#   - On success: creates .hivemind/runs/<run-id>/ and .hivemind/runs/<run-id>/evidence/,
+#   - On success: creates <checkout-root>/.hivemind/runs/<run-id>/ and its evidence/ subdir,
 #     writes state.json, prints YAML routing lines to stdout and exits 0:
 #       run_id: <id>
-#       ledger: .hivemind/runs/<id>/state.json
+#       ledger: <checkout-root>/.hivemind/runs/<id>/state.json
 #   - On any failure: prints `blocker: <reason>` to stderr, exits 1, writes no ledger.
 #
 # EXIT CONTRACT:
@@ -163,7 +170,14 @@ case "$run_id" in
 esac
 
 # ── Directory creation ────────────────────────────────────────────────────────
-run_dir=".hivemind/runs/$run_id"
+# Anchor the run dir to the git checkout ROOT, not $(pwd). Started from a subdir a
+# CWD-relative path misplaced the ledger, so resume-on-start (which reads the checkout-root
+# location) could not find it and spawned a duplicate run. In a linked worktree
+# --show-toplevel resolves to the worktree root (correct for brood children). Mirrors
+# spawn-brood.sh's repo_root precedent. Empty result = not inside a git checkout = blocker.
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$repo_root" ] || blocker "not inside a git repository"
+run_dir="$repo_root/.hivemind/runs/$run_id"
 ledger_path="$run_dir/state.json"
 
 [ -e "$ledger_path" ] && blocker "a ledger already exists at $ledger_path; refusing to overwrite"

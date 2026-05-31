@@ -47,7 +47,7 @@ The generic, workflow-agnostic loop. It carries no per-workflow sequencing — t
 
 Do not invent states. Do not skip required states. Do not transition to states not allowed by the workflow definition.
 
-The cerebrate plan arrives as a YAML `plan:` block. When the `plan` (cerebrate) state completes, reformat its `steps` into a JSON array and pass them to `hivemind:record-state-result` via `--plan-steps` (with `--plan-path` if known) so `ledger.plan.steps` is populated for the implement loop — the ledger is inited before this state runs, so this record-time write, not an init seed, is what fills `plan.steps`. Map delivery `single`/`multi`/`brood` and `open_questions`/`blocked` to the matching transition result.
+The cerebrate plan arrives as a YAML `plan:` block. When ANY cerebrate planning state completes (`plan`, `review_remediation_plan`, `review_remediation_plan_postpr`, `brood_plan` — whichever the active workflow declares), reformat its `steps` into a JSON array and pass them to `hivemind:record-state-result` via `--plan-steps` (with `--plan-path` if known) so `ledger.plan.steps` is populated for the implement loop — the ledger is inited before any planning state runs, so this record-time write, not an init seed, is what fills `plan.steps`. Map delivery `single`/`multi`/`brood` and `open_questions`/`blocked` to the matching transition result.
 
 ## Resume On Start
 

@@ -28,6 +28,19 @@
 #                           (`build`, no agent==cerebrate) is rejected: non-zero exit, ledger
 #                           byte-UNCHANGED (sha256). Flag presence alone never authorizes a
 #                           plan write — only a cerebrate planning state may persist plan.steps.
+#   K. checkout-root anchor -> init-run-ledger.sh run from a SUBDIR of a throwaway git repo
+#                           writes the ledger under <repo-root>/.hivemind/runs/<id>/state.json
+#                           and NOT under <subdir>/.hivemind. Regression for the CWD-relative
+#                           run_dir that misplaced the ledger and caused duplicate runs (F-E).
+#   L. ledger-safe brood id -> init-run-ledger.sh --parent-kind brood with a COLON-FREE
+#                           ledger-safe --parent-brood-id succeeds (exit 0) and derives run-id
+#                           <safe>--<short>. Proves the ledger-safe parent id spawn-brood now
+#                           injects is accepted without a colon blocker (F-D).
+#   M. cerebrate-name-agnostic authz -> record-state-result.sh --plan-steps at a SECOND
+#                           cerebrate state whose name is NOT `plan` (review_remediation_plan,
+#                           agent==hivemind:cerebrate) is ACCEPTED (exit 0, steps persisted).
+#                           Proves plan-write authorization keys on agent==cerebrate, not on
+#                           the literal state name (F-C authorization coverage).
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -48,16 +61,18 @@ LEDGER_AT_PLAN="$FIXTURES_DIR/ledger-at-plan.json"
 LEDGER_AT_BUILD="$FIXTURES_DIR/ledger-at-build.json"
 LEDGER_WRONG_WORKFLOW="$FIXTURES_DIR/ledger-wrong-workflow.json"
 LEDGER_WRONG_VERSION="$FIXTURES_DIR/ledger-wrong-version.json"
+LEDGER_AT_REMEDIATION_PLAN="$FIXTURES_DIR/ledger-at-remediation-plan.json"
 
 # ── Dependency / fixture preflight ──────────────────────────────────────────
 
-for dep in jq sha256sum; do
+for dep in jq sha256sum git; do
     command -v "$dep" >/dev/null 2>&1 \
         || { echo "FAIL: required dependency '$dep' is not installed" >&2; exit 2; }
 done
 
 for required in "$ENGINE" "$INIT_ENGINE" "$WORKFLOW_DEF" "$LEDGER_AT_PLAN" \
-    "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION"; do
+    "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION" \
+    "$LEDGER_AT_REMEDIATION_PLAN"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required input missing: $required" >&2; exit 2; }
 done
@@ -220,10 +235,13 @@ assert_atomicity_on_write_failure() {
 
 assert_plan_steps_seed() {
     local name="F:plan-steps-seed"
-    # Run the init engine in a disposable temp CWD so it writes under
-    # <temp>/.hivemind/runs/<run-id>/state.json — NEVER a ledger into the repo.
+    # Run the init engine in a disposable throwaway git repo so it writes under
+    # <repo-root>/.hivemind/runs/<run-id>/state.json — NEVER a ledger into the real repo.
+    # init-run-ledger now anchors the run dir to `git rev-parse --show-toplevel`, so the CWD
+    # must be inside a git checkout; the printed `ledger:` line is now an ABSOLUTE path.
     local initdir="$WORKDIR/f-init"
     mkdir -p "$initdir"
+    git -C "$initdir" init -q
     local rc=0 out
     out="$(cd "$initdir" && bash "$INIT_ENGINE" \
         --workflow engine-fixture \
@@ -239,7 +257,8 @@ assert_plan_steps_seed() {
     fi
 
     local ledger steps_len step_id
-    ledger="$initdir/$(printf '%s\n' "$out" | sed -n 's/^ledger: //p')"
+    # `ledger:` is now an absolute checkout-root-anchored path — use it verbatim.
+    ledger="$(printf '%s\n' "$out" | sed -n 's/^ledger: //p')"
     if [[ ! -f "$ledger" ]]; then
         failed "$name" "init engine did not write a ledger at $ledger"
         return
@@ -364,6 +383,118 @@ assert_plan_write_unauthorized_unchanged() {
     fi
 }
 
+# ── K. init run dir anchored to checkout root, not CWD (F-E regression) ─────
+
+assert_init_anchored_to_checkout_root() {
+    local name="K:init-anchored-to-checkout-root"
+    # Throwaway git repo with a subdir; run init FROM the subdir. The ledger must land at
+    # <repo-root>/.hivemind/runs/<id>/state.json and be ABSENT under <subdir>/.hivemind.
+    local repo="$WORKDIR/k-repo"
+    mkdir -p "$repo/sub"
+    git -C "$repo" init -q
+    local rc=0 out
+    out="$(cd "$repo/sub" && bash "$INIT_ENGINE" \
+        --workflow engine-fixture \
+        --workflow-version 1 \
+        --start-state plan \
+        --user-request "engine test checkout-root anchor" \
+        --normalized "engine test checkout-root anchor" 2>&1)" || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "init engine exited $rc from a subdir (expected 0): $out"
+        return
+    fi
+
+    local run_id ledger root_ledger
+    run_id="$(printf '%s\n' "$out" | sed -n 's/^run_id: //p')"
+    ledger="$(printf '%s\n' "$out" | sed -n 's/^ledger: //p')"
+    root_ledger="$repo/.hivemind/runs/$run_id/state.json"
+    # Ledger present at the checkout root, the printed path is that absolute path, and NOTHING
+    # was written under the subdir.
+    if [[ -f "$root_ledger" && "$ledger" == "$root_ledger" && ! -e "$repo/sub/.hivemind" ]]; then
+        pass "$name" "ledger anchored to checkout root ($root_ledger), absent under subdir"
+    else
+        failed "$name" "expected ledger at $root_ledger and none under sub/.hivemind; got ledger=$ledger sub_exists=$([[ -e "$repo/sub/.hivemind" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── L. ledger-safe brood id accepted; run-id <safe>--<short> (F-D regression) ─
+
+assert_brood_child_ledger_safe_id() {
+    local name="L:brood-child-ledger-safe-id"
+    # Brood child init with a COLON-FREE ledger-safe --parent-brood-id (the form spawn-brood
+    # now injects as parent.brood_id_ledger). Must succeed and derive run-id <safe>--<short>.
+    local repo="$WORKDIR/l-repo"
+    mkdir -p "$repo"
+    git -C "$repo" init -q
+    local safe="2026-05-31T17-30-00Z" short="my-strain"
+    local rc=0 out
+    out="$(cd "$repo" && bash "$INIT_ENGINE" \
+        --workflow engine-fixture \
+        --workflow-version 1 \
+        --start-state plan \
+        --user-request "engine test brood child" \
+        --normalized "engine test brood child" \
+        --parent-kind brood \
+        --parent-brood-id "$safe" \
+        --parent-strain-id "$short" \
+        --parent-run-id "$safe-hatchery" \
+        --parent-manifest "$repo/.hivemind/brood/manifest.yaml" 2>&1)" || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "init engine exited $rc on a ledger-safe brood id (expected 0): $out"
+        return
+    fi
+
+    local run_id ledger brood_id
+    run_id="$(printf '%s\n' "$out" | sed -n 's/^run_id: //p')"
+    ledger="$(printf '%s\n' "$out" | sed -n 's/^ledger: //p')"
+    if [[ "$run_id" != "$safe--$short" ]]; then
+        failed "$name" "expected run-id $safe--$short, got $run_id"
+        return
+    fi
+    brood_id="$(jq -r '.parent.brood_id' "$ledger")"
+    if [[ -f "$ledger" && "$brood_id" == "$safe" ]]; then
+        pass "$name" "ledger-safe brood id accepted: run-id=$run_id, parent.brood_id round-trips"
+    else
+        failed "$name" "expected ledger at $ledger with parent.brood_id=$safe, got brood_id=$brood_id"
+    fi
+}
+
+# ── M. cerebrate authz is name-agnostic (F-C authorization coverage) ────────
+
+assert_plan_write_remediation_state_authorized() {
+    local name="M:plan-write-remediation-authorized"
+    # Ledger at state.current=review_remediation_plan, a SECOND cerebrate state whose name is
+    # NOT `plan`. Recording it WITH --plan-steps must be ACCEPTED (agent==cerebrate authorizes
+    # the write regardless of the state name) and persist the steps.
+    local ledger="$WORKDIR/m-ledger.json"
+    cp "$LEDGER_AT_REMEDIATION_PLAN" "$ledger"
+
+    local rc=0
+    bash "$ENGINE" \
+        --ledger "$ledger" \
+        --workflow "$WORKFLOW_DEF" \
+        --state review_remediation_plan \
+        --result ready \
+        --summary "engine test remediation-plan authorized write" \
+        --plan-steps '[{"id":"STEP-001","status":"pending"}]' >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a cerebrate remediation state with --plan-steps (expected 0)"
+        return
+    fi
+
+    local steps_len step_id
+    steps_len="$(jq -r '.plan.steps | length' "$ledger")"
+    step_id="$(jq -r '.plan.steps[0].id' "$ledger")"
+    if [[ "$steps_len" -eq 1 && "$step_id" == "STEP-001" ]]; then
+        pass "$name" "non-'plan' cerebrate state authorized: plan.steps persisted (length=1, id=STEP-001)"
+    else
+        failed "$name" "expected length=1/id=STEP-001, got length=$steps_len/id=$step_id"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: record-state-result.sh against tests/engine/ fixtures ==='
@@ -377,6 +508,9 @@ assert_id_mismatch_unchanged
 assert_version_mismatch_unchanged
 assert_plan_steps_record_time
 assert_plan_write_unauthorized_unchanged
+assert_init_anchored_to_checkout_root
+assert_brood_child_ledger_safe_id
+assert_plan_write_remediation_state_authorized
 
 echo ''
 echo '=== Summary ==='

@@ -13,7 +13,8 @@ Create the run ledger for the current overlord instance. The deterministic engin
 committed script
 `${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh`; this body is a
 navigator that gathers the inputs, builds the script flags, and runs the script once. The
-ledger is JSON (`.hivemind/runs/<run-id>/state.json`) per ADR-0018 §A and
+ledger is JSON (`<checkout-root>/.hivemind/runs/<run-id>/state.json`, anchored to the git
+checkout root) per ADR-0018 §A and
 `${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md`.
 
 Rules: ADR-0018 §A (ledger is JSON); §C (engine is the committed script).
@@ -94,9 +95,11 @@ verbatim; else derived `<utc-timestamp>-<workflow-id>`.
 3. **Interpret the result.** Exit 0: the script printed YAML routing lines on stdout —
    ```yaml
    run_id: <id>
-   ledger: .hivemind/runs/<id>/state.json
+   ledger: <checkout-root>/.hivemind/runs/<id>/state.json
    ```
-   the overlord proceeds with that ledger. Exit 1: the script printed `blocker: <reason>`
+   the run dir is anchored to the git checkout root (`git rev-parse --show-toplevel`), not the
+   CWD, so resume-on-start finds it regardless of which subdir init ran from; init requires being
+   inside a git checkout. the overlord proceeds with that ledger. Exit 1: the script printed `blocker: <reason>`
    on stderr and wrote no ledger — surface it and stop.
 
 ## Pointers

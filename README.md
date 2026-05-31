@@ -244,6 +244,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:adaptation-cycle` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `hivemind:local-reviewer` |
 | `hivemind:github-review-loop` | Watch a PR in the main session and dispatch the fix-mode `github-reviewer` per actionable event — owns the post-PR review loop |
 | `hivemind:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
+| `hivemind:push-branch` | Push the current working branch to its remote (no PR creation) — used to land remediation commits before resuming a review loop |
 | `hivemind:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
 | `hivemind:create-handoff` | Generate an optional session-resumption handoff doc from a plan |
 | `hivemind:plan-to-prd` | Turn an interrogated plan into a committed WHAT-only PRD |

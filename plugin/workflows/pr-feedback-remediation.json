@@ -86,11 +86,20 @@
     },
     "validate": {
       "type": "decision",
-      "description": "Overlord runs validation and judges pass/fail before returning to the review loop.",
+      "description": "Overlord runs validation and judges pass/fail before pushing remediation commits.",
       "owner": "overlord",
       "transitions": {
-        "passed": "github_review_loop",
+        "passed": "push_remediation",
         "failed": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "push_remediation": {
+      "type": "skill",
+      "description": "Push the remediation commits to the working branch's remote (no PR creation) so the in-flight review loop resumes against the updated branch.",
+      "skill": "hivemind:push-branch",
+      "transitions": {
+        "complete": "github_review_loop",
         "blocked": "blocked"
       }
     },
