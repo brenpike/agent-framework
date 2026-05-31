@@ -25,10 +25,10 @@
 #   --user-request <text>      (required) raw user request — UNTRUSTED data, serialized only
 #   --normalized <text>        (required) overlord's normalized summary of the request
 #   --parent-kind <kind>       (optional) none|brood ; default none
-#   --parent-run-id <id>       (optional) parent run id when --parent-kind=brood
-#   --parent-brood-id <id>     (optional) brood id when --parent-kind=brood
-#   --parent-strain-id <id>    (optional) strain id when --parent-kind=brood
-#   --parent-manifest <path>   (optional) manifest path when --parent-kind=brood
+#   --parent-run-id <id>       (required when --parent-kind=brood) parent run id
+#   --parent-brood-id <id>     (required when --parent-kind=brood) brood id
+#   --parent-strain-id <id>    (required when --parent-kind=brood) strain id
+#   --parent-manifest <path>   (required when --parent-kind=brood) manifest path
 #   --suggested-run-id <id>    (optional) caller-suggested run id; used verbatim only if
 #                              it matches ^[A-Za-z0-9._-]+$, else a derived id is used.
 #   --plan-steps <json-array>  (optional) cerebrate's plan steps reformatted to a JSON
@@ -136,6 +136,12 @@ if [ "$parent_kind" = "brood" ]; then
   # Child form <brood-id>--<strain-id>; both components required and safe.
   [ -n "$parent_brood_id" ]  || blocker "--parent-kind=brood requires --parent-brood-id"
   [ -n "$parent_strain_id" ] || blocker "--parent-kind=brood requires --parent-strain-id"
+  # parent_run_id and parent_manifest identify the hatchery relationship (run-ledger-schema
+  # brood variant). A child that omits either while translating its injected metadata would
+  # otherwise write a brood ledger with null ancestry fields, silently breaking the
+  # reconciliation trail — so require both non-empty before creating the ledger.
+  [ -n "$parent_run_id" ]    || blocker "--parent-kind=brood requires --parent-run-id"
+  [ -n "$parent_manifest" ]  || blocker "--parent-kind=brood requires --parent-manifest"
   case "$parent_brood_id"  in *[!A-Za-z0-9._-]*) blocker "--parent-brood-id contains characters outside [A-Za-z0-9._-]: $parent_brood_id" ;; esac
   case "$parent_strain_id" in *[!A-Za-z0-9._-]*) blocker "--parent-strain-id contains characters outside [A-Za-z0-9._-]: $parent_strain_id" ;; esac
   run_id="${parent_brood_id}--${parent_strain_id}"

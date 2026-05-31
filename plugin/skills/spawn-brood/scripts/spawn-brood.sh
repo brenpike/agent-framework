@@ -147,6 +147,10 @@ case "$brood_id" in
   [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) : ;;
   *) blocker "brood_id is not a valid ISO-8601 timestamp: $brood_id" ;;
 esac
+# brood_id is an ISO-8601 timestamp (e.g. 2026-05-31T17:30:00Z) whose ':' separators fall
+# outside init-run-ledger's [A-Za-z0-9._-] parent-id charset. Derive a filesystem-safe form
+# ONCE (brood_id is loop-invariant) for the child run id and the child's --parent-brood-id.
+brood_id_safe="$(printf '%s' "$brood_id" | tr ':' '-')"
 
 # Strain count. An empty/zero-strain array is a blocker — never write an empty
 # manifest (a downstream brood-status would treat it as a broodless session).
@@ -195,7 +199,8 @@ for idx in $(seq 0 $((strain_count - 1))); do
   # overlord-supplied hint (a non-binding suggestion; the child's own router decides),
   # defaulting to standard-delivery. Values derive only from already-validated brood_id /
   # short / wt, so no new untrusted bytes; emitted later via emit_block, never inline.
-  run_id="$brood_id--$short"
+  # brood_id_safe (filesystem-safe, colons mapped to dashes) is derived brood-level above.
+  run_id="$brood_id_safe--$short"
   run_ledger="$wt/.hivemind/runs/$run_id/state.json"
   run_hint="$(jq -r ".strains[$idx].workflow_hint // \"\"" "$INPUTS_FILE")"
   [ -n "$run_hint" ] || run_hint="standard-delivery"
@@ -472,7 +477,7 @@ for idx in $(seq 0 $((strain_count - 1))); do
   brood_meta="$( {
     printf 'parent:\n'
     printf '  kind: brood\n'
-    printf '  brood_id: |-\n';          printf '%s\n' "$brood_id"            | sed 's/^/    /'
+    printf '  brood_id: |-\n';          printf '%s\n' "$brood_id_safe"       | sed 's/^/    /'
     printf '  hatchery_run_id: |-\n';   printf '%s\n' "$hatchery_run_id"     | sed 's/^/    /'
     printf '  hatchery_manifest: |-\n'; printf '%s\n' "$repo_root/.hivemind/brood/manifest.yaml" | sed 's/^/    /'
     printf 'strain:\n'
@@ -499,7 +504,7 @@ for idx in $(seq 0 $((strain_count - 1))); do
   # same class as `git worktree add` failure. Clean up what this invocation created
   # and skip the session launch rather than leave an idle privileged child.
   if ! mkdir -p "$wt/.hivemind/brood" 2>/dev/null \
-     || ! printf '%s\n\n%s\n\n%s\n' "$brood_meta" "$PREAMBLE" "$desc" > "$task_file" 2>/dev/null; then
+     || ! printf '%s\n\n%s\n' "$PREAMBLE" "$brood_meta" > "$task_file" 2>/dev/null; then
     printf 'warning: task-file provisioning failed for strain %s\n' "${S_NAME[$idx]}" >&2
     mark_failed "$idx"
     if [ "$created_worktree" = true ]; then
