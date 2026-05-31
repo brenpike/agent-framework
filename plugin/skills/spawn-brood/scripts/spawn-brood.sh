@@ -376,16 +376,28 @@ for idx in $(seq 0 $((strain_count - 1))); do
 
   # 3a: explicit worktree + exact strain branch off base. Do NOT use claude
   # --worktree (mangles names / creates worktree-<name>).
+  # MARK-BEFORE-MUTATE: set the markers IMMEDIATELY BEFORE the mutating command, not
+  # after its success check. Bash evaluates a pending INT/TERM at statement boundaries,
+  # so a signal that becomes pending as `git worktree add` completes can fire the trap
+  # BEFORE a post-success assignment runs — the worktree would exist but go unreported.
+  # Marking first means an interrupt anywhere around the command conservatively
+  # OVER-reports a possibly-created worktree+branch for manual verification.
+  cur_wt="$wt"
+  cur_branch="$branch"
   if ! git worktree add -b "$branch" "$wt" "$base" >/dev/null 2>&1; then
     printf 'warning: git worktree add failed for strain %s\n' "${S_NAME[$idx]}" >&2
     mark_failed "$idx"
-    # HARD cleanup: worktree add did not succeed, so nothing this invocation
-    # created remains. Nothing to remove.
+    # HARD cleanup: worktree add did not succeed, but an abnormal failure can leave
+    # partially-created worktree/branch state — best-effort remove it (matching the
+    # other failure paths), then CLEAR the markers (confirmed failure + cleaned → no
+    # false leak report).
+    git worktree remove --force "$wt" >/dev/null 2>&1 || true
+    git branch -D "$branch" >/dev/null 2>&1 || true
+    cur_wt=""
+    cur_branch=""
     continue
   fi
   created_worktree=true
-  cur_wt="$wt"
-  cur_branch="$branch"
 
   # 3b: propagate config into the new worktree, if present.
   if [ -f "$settings_local" ]; then
@@ -429,6 +441,11 @@ for idx in $(seq 0 $((strain_count - 1))); do
 
   # 3d: launch a DETACHED tmux session running claude (tmux supplies the pty the
   # Bash context lacks). Pre-accept the bypass-permissions trust gate.
+  # MARK-BEFORE-MUTATE: set cur_session IMMEDIATELY BEFORE new-session so an interrupt
+  # that fires as the command completes reports the possibly-live privileged session
+  # rather than omitting it (a live --dangerously-skip-permissions child must never go
+  # unreported).
+  cur_session="$tmux_session"
   if ! tmux new-session -d -s "$tmux_session" -c "$wt" \
         "claude --dangerously-skip-permissions --settings '{\"skipDangerousModePermissionPrompt\":true}'" 2>/dev/null; then
     printf 'warning: tmux new-session failed for strain %s\n' "${S_NAME[$idx]}" >&2
@@ -439,13 +456,14 @@ for idx in $(seq 0 $((strain_count - 1))); do
       git worktree remove --force "$wt" >/dev/null 2>&1 || true
       git branch -D "$branch" >/dev/null 2>&1 || true
     fi
-    # Worktree+branch removed; no session launched. Clear so the trap reports nothing.
+    # Worktree+branch removed; session did not confirm launch. Clear all markers so the
+    # trap reports nothing.
     cur_wt=""
     cur_branch=""
+    cur_session=""
     continue
   fi
   created_session=true
-  cur_session="$tmux_session"
   launched_sessions="${launched_sessions:+$launched_sessions }$tmux_session"
   : "$created_session"  # session confirmed launched; provisionally running
   # Strain now fully tracked in launched_sessions; clear the in-progress markers so the

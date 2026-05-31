@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.7] - 2026-05-30
+
+### Fixed
+
+- `spawn-brood`'s interrupt-recovery markers now follow mark-before-mutate ordering: each provisional resource marker (`cur_wt`/`cur_branch`/`cur_session`) is set BEFORE its resource-creating command (`git worktree add`, `tmux new-session`) and cleared on confirmed-clean failure. Bash evaluates pending INT/TERM traps at statement boundaries, so the prior set-after-success ordering could run the trap between a command returning and its marker assignment, silently omitting a just-created worktree or live privileged child. Interrupts now conservatively over-report a provisional resource for manual verification rather than under-report a real one.
+
 ## [2.18.6] - 2026-05-30
 
 ### Fixed
