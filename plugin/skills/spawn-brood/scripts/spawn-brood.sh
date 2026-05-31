@@ -143,14 +143,26 @@ case "$overlap_risk" in
   low|medium|high) : ;;
   *) blocker "overlap_risk must be low|medium|high, got: $overlap_risk" ;;
 esac
+# brood_id MUST be the EXACT canonical ISO-8601 UTC instant form spawn-brood documents
+# and emits (YYYY-MM-DDTHH:MM:SSZ). A prefix-only check would let a malformed suffix
+# (e.g. "2026-05-31../../escape") survive into run.suggested_id / run.suggested_ledger as
+# a path-traversal payload — reject anything not matching the full anchored form here,
+# BEFORE any path derivation reads brood_id.
 case "$brood_id" in
-  [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) : ;;
-  *) blocker "brood_id is not a valid ISO-8601 timestamp: $brood_id" ;;
+  [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-6][0-9]Z) : ;;
+  *) blocker "brood_id must be an ISO-8601 UTC instant (YYYY-MM-DDTHH:MM:SSZ): $brood_id" ;;
 esac
 # brood_id is an ISO-8601 timestamp (e.g. 2026-05-31T17:30:00Z) whose ':' separators fall
 # outside init-run-ledger's [A-Za-z0-9._-] parent-id charset. Derive a filesystem-safe form
 # ONCE (brood_id is loop-invariant) for the child run id and the child's --parent-brood-id.
 brood_id_safe="$(printf '%s' "$brood_id" | tr ':' '-')"
+# Defense-in-depth: the strict ISO regex above already precludes path separators and "..",
+# but re-verify the DERIVED filesystem-safe form carries neither before it feeds path
+# derivation (run_id / run_ledger). A traversal-bearing brood_id_safe must never reach a path.
+case "$brood_id_safe" in
+  *..*)   blocker "brood_id derives an unsafe id containing '..': $brood_id_safe" ;;
+  */*|*\\*) blocker "brood_id derives an unsafe id containing a path separator: $brood_id_safe" ;;
+esac
 
 # Strain count. An empty/zero-strain array is a blocker — never write an empty
 # manifest (a downstream brood-status would treat it as a broodless session).

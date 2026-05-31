@@ -60,7 +60,7 @@ None of these fields point at a ledger the hatchery creates — they are pointer
 
 ## Injected child-task metadata
 
-The task injected into each child strain carries metadata above the task description. This is an inter-agent contract, so it is YAML.
+The task injected into each child strain carries, below the data-boundary preamble, a YAML metadata block above the task description. This is an inter-agent contract, so it is YAML.
 
 ```yaml
 parent:
@@ -93,7 +93,7 @@ task:
     Implement the API slice.
 ```
 
-`spawn-brood.sh` prepends this YAML metadata block ABOVE the canonical external-content data-boundary preamble and the (untrusted) task description in the child's injected `task.md`, using the same block-scalar discipline as the manifest emitter (`|-` for exact-value fields, `|` for the free-text `task.description`). The untrusted strain name/branch/worktree-path/description are reproduced at each block-scalar's content indent and stripped of C0 control bytes, so an issue-sourced value cannot break the metadata's YAML validity or the paste boundary.
+`spawn-brood.sh` emits the canonical external-content data-boundary preamble FIRST in the child's injected `task.md`, then this YAML metadata block (whose `task.description` carries the untrusted task description) below it, using the same block-scalar discipline as the manifest emitter (`|-` for exact-value fields, `|` for the free-text `task.description`). The untrusted strain name/branch/worktree-path/description are reproduced at each block-scalar's content indent and stripped of C0 control bytes, so an issue-sourced value cannot break the metadata's YAML validity or the paste boundary.
 
 The child reads this, routes via `hivemind:route-workflow`, initializes its own JSON run ledger (with `parent.kind: brood` populated from this metadata — see run-ledger-schema.md), and executes the selected workflow normally. The child owns its ledger; it does not write the hatchery manifest or hatchery ledger.
 
