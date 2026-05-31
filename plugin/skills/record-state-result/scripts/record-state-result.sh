@@ -28,9 +28,12 @@
 #   9. Update run.updated_at.
 #  10. If next_state is a declared terminal, set run.status + state.status to the
 #      matching terminal status (complete->complete, blocked->blocked,
-#      cancelled->cancelled; any other terminal e.g. hatchery_monitor -> complete-
-#      equivalent per the schema doc, which constrains run.status to
-#      running|complete|blocked|cancelled).
+#      cancelled->cancelled). The human-intervention terminals
+#      (user_input_required, review_rejected, review_exhausted) are "stopped, needs
+#      attention" outcomes — they map to blocked (NOT complete) so a stalled run is
+#      never masked as success. Genuine done-terminals (e.g. hatchery_monitor) ->
+#      complete-equivalent per the schema doc, which constrains run.status to
+#      running|complete|blocked|cancelled.
 #  11. Write via temp file + atomic mv so a concurrent hatchery reader never sees a
 #      torn file.
 #
@@ -204,12 +207,16 @@ fi
 
 # (10 pre-compute) determine whether next_state is a declared terminal and map its
 # run/state status. The schema constrains run.status to running|complete|blocked|
-# cancelled, so any terminal other than blocked/cancelled is complete-equivalent.
+# cancelled. The human-intervention terminals (user_input_required, review_rejected,
+# review_exhausted) are "stopped, needs attention" outcomes and map to blocked — NOT
+# complete — so a stalled run is never masked as success. Only genuine done-terminals
+# (e.g. complete, hatchery_monitor) are complete-equivalent.
 is_terminal="$(jq --arg n "$next_state" '(.terminal // []) | index($n) != null' "$workflow")"
 if [ "$is_terminal" = "true" ]; then
   case "$next_state" in
     blocked)   terminal_status="blocked" ;;
     cancelled) terminal_status="cancelled" ;;
+    user_input_required|review_rejected|review_exhausted) terminal_status="blocked" ;;
     *)         terminal_status="complete" ;;
   esac
   run_status="$terminal_status"

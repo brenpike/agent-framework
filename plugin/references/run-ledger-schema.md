@@ -67,7 +67,7 @@ Ledger schema version. Distinct from `run.workflow_version`, which tracks the wo
 - `id` — run identifier; matches the `<run-id>` directory name.
 - `workflow` — selected workflow id (matches a definition under `plugin/workflows/<id>.json`).
 - `workflow_version` — the definition `version` at init time. On resume, a mismatch against the on-disk definition triggers the version-skew gate.
-- `status` — `running` | `complete` | `blocked` | `cancelled`.
+- `status` — `running` | `complete` | `blocked` | `cancelled`. Terminal-state mapping when `record-state-result` reaches a declared terminal: `complete`→`complete`, `blocked`→`blocked`, `cancelled`→`cancelled`, the human-intervention terminals (`user_input_required` / `review_rejected` / `review_exhausted`)→`blocked` (stopped, needs attention — never masked as success), and any other done-terminal (e.g. `hatchery_monitor`)→`complete`. The enum is fixed; intervention terminals reuse `blocked` rather than adding a new value.
 - `mode` — `deterministic` (default) or `intent_fallback` (see below).
 - `created_at` / `updated_at` — ISO 8601 UTC timestamps.
 

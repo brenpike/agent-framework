@@ -2,7 +2,7 @@
   "id": "engine-fixture",
   "version": 1,
   "start": "plan",
-  "terminal": ["complete", "blocked", "cancelled"],
+  "terminal": ["complete", "blocked", "cancelled", "user_input_required"],
   "states": {
     "plan": {
       "type": "agent",
@@ -19,7 +19,8 @@
       "allowed_agents": ["hivemind:drone"],
       "transitions": {
         "done": "complete",
-        "blocked": "blocked"
+        "blocked": "blocked",
+        "needs-input": "user_input_required"
       }
     },
     "review_remediation_plan": {
@@ -33,6 +34,7 @@
     },
     "complete": { "type": "terminal" },
     "blocked": { "type": "terminal" },
-    "cancelled": { "type": "terminal" }
+    "cancelled": { "type": "terminal" },
+    "user_input_required": { "type": "terminal" }
   }
 }

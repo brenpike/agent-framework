@@ -44,6 +44,11 @@
 #                           agent==hivemind:cerebrate) is ACCEPTED (exit 0, steps persisted).
 #                           Proves plan-write authorization keys on agent==cerebrate, not on
 #                           the literal state name (F-C authorization coverage).
+#   N. intervention terminal -> record-state-result.sh reaching a human-intervention terminal
+#                           (user_input_required) sets run.status=blocked, NOT complete. Guards
+#                           the regression where every non-blocked/cancelled terminal mapped to
+#                           complete, masking a stalled run as success (complements D, which
+#                           proves a genuine done-terminal still maps to complete).
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -508,6 +513,38 @@ assert_plan_write_remediation_state_authorized() {
     fi
 }
 
+# ── N. intervention terminal -> run.status blocked (not complete) ───────────
+
+assert_intervention_terminal_blocked() {
+    local name="N:intervention-terminal-blocked"
+    # Ledger at build; record needs-input -> user_input_required (a declared human-intervention
+    # terminal). run.status MUST be blocked (stopped, needs attention), NOT complete.
+    local ledger="$WORKDIR/n-ledger.json"
+    cp "$LEDGER_AT_BUILD" "$ledger"
+    local rc=0
+    bash "$ENGINE" \
+        --ledger "$ledger" \
+        --workflow "$WORKFLOW_DEF" \
+        --state build \
+        --result needs-input \
+        --summary "engine test intervention terminal" >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording an intervention terminal (expected 0)"
+        return
+    fi
+
+    local current run_status state_status
+    current="$(jq -r '.state.current' "$ledger")"
+    run_status="$(jq -r '.run.status' "$ledger")"
+    state_status="$(jq -r '.state.status' "$ledger")"
+    if [[ "$current" == "user_input_required" && "$run_status" == "blocked" && "$state_status" == "blocked" ]]; then
+        pass "$name" "intervention terminal mapped to blocked: state.current=user_input_required, run.status=blocked"
+    else
+        failed "$name" "expected user_input_required/blocked/blocked, got current=$current/run.status=$run_status/state.status=$state_status"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: record-state-result.sh against tests/engine/ fixtures ==='
@@ -524,6 +561,7 @@ assert_plan_write_unauthorized_unchanged
 assert_init_anchored_to_checkout_root
 assert_brood_child_canonical_id
 assert_plan_write_remediation_state_authorized
+assert_intervention_terminal_blocked
 
 echo ''
 echo '=== Summary ==='

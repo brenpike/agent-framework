@@ -4,7 +4,6 @@ description: Record the outcome of the current workflow state into the run ledge
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh *)
   - Read
-  - Write
 shell: bash
 ---
 
@@ -94,8 +93,13 @@ The script validates, in order, ALL before any write:
 
 Then it appends the event; updates `state.previous`/`state.current`/`state.status`,
 `run.updated_at`, (if `next_state` is terminal) `run.status`, and — when `--plan-steps` /
-`--plan-path` are present — `plan.steps` / `plan.path`. Every write is temp-write + atomic
-rename; on ANY validation failure the on-disk ledger is byte-unchanged.
+`--plan-path` are present — `plan.steps` / `plan.path`. Terminal `run.status` mapping
+(schema enum `running|complete|blocked|cancelled`): `complete`→`complete`,
+`blocked`→`blocked`, `cancelled`→`cancelled`, the human-intervention terminals
+(`user_input_required` / `review_rejected` / `review_exhausted`)→`blocked` (stopped, needs
+attention — never masked as success), and any other done-terminal (e.g. `hatchery_monitor`)
+→`complete`. Every write is temp-write + atomic rename; on ANY validation failure the
+on-disk ledger is byte-unchanged.
 
 ## Procedure
 
@@ -104,9 +108,9 @@ rename; on ANY validation failure the on-disk ledger is byte-unchanged.
    / `brood_plan`), reformat cerebrate's YAML plan `steps` into a JSON array per the §A seam and
    pass it via `--plan-steps` (and `--plan-path` if known) — this is the primary, live writer of
    `ledger.plan.steps`.
-2. **(Conditional) Write the reformatted outputs** via the Write tool only if they must be
-   materialized to a file before the script call — otherwise pass them inline via
-   `--outputs` / `--plan-steps`. This is a permitted NON-FINAL tool call.
+2. **Pass the reformatted outputs inline** via `--outputs` / `--plan-steps`. The navigator
+   builds the flag values in-message and never itself writes a file — every ledger write
+   (atomic temp + rename) is performed by the script.
 3. **Execute the script** with one Bash call:
    ```bash
    bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh \
@@ -139,8 +143,8 @@ rename; on ANY validation failure the on-disk ledger is byte-unchanged.
 This is a pipeline skill:
 
 - Produce zero chat text during execution. Outputs are tool calls only.
-- The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat text. The
-  final action is the Bash script call (step 3).
+- The navigator builds flag values in-message and never writes a file — the only tool call
+  is the Bash script invocation (step 3), which performs every atomic ledger write.
 - Exit 0 = overlord advances to `current_state`; routing data is on stdout.
   Exit 1 = blocked; the reason is on stderr and the ledger is unchanged.
 

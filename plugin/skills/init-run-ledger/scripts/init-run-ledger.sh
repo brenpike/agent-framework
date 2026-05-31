@@ -100,21 +100,26 @@ suggested_run_id=""
 plan_steps="[]"
 plan_path=""
 
+# require_value: every valued flag must be followed by an argument. A trailing valued flag
+# with no value would otherwise consume "" and `shift 2` would fail against a single remaining
+# positional — silently mis-parsing under set -u. Reject with a clear blocker instead.
+require_value() { [ "$#" -ge 2 ] || blocker "flag $1 requires a value"; }
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --workflow)          workflow="${2:-}"; shift 2 ;;
-    --workflow-version)  workflow_version="${2:-}"; shift 2 ;;
-    --start-state)       start_state="${2:-}"; shift 2 ;;
-    --user-request)      user_request="${2:-}"; shift 2 ;;
-    --normalized)        normalized="${2:-}"; shift 2 ;;
-    --parent-kind)       parent_kind="${2:-}"; shift 2 ;;
-    --parent-run-id)     parent_run_id="${2:-}"; shift 2 ;;
-    --parent-brood-id)   parent_brood_id="${2:-}"; shift 2 ;;
-    --parent-strain-id)  parent_strain_id="${2:-}"; shift 2 ;;
-    --parent-manifest)   parent_manifest="${2:-}"; shift 2 ;;
-    --suggested-run-id)  suggested_run_id="${2:-}"; shift 2 ;;
-    --plan-steps)        plan_steps="${2:-}"; shift 2 ;;
-    --plan-path)         plan_path="${2:-}"; shift 2 ;;
+    --workflow)          require_value "$@"; workflow="$2"; shift 2 ;;
+    --workflow-version)  require_value "$@"; workflow_version="$2"; shift 2 ;;
+    --start-state)       require_value "$@"; start_state="$2"; shift 2 ;;
+    --user-request)      require_value "$@"; user_request="$2"; shift 2 ;;
+    --normalized)        require_value "$@"; normalized="$2"; shift 2 ;;
+    --parent-kind)       require_value "$@"; parent_kind="$2"; shift 2 ;;
+    --parent-run-id)     require_value "$@"; parent_run_id="$2"; shift 2 ;;
+    --parent-brood-id)   require_value "$@"; parent_brood_id="$2"; shift 2 ;;
+    --parent-strain-id)  require_value "$@"; parent_strain_id="$2"; shift 2 ;;
+    --parent-manifest)   require_value "$@"; parent_manifest="$2"; shift 2 ;;
+    --suggested-run-id)  require_value "$@"; suggested_run_id="$2"; shift 2 ;;
+    --plan-steps)        require_value "$@"; plan_steps="$2"; shift 2 ;;
+    --plan-path)         require_value "$@"; plan_path="$2"; shift 2 ;;
     *) blocker "unknown argument: $1" ;;
   esac
 done
