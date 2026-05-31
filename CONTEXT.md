@@ -271,6 +271,36 @@ _Avoid_: module, horizontal slice, layer
 The optional, ephemeral session-resumption artifact at `.hivemind/handoffs/<slug>.md`, produced by `hivemind:create-handoff` (planned skill — not yet implemented). Carries volatile session state (locked decisions, first actions, open questions, pointers) to bridge into a fresh session; points to the plan/PRD rather than duplicating them. Gitignored, disposable once loaded.
 _Avoid_: essence (which is the worker report), spawn
 
+### Workflow State Machine
+
+**Workflow Definition**:
+A declarative JSON file under `plugin/workflows/<id>.json` enumerating a workflow's legal states and named transitions. Read-only at runtime, parsed by `jq`. Names WHO acts (agent/skill/overlord decision) and WHAT outcomes are legal next — never WHY an outcome is chosen (the WHO/WHAT-not-WHY invariant, ADR-0018). Authored as JSON (not YAML) because the deterministic engine parses it; `description` fields replace comments.
+_Avoid_: workflow YAML, STT, state table, workflow spec
+
+**Run Ledger**:
+The per-instance JSON file at `.hivemind/runs/<run-id>/state.json` recording one overlord instance's workflow progress — current state, event log, facts, blockers. The source of truth for progress (conversation memory is not). Written via temp-write + atomic rename; untrusted fields serialized with `jq --arg`. Owned and mutated only by the instance whose worktree contains it.
+_Avoid_: state file, run state, progress log
+
+**Workflow Router**:
+The `hivemind:route-workflow` skill — the sole classifier that selects a workflow for a request by judgment (never a keyword lookup table). Outcomes: `selected`, `ambiguous` (2+ known → confirm gate), `exploratory` (no known match → catch-all), `blocked` (unsafe/illegible only). Keeps the overlord flat as the workflow catalog grows: a new workflow = a new definition + one routing rule.
+_Avoid_: classifier, dispatcher, intent matcher
+
+**Exploratory Intent Session**:
+The catch-all workflow (`exploratory-intent-session`) the router selects when no concrete workflow matches. Handles novel requests in a bounded, ledgered, observable way and emits an advisory recommendation on whether the pattern should be codified into a new workflow — never auto-authoring one. The data-driven nursery for future workflows; the router must prefer concrete workflows over it.
+_Avoid_: default workflow, fallback workflow, misc
+
+**Transition Engine**:
+The committed `record-state-result.sh` script (with `init-run-ledger.sh`) that deterministically reads the ledger + definition, validates `result ∈ allowed`, mutates, and atomically writes. The skill is a thin navigator; the script owns the determinism (the `spawn-brood.sh` precedent).
+_Avoid_: advance-workflow, state updater
+
+**Run Ownership**:
+The policy (RUN-OWNERSHIP-01) that a run ledger is owned and mutated only by the overlord instance whose worktree contains it; cross-instance reads (hatchery → child ledger) are read-only. Enforced by worktree isolation, not convention; the brood manifest is the sole shared artifact and only the hatchery writes it.
+_Avoid_: ledger lock, write policy
+
+**Intent-Driven Fallback**:
+The universal degradation posture: whenever the deterministic substrate is unavailable or invalidated — workflow-definition version skew across a plugin upgrade, a torn/missing ledger, an unresolvable state — the overlord finishes by judgment (transition gating suspended, run marked `intent_fallback`) rather than hard-failing. Determinism only ever adds safety/observability; it never strands a run. Worst case equals pure-intent behavior.
+_Avoid_: degraded mode, manual mode, safe mode
+
 ## Relationships
 
 - An **Overlord** (orchestrator) spawns exactly one **Cerebrate**, **Drone**, **Changeling**, **Local-Reviewer**, or **GitHub-Reviewer** per **Phase**
@@ -313,6 +343,12 @@ _Avoid_: essence (which is the worker report), spawn
 - A **PRD** (WHAT) is distinct from a **Directive** (HOW): the PRD carries stories/acceptance/metrics; the Directive carries steps/file-scope/sequence — no duplication
 - `hivemind:plan-to-prd`, `hivemind:prd-to-issues`, and `hivemind:create-handoff` (planned skills — not yet implemented) are designed as decoupled leaf transforms — none invokes another (ADR-0013); their output is path-agnostic (ADR-0012)
 - A **Vertical Slice** becomes one GitHub issue and one **Strain** candidate; the **Cerebrate** re-derives file overlap at brood-time and remains the sole independence authority (issues never self-declare scope)
+
+- A **Workflow Router** selects exactly one **Workflow Definition** for a request, or routes to the **Exploratory Intent Session** when no concrete workflow matches; the **Overlord** then executes that definition's states, advancing only via the **Transition Engine** and recording progress in the **Run Ledger**
+- A **Reflex** (trivial fast path) bypasses the **Workflow Router** and the **Run Ledger** entirely — the **Overlord** drives the short delivery tail by intent, just as it skips the **Cerebrate**
+- **Intent-Driven Fallback** is the floor beneath every **Workflow Definition**: when the deterministic substrate is invalidated, execution degrades to judgment rather than failing
+- **Run Ownership** (RUN-OWNERSHIP-01) is enforced by worktree isolation; a **Hatchery** reads child **Run Ledgers** read-only and never mutates them (consistent with ADR-0007)
+- The declarative **Workflow Definition** + **Run Ledger** are JSON (parsed by `jq`); all inter-agent/human-read contracts stay YAML — format follows consumer (ADR-0018)
 
 ## Example dialogue
 
