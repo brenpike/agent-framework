@@ -252,6 +252,9 @@ All skills are invoked using the namespaced form:
 | `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke only in a context that can modify source and test files |
 | `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
 | `hivemind:brood-status` | Check status of all active brood sessions — reports per-strain tmux session state, branch existence, and PR status |
+| `hivemind:route-workflow` | Sole workflow classifier — selects which workflow handles a non-Reflex request by judgment (never a keyword table); emits selected / ambiguous / exploratory / blocked |
+| `hivemind:init-run-ledger` | Initialize the run ledger for the current overlord instance — creates `.hivemind/runs/<run-id>/` and writes the initial `state.json` via the committed engine script |
+| `hivemind:record-state-result` | Record the outcome of the current workflow state into the run ledger and advance `state.current` to the legal next state, validated against the workflow definition |
 | `hivemind:zoom-out` | Zoom out for broader context — maps relevant modules and callers using the project's domain glossary vocabulary |
 | `hivemind:improving-architecture` | Read-only architecture analysis — emits a ranked refactoring blueprint of deepening opportunities (shallow → deep modules) for testability and AI-navigability |
 | `hivemind:refactor-to-depth` | Execution skill that performs a behavior-preserving deepening refactor via a refactor-under-green loop — the in-implementation counterpart to the read-only `improving-architecture` blueprint |
