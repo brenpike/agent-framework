@@ -150,10 +150,13 @@
     },
     "review_remediation_plan": {
       "type": "agent",
-      "description": "Cerebrate re-plans remediation when review escalates to the planner.",
+      "description": "Cerebrate re-plans remediation when review escalates to the planner. Declares every cerebrate outcome (single|multi|brood|open_questions|blocked); a re-plan that yields steps routes to implementation, brood routes to the brood_confirm gate, open_questions/blocked surface to the user.",
       "agent": "hivemind:cerebrate",
       "transitions": {
-        "complete": "implement_next_step",
+        "single": "implement_next_step",
+        "multi": "implement_next_step",
+        "brood": "brood_confirm",
+        "open_questions": "blocked",
         "blocked": "blocked"
       }
     },

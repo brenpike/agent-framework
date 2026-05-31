@@ -97,6 +97,25 @@ LOCAL_REVIEWER_SET=(clean max-iterations-reached break-fix-break diminishing-ret
 REVIEW_LOOP_SET=(clean pr-merged pr-closed max-cycles-reached planner-escalation blocked injection-suspect high-severity-rejection user-input-required)
 REVIEWER_FIX_SET=(clean injection-suspect user-input-required planner-escalation high-severity-rejection blocked)
 
+# CEREBRATE_PLANNING_SET / CEREBRATE_ANALYSIS_SET : cerebrate's two output-mode
+# vocabularies.
+#   Source of truth = plugin/agents/cerebrate.md
+#     - PLANNING mode (Plan Result Mapping):    single multi brood open_questions blocked
+#     - ANALYSIS mode (Analysis Result Mapping): complete open_questions blocked
+# Cerebrate has TWO output modes. In PLANNING mode it produces a directive and emits
+# a delivery mode (single/multi/brood); in ANALYSIS mode it performs read-only
+# analysis with no implementation, so delivery modes are meaningless and it emits
+# "complete" instead. EVERY state whose .agent == "hivemind:cerebrate" (in any
+# workflow) MUST declare transition keys that are a SUPERSET of EITHER the PLANNING
+# set OR the ANALYSIS set, because the engine hard-rejects any undeclared outcome —
+# leaving a successful plan/analysis with no legal transition. A state that
+# satisfies NEITHER set (e.g. {complete, blocked} — missing open_questions for the
+# analysis set and missing single/multi/brood for the planning set) is rejected.
+# This is applied by AUTO-DISCOVERY (see validate_cerebrate_contract), not via a
+# hardcoded state-name row, so future cerebrate states are covered automatically.
+CEREBRATE_PLANNING_SET=(single multi brood open_questions blocked)
+CEREBRATE_ANALYSIS_SET=(complete open_questions blocked)
+
 # Contract rows: "<state-name>:<set-var-name>". A reviewer state with the given
 # name in a workflow definition must declare every outcome in the named set as a
 # transition key. State names are matched only when present in the definition, so
@@ -260,6 +279,66 @@ validate_producer_contract() {
     fi
 }
 
+# ── Cerebrate-state contract validation ──────────────────────────────────────────
+#
+# AUTO-DISCOVERY: iterate every state in the definition, select the ones whose
+# .agent == "hivemind:cerebrate", and assert each declares transition keys that are
+# a SUPERSET of EITHER the PLANNING set OR the ANALYSIS set. Cerebrate has two output
+# modes (see plugin/agents/cerebrate.md: Plan Result Mapping + Analysis Result
+# Mapping), so satisfying either set is legitimate; a state is rejected ONLY when it
+# satisfies NEITHER. Unlike validate_producer_contract (keyed on fixed state names),
+# this is name-agnostic so any future cerebrate state is covered without editing this
+# script. Fails (increments FAILURES) on any state that satisfies neither set.
+validate_cerebrate_contract() {
+    local def_file="$1"
+    local label
+    label="${def_file#"$REPO_ROOT"/}"
+    local file_failures_before="$FAILURES"
+
+    # Skip non-JSON — structural validation already reports that.
+    if ! jq -e . "$def_file" >/dev/null 2>&1; then
+        return
+    fi
+
+    # Discover cerebrate state names.
+    local cerebrate_states
+    cerebrate_states="$(jq -r '
+        [.states | to_entries[]
+         | select(.value.agent == "hivemind:cerebrate")
+         | .key]
+        | .[]
+    ' "$def_file" 2>/dev/null || true)"
+
+    [[ -n "$cerebrate_states" ]] || return 0
+
+    local state_name outcome
+    while IFS= read -r state_name; do
+        [[ -n "$state_name" ]] || continue
+
+        # A state satisfies a set when it declares a transition key for EVERY outcome
+        # in that set. Track whether each set is fully satisfied.
+        local planning_ok=true analysis_ok=true present
+        for outcome in "${CEREBRATE_PLANNING_SET[@]}"; do
+            present="$(jq -r --arg st "$state_name" --arg o "$outcome" \
+                '(.states[$st].transitions // {}) | has($o)' "$def_file" 2>/dev/null || echo "false")"
+            [[ "$present" == "true" ]] || planning_ok=false
+        done
+        for outcome in "${CEREBRATE_ANALYSIS_SET[@]}"; do
+            present="$(jq -r --arg st "$state_name" --arg o "$outcome" \
+                '(.states[$st].transitions // {}) | has($o)' "$def_file" 2>/dev/null || echo "false")"
+            [[ "$present" == "true" ]] || analysis_ok=false
+        done
+
+        if [[ "$planning_ok" != "true" && "$analysis_ok" != "true" ]]; then
+            fail "$label" "cerebrate-contract violation: state '$state_name' (agent hivemind:cerebrate) declares transition keys that are a superset of NEITHER the PLANNING set {${CEREBRATE_PLANNING_SET[*]}} NOR the ANALYSIS set {${CEREBRATE_ANALYSIS_SET[*]}}"
+        fi
+    done <<< "$cerebrate_states"
+
+    if [[ "$FAILURES" -eq "$file_failures_before" ]]; then
+        echo "PASS [$label] cerebrate-state contract satisfied"
+    fi
+}
+
 # ── Run-ledger fixture shape validation ─────────────────────────────────────────
 
 validate_ledger_fixture() {
@@ -328,11 +407,11 @@ run_self_test() {
             # (e.g. missing-producer-outcome.json) are structurally valid and are
             # caught only by validate_producer_contract.
             local rc=0
-            ( FAILURES=0; validate_workflow_definition "$bf"; validate_producer_contract "$bf"; [[ "$FAILURES" -gt 0 ]] ) >/dev/null 2>&1 || rc=$?
+            ( FAILURES=0; validate_workflow_definition "$bf"; validate_producer_contract "$bf"; validate_cerebrate_contract "$bf"; [[ "$FAILURES" -gt 0 ]] ) >/dev/null 2>&1 || rc=$?
             if [[ "$rc" -eq 0 ]]; then
                 # Re-run visibly to show WHY it was rejected.
                 local detail
-                detail="$( FAILURES=0; validate_workflow_definition "$bf"; validate_producer_contract "$bf" 2>&1 | grep '^FAIL' || true )"
+                detail="$( FAILURES=0; validate_workflow_definition "$bf"; validate_producer_contract "$bf"; validate_cerebrate_contract "$bf" 2>&1 | grep '^FAIL' || true )"
                 echo "PASS [self-test] correctly rejected: $bf_label"
                 while IFS= read -r d; do [[ -n "$d" ]] && echo "    $d"; done <<< "$detail"
             else
@@ -350,12 +429,12 @@ run_self_test() {
             local vf_label
             vf_label="${vf#"$REPO_ROOT"/}"
             local rc=0
-            ( FAILURES=0; validate_workflow_definition "$vf"; [[ "$FAILURES" -eq 0 ]] ) >/dev/null 2>&1 || rc=$?
+            ( FAILURES=0; validate_workflow_definition "$vf"; validate_producer_contract "$vf"; validate_cerebrate_contract "$vf"; [[ "$FAILURES" -eq 0 ]] ) >/dev/null 2>&1 || rc=$?
             if [[ "$rc" -eq 0 ]]; then
                 echo "PASS [self-test] valid fixture accepted: $vf_label"
             else
                 echo "FAIL [self-test] valid fixture was rejected: $vf_label"
-                ( FAILURES=0; validate_workflow_definition "$vf" 2>&1 | grep '^FAIL' || true ) \
+                ( FAILURES=0; validate_workflow_definition "$vf"; validate_producer_contract "$vf"; validate_cerebrate_contract "$vf" 2>&1 | grep '^FAIL' || true ) \
                     | while IFS= read -r d; do [[ -n "$d" ]] && echo "    $d"; done
                 self_failures=$((self_failures + 1))
             fi
@@ -400,6 +479,12 @@ else
         echo '=== Producer-to-workflow contract: reviewer-state transitions ==='
         for f in "${def_files[@]}"; do
             validate_producer_contract "$f"
+        done
+
+        echo ''
+        echo '=== Cerebrate-state contract: planner outcome transitions ==='
+        for f in "${def_files[@]}"; do
+            validate_cerebrate_contract "$f"
         done
     fi
 fi

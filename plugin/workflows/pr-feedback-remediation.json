@@ -45,10 +45,13 @@
     },
     "review_remediation_plan": {
       "type": "agent",
-      "description": "Cerebrate re-plans remediation when review escalates to the planner.",
+      "description": "Cerebrate re-plans remediation when review escalates to the planner. Declares every cerebrate outcome (single|multi|brood|open_questions|blocked); a re-plan that yields steps routes to implementation. There is no brood_confirm state in this workflow, so brood/open_questions/blocked surface to the user — a PR-feedback remediation cannot fan out to a brood.",
       "agent": "hivemind:cerebrate",
       "transitions": {
-        "complete": "implement_next_step",
+        "single": "implement_next_step",
+        "multi": "implement_next_step",
+        "brood": "blocked",
+        "open_questions": "blocked",
         "blocked": "blocked"
       }
     },

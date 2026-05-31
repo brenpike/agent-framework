@@ -6,9 +6,11 @@
   "states": {
     "brood_plan": {
       "type": "agent",
-      "description": "Cerebrate produces a brood-plan decomposing work into independent strains. Parent-side dispatch only; children run the shared engine themselves.",
+      "description": "Cerebrate produces a brood-plan decomposing work into independent strains. Parent-side dispatch only; children run the shared engine themselves. Declares every cerebrate outcome (single|multi|brood|open_questions|blocked); only brood proceeds to the brood_confirm gate — if cerebrate decides the work is single/multi or has open questions, hatchery dispatch cannot proceed and surfaces to the user as blocked.",
       "agent": "hivemind:cerebrate",
       "transitions": {
+        "single": "blocked",
+        "multi": "blocked",
         "brood": "brood_confirm",
         "open_questions": "blocked",
         "blocked": "blocked"

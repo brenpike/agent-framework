@@ -205,12 +205,30 @@ The `plan:` block mirrors the prose blocks above (it does not replace them). Kee
 
 ### Plan Result Mapping
 
-The overlord maps this plan to a workflow transition result:
+Cerebrate's emitted vocabulary depends on whether it was asked to PLAN (produce a
+directive) or to ANALYZE (read-only). The two modes emit disjoint result sets.
+
+PLANNING mode — cerebrate produces a directive (states like `plan`,
+`review_remediation_plan`, `brood_plan`). The overlord maps the plan to a workflow
+transition result:
 
 ```text
 delivery.mode = single   -> single
 delivery.mode = multi    -> multi
 delivery.mode = brood    -> brood
+open questions present   -> open_questions
+blocker                  -> blocked
+```
+
+### Analysis Result Mapping
+
+ANALYSIS mode — cerebrate performs read-only analysis, review, interrogation, or
+recommendation with no implementation (states like `analyze` in analysis-only).
+Delivery modes (single/multi/brood) are meaningless here because nothing is
+implemented, so cerebrate never emits them. The overlord maps the analysis to:
+
+```text
+analysis delivered       -> complete
 open questions present   -> open_questions
 blocker                  -> blocked
 ```

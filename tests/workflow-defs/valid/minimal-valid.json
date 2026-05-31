@@ -7,7 +7,7 @@
     "plan": {
       "type": "agent",
       "description": "A known-good fixture exercising every v1 state type and a loop-back transition.",
-      "agent": "hivemind:cerebrate",
+      "agent": "hivemind:drone",
       "transitions": {
         "ready": "decide",
         "blocked": "blocked"
