@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.18.3] - 2026-05-30
+
+### Removed
+
+- **`spawn-brood` concurrency machinery removed.** The per-brood-id namespaced state introduced in v2.18.0 (`.hivemind/brood/<brood_slug>/{inputs.json,manifest.yaml}`), `brood_slug` derivation and UTC canonicalization (`date -u … +%Y%m%dT%H%M%SZ`), the `.reservation` mkdir reservation gate, the `brood-<short>-<brood_slug>` session-name slug suffix, the inputs-path/slug consistency check, and `brood-status` multi-brood glob discovery (`<main_checkout>/.hivemind/brood/*/manifest.yaml`) are all removed. v2.18.0–2.18.2 existed only inside this unmerged PR and were never shipped to consumers, so removing this capability breaks no released contract. **Migration:** brood state is now the singleton `.hivemind/brood/{inputs.json,manifest.yaml}`; in-flight broods under the old per-slug layout (`<brood_slug>/` subdirectory) should be finished or re-dispatched.
+
+### Changed
+
+- **`spawn-brood` state layout reverts to singleton `.hivemind/brood/{inputs.json,manifest.yaml}`.** The per-brood-id subdirectory layout is replaced by the pre-v2.18.0 singleton paths; a single checkout supports only one active brood at a time.
+- **`spawn-brood` tmux session naming reverts to `brood-<short>`.** The `<brood_slug>` suffix introduced in v2.18.0 is removed; sessions are named `brood-<short>` as in v2.17.x.
+- **`brood-status` reads the single manifest at `.hivemind/brood/manifest.yaml`.** Multi-brood glob discovery is replaced by a direct read of the singleton manifest path; output is a single status table with no per-brood labeling.
+- **Single-brood overlap protection is now a singleton-manifest liveness guard.** A new spawn is refused only when `.hivemind/brood/manifest.yaml` exists AND its recorded `tmux_session` is live (`tmux has-session`); stale state (no live session) may be overwritten. This replaces both the v2.18.x per-`brood_id` reservation gate and the v2.17.13 `mkdir .spawn-lock` atomic lock.
+
 ## [2.18.2] - 2026-05-30
 
 ### Security

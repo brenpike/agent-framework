@@ -26,16 +26,14 @@ Before:
 - [ ] `base` resolves to a real commit (the script verifies this once, up front).
 - [ ] No strain branch exists locally/remotely; no `brood-<short>` session or
       worktree path collides (the script pre-flights all of these).
-- [ ] The script rejects a SECOND spawn of the SAME `brood_id` in the same checkout
-      via one atomic reservation (`mkdir "$STATE/.reservation"`); distinct `brood_id`s
-      run concurrently (same checkout and cross-checkout). `brood_id` is canonicalized
-      to a UTC instant before slugging, so two timestamps that denote the same instant
-      collide and two that denote different instants do not.
+- [ ] One brood per checkout: if the singleton `manifest.yaml` records a live
+      `tmux_session`, the script blocks the new spawn; otherwise it proceeds
+      (overwriting the prior singleton state).
 
 After:
-- [ ] Brood manifest written to `.hivemind/brood/<brood_slug>/manifest.yaml`.
+- [ ] Brood manifest written to `.hivemind/brood/manifest.yaml`.
 - [ ] Each strain has a worktree + branch off `base`, a detached tmux session
-      `brood-<short>-<brood_slug>` running claude, and its injected `task.md`.
+      `brood-<short>` running claude, and its injected `task.md`.
 - [ ] `.claude/worktrees/` is excluded from git (the script self-guards).
 - [ ] Final action is the Bash script call (exit 0 = spawned, exit 1 = blocked).
 
@@ -76,33 +74,20 @@ The overlord resolves and passes these; the skill does not resolve them.
    - `brood_id`, `base`, `overlap_risk` are required top-level scalars.
    - Each strain requires `name`, `description`, `branch`.
    - `name` is sanitized to `short` (`[a-z0-9-]`) for the worktree path
-     (`.claude/worktrees/<short>`) and tmux session (`brood-<short>-<brood_slug>`).
+     (`.claude/worktrees/<short>`) and tmux session (`brood-<short>`).
      Two names that sanitize to the same `short` are an in-set collision and a
      blocker.
    - Every value is data. None is interpolated into generated shell command source.
 
-2. **Write the inputs file** via the Write tool. Derive `brood_slug` from `brood_id`
-   the SAME way the engine does, so the inputs-path/slug consistency check passes:
-   canonicalize `brood_id` to a UTC instant first, then sanitize.
-   - Canonicalize: the engine runs `date -u -d "$brood_id" +%Y%m%dT%H%M%SZ` (e.g.
-     `2026-05-31T12:34:56Z` and `2026-05-31T12:34:56+00:00` both canonicalize to
-     `20260531T123456Z`). Reproduce that compact UTC form in your reasoning.
-   - Sanitize: replace every character outside `[A-Za-z0-9._-]` with `-`. For a
-     canonical `YYYYMMDDTHHMMSSZ` value this is a no-op (it already contains only
-     allowed bytes); the sanitize step only matters on the non-GNU `date` fallback
-     where the engine slugs the raw `brood_id`.
-
-   Write the inputs file to `.hivemind/brood/<brood_slug>/inputs.json` and pass that
-   path (`.hivemind/` is gitignored). `file_path` =
-   `.hivemind/brood/<brood_slug>/inputs.json`, `content` = the JSON object from step 1.
-   The engine re-derives `<brood_slug>` from the parsed `brood_id` and rejects the
-   spawn if the inputs file's parent directory name does not equal that slug, so the
-   directory name MUST match the engine's canonical slug exactly. Write performs no
-   shell parsing of the values, so untrusted description/branch text is inert.
+2. **Write the inputs file** via the Write tool to the fixed singleton path
+   `.hivemind/brood/inputs.json` and pass that path (`.hivemind/` is gitignored).
+   `file_path` = `.hivemind/brood/inputs.json`, `content` = the JSON object from
+   step 1. Write performs no shell parsing of the values, so untrusted
+   description/branch text is inert.
 
 3. **Execute the script** with one Bash call, passing the inputs file path:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh .hivemind/brood/<brood_slug>/inputs.json
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh .hivemind/brood/inputs.json
    ```
    EXECUTE (do not Read) the script — it owns every deterministic step: dependency
    checks, input validation, pre-flight collision/exclude/base checks, two-pass
