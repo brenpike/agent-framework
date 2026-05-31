@@ -30,11 +30,13 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 FIX_DIR="$REPO_ROOT/tests/brood"
 MANIFEST_V1="$FIX_DIR/manifest-v1-old.yaml"
 MANIFEST_V2="$FIX_DIR/manifest-v2-new.yaml"
+SPAWN_SCRIPT="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
+INIT_SCRIPT="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
 
 command -v jq >/dev/null 2>&1 \
     || { echo "FAIL: required dependency 'jq' is not installed" >&2; exit 2; }
 
-for required in "$MANIFEST_V1" "$MANIFEST_V2"; do
+for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required fixture missing: $required" >&2; exit 2; }
 done
@@ -126,9 +128,40 @@ assert_v2_new() {
     fi
 }
 
+# ── Assertion 3: generated child instructions cover every brood flag init requires ──
+# Producer/consumer parity for the task-to-init invocation path: the child task file
+# emitted by spawn-brood.sh instructs the child how to call init-run-ledger. The
+# initializer REJECTS a brood child unless all four --parent-* flags are non-empty
+# (init-run-ledger.sh: --parent-brood-id, --parent-strain-id, --parent-run-id,
+# --parent-manifest). If the generated instructions omit any mapping, a child that
+# follows the injected contract blocks before creating its ledger. This asserts every
+# brood flag the initializer enforces is named in the spawn-brood child instructions.
+assert_brood_instruction_flag_parity() {
+    local name="PARITY:child-instructions-cover-init-brood-flags"
+    # The brood flags init-run-ledger.sh enforces for --parent-kind=brood.
+    local flags=( --parent-brood-id --parent-strain-id --parent-run-id --parent-manifest )
+    local missing_init="" missing_instr=""
+    for flag in "${flags[@]}"; do
+        # Confirm the initializer actually enforces the flag (guards against the list
+        # going stale if the init contract changes).
+        grep -q -- "$flag" "$INIT_SCRIPT" || missing_init+=" $flag"
+        # Confirm the generated child instructions name the flag. Restrict to the
+        # `printf '  - ...` instruction emission lines so a stray mention elsewhere
+        # cannot satisfy the check.
+        grep -E "printf '[[:space:]]*-.*$flag" "$SPAWN_SCRIPT" >/dev/null \
+            || missing_instr+=" $flag"
+    done
+    if [[ -z "$missing_init" && -z "$missing_instr" ]]; then
+        pass "$name" "all four brood flags enforced by init and mapped in child instructions"
+    else
+        failed "$name" "init missing:[${missing_init# }] instructions missing:[${missing_instr# }]"
+    fi
+}
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
+assert_brood_instruction_flag_parity
 
 echo ''
 echo '=== Summary ==='
