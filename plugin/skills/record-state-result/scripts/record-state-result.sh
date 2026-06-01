@@ -47,6 +47,21 @@
 # plan_steps reaches jq solely as an --argjson binding; plan_path solely as an --arg
 # binding. The ONLY value passed on the command line is the trusted inputs-file path.
 #
+# PATH POSTURE — the engine NEVER accepts a path as input. It DERIVES every path from
+# identity, dissolving two trust-boundary P0s (a caller-supplied ledger path enabled an
+# arbitrary-file overwrite; a caller-supplied workflow-definition path enabled a forged
+# definition that bypassed the transition gate AND the plan-write authorization). The ONLY
+# path on the command line is $1, the inputs-file authored by the trusted skill via Write.
+#   - The ledger is DERIVED: repo_root="$(git rev-parse --show-toplevel)" then
+#     "$repo_root/.hivemind/runs/<run_id>/state.json". <run_id> comes from the inputs file,
+#     SAFE_ID_RE-validated and ./.. -rejected.
+#   - A COHERENCE CHECK requires the on-disk ledger.run.id to equal the passed run_id.
+#   - The workflow DEFINITION is DERIVED from the (trusted) ledger's run.workflow against the
+#     script's OWN packaged workflows dir (self-located via BASH_SOURCE + pwd -P, independent
+#     of ${CLAUDE_PLUGIN_ROOT} and of any caller value). The caller NEVER supplies this path,
+#     so a forged definition can no longer be injected; the binding guard now compares the
+#     trusted ledger against the self-derived PACKAGED definition.
+#
 # INPUT (single positional argument):
 #   $1  Absolute or repo-relative path to a JSON inputs file authored by the agent via the
 #       Write tool. The agent writes structured data; this script parses it with jq into
@@ -58,8 +73,8 @@
 #
 #   Inputs JSON shape (authoritative schema in SKILL.md § Inputs JSON):
 #     {
-#       "ledger":     "<required> path to the run ledger state.json",
-#       "workflow":   "<required> path to the workflow definition JSON",
+#       "run_id":     "<required> identity of the run; the ledger path is DERIVED from it as
+#                      <git-root>/.hivemind/runs/<run_id>/state.json. NO path is accepted.",
 #       "state":      "<required> state the run is currently in (must match ledger)",
 #       "result":     "<required> named outcome to record (must be a legal transition)",
 #       "summary":    "<required> human-readable summary — UNTRUSTED, serialized only",
@@ -102,6 +117,19 @@ set -u
 
 blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 
+# SAFE_ID charset for identity components (mirrors init-run-ledger.sh). The reserved
+# components "." and ".." pass this class but must be rejected explicitly (path traversal).
+SAFE_ID_RE='^[A-Za-z0-9._-]+$'
+
+# ── Script self-location (portable; independent of ${CLAUDE_PLUGIN_ROOT} and the caller) ──
+# Resolve the packaged workflows dir from THIS script's own location, never from a caller
+# value. `cd ... && pwd -P` is portable (no GNU-only readlink -f); BASH_SOURCE is set under
+# `#!/usr/bin/env bash`. Layout: plugin/skills/record-state-result/scripts/ => 3 dirs up is
+# the plugin root (verified against the real tree).
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
+workflows_dir="$plugin_root/workflows"
+
 # ── Dependency check ──────────────────────────────────────────────────────────
 command -v jq >/dev/null 2>&1 \
   || blocker "jq is required to read and write the run ledger but is not installed"
@@ -124,8 +152,7 @@ jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
 # the inputs object: a MISSING key OR a present-but-null value is ABSENT; a present non-null
 # value is SUPPLIED. This preserves EXACTLY the prior flag semantics — absent outputs defaults
 # to {}, absent plan_steps/plan_path leaves .plan.* UNTOUCHED (never clobbered to []).
-ledger="$(jq -r '.ledger // ""' "$INPUTS_FILE")"
-workflow="$(jq -r '.workflow // ""' "$INPUTS_FILE")"
+run_id="$(jq -r '.run_id // ""' "$INPUTS_FILE")"
 state="$(jq -r '.state // ""' "$INPUTS_FILE")"
 result="$(jq -r '.result // ""' "$INPUTS_FILE")"
 summary="$(jq -r '.summary // ""' "$INPUTS_FILE")"
@@ -161,16 +188,47 @@ else
 fi
 
 # ── Required-input validation ─────────────────────────────────────────────────
-[ -n "$ledger" ]   || blocker "inputs file is missing required ledger"
-[ -n "$workflow" ] || blocker "inputs file is missing required workflow"
-[ -n "$state" ]    || blocker "inputs file is missing required state"
-[ -n "$result" ]   || blocker "inputs file is missing required result"
-[ -n "$summary" ]  || blocker "inputs file is missing required summary"
+[ -n "$run_id" ]  || blocker "inputs file is missing required run_id"
+[ -n "$state" ]   || blocker "inputs file is missing required state"
+[ -n "$result" ]  || blocker "inputs file is missing required result"
+[ -n "$summary" ] || blocker "inputs file is missing required summary"
 
-[ -f "$ledger" ]   || blocker "ledger file does not exist: $ledger"
-[ -f "$workflow" ] || blocker "workflow definition file does not exist: $workflow"
+# run_id must be a single safe path component (SAFE_ID_RE + reserved-component reject). This
+# is the ONLY identity the caller supplies; every path below is derived from it.
+printf '%s' "$run_id" | grep -Eq "$SAFE_ID_RE" \
+  || blocker "run_id is not a safe path component: $run_id"
+case "$run_id" in
+  .|..) blocker "run_id is a reserved path component: $run_id" ;;
+esac
 
-jq -e . "$ledger"   >/dev/null 2>&1 || blocker "ledger file is not valid JSON: $ledger"
+# ── DERIVE the ledger path from git-root + run_id (NO caller path) ─────────────
+# repo_root anchors the ledger to the checkout root, mirroring init-run-ledger.sh. Empty =
+# not inside a git checkout = blocker. The caller never supplies a ledger path, so an
+# arbitrary-file overwrite via a caller path is structurally impossible.
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$repo_root" ] || blocker "not inside a git repository"
+ledger="$repo_root/.hivemind/runs/$run_id/state.json"
+[ -f "$ledger" ] || blocker "ledger file does not exist: $ledger"
+jq -e . "$ledger" >/dev/null 2>&1 || blocker "ledger file is not valid JSON: $ledger"
+
+# ── COHERENCE CHECK: the on-disk ledger must self-identify with the passed run_id ──
+ledger_run_id="$(jq -r '.run.id // ""' "$ledger")"
+[ "$ledger_run_id" = "$run_id" ] \
+  || blocker "ledger run.id '$ledger_run_id' does not match run_id '$run_id'; ledger unchanged"
+
+# ── DERIVE the workflow definition from the (trusted) ledger's run.workflow ────
+# The definition is resolved against the self-located PACKAGED workflows dir, never a caller
+# path — so a forged definition cannot bypass the transition gate or the plan-write auth.
+# Defense in depth: SAFE_ID_RE + ./.. reject on run.workflow even though the ledger is trusted.
+run_workflow="$(jq -r '.run.workflow // ""' "$ledger")"
+[ -n "$run_workflow" ] || blocker "ledger run.workflow is empty; cannot derive workflow definition"
+printf '%s' "$run_workflow" | grep -Eq "$SAFE_ID_RE" \
+  || blocker "ledger run.workflow is not a safe path component: $run_workflow"
+case "$run_workflow" in
+  .|..) blocker "ledger run.workflow is a reserved path component: $run_workflow" ;;
+esac
+workflow="$workflows_dir/$run_workflow.json"
+[ -f "$workflow" ] || blocker "packaged workflow definition does not exist: $workflow"
 jq -e . "$workflow" >/dev/null 2>&1 || blocker "workflow definition is not valid JSON: $workflow"
 
 # If --outputs was supplied, it must be a valid JSON object (--argjson rejects

@@ -17,6 +17,14 @@
 # spawn-brood.sh committed-script precedent (shebang, set -u, blocker() helper, jq
 # parsing into inert variables, structured stdout routing, exit codes).
 #
+# PACKAGED-DEFINITION VALIDATION: before creating the run dir, init self-locates its OWN
+# packaged workflows dir (BASH_SOURCE + pwd -P, independent of ${CLAUDE_PLUGIN_ROOT} and of
+# any caller value; layout: plugin/skills/init-run-ledger/scripts/ => 3 dirs up is the plugin
+# root) and validates the supplied workflow id against the packaged definition: the
+# definition file must EXIST, its .version must equal workflow_version, and its .start must
+# equal start_state. The definition is read ONLY to validate these three facts — it does not
+# drive transitions. The caller never supplies a definition path.
+#
 # INJECTION POSTURE: every ledger field is serialized with `jq -n` using --arg
 # (strings) / --argjson (pre-validated JSON), NEVER string-interpolated into the jq
 # program or any shell command source. The untrusted fields request.raw,
@@ -93,6 +101,15 @@ blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 
 # SAFE_ID charset for run-id components and suggested run ids.
 SAFE_ID_RE='^[A-Za-z0-9._-]+$'
+
+# ── Script self-location (portable; independent of ${CLAUDE_PLUGIN_ROOT} and the caller) ──
+# Resolve the packaged workflows dir from THIS script's own location, never from a caller
+# value. `cd ... && pwd -P` is portable (no GNU-only readlink -f); BASH_SOURCE is set under
+# `#!/usr/bin/env bash`. Layout: plugin/skills/init-run-ledger/scripts/ => 3 dirs up is the
+# plugin root (verified against the real tree).
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
+workflows_dir="$plugin_root/workflows"
 
 # ── Dependency check ──────────────────────────────────────────────────────────
 command -v jq >/dev/null 2>&1 \
@@ -209,6 +226,27 @@ run_dir="$repo_root/.hivemind/runs/$run_id"
 ledger_path="$run_dir/state.json"
 
 [ -e "$ledger_path" ] && blocker "a ledger already exists at $ledger_path; refusing to overwrite"
+
+# ── Packaged-definition validation (#162) ─────────────────────────────────────
+# Validate the supplied workflow id against the script's OWN packaged definition BEFORE
+# creating any directory (fail early, leave no orphan run dir). The workflow id must be a
+# safe single path component (the suggested-run-id / brood branches may not have guarded it)
+# before it becomes a path; reject ./.. explicitly. The definition is read ONLY to confirm
+# it exists and that its version/start match the supplied values — it does not drive
+# transitions, and the caller never supplies its path.
+printf '%s' "$workflow" | grep -Eq "$SAFE_ID_RE" \
+  || blocker "workflow is not a safe path component: $workflow"
+case "$workflow" in
+  .|..) blocker "workflow is a reserved path component: $workflow" ;;
+esac
+def="$workflows_dir/$workflow.json"
+[ -f "$def" ] || blocker "packaged workflow definition does not exist: $def"
+def_version="$(jq -r '.version // ""' "$def")"
+[ "$def_version" = "$workflow_version" ] \
+  || blocker "packaged workflow definition version '$def_version' does not match workflow_version '$workflow_version'"
+def_start="$(jq -r '.start // ""' "$def")"
+[ "$def_start" = "$start_state" ] \
+  || blocker "packaged workflow definition start '$def_start' does not match start_state '$start_state'"
 
 mkdir -p "$run_dir/evidence" \
   || blocker "failed to create run directory $run_dir/evidence"
