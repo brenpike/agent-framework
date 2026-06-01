@@ -67,7 +67,19 @@ skip() { echo "SKIP [$1] $2"; SKIP_COUNT=$((SKIP_COUNT + 1)); }
 # on exit). The parse/parity assertions above touch only read-only fixtures, so this is only
 # armed for the symlink-escape case.
 WORKDIR=""
-cleanup() { [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"; return 0; }
+# reap_brood_sessions: kill the deterministic tmux session(s) the spawn-invoking escape cases
+# create. Every escape/positive case uses strain name `api` → session `brood-api`. A case that
+# proceeds PAST the guards to `tmux new-session` (e.g. the regular-file positive case, or any
+# case run with claude/tmux present) LEAVES a detached `brood-api` session behind: the suite's
+# EXIT trap previously reaped only WORKDIR, never tmux state. A leaked `brood-api` then makes a
+# LATER case abort at spawn-brood pre-flight step 1d ("tmux session brood-api already exists")
+# BEFORE it can reach the leaf guard — so the leaf-guard assertion would never run (and, with
+# the weaker pre-fix assertion, falsely PASS). Reaping the deterministic session name before
+# each spawn-invoking case and on EXIT keeps cases isolated and avoids polluting the caller's
+# tmux server. Scoped to the exact `brood-api` name these fixtures use — never a wildcard — so
+# an unrelated user session is never touched.
+reap_brood_sessions() { tmux kill-session -t brood-api 2>/dev/null || true; return 0; }
+cleanup() { reap_brood_sessions; [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"; return 0; }
 trap cleanup EXIT
 
 # extract_tmux_session: pull the first strain's tmux_session value the SAME way the
@@ -214,6 +226,7 @@ assert_spawn_brood_symlink_escape_blocked() {
         > "$inputs"
 
     local rc=0
+    reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
     ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
 
     # The guard must reject (non-zero) AND nothing may have been written under the external
@@ -288,6 +301,7 @@ assert_spawn_brood_inputs_external_rejected() {
         > "$inputs"
 
     local rc=0
+    reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
     ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
 
     # The read-guard must reject (non-zero) AND spawn-brood must have written NOTHING under the
@@ -411,6 +425,7 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked() {
         > "$inputs"
 
     local rc=0
+    reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
     ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
 
     # The child-worktree guard must reject (non-zero — the single strain fails) AND nothing may
@@ -440,9 +455,17 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked() {
 # to an external target before a --dangerously-skip-permissions child launches).
 #
 # This case builds an `evil` base ref whose tree tracks a REAL .hivemind/brood/ dir and a
-# SYMLINKED .hivemind/brood/task.md leaf pointing outside the checkout. spawn-brood is run
-# with base=evil; the leaf guard must reject (non-zero / strain marked failed), write NOTHING
-# under the external target, and remove the offending worktree.
+# SYMLINKED .hivemind/brood/task.md leaf pointing at a FILE path outside the checkout
+# ($external/task.md). The leaf MUST target a file path, not the external dir itself: the
+# provisioning write is `printf > "$task_file"` (a redirect). A symlink-to-DIR would make the
+# unguarded redirect fail with "Is a directory" and write nothing — the strain would then be
+# torn down by the generic provisioning-failure path, so the assertion (non-zero exit + no
+# external file + worktree removed) would PASS on the VULNERABLE implementation and the test
+# could not distinguish guarded from unguarded. Targeting a file path makes the unguarded
+# redirect FOLLOW the dangling symlink and CREATE $external/task.md — a real escape the
+# assertion detects. spawn-brood is run with base=evil; the leaf guard must reject (non-zero /
+# strain marked failed) with its specific rejection message, write NOTHING under the external
+# target, and remove the offending worktree.
 #
 # DEPENDENCY GATING: identical to CHILD-ESCAPE — spawn-brood's tmux/claude/jq dep checks
 # precede the child-worktree provisioning path and exit at the first missing binary.
@@ -475,20 +498,24 @@ assert_spawn_brood_child_leaf_task_escape_blocked() {
     git init -q --bare "$origin"
     git -C "$gitroot" remote add origin "$origin"
 
-    # External dir — the symlink leaf's escape target.
+    # External dir — the symlink leaf's escape target. The leaf points at $external/task.md
+    # (a FILE path inside this dir), NOT at $external itself, so the unguarded `printf >`
+    # redirect would CREATE the file there rather than fail on a directory target.
     local external="$WORKDIR/brood-external"
     mkdir -p "$external"
 
-    # Build the `evil` base ref: REAL .hivemind/brood/ dir, SYMLINKED task.md leaf.
-    # The dir-guard (hivemind_assert_contained over .hivemind/brood) will PASS because the
-    # directory ancestor chain is real — only the leaf guard fires.
+    # Build the `evil` base ref: REAL .hivemind/brood/ dir, SYMLINKED task.md leaf pointing at
+    # the external FILE path $external/task.md (the target file does not yet exist — the
+    # unguarded redirect would create it, which is the escape). The dir-guard
+    # (hivemind_assert_contained over .hivemind/brood) PASSES because the directory ancestor
+    # chain is real — only the leaf guard fires.
     git -C "$gitroot" checkout -q -b evil
     rm -rf "$gitroot/.hivemind"
     mkdir -p "$gitroot/.hivemind/brood"
-    ln -s "$external" "$gitroot/.hivemind/brood/task.md"
+    ln -s "$external/task.md" "$gitroot/.hivemind/brood/task.md"
     # .hivemind is gitignored; force-add both the dir contents and the symlink leaf.
     git -C "$gitroot" add -f "$gitroot/.hivemind/brood/task.md"
-    git -C "$gitroot" commit -q -m "evil: real .hivemind/brood dir, symlinked task.md leaf"
+    git -C "$gitroot" commit -q -m "evil: real .hivemind/brood dir, task.md leaf symlinked to external file path"
     # Confirm the leaf is committed as a symlink (mode 120000) — the exact escape vector.
     if ! git -C "$gitroot" ls-files -s -- .hivemind/brood/task.md | grep -q '^120000 '; then
         failed "$name" "fixture error: .hivemind/brood/task.md was not committed as a symlink on evil ref"
@@ -520,24 +547,36 @@ assert_spawn_brood_child_leaf_task_escape_blocked() {
         }' \
         > "$inputs"
 
+    # Capture stderr separately to assert the SPECIFIC leaf-guard rejection fired — not some
+    # coincidental downstream failure. On the VULNERABLE impl the redirect follows the symlink
+    # and creates $external/task.md (escaped=yes), so this case fails there; on the FIXED impl
+    # the [ -L ] leaf test rejects before any write, emitting the guard's warning to stderr.
     local rc=0
-    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    local stderr_out="$WORKDIR/spawn-stderr.txt"
+    reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
+    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
 
     # Leaf guard must reject (non-zero) AND nothing written under external escape target.
-    # A successful escape would write external/task.md (followed from the symlink leaf).
+    # A successful escape would CREATE external/task.md (followed from the symlink leaf).
     local escaped=no
     if find "$external" -mindepth 1 -print 2>/dev/null | grep -q .; then
         escaped=yes
+    fi
+    # The leaf guard emits a specific rejection message before tearing down the worktree.
+    # Its presence proves the LEAF GUARD (not a coincidental provisioning failure) blocked.
+    local leaf_guard_rejected=no
+    if grep -qE 'symlinked .*task\.md leaf' "$stderr_out" 2>/dev/null; then
+        leaf_guard_rejected=yes
     fi
     # The offending worktree must be removed (not left dangling).
     local worktree_leaked=no
     if [ -e "$gitroot/.claude/worktrees/api" ]; then
         worktree_leaked=yes
     fi
-    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" ]]; then
-        pass "$name" "task.md symlinked leaf rejected (exit $rc); worktree removed; nothing written under external target"
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$leaf_guard_rejected" == "yes" ]]; then
+        pass "$name" "task.md symlinked leaf rejected by leaf guard (exit $rc); worktree removed; nothing written under external target"
     else
-        failed "$name" "expected non-zero exit + no external write + worktree removed; rc=$rc escaped=$escaped worktree_leaked=$worktree_leaked"
+        failed "$name" "expected non-zero exit + leaf-guard rejection + no external write + worktree removed; rc=$rc escaped=$escaped leaf_guard_rejected=$leaf_guard_rejected worktree_leaked=$worktree_leaked stderr: $(cat "$stderr_out" 2>/dev/null)"
     fi
 }
 
@@ -624,6 +663,7 @@ assert_spawn_brood_child_leaf_settings_escape_blocked() {
         > "$inputs"
 
     local rc=0
+    reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
     ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
 
     # Leaf guard must reject (non-zero) AND nothing written under external escape target.
@@ -727,6 +767,7 @@ assert_spawn_brood_child_leaf_regular_ok() {
     local rc=0
     local stderr_out
     stderr_out="$WORKDIR/spawn-stderr.txt"
+    reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
     ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
 
     # ANTI-FALSE-REJECT: the leaf guard emits a specific rejection message. Its ABSENCE
