@@ -30,6 +30,32 @@
 #     On reject:  prints a human-readable reason to stderr and returns non-zero. The caller
 #                 maps the non-zero return to its OWN blocker() (this helper never exits).
 #
+#   hivemind_assert_file_contained <raw_repo_root> <relative_file_chain>
+#     <raw_repo_root>       the git checkout root (e.g. `git rev-parse --show-toplevel`).
+#     <relative_file_chain> a checkout-relative path whose LEAF is a write-target FILE,
+#                           e.g. ".hivemind/brood/task.md" or ".claude/settings.local.json".
+#     On success: echoes the CANONICAL checkout root (cd && pwd -P) to stdout and returns 0.
+#     On reject:  prints a reason to stderr and returns non-zero (never exits).
+#     LEAF BEHAVIOR CONTRACT: a NON-EXISTENT leaf passes (caller CREATES it fresh); a
+#       REGULAR-FILE leaf passes (caller OVERWRITES in place); only a SYMLINK leaf is
+#       REJECTED. The [ -L ] leaf test fires regardless of whether the symlink target
+#       exists (covers dangling symlinks). A symlinked ANCESTOR is caught by the reused
+#       parent-dir guard below — no gap.
+#     PRECONDITION: the leaf must be a file target. A chain whose leaf is "." or ".." is
+#       OUT OF CONTRACT (no special handling); callers must not pass such chains.
+#
+# WHY A SEPARATE FILE-TARGET VARIANT (hivemind_assert_contained CANNOT take a file chain):
+#   hivemind_assert_contained's final containment step does `cd "$canon_root/$deepest_existing"
+#   && pwd -P`. When the deepest-existing component is a REGULAR FILE, that `cd` FAILS (you
+#   cannot cd into a file), yielding an EMPTY string — which the empty-test rejects. So a
+#   legitimately-tracked, non-symlink leaf we MEAN to overwrite would be wrongly FALSE-REJECTED.
+#   hivemind_assert_file_contained sidesteps this by canonicalizing only the PARENT dir (via the
+#   reused dir guard) and applying a single `[ -L ]` symlink test to the leaf — never cd-ing
+#   into the leaf. This closes the symlinked-write-target-LEAF escape that the directory-only
+#   guard leaves open: a hostile base ref committing a symlinked `.hivemind/brood/task.md` or
+#   `.claude/settings.local.json` LEAF, materialized into a child worktree by `git worktree add`,
+#   would otherwise be followed on write. The parent-dir guard alone never inspects the leaf.
+#
 # DEPTH-COMPLETE: every component of <relative_chain> that ALREADY EXISTS is checked for
 #   being a symlink ([ -L ]); the deepest existing prefix is canonicalized and required to
 #   stay under "<canon_root>/<expected-sub-prefix>/". Non-existent leaf components are fine
@@ -129,6 +155,47 @@ hivemind_assert_contained() {
         return 1
         ;;
     esac
+  fi
+
+  printf '%s' "$canon_root"
+  return 0
+}
+
+# hivemind_assert_file_contained <raw_repo_root> <relative_file_chain>
+# File-target containment: the chain's LEAF is a write-target FILE, not a directory.
+# COMPOSES hivemind_assert_contained — it does NOT reimplement the ancestor walk. The parent
+# directory chain is validated by the existing depth-complete guard; only the leaf gets an
+# additional [ -L ] symlink test. See the WHY block in the header for the false-reject the
+# directory-only guard would hit on a regular-file leaf.
+# Echoes the canonical root on success (return 0); prints a reason to stderr and returns
+# non-zero on reject. Never exits — the caller maps non-zero to its own blocker.
+hivemind_assert_file_contained() {
+  local raw_root="$1"
+  local rel_chain="$2"
+
+  # Split the chain into parent-dir chain + leaf basename. A single-component chain has a
+  # dirname of "." — normalize it to "" so the parent guard validates the root only.
+  local parent_chain leaf
+  parent_chain="$(dirname "$rel_chain")"
+  leaf="$(basename "$rel_chain")"
+  if [ "$parent_chain" = "." ]; then
+    parent_chain=""
+  fi
+
+  # Reuse the existing depth-complete ancestor symlink walk + canonicalization on the PARENT
+  # chain. On reject (non-zero) OR empty canon_root, propagate — the existing fn already
+  # printed a reason to stderr.
+  local canon_root
+  canon_root="$(hivemind_assert_contained "$raw_root" "$parent_chain")"
+  if [ $? -ne 0 ] || [ -z "$canon_root" ]; then
+    return 1
+  fi
+
+  # Apply the symlink test to the FULL leaf path. [ -L ] fires for a dangling symlink too
+  # (target need not exist). A non-existent or regular-file leaf passes per the contract.
+  if [ -L "$canon_root/$rel_chain" ]; then
+    printf 'refusing symlinked file leaf %s under %s\n' "$rel_chain" "$canon_root" >&2
+    return 1
   fi
 
   printf '%s' "$canon_root"

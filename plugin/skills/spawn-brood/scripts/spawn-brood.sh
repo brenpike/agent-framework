@@ -539,6 +539,22 @@ for idx in $(seq 0 $((strain_count - 1))); do
 
   # 3b: propagate config into the new worktree, if present.
   if [ -f "$settings_local" ]; then
+    # LEAF GUARD: the 525 dir-guard proves the .claude ANCESTOR is unsymlinked, but the cp
+    # write target is the .claude/settings.local.json LEAF — a hostile base ref can track a
+    # real .claude/ dir yet a SYMLINKED settings.local.json leaf, materialized into $wt by
+    # `git worktree add`, which `cp` would follow to an external target before a privileged
+    # child launches. Reject a symlinked leaf with the SAME hard per-strain pre-launch
+    # cleanup as the dir-guard above.
+    if ! hivemind_assert_file_contained "$wt" ".claude/settings.local.json" >/dev/null; then
+      printf 'warning: child worktree %s has a symlinked .claude/settings.local.json leaf that escapes the checkout (base ref tracks it); refusing to provision or launch strain %s\n' "$wt" "${S_NAME[$idx]}" >&2
+      mark_failed "$idx"
+      git worktree remove --force "$wt" >/dev/null 2>&1 || true
+      git branch -D "$branch" >/dev/null 2>&1 || true
+      rm -rf "$wt" >/dev/null 2>&1 || true
+      cur_wt=""
+      cur_branch=""
+      continue
+    fi
     mkdir -p "$wt/.claude"
     cp "$settings_local" "$wt/.claude/settings.local.json"
   fi
@@ -610,6 +626,21 @@ for idx in $(seq 0 $((strain_count - 1))); do
     printf 'task:\n'
     printf '  description: |\n';     printf '%s\n' "$desc"          | sed 's/^/    /'
   } )"
+  # LEAF GUARD: the 525 dir-guard proves the .hivemind/brood ANCESTOR is unsymlinked, but the
+  # write target is the task.md LEAF — a hostile base ref can track a real .hivemind/brood/ dir
+  # yet a SYMLINKED task.md leaf, materialized into $wt by `git worktree add`, which the printf
+  # redirect would follow to an external target before a privileged child launches. Reject a
+  # symlinked leaf with the SAME hard per-strain pre-launch cleanup as the dir-guard above.
+  if ! hivemind_assert_file_contained "$wt" ".hivemind/brood/task.md" >/dev/null; then
+    printf 'warning: child worktree %s has a symlinked .hivemind/brood/task.md leaf that escapes the checkout (base ref tracks it); refusing to provision or launch strain %s\n' "$wt" "${S_NAME[$idx]}" >&2
+    mark_failed "$idx"
+    git worktree remove --force "$wt" >/dev/null 2>&1 || true
+    git branch -D "$branch" >/dev/null 2>&1 || true
+    rm -rf "$wt" >/dev/null 2>&1 || true
+    cur_wt=""
+    cur_branch=""
+    continue
+  fi
   # Guard task-file provisioning BEFORE launching a privileged child: a failed mkdir
   # or write (full FS, permissions, conflicting path) is a HARD pre-launch failure —
   # same class as `git worktree add` failure. Clean up what this invocation created

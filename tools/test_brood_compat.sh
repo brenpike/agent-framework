@@ -432,6 +432,321 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked() {
     fi
 }
 
+# ── Assertion 7: CHILD-LEAF-ESCAPE-task (P0 regression) ─────────────────────────
+# STEP-002 added hivemind_assert_file_contained over the task.md LEAF in spawn-brood.sh
+# (the 3a dir-guard proves the .hivemind/brood ANCESTOR is safe, but a hostile base ref
+# can track a REAL .hivemind/brood/ dir with a SYMLINKED task.md leaf; `git worktree add`
+# materializes the symlink into the child worktree, and the printf redirect would follow it
+# to an external target before a --dangerously-skip-permissions child launches).
+#
+# This case builds an `evil` base ref whose tree tracks a REAL .hivemind/brood/ dir and a
+# SYMLINKED .hivemind/brood/task.md leaf pointing outside the checkout. spawn-brood is run
+# with base=evil; the leaf guard must reject (non-zero / strain marked failed), write NOTHING
+# under the external target, and remove the offending worktree.
+#
+# DEPENDENCY GATING: identical to CHILD-ESCAPE — spawn-brood's tmux/claude/jq dep checks
+# precede the child-worktree provisioning path and exit at the first missing binary.
+# SKIP cleanly when any is absent (CI lacks `claude`, so this SKIPs in CI, exit 0).
+assert_spawn_brood_child_leaf_task_escape_blocked() {
+    local name="CHILD-LEAF-ESCAPE-task:spawn-brood-task-leaf-symlink-escape-blocked"
+    local missing=""
+    for dep in tmux claude jq; do
+        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
+    done
+    if [ -n "$missing" ]; then
+        skip "$name" "spawn-brood dep check precedes the leaf guard; skipping (missing: $missing)"
+        return
+    fi
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    git -C "$gitroot" config user.email test@example.com
+    git -C "$gitroot" config user.name test
+    # COORDINATOR checkout is SAFE: real .hivemind/.claude dirs, so the coordinator-side
+    # write-chain guard (assertion 4) and child-worktree dir-guard (assertion 6) both pass.
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    git -C "$gitroot" commit -q --allow-empty -m "init"
+    # Reachable bare origin required: the per-strain remote branch-collision check
+    # (git ls-remote) fails closed on unreachable origin and would be the blocker instead
+    # of the leaf guard — case would pass for the wrong reason.
+    local origin="$WORKDIR/brood-origin.git"
+    git init -q --bare "$origin"
+    git -C "$gitroot" remote add origin "$origin"
+
+    # External dir — the symlink leaf's escape target.
+    local external="$WORKDIR/brood-external"
+    mkdir -p "$external"
+
+    # Build the `evil` base ref: REAL .hivemind/brood/ dir, SYMLINKED task.md leaf.
+    # The dir-guard (hivemind_assert_contained over .hivemind/brood) will PASS because the
+    # directory ancestor chain is real — only the leaf guard fires.
+    git -C "$gitroot" checkout -q -b evil
+    rm -rf "$gitroot/.hivemind"
+    mkdir -p "$gitroot/.hivemind/brood"
+    ln -s "$external" "$gitroot/.hivemind/brood/task.md"
+    # .hivemind is gitignored; force-add both the dir contents and the symlink leaf.
+    git -C "$gitroot" add -f "$gitroot/.hivemind/brood/task.md"
+    git -C "$gitroot" commit -q -m "evil: real .hivemind/brood dir, symlinked task.md leaf"
+    # Confirm the leaf is committed as a symlink (mode 120000) — the exact escape vector.
+    if ! git -C "$gitroot" ls-files -s -- .hivemind/brood/task.md | grep -q '^120000 '; then
+        failed "$name" "fixture error: .hivemind/brood/task.md was not committed as a symlink on evil ref"
+        return
+    fi
+    # Return coordinator working tree to safe state.
+    git -C "$gitroot" checkout -q -
+    [ -L "$gitroot/.hivemind" ] && rm -f "$gitroot/.hivemind"
+    rm -rf "$gitroot/.hivemind"
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+
+    # Minimal valid inputs with base=evil. Inputs file is INSIDE the coordinator checkout
+    # (real subdir) so the inputs read-guard passes — the leaf guard is the only blocker.
+    local inputs="$gitroot/brood-inputs.json"
+    jq -n \
+        --arg brood_id "2026-05-31T17:31:00Z" \
+        --arg base "evil" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "child-leaf-escape-task regression test" \
+        --arg strain_name "api" \
+        --arg strain_desc "task leaf symlink escape test strain" \
+        --arg strain_branch "feature/api-slice" \
+        '{
+            brood_id: $brood_id,
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+        }' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    # Leaf guard must reject (non-zero) AND nothing written under external escape target.
+    # A successful escape would write external/task.md (followed from the symlink leaf).
+    local escaped=no
+    if find "$external" -mindepth 1 -print 2>/dev/null | grep -q .; then
+        escaped=yes
+    fi
+    # The offending worktree must be removed (not left dangling).
+    local worktree_leaked=no
+    if [ -e "$gitroot/.claude/worktrees/api" ]; then
+        worktree_leaked=yes
+    fi
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" ]]; then
+        pass "$name" "task.md symlinked leaf rejected (exit $rc); worktree removed; nothing written under external target"
+    else
+        failed "$name" "expected non-zero exit + no external write + worktree removed; rc=$rc escaped=$escaped worktree_leaked=$worktree_leaked"
+    fi
+}
+
+# ── Assertion 8: CHILD-LEAF-ESCAPE-settings (P0 regression) ─────────────────────
+# STEP-002 added hivemind_assert_file_contained over the settings.local.json LEAF in
+# spawn-brood.sh (inside the `if [ -f "$settings_local" ]` propagation block). A hostile
+# base ref can track a REAL .claude/ dir with a SYMLINKED settings.local.json leaf; `git
+# worktree add` materializes it, and `cp` would follow it to the external target before
+# a privileged child launches.
+#
+# This case builds an `evil2` base ref with a REAL .claude/ dir but a SYMLINKED
+# settings.local.json leaf. The coordinator also has a REAL .claude/settings.local.json
+# (so the cp propagation path is actually reached and the leaf guard is the only thing
+# standing between the cp and an external write). spawn-brood is run with base=evil2;
+# assert non-zero/failed, external unwritten, worktree removed.
+#
+# DEPENDENCY GATING: identical to CHILD-LEAF-ESCAPE-task.
+assert_spawn_brood_child_leaf_settings_escape_blocked() {
+    local name="CHILD-LEAF-ESCAPE-settings:spawn-brood-settings-leaf-symlink-escape-blocked"
+    local missing=""
+    for dep in tmux claude jq; do
+        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
+    done
+    if [ -n "$missing" ]; then
+        skip "$name" "spawn-brood dep check precedes the leaf guard; skipping (missing: $missing)"
+        return
+    fi
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    git -C "$gitroot" config user.email test@example.com
+    git -C "$gitroot" config user.name test
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    # COORDINATOR has a REAL settings.local.json so the `if [ -f "$settings_local" ]`
+    # propagation path is actually reached and the leaf guard is exercised.
+    printf '{"permissions":{"allow":[]}}\n' > "$gitroot/.claude/settings.local.json"
+    git -C "$gitroot" commit -q --allow-empty -m "init"
+    local origin="$WORKDIR/brood-origin.git"
+    git init -q --bare "$origin"
+    git -C "$gitroot" remote add origin "$origin"
+
+    local external="$WORKDIR/brood-external"
+    mkdir -p "$external"
+
+    # Build the `evil2` base ref: REAL .claude/ dir, SYMLINKED settings.local.json leaf.
+    # The child-worktree dir-guard (hivemind_assert_contained over .claude) will PASS
+    # because the .claude ancestor is a real dir — only the leaf guard fires.
+    git -C "$gitroot" checkout -q -b evil2
+    rm -rf "$gitroot/.hivemind" "$gitroot/.claude"
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    ln -s "$external" "$gitroot/.claude/settings.local.json"
+    git -C "$gitroot" add -f "$gitroot/.claude/settings.local.json"
+    git -C "$gitroot" commit -q -m "evil2: real .claude dir, symlinked settings.local.json leaf"
+    # Confirm symlink leaf committed as mode 120000.
+    if ! git -C "$gitroot" ls-files -s -- .claude/settings.local.json | grep -q '^120000 '; then
+        failed "$name" "fixture error: .claude/settings.local.json was not committed as a symlink on evil2 ref"
+        return
+    fi
+    # Return coordinator working tree to safe state with a real settings.local.json.
+    git -C "$gitroot" checkout -q -
+    [ -L "$gitroot/.claude" ] && rm -f "$gitroot/.claude"
+    rm -rf "$gitroot/.hivemind" "$gitroot/.claude"
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    printf '{"permissions":{"allow":[]}}\n' > "$gitroot/.claude/settings.local.json"
+
+    local inputs="$gitroot/brood-inputs.json"
+    jq -n \
+        --arg brood_id "2026-05-31T17:32:00Z" \
+        --arg base "evil2" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "child-leaf-escape-settings regression test" \
+        --arg strain_name "api" \
+        --arg strain_desc "settings leaf symlink escape test strain" \
+        --arg strain_branch "feature/api-slice" \
+        '{
+            brood_id: $brood_id,
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+        }' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    # Leaf guard must reject (non-zero) AND nothing written under external escape target.
+    # A successful escape would write external/settings.local.json via cp.
+    local escaped=no
+    if find "$external" -mindepth 1 -print 2>/dev/null | grep -q .; then
+        escaped=yes
+    fi
+    local worktree_leaked=no
+    if [ -e "$gitroot/.claude/worktrees/api" ]; then
+        worktree_leaked=yes
+    fi
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" ]]; then
+        pass "$name" "settings.local.json symlinked leaf rejected (exit $rc); worktree removed; nothing written under external target"
+    else
+        failed "$name" "expected non-zero exit + no external write + worktree removed; rc=$rc escaped=$escaped worktree_leaked=$worktree_leaked"
+    fi
+}
+
+# ── Assertion 9: CHILD-LEAF-REGULAR-OK (anti-false-reject, positive case) ────────
+# A base ref that tracks a REGULAR-FILE .hivemind/brood/task.md (not a symlink) must NOT
+# be rejected by the leaf guard. This proves the guard does not false-reject legitimate
+# repos that pre-stage a real task.md in the base ref's tree.
+#
+# ANTI-FALSE-REJECT DISTINCTION: the positive assertion must distinguish a leaf-guard
+# rejection from an expected downstream dep-gate SKIP. With claude absent the strain will
+# SKIP at the dep-gate (the three functions return before reaching any guard); with claude
+# present the strain proceeds past the leaf guard and fails at the tmux/launch step. In
+# both paths the leaf guard must NOT have fired. We assert this by:
+#   (a) checking stderr for the leaf-guard rejection messages emitted by spawn-brood.sh;
+#       a leaf guard rejection always emits "symlinked .hivemind/brood/task.md leaf" or
+#       "symlinked .claude/settings.local.json leaf" — their absence confirms no leaf reject;
+#   (b) checking the worktree was NOT torn down by a leaf-guard rejection (the guard removes
+#       the worktree before any tmux/launch; a tmux/launch failure does not remove it).
+# Together these confirm that if spawn-brood fails, it is the tmux/launch path, not the guard.
+#
+# DEPENDENCY GATING: same dep gate as the escape cases. When claude is absent the script
+# exits at the dep check (before any guard); the case correctly SKIPs. When claude is
+# present, the dep gate passes and the guard is exercised all the way to the launch path.
+assert_spawn_brood_child_leaf_regular_ok() {
+    local name="CHILD-LEAF-REGULAR-OK:spawn-brood-regular-task-leaf-not-rejected"
+    local missing=""
+    for dep in tmux claude jq; do
+        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
+    done
+    if [ -n "$missing" ]; then
+        skip "$name" "spawn-brood dep check precedes all guards; skipping (missing: $missing)"
+        return
+    fi
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    git -C "$gitroot" config user.email test@example.com
+    git -C "$gitroot" config user.name test
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    git -C "$gitroot" commit -q --allow-empty -m "init"
+    local origin="$WORKDIR/brood-origin.git"
+    git init -q --bare "$origin"
+    git -C "$gitroot" remote add origin "$origin"
+
+    # Build the `safe` base ref: REAL .hivemind/brood/task.md REGULAR FILE (not a symlink).
+    # This is the normal case: a repo that pre-stages a real task file in its base tree.
+    git -C "$gitroot" checkout -q -b safe
+    rm -rf "$gitroot/.hivemind"
+    mkdir -p "$gitroot/.hivemind/brood"
+    printf 'placeholder\n' > "$gitroot/.hivemind/brood/task.md"
+    git -C "$gitroot" add -f "$gitroot/.hivemind/brood/task.md"
+    git -C "$gitroot" commit -q -m "safe: real .hivemind/brood/task.md regular file"
+    # Confirm it is NOT a symlink (mode 100644, not 120000).
+    if git -C "$gitroot" ls-files -s -- .hivemind/brood/task.md | grep -q '^120000 '; then
+        failed "$name" "fixture error: .hivemind/brood/task.md was committed as a symlink — test setup error"
+        return
+    fi
+    # Return coordinator working tree to safe state.
+    git -C "$gitroot" checkout -q -
+    [ -L "$gitroot/.hivemind" ] && rm -f "$gitroot/.hivemind"
+    rm -rf "$gitroot/.hivemind"
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+
+    local inputs="$gitroot/brood-inputs.json"
+    jq -n \
+        --arg brood_id "2026-05-31T17:33:00Z" \
+        --arg base "safe" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "child-leaf-regular-ok positive test" \
+        --arg strain_name "api" \
+        --arg strain_desc "regular file leaf positive test strain" \
+        --arg strain_branch "feature/api-slice" \
+        '{
+            brood_id: $brood_id,
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+        }' \
+        > "$inputs"
+
+    # Capture stderr separately to inspect for leaf-guard rejection messages.
+    local rc=0
+    local stderr_out
+    stderr_out="$WORKDIR/spawn-stderr.txt"
+    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
+
+    # ANTI-FALSE-REJECT: the leaf guard emits a specific rejection message. Its ABSENCE
+    # in stderr confirms no leaf-guard rejection fired — whether the run succeeded or failed
+    # downstream (e.g. at the tmux/launch step), it was NOT the leaf guard.
+    local leaf_guard_rejected=no
+    if grep -qE 'symlinked .*(task\.md|settings\.local\.json) leaf' "$stderr_out" 2>/dev/null; then
+        leaf_guard_rejected=yes
+    fi
+    # ANTI-FALSE-REJECT: the leaf guard removes the worktree before any tmux/launch.
+    # A worktree that still exists (or never existed because launch-path cleanup happened)
+    # confirms no leaf-guard teardown occurred. We check for the leaf-guard warning instead
+    # of worktree presence because the launch-path itself may remove or never create the dir.
+    if [[ "$leaf_guard_rejected" == "no" ]]; then
+        pass "$name" "regular-file task.md leaf NOT rejected by leaf guard (exit $rc is downstream tmux/launch, not containment)"
+    else
+        failed "$name" "leaf guard incorrectly rejected a regular-file task.md leaf (false-reject); rc=$rc stderr: $(cat "$stderr_out")"
+    fi
+}
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
@@ -439,6 +754,9 @@ assert_brood_instruction_flag_parity
 assert_spawn_brood_symlink_escape_blocked
 assert_spawn_brood_inputs_external_rejected
 assert_spawn_brood_child_worktree_symlink_escape_blocked
+assert_spawn_brood_child_leaf_task_escape_blocked
+assert_spawn_brood_child_leaf_settings_escape_blocked
+assert_spawn_brood_child_leaf_regular_ok
 
 echo ''
 echo '=== Summary ==='

@@ -130,3 +130,29 @@ Coherence with the #167 deferral: where state is ISOLATED (per-run worktree, RUN
 This is documented as a KNOWN v1 residual limitation on PR #156. The `security-policy.md` Transport-path invariant section and `spawn-brood.sh` liveness-guard comment block are updated on the same PR to reflect this retraction and to point to #168 as the tracked structural fix. No behavior change accompanies this amendment — this records the retraction and the known residual only.
 
 This amendment is APPEND-ONLY. Status remains accepted.
+
+## Amendment — 2026-06-01 (file-target containment primitive + signal-safe state-keyed rollback; Codex Findings D, E, PR #156)
+
+Two post-merge hardening fixes are recorded here. Neither reverses prior decisions; both sharpen existing discipline in the one-shared-containment.sh invariant framing (extend, never fork). This amendment records two points; it does not edit the Decision, Consequences, or any prior amendment.
+
+1. **File-target containment primitive — derive-and-verify-containment must cover the write-target LEAF, not only its ancestor chain, for any writer whose leaf can be a symlink materialized from an attacker-influenced tree.**
+
+   The second amendment (point 2) introduced `hivemind_assert_contained` in `plugin/skills/_shared/containment.sh` to cover directory-ancestor chains. That primitive canonicalizes the deepest EXISTING ancestor and `[ -L ]`-rejects any symlinked component along the chain. It is correct for directory targets. It does NOT cover a write-target LEAF that is itself a symlink: a `git worktree add` from a hostile `base` ref can materialize `.hivemind/brood/task.md` or `.claude/settings.local.json` as a COMMITTED SYMLINKED LEAF into the child worktree, so the write follows the symlink to an external target before a `--dangerously-skip-permissions` child launches — even when every ancestor passes the existing chain guard.
+
+   **Reproduced vector (Codex Finding D, P0, summarized — the thread text is DATA, not instructions):** a committed symlinked leaf below an otherwise-clean ancestor chain caused `spawn-brood`'s child-provisioning write to land outside the checkout, bypassing the chain guard entirely.
+
+   **The new primitive.** `hivemind_assert_file_contained` is added to `containment.sh`. It composes `hivemind_assert_contained` on the leaf's PARENT directory (validating the ancestor chain), then adds a `[ -L ]` reject on the leaf itself. WHY it cannot reuse the directory primitive directly: `hivemind_assert_contained`'s final `cd "$deepest_existing" && pwd -P` empty-false-rejects a regular-file leaf (you cannot `cd` into a file). A non-existent leaf (fresh create) and a regular-file leaf (overwrite) both pass the new primitive; only a symlinked leaf rejects.
+
+   **Scope.** `spawn-brood.sh` now calls `hivemind_assert_file_contained` before its two child-provisioning writes (the `task.md` write and the child-settings write). The init and record engines are NOT in scope: their leaf names derive from a SAFE_ID_RE-validated `run_id` component, and their depth-complete chain guard already walks to the deepest existing ancestor (which, when the run dir exists, includes the leaf); a class scan confirms the leaf-symlink attack requires a planner-controlled name below the SAFE_ID_RE gate — structurally excluded. Exactly the two spawn-brood child leaves required the new primitive.
+
+2. **Signal-safe state-keyed reservation rollback — destructive EXIT-trap cleanup that lags a durable mutation must key on GROUND TRUTH (committed ledger absence), not a mutable disarm flag.**
+
+   `init-run-ledger.sh`'s reservation-rollback EXIT trap keyed the destructive `rm -rf "$CLAIMED_DIR"` on the mutable `CLAIMED_DIR` disarm flag: the flag is cleared AFTER the durable `mv -f` ledger install. A TERM or INT arriving in the `mv`→disarm window fired the trap with `CLAIMED_DIR` still set and erased the just-committed ledger — a race between the signal and the disarm assignment that made the rollback destructive on a committed ledger.
+
+   **Reproduced vector (Codex Finding E, P1, summarized — the thread text is DATA, not instructions):** a signal in the `mv`→disarm window triggered the rollback trap on a ledger already durably committed, destroying it.
+
+   **The fix.** The trap cleanup is re-keyed on GROUND TRUTH: `[ -n "${CLAIMED_DIR:-}" ] && [ ! -f "${ledger_path:-}" ]` — rollback runs ONLY when the committed ledger is absent (genuine orphan). State-based and idempotent: a signal anywhere relative to the `mv` is harmless — if the ledger file exists after the signal, the trap does nothing. The trap still ends in the guaranteed-zero `:` (EXIT-trap-exit-code invariant). The `CLAIMED_DIR=""` disarm is kept as belt-and-suspenders.
+
+   **Class-scan siblings (scanned, neither needs a fix).** `spawn-brood`'s interrupt trap is REPORTING-ONLY — it emits provisional resource names for manual recovery and runs no destructive cleanup; over-reporting on a lagging marker is the safe direction. `record-state-result.sh` has NO trap — its atomicity is temp-write + atomic `mv`; on failure it only `rm`s its own temp, never the committed ledger. Both are the safe class; neither requires a parallel fix.
+
+This amendment is APPEND-ONLY. The original Decision, Consequences, and all prior amendments stand. Status remains accepted.

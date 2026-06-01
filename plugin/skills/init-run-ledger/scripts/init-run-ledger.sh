@@ -101,15 +101,33 @@ blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 
 # Invocation-owned run-dir cleanup. CLAIMED_DIR is set ONLY after the atomic bare
 # `mkdir "$run_dir"` below succeeds — the point at which THIS invocation exclusively owns the
-# leaf dir. The EXIT trap removes that invocation-owned dir IFF the ledger was not durably
-# committed (CLAIMED_DIR still non-empty). Set CLAIMED_DIR up front (before any post-claim
-# blocker could fire) for set -u safety. INVARIANT: the trap body MUST end with a guaranteed-
-# zero statement (`:`) so a failing `rm`/test can never override the script's intended exit
-# code — this script runs under `set -u` with no `set -e`, and blocker() exits 1; an EXIT trap
-# whose last command fails would otherwise clobber that 1 (the EXIT-trap-exit-code gotcha fixed
-# in tools/test_brood_compat.sh @ 21290bf). Top-level `return` is invalid in a trap here; `:`.
+# leaf dir. The EXIT trap removes that invocation-owned dir IFF this invocation owns it
+# (CLAIMED_DIR non-empty) AND the durable ledger is ABSENT. Set CLAIMED_DIR up front (before
+# any post-claim blocker could fire) for set -u safety.
+#
+# STATE-KEYED, IDEMPOTENT cleanup. The destructive `rm -rf` is keyed on GROUND TRUTH — the
+# existence of the durable ledger at $ledger_path — NOT on the mutable disarm flag alone. The
+# flag (CLAIMED_DIR) lags the durable `mv -f` install: there is a window between the mv (which
+# durably commits state.json) and the `CLAIMED_DIR=""` disarm where a TERM/INT would fire this
+# EXIT trap with CLAIMED_DIR still set. Keying the rm additionally on `[ ! -f "$ledger_path" ]`
+# dissolves that signal race: a signal ANYWHERE relative to the mv is harmless — once the ledger
+# exists the rm never fires, so a cancelled initializer can never erase its own just-committed
+# run dir (Codex Finding E, P1). The flag remains as the fast normal-exit path and to scope
+# cleanup to dirs THIS invocation claimed (exclusive-ownership orphan cleanup is preserved: a
+# genuine pre-ledger failure has CLAIMED_DIR set AND no ledger, so the rm still fires).
+#
+# ${ledger_path:-} (not bare $ledger_path): the trap is ARMED here but $ledger_path is not
+# defined until later. `&&` short-circuits on the leading `[ -n "${CLAIMED_DIR:-}" ]`, and
+# CLAIMED_DIR stays "" until AFTER $ledger_path is defined, so the test is never evaluated
+# pre-definition today — but :- makes that robust under `set -u` even if ordering ever shifts.
+#
+# INVARIANT: the trap body MUST end with a guaranteed-zero statement (`:`) so a failing `rm`/test
+# can never override the script's intended exit code — this script runs under `set -u` with no
+# `set -e`, and blocker() exits 1; an EXIT trap whose last command fails would otherwise clobber
+# that 1 (the EXIT-trap-exit-code gotcha fixed in tools/test_brood_compat.sh @ 21290bf).
+# Top-level `return` is invalid in a trap here; `:`.
 CLAIMED_DIR=""
-trap 'if [ -n "${CLAIMED_DIR:-}" ]; then rm -rf "$CLAIMED_DIR" 2>/dev/null; fi; :' EXIT
+trap 'if [ -n "${CLAIMED_DIR:-}" ] && [ ! -f "${ledger_path:-}" ]; then rm -rf "$CLAIMED_DIR" 2>/dev/null; fi; :' EXIT
 
 # SAFE_ID charset for run-id components and suggested run ids.
 SAFE_ID_RE='^[A-Za-z0-9._-]+$'
