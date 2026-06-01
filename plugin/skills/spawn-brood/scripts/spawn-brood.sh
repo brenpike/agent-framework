@@ -430,6 +430,14 @@ mkdir -p "$STATE"
 # (jq over the JSON manifest), so both consumers parse identically. A jq parse failure on a
 # stale/torn manifest yields no sessions (2>/dev/null swallows the error), preserving the
 # fail-OPEN-to-overwrite behavior the prior sed path had on an absent/malformed manifest.
+# ACCEPTED RESIDUAL (Codex #172 Finding 1, document-only — no behavior change): this guard
+# probes ONLY manifest.json. A live PRE-UPGRADE brood whose only manifest is the legacy YAML
+# (manifest.yaml) would NOT be detected here, so its checkout could be overwritten. The JSON-only
+# probe is INTENTIONAL: do NOT add YAML parsing or a YAML→JSON migration path — that would reopen
+# the deleted sed/awk YAML hand-parse injection class this PR removed by construction. There is no
+# backwards-compat obligation (single-user, unreleased) and the operator policy is "drain any
+# running brood before upgrade," so a stale legacy-YAML brood is out of scope. Full resolution is
+# per-<brood-id> namespacing (#168), which dissolves the singleton manifest entirely.
 if [ -f "$STATE/manifest.json" ]; then
   while IFS= read -r recorded_session; do
     [ -n "$recorded_session" ] || continue

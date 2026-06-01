@@ -52,12 +52,26 @@
 #   tmux_session); the field ORDER is: name, worktree_path, branch, tmux_session,
 #   manifest_status, state_current, run_status.
 #
+#   INTEGRITY SENTINEL (distinct from any STRAIN line): when the manifest is PRESENT but
+#   UNPARSEABLE (torn / truncated / invalid JSON), the script emits exactly ONE line
+#     MANIFEST_UNREADABLE <TAB> <manifest_path>
+#   to stdout and exits nonzero (see EXIT CONTRACT). This is DISTINCT from "manifest absent"
+#   (a pre-flight blocker on stderr) and from "valid empty brood" (`{"strains":[]}` → exit 0,
+#   zero STRAIN lines, no sentinel). A present-but-unparseable manifest must NEVER be
+#   silently projected as zero strains: corruption is otherwise indistinguishable from an
+#   empty brood and would hide live children from the monitoring dashboard.
+#
 # EXIT CONTRACT:
-#   0  projected all strains. PER-STRAIN MALFORMED / MISSING is NOT a failure — a strain with a
-#      bad field or an unreadable ledger still emits its line (with token fields) and the script
-#      continues to the next strain.
-#   1  pre-flight blocker ONLY: missing arg, jq absent, manifest unreadable, or manifest path
-#      escapes the checkout (symlinked ancestor). No per-strain condition reaches exit 1.
+#   0  projected all strains (including zero strains for a VALID empty manifest). PER-STRAIN
+#      MALFORMED / MISSING is NOT a failure — a strain with a bad field or an unreadable ledger
+#      still emits its line (with token fields) and the script continues to the next strain.
+#   1  pre-flight blocker ONLY: missing arg, jq absent, manifest path escapes the checkout
+#      (symlinked ancestor). Reported via blocker() on stderr. No per-strain condition reaches
+#      exit 1.
+#   2  manifest PRESENT but UNPARSEABLE: emits the MANIFEST_UNREADABLE sentinel line to stdout
+#      (above) and exits 2. A distinct nonzero code so the navigator can tell a corruption
+#      integrity-failure (live children may exist but cannot be enumerated) apart from the
+#      absent-manifest stderr blocker.
 #
 # set -u: every value is read explicitly; an unset variable is a programming error here. We do
 # NOT use `set -e`: per-strain field/ledger problems are caught and rendered as tokens, never
@@ -121,6 +135,22 @@ fi
 # (where the fallback manifest actually lives) instead of the current linked worktree.
 hivemind_assert_inputs_contained "$CHECKOUT_ROOT" "$MANIFEST" >/dev/null \
   || blocker "refusing to read the manifest: $MANIFEST resolves outside the checkout root $CHECKOUT_ROOT (symlinked ancestor)"
+
+# ── Manifest PARSEABILITY probe (integrity, not "no strains") ─────────────────────
+# The manifest passed every pre-flight (present, regular file, not a symlink leaf, contained).
+# Now probe that it is VALID JSON. hivemind_manifest_strain_names (below) swallows jq parse
+# errors and yields zero names, so a torn / truncated / invalid-JSON manifest would otherwise
+# project as an empty brood — corruption indistinguishable from a genuinely empty brood, hiding
+# live children from the dashboard. Distinguish the two HERE: a present-but-unparseable manifest
+# emits a single MANIFEST_UNREADABLE sentinel to stdout and exits 2 (integrity failure), while a
+# VALID empty manifest (`{"strains":[]}`) falls through to the strain loop and exits 0 with no
+# STRAIN lines (legit empty brood). This is the READ-side response only; the WRITE-side liveness
+# guard in spawn-brood.sh deliberately keeps its fail-open-on-malformed behavior (a corrupt
+# manifest must not wedge spawning) — same jq parse, different RESPONSE.
+if ! jq empty "$MANIFEST" 2>/dev/null; then
+  printf 'MANIFEST_UNREADABLE\t%s\n' "$MANIFEST"
+  exit 2
+fi
 
 # ── Per-strain projection ───────────────────────────────────────────────────────
 # For each strain, extract the manifest static fields out-of-band into inert vars, re-gate

@@ -65,9 +65,20 @@ Workflow state (`state_current` / `run.status`) is now projected via the committ
    # main-checkout fallback manifest (confine beneath the main checkout):
    bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh "<manifest_path>" "<main_checkout>"
    ```
-   If the helper exits nonzero, it has printed a pre-flight blocker to stderr. Report that blocker message and stop — do not proceed to per-strain probes.
+   Handle the helper's exit status BEFORE consuming its output:
+   - **Exit 0** — proceed to per-strain probes (below). Note a VALID empty brood also exits 0 with NO `STRAIN` lines: if there are zero `STRAIN` lines on exit 0, report "No active strains in this brood (empty brood)." and stop.
+   - **Exit 2 (manifest PRESENT but UNREADABLE)** — the helper has printed a single `MANIFEST_UNREADABLE` line (TAB-delimited: `MANIFEST_UNREADABLE <TAB> <manifest_path>`) to stdout. This is an INTEGRITY FAILURE, NOT an empty brood: the manifest file exists but is torn / truncated / invalid JSON, so its strains cannot be enumerated even though live children may still be running. Render a PROMINENT warning instead of any status table, and stop — do NOT report "No active brood found." (that is reserved for an ABSENT manifest, step 1d):
+     ```
+     ⚠️  Brood manifest present but UNREADABLE — possible corruption.
+         Path: <manifest_path>
+         Live children may still be running but cannot be enumerated from this manifest.
+         Inspect the manifest directly (it is not valid JSON) before assuming the brood is gone.
+     ```
+   - **Any other nonzero exit** — the helper has printed a pre-flight blocker to stderr. Report that blocker message and stop — do not proceed to per-strain probes.
 
-   On exit 0, filter the output for lines prefixed with the literal sentinel `STRAIN`. Each such line is TAB-delimited with fields in this order:
+   Distinguish the three "no table" cases explicitly: ABSENT manifest → "No active brood found." (step 1d); VALID empty manifest → "No active strains in this brood (empty brood)." (exit 0, zero `STRAIN` lines); PRESENT-but-UNREADABLE manifest → the corruption warning above (exit 2).
+
+   On exit 0 with one or more `STRAIN` lines, filter the output for lines prefixed with the literal sentinel `STRAIN`. Each such line is TAB-delimited with fields in this order:
    `STRAIN <TAB> name <TAB> worktree_path <TAB> branch <TAB> tmux_session <TAB> manifest_status <TAB> state_current <TAB> run_status`
 
    **Trust contract — gate moved into the helper.** Every emitted field is already allowlist-validated by the helper (`^[A-Za-z0-9._/-]+$`, non-empty, no leading `-`, no `..`) or rendered as the fixed token `MALFORMED` / `MISSING`. The navigator does NOT re-gate these values in agent reasoning. A field rendered `MALFORMED` MUST NOT be used in any shell probe — but the skip is **per-probe, scoped to the specific malformed field**, NOT a blanket skip of the whole strain. Skip ONLY the probe whose required shell token is malformed (`tmux_session` gates the tmux probe; `branch` gates the branch and PR probes — see steps a–c). Continue running every other live probe whose tokens are clean, and still derive `Status` from those observables. Display/ledger fields (`state_current`, `run_status`) are INFORMATIONAL ONLY (step d / line 92): a `MALFORMED` value there NEVER suppresses any external probe — otherwise a child could disable its own tmux/branch/PR reporting just by writing an invalid ledger scalar, contradicting the observables-are-ground-truth contract. A field rendered `MISSING` (no ledger yet) is benign and renders as `—` in the table.

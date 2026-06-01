@@ -1197,6 +1197,59 @@ assert_proj_missing_arg() {
     fi
 }
 
+# ── Projection 11: PRESENT but UNPARSEABLE manifest → MANIFEST_UNREADABLE sentinel + exit 2 ──
+# A manifest file that EXISTS but is torn / truncated / invalid JSON must NOT be silently
+# projected as zero strains (corruption indistinguishable from an empty brood, hiding live
+# children — Codex #172 P1 Finding 2). The entrypoint probes parseability after pre-flight and
+# emits exactly one MANIFEST_UNREADABLE<TAB><path> sentinel line to stdout, exiting nonzero (2),
+# with NO STRAIN lines. We capture stdout (run_project discards stderr).
+assert_proj_unreadable_manifest() {
+    local name="PROJ-UNREADABLE:present-but-invalid-json-sentinel"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/unreadable"
+    mkdir -p "$wd"
+    local manifest="$wd/manifest.json"
+    # Torn / truncated JSON: a valid opening that jq cannot parse. Pure DATA written with LF.
+    printf '{"manifest_version":3,"strains":[{"name":"api",\n' > "$manifest"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local strain_lines; strain_lines="$(count_strain_lines "$out")"
+    local sentinel_path
+    sentinel_path="$(printf '%s\n' "$out" | awk -F'\t' '/^MANIFEST_UNREADABLE\t/ { print $2; exit }')"
+    if [[ "$rc" -eq 2 \
+          && "$strain_lines" -eq 0 \
+          && "$sentinel_path" == "$manifest" ]]; then
+        pass "$name" "exit 2; MANIFEST_UNREADABLE sentinel emitted (path=$sentinel_path); no STRAIN lines"
+    else
+        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path] expected exit 2 + sentinel + 0 strains"
+    fi
+}
+
+# ── Projection 12: VALID empty manifest → exit 0, no STRAIN lines, NO sentinel ───
+# A genuinely empty-but-VALID manifest (`{"strains":[]}`) is a legit empty brood: exit 0,
+# zero STRAIN lines, and NO MANIFEST_UNREADABLE sentinel. This proves the parseability probe
+# distinguishes "present but unparseable" (Projection 11) from "valid empty brood".
+assert_proj_valid_empty_manifest() {
+    local name="PROJ-EMPTY-OK:valid-empty-manifest-exit0-no-sentinel"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/emptyok"
+    mkdir -p "$wd"
+    local manifest="$wd/manifest.json"
+    jq -n '{manifest_version:3, brood_id:"2026-05-30T22-10-00Z", base:"main", overlap_risk:"low", strains:[], merge_order:[]}' > "$manifest"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local strain_lines; strain_lines="$(count_strain_lines "$out")"
+    local sentinel_seen=no
+    printf '%s\n' "$out" | grep -q '^MANIFEST_UNREADABLE	' && sentinel_seen=yes
+    if [[ "$rc" -eq 0 \
+          && "$strain_lines" -eq 0 \
+          && "$sentinel_seen" == "no" ]]; then
+        pass "$name" "exit 0; valid empty manifest → no STRAIN lines, no MANIFEST_UNREADABLE sentinel"
+    else
+        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_seen=$sentinel_seen expected exit 0 + 0 strains + no sentinel"
+    fi
+}
+
 # ── Projection 10: multi-strain — one healthy + one malformed, independent ───────
 # Two strains: a healthy one projects fully; a second whose state.current carries an
 # injection payload projects state_current=MALFORMED. One STRAIN line each, exit 0.
@@ -1289,6 +1342,8 @@ assert_proj_symlink_leaf
 assert_proj_ledger_escape
 assert_proj_missing_arg
 assert_proj_multi_strain
+assert_proj_unreadable_manifest
+assert_proj_valid_empty_manifest
 
 echo ''
 echo '=== Summary ==='
