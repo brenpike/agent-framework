@@ -238,6 +238,17 @@ for idx in $(seq 0 $((strain_count - 1))); do
   branch="$(jq -r ".strains[$idx].branch // \"\"" "$INPUTS_FILE")"
 
   [ -n "$name" ]   || { printf 'blocker: strain %d is missing name\n' "$idx" >&2; exit 1; }
+  # Reject an embedded newline in the strain name. The manifest emits the name as a `name: |-`
+  # block scalar; a multiline name would write extra body lines that a consumer could parse as
+  # forged strain STRUCTURE (e.g. a second line "status: failed" overriding the genuine status
+  # field). The name must be a single line — fail closed at the producer rather than rely on the
+  # reader to neutralize every injected body line. (Codex #172 P1; pairs with the consumer's
+  # full name-body skip in _shared/manifest.sh.)
+  newline='
+'
+  case "$name" in
+    *"$newline"*) printf 'blocker: strain %d name contains an embedded newline; strain names must be a single line\n' "$idx" >&2; exit 1 ;;
+  esac
   [ -n "$desc" ]   || { printf 'blocker: strain %s is missing description\n' "$name" >&2; exit 1; }
   [ -n "$branch" ] || { printf 'blocker: strain %s is missing branch\n' "$name" >&2; exit 1; }
 

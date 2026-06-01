@@ -65,6 +65,23 @@ hivemind_project_state_current() {
     printf 'MISSING\n'
     return 0
   fi
+  # JSON-TYPE GATE (must precede value extraction): jq -r stringifies non-string scalars
+  # (a JSON true becomes the text "true", 123 becomes "123"), which would then pass the
+  # identifier length/charset checks and project a forged-but-valid-looking workflow state.
+  # Probe the JSON type FIRST: a PRESENT non-string .state.current is a tamper/corruption
+  # indicator and is reported MALFORMED; only a genuine JSON string proceeds to the
+  # length/charset contract below. An ABSENT field (jq type "null" for a missing key or an
+  # explicit JSON null) is the intended "nothing to report" case and is reported MISSING.
+  local jtype
+  if ! jtype="$(jq -r '.state.current | type' "$ledger_path" 2>/dev/null)"; then
+    printf 'MALFORMED\n'
+    return 0
+  fi
+  case "$jtype" in
+    null) printf 'MISSING\n'; return 0 ;;
+    string) : ;;
+    *) printf 'MALFORMED\n'; return 0 ;;
+  esac
   local value
   if ! value="$(jq -r '.state.current // empty' "$ledger_path" 2>/dev/null)"; then
     printf 'MALFORMED\n'

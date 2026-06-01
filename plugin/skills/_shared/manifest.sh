@@ -95,12 +95,24 @@ hivemind_manifest_strain_names() {
     }
 
     {
-      # A pending block-scalar NAME value (line after "  - name: |-") is consumed first.
+      # A pending block-scalar NAME value (line after "  - name: |-") is consumed first: the
+      # genuine name is ONLY its first content line. Any FURTHER lines more-indented than the
+      # name key are injected block-scalar BODY (e.g. a multiline name carrying "status: failed"
+      # on line 2) and must be skipped as content, never parsed as structure. So after printing
+      # the first line, enter the block-scalar body-skip keyed off the name content indent (the
+      # same containment applied to description/other-scalar bodies). (Codex #172 P1.)
       if (grab) {
         line = $0
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
         print line
         grab = 0
+        # Treat the rest of the name block-scalar as body to skip. The body comprises lines at
+        # the name CONTENT indent (this first content line indent) or deeper; a sibling field
+        # such as "    description:" sits at a SHALLOWER indent and correctly ends the body.
+        # Using content_indent - 1 as the threshold means the in_scalar rule skips body lines
+        # (indent > threshold) while a dedent to the sibling-field indent ends the skip.
+        scalar_indent = indent_of($0) - 1
+        in_scalar = 1
         next
       }
       # Block-scalar name entry: "  - name: |-" — value is on the next content line.
@@ -154,14 +166,20 @@ hivemind_manifest_field() {
     /^[^[:space:]]/ { if (in_strains) in_strains = 0; in_target = 0; in_scalar = 0 }
     !in_strains { next }
 
-    # Resolve a pending block-scalar NAME value (the line after "- name: |-"). This is the
-    # genuine name value, so it is consumed BEFORE the body-skip rule (it sits one level deeper
-    # than the "- name:" key but is the value we actually want, not skippable body).
+    # Resolve a pending block-scalar NAME value (the line after "- name: |-"). This first content
+    # line is the genuine name value, consumed BEFORE the body-skip rule (it sits one level deeper
+    # than the "- name:" key but is the value we actually want, not skippable body). Any FURTHER
+    # lines of a multiline name are injected block-scalar BODY (e.g. line 2 "status: failed") and
+    # MUST be skipped as content, never matched as fields — so after capturing the value we enter
+    # the body-skip with the name content indent (content_indent - 1 threshold, so a shallower
+    # sibling field ends the skip). (Codex #172 P1; pairs with the producer newline rejection.)
     pending_name_block {
       nm = trim($0)
       cur_is_target = (nm == want)
       in_target = cur_is_target
       pending_name_block = 0
+      scalar_indent = indent_of($0) - 1
+      in_scalar = 1
       next
     }
 
