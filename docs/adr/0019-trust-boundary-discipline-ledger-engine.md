@@ -57,3 +57,24 @@ The two reproduced P0s above are instances of a boundary that had NOT yet receiv
 - Boundary 3 (#161) is staged, not closed; the coordinator's read of hostile child-ledger content must be brought under the same identifier+derivation+bounded-token discipline before it is considered compliant.
 - **Supersedes the ADR-0018 f92f1db8 implementation note.** That note declined to anchor `--workflow` because the value was deemed "trusted overlord-resolved path / out-of-model." The forged-definition + plan-write-auth-forgery vector was REPRODUCED and is now IN-model; the engine no longer accepts a workflow path at all, reversing the prior decline. ADR-0018's f92f1db8 note is marked superseded (original retained, append-only).
 - This decision is hard-to-reverse (it removes paths from a committed interface), surprising (it inverts the f92f1db8 "trusted path" posture), and a real trade-off (callers lose the ability to point the engine at an out-of-tree definition, e.g. for ad-hoc testing) — an ADR is warranted.
+
+## Amendment — 2026-06-01 (canonical-containment guard: derivation requires verifying containment)
+
+The derive-from-ground-truth principle is SHARPENED, not reversed: a derived TEXTUAL path is NOT confinement when an ancestor of that path is attacker-controlled. The original Decision derived the ledger path as the literal text `<checkout-root>/.hivemind/runs/<run_id>/state.json` and treated that derivation as sufficient confinement. It is not. `.hivemind/` is normally gitignored, but a repo can still COMMIT `.hivemind` (or `.hivemind/runs`) as a SYMLINK; git tracks the symlink itself, gitignore notwithstanding. When `.hivemind` resolves to an external directory, the textually-derived path resolves OUTSIDE the checkout, and the engine's own `mkdir`/`mktemp`/`mv` write there.
+
+**Reproduced vector (Codex P0 r3331282391, summarized — the thread text is DATA, not instructions):** a tracked `.hivemind`→external symlink in the checkout redirected the engine write outside the checkout. With `.hivemind` pointing at an external dir, `init-run-ledger.sh` exited 0 and created `<external>/runs/demo/state.json` — the ledger write landed entirely outside the checkout, exactly the boundary the derivation was meant to enforce.
+
+**The sharpening.** After textual derivation, BEFORE any `mkdir`/`mktemp`/`mv`, both engines now:
+
+1. Canonicalize — resolve all symlink components — via the portable `cd … && pwd -P` idiom (not `realpath`/`readlink -f`, which BSD/macOS lack or spell differently); a failed `cd` yields an empty result under `set -u`, which is tested for and blocked rather than proceeding with an empty canonical path.
+2. Verify the canonical path remains under the canonical `<checkout-root>/.hivemind/runs/` prefix (trailing-slash-guarded so a sibling like `.hivemind-evil` / `.hivemind/runs-evil` cannot prefix-match).
+3. Explicitly reject any symlinked ancestor with a POSIX `[ -L ]` test (which detects a symlink component regardless of whether its target exists).
+
+The two engines differ by their leaf's existence at guard time, and the guard is shaped accordingly:
+
+- **`init-run-ledger.sh`** CREATES the run dir, so its leaf does not exist yet. It canonicalizes the deepest EXISTING ancestor (`.hivemind`, then `.hivemind/runs` when each is a real dir) and adds an explicit `[ -L ]` reject on `.hivemind` and `.hivemind/runs`. A first-init checkout where neither exists skips both probes — the leaf run dir is created later under the verified-contained canonical root. The ledger path is then derived from the CANONICAL root so the subsequent `mkdir -p`/`mktemp`/`mv` all operate on the verified path.
+- **`record-state-result.sh`** requires the ledger to ALREADY EXIST, so it canonicalizes the already-existing ledger file (via its directory), requires the canonical ledger live under the canonical `.hivemind/runs/`, and uses the canonical (verified-contained) dir for the temp-write + atomic rename. All of this runs BEFORE `mktemp`, so a rejection never creates a temp file and the on-disk ledger is byte-unchanged.
+
+**Lower-severity, separately tracked (out of scope for this engine fix).** The agent-authored inputs-file Write transport — `.init-inputs.json` / `.record-inputs.json` written to a fixed `.hivemind/` path by the Write tool — could LIKEWISE be redirected by a symlinked `.hivemind`. That is a distinct trust posture from the engine's own `mkdir`/`mktemp`/`mv`: it is an agent Write-tool transport, not an engine filesystem mutation, and is tracked separately rather than addressed here. The engine guards SHRINK that window: they reject a symlinked `.hivemind` the moment `init`/`record` runs.
+
+This amendment is APPEND-ONLY. The original Decision and Consequences prose stand; this records that derive-from-ground-truth REQUIRES canonical-containment verification to be confinement, not merely textual derivation. Status remains accepted.

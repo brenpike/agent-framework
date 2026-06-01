@@ -92,6 +92,23 @@
 #   S. coherence mismatch -> ledger at runs/<run-id>/state.json whose internal .run.id is a
 #                           DIFFERENT value -> the coherence check fails: non-zero exit, ledger
 #                           byte-UNCHANGED.
+#   T. init-symlink-escape-rejected -> the gitroot's .hivemind is replaced with a symlink to an
+#                           EXTERNAL dir outside the gitroot. init-run-ledger.sh canonicalizes
+#                           the derived path, detects the symlinked .hivemind ancestor, and
+#                           rejects BEFORE any mkdir: non-zero exit AND no state.json is created
+#                           anywhere under the external target. Proves derive-from-ground-truth
+#                           is PAIRED with canonical-containment (a textually-derived path is not
+#                           confinement when an ancestor is a symlink).
+#   U. record-symlink-escape-rejected -> the external target is PRE-STAGED with a valid ledger at
+#                           runs/<run-id>/state.json, then the gitroot's .hivemind is symlinked to
+#                           it (so `[ -f ]` passes THROUGH the symlink — the ledger is REACHABLE).
+#                           record-state-result.sh canonicalizes the existing ledger, detects the
+#                           symlinked ancestor / out-of-containment resolution, and rejects: non-
+#                           zero exit, the external ledger BYTE-UNCHANGED (sha256 before==after),
+#                           and NO temp file leaked under the external dir. CRITICAL: the
+#                           rejection is by CONTAINMENT (file reachable but unmutated), not by
+#                           file-absence — the pre-staged file proves the guard, not a missing
+#                           file, blocked the write.
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -993,6 +1010,104 @@ assert_coherence_mismatch_unchanged() {
     fi
 }
 
+# ── T. init symlink-escape rejected: no ledger written outside the checkout ──
+
+assert_init_symlink_escape_rejected() {
+    local name="T:init-symlink-escape-rejected"
+    # A repo that COMMITS .hivemind as a symlink to an external dir makes the textually-derived
+    # ledger path resolve OUTSIDE the checkout. init-run-ledger.sh canonicalizes the derived path
+    # (cd && pwd -P), detects the symlinked .hivemind ancestor (explicit [ -L ] reject), and
+    # blocks BEFORE any mkdir. Assert: non-zero exit AND no state.json under the external target.
+    # The symlink lives ONLY in the ledger gitroot — self-location is via the fakeplugin tree.
+    local gitroot external inputs rc=0
+    gitroot="$(new_gitroot t-git)"
+    # External dir OUTSIDE the gitroot (a sibling under $WORKDIR), the symlink's escape target.
+    external="$WORKDIR/t-external"
+    mkdir -p "$external"
+    # Replace the gitroot's .hivemind with a symlink to the external dir.
+    ln -s "$external" "$gitroot/.hivemind"
+    inputs="$WORKDIR/t-inputs.json"
+
+    # Valid init inputs (workflow=engine-fixture, version 1, start plan — matches the fakeplugin
+    # def), authored SAFELY via jq. The ONLY hostile element is the symlinked .hivemind.
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init symlink escape" \
+        --arg normalized "engine test init symlink escape" \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    # The guard must reject (non-zero) AND no state.json may have been written under the external
+    # escape target (a successful escape would land runs/<id>/state.json there via the symlink).
+    local escaped=no
+    if find "$external" -name state.json -print 2>/dev/null | grep -q .; then
+        escaped=yes
+    fi
+    if [[ "$rc" -ne 0 && "$escaped" == "no" ]]; then
+        pass "$name" "symlinked .hivemind rejected (exit $rc); no ledger written under external target"
+    else
+        failed "$name" "expected non-zero exit + no external ledger; rc=$rc escaped=$escaped"
+    fi
+}
+
+# ── U. record symlink-escape rejected: external ledger reachable but unmutated ──
+
+assert_record_symlink_escape_rejected() {
+    local name="U:record-symlink-escape-rejected"
+    # record-state-result.sh requires the ledger to EXIST, so the escape vector PRE-STAGES the
+    # external target with a valid ledger, then symlinks the gitroot's .hivemind -> external so
+    # `[ -f ]` passes THROUGH the symlink (the ledger is REACHABLE). The canonical-containment
+    # guard canonicalizes the existing ledger, sees it resolves OUTSIDE the checkout, and rejects.
+    # CRITICAL: the rejection is by CONTAINMENT (file reachable but unmutated), not file-absence —
+    # the pre-staged file proves the guard, not a missing file, blocked the write.
+    local gitroot external run_id ext_ledger inputs before after rc=0
+    gitroot="$(new_gitroot u-git)"
+    run_id="engine-case-u"
+    external="$WORKDIR/u-external"
+    # Pre-stage a VALID ledger at the external target's runs/<run-id>/state.json: .run.id ==
+    # run_id (coherence passes) and .run.workflow == engine-fixture (def resolves). Authored from
+    # the fixture via jq so it is a real, well-formed ledger the engine would accept absent the
+    # containment guard.
+    mkdir -p "$external/runs/$run_id"
+    ext_ledger="$external/runs/$run_id/state.json"
+    jq --arg id "$run_id" --arg wf "engine-fixture" \
+        '.run.id = $id | .run.workflow = $wf' \
+        "$LEDGER_AT_PLAN" > "$ext_ledger"
+    # Symlink the gitroot's .hivemind -> external so the engine's derived
+    # <gitroot>/.hivemind/runs/<run-id>/state.json resolves THROUGH the symlink to the pre-staged
+    # external ledger (so `[ -f ]` passes and the guard — not a missing file — is what blocks).
+    ln -s "$external" "$gitroot/.hivemind"
+    before="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    inputs="$WORKDIR/u-inputs.json"
+
+    # A valid transition (plan ready -> build) the engine WOULD record absent the containment guard.
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test record symlink escape" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    # No engine temp file (.state.json.XXXXXX) may have leaked under the external runs dir.
+    local leaked=no
+    if find "$external" -name '.state.json.*' -print 2>/dev/null | grep -q .; then
+        leaked=yes
+    fi
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" ]]; then
+        pass "$name" "external ledger reachable but rejected by containment (exit $rc): byte-unchanged, no temp leaked"
+    else
+        failed "$name" "expected non-zero exit + external ledger byte-unchanged + no temp; rc=$rc changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1015,6 +1130,8 @@ assert_record_injection_safe
 assert_run_id_traversal_rejected
 assert_forged_definition_not_honored
 assert_coherence_mismatch_unchanged
+assert_init_symlink_escape_rejected
+assert_record_symlink_escape_rejected
 
 echo ''
 echo '=== Summary ==='

@@ -73,7 +73,7 @@ Ledger schema version. Distinct from `run.workflow_version`, which tracks the wo
 
 ### `parent.*`
 
-Identifies the run's relationship to a brood. The `kind` field selects the variant; see [Parent-block variants](#parent-block-variants). For a `brood` child, `brood_id` holds the CANONICAL brood id — the manifest's colon-bearing ISO-8601 timestamp — persisted verbatim so the child ledger reconciles 1:1 with the coordinator manifest's `brood_id`. `init-run-ledger --parent-brood-id` accepts this canonical form and sanitizes it internally (colons -> dashes) only to derive the filesystem-safe run id (`<sanitized-brood-id>--<strain-id>`); the run path is sanitized, `.parent.brood_id` is canonical.
+Identifies the run's relationship to a brood. The `kind` field selects the variant; see [Parent-block variants](#parent-block-variants). For a `brood` child, `brood_id` holds the CANONICAL brood id — the manifest's colon-bearing ISO-8601 timestamp — persisted verbatim so the child ledger reconciles 1:1 with the coordinator manifest's `brood_id`. The `parent.brood_id` field of the INIT inputs JSON object accepts this canonical form and the init engine sanitizes it internally (colons -> dashes) only to derive the filesystem-safe run id (`<sanitized-brood-id>--<strain-id>`); the run path is sanitized, `.parent.brood_id` is canonical.
 
 ### `request.*`
 
@@ -92,11 +92,11 @@ Reconciliation anchors derived from git observables: `branch`, `base`, `pr`.
 
 ### `plan.*`
 
-- `path` — path to the cerebrate directive, or `null`. Written by the same two writers as `steps` (`--plan-path` on each).
+- `path` — path to the cerebrate directive, or `null`. Written by the same two writers as `steps`, via the `plan_path` field of each writer's inputs object.
 - `current_step` — the step id currently executing, or `null`.
-- `steps` — array reformatted from the cerebrate YAML plan block at the §A boundary (no maintained converter). Two writers, validated as a JSON array and bound via `--argjson` in each:
-  - **PRIMARY (live):** `record-state-result --plan-steps`, passed by the overlord when recording the `plan` (cerebrate) state result. The overlord inits the ledger BEFORE the `plan` state runs, so this record-time write is what populates `plan.steps` for the implement loop on a fresh root run. When the flag is absent the script leaves `plan.steps` UNTOUCHED (never clobbered to `[]`). The engine honors `--plan-steps` / `--plan-path` ONLY when the recording state is a cerebrate planning state (`states.<state>.agent == "hivemind:cerebrate"` — `plan` / `review_remediation_plan` / `brood_plan`); recording any other state with these flags is rejected (ledger byte-unchanged), so `plan.steps` is record-time-writable only at cerebrate planning states.
-  - **SEED (child/resume):** `init-run-ledger --plan-steps`, which seeds `plan.steps` at init time for a child/resume run that already has the steps in hand; absent the flag it defaults to `[]`.
+- `steps` — array reformatted from the cerebrate YAML plan block at the §A boundary (no maintained converter). Two writers, each carrying the steps in the `plan_steps` field of its inputs JSON object, validated as a JSON array and bound via `--argjson` in each:
+  - **PRIMARY (live):** the `plan_steps` field of the RECORD inputs object (`record-state-result`), passed by the overlord when recording the `plan` (cerebrate) state result. The overlord inits the ledger BEFORE the `plan` state runs, so this record-time write is what populates `plan.steps` for the implement loop on a fresh root run. When the field is absent (missing key or `null`) the engine leaves `plan.steps` UNTOUCHED (never clobbered to `[]`). The engine honors the `plan_steps` / `plan_path` fields ONLY when the recording state is a cerebrate planning state (`states.<state>.agent == "hivemind:cerebrate"` — `plan` / `review_remediation_plan` / `brood_plan`); recording any other state with these fields present is rejected (ledger byte-unchanged), so `plan.steps` is record-time-writable only at cerebrate planning states.
+  - **SEED (child/resume):** the `plan_steps` field of the INIT inputs object (`init-run-ledger`), which seeds `plan.steps` at init time for a child/resume run that already has the steps in hand; absent the field it defaults to `[]`.
 
 ### `artifacts` (object)
 
