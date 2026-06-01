@@ -4,7 +4,7 @@ description: Initialize the run ledger for the current overlord instance — cre
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh *)
   - Read
-  - Write   # inert inputs-file only: authors fixed-path .hivemind/runs/.init-inputs.json; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0018
+  - Write   # inert inputs-file only: authors per-invocation-unique path .hivemind/runs/.init-inputs-<token>.json; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0018/0019
 shell: bash
 ---
 
@@ -107,16 +107,25 @@ canonical value); else a safe `suggested_run_id` verbatim; else derived
    the chosen workflow definition (`<id>.json` under `${CLAUDE_PLUGIN_ROOT}/workflows/`) —
    derive it from that file.
 
-2. **Write the inputs file** via the Write tool to the fixed gitignored path
-   `.hivemind/runs/.init-inputs.json`. `file_path` = `.hivemind/runs/.init-inputs.json`,
-   `content` = the JSON object from step 1. The leading-dot filename keeps it OUT of the
-   `runs/<run-id>/` glob (it is a sibling of the run dirs, not one of them), and
-   `.hivemind/` is gitignored. Write performs no shell parsing of the values, so untrusted
+2. **Write the inputs file** via the Write tool to a PER-INVOCATION-UNIQUE gitignored path
+   `.hivemind/runs/.init-inputs-<token>.json`. Init has NO `run_id` yet — the ledger is being
+   CREATED — so there is no run dir to key the path on; instead GENERATE an invocation-unique
+   `<token>` for the filename (e.g. a UTC timestamp plus a random component, such as
+   `20260601T014132Z-a1b2c3`) so two concurrent same-checkout overlord sessions initing at the
+   same moment author DISTINCT inputs files and cannot clobber each other's payload between the
+   Write and the script exec (closes the singleton-inputs TOCTOU; see ADR-0019). `file_path` =
+   `.hivemind/runs/.init-inputs-<token>.json`, `content` = the JSON object from step 1. The
+   leading-dot `.init-inputs-*` name is a SIBLING of the run dirs (`runs/<run-id>/`), not one of
+   them, so it stays OUT of the `runs/<run-id>/` glob — it never pollutes the run-dir scan or the
+   existing-ledger check. `.hivemind/` is gitignored. Do NOT pass the inputs via stdin/heredoc:
+   a heredoc reintroduces the very delimiter-injection class the inert Write-tool-file pattern
+   exists to avoid (ADR-0017). Cleanup is not required: this is transient gitignored state and
+   `.hivemind/` is ephemeral. Write performs no shell parsing of the values, so untrusted
    `user_request` / `normalized` / `plan_steps` text is inert.
 
 3. **Execute the script** with one Bash call, passing the inputs file path:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh .hivemind/runs/.init-inputs.json
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh .hivemind/runs/.init-inputs-<token>.json
    ```
    EXECUTE (do not Read) the script — it owns dependency check, input validation,
    packaged-definition validation, run-id derivation, directory creation, and the atomic
@@ -149,7 +158,8 @@ This is a pipeline skill:
 
 - Produce zero chat text during execution. Outputs are tool calls only.
 - The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat text and
-  authors ONLY the inputs file. The final action is the Bash script call (step 3).
+  authors ONLY the inputs file (`.hivemind/runs/.init-inputs-<token>.json`). The final action
+  is the Bash script call (step 3).
 - Exit 0 = overlord proceeds; routing data (`run_id:`, `ledger:`) is on stdout.
   Exit 1 = blocked; the reason is on stderr.
 
@@ -158,7 +168,7 @@ This is a pipeline skill:
 - invent values for `workflow`, `workflow_version`, `start_state`, `user_request`, or
   `normalized` — the script exits 1 with a blocker if any required input is missing.
 - write the ledger by hand or with any tool other than the script.
-- use the Write tool for anything other than the `.hivemind/runs/.init-inputs.json`
+- use the Write tool for anything other than the `.hivemind/runs/.init-inputs-<token>.json`
   inputs file.
 - commit, push, or open a PR.
 - Read or reconstruct the script body — invoke it with the documented inputs file path.
