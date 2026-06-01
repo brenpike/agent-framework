@@ -14,6 +14,7 @@
 #   - every transition target is a declared state
 #   - every NON-terminal state has a .transitions object (a JSON object)
 #   - every declared terminal exists in .states with type "terminal"
+#   - (inverse) every terminal-typed state appears in the .terminal array
 #   - only v1 state types are used: decision|agent|skill|user_gate|terminal
 #
 # Per ledger fixture, asserts the required run-ledger fields exist with the right
@@ -228,6 +229,25 @@ validate_workflow_definition() {
     ' "$def_file")"
     [[ -z "$bad_terminals" ]] \
         || fail "$label" "declared terminal(s) absent from .states or not type terminal: $bad_terminals"
+
+    # Rule (inverse): every state whose type is "terminal" MUST appear in .terminal.
+    # The forward rule above only proves listed names resolve; without this inverse
+    # rule a state with { "type": "terminal" } omitted from .terminal passes here yet
+    # the runtime engine (record-state-result.sh determines completion from .terminal)
+    # never marks the run complete — it leaves run.status: running and resume scans
+    # keep rediscovering the finished run.
+    local unlisted_terminals
+    unlisted_terminals="$(jq -r '
+        (.terminal // []) as $declared
+        | [.states | to_entries[]
+           | select((.value.type // "") == "terminal")
+           | .key as $name
+           | select(($declared | index($name)) == null)
+           | $name]
+        | join(", ")
+    ' "$def_file")"
+    [[ -z "$unlisted_terminals" ]] \
+        || fail "$label" "terminal-typed state(s) omitted from .terminal array: $unlisted_terminals"
 
     if [[ "$FAILURES" -eq "$file_failures_before" ]]; then
         echo "PASS [$label] workflow definition valid"
