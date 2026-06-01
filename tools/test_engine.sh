@@ -1404,6 +1404,107 @@ assert_init_pre_ledger_failure_rolls_back_then_retry_succeeds() {
     fi
 }
 
+# ── AA. init trap predicate preserves committed ledger and cleans orphan ─────
+#
+# Regression guard for Codex Finding E (P1): the EXIT trap in init-run-ledger.sh must be
+# STATE-KEYED (`[ -n "${CLAIMED_DIR:-}" ] && [ ! -f "${ledger_path:-}" ]`) rather than
+# unconditional. This test exercises the PREDICATE DIRECTLY rather than racing a real kill
+# signal. Rationale: `kill -TERM <pid>` delivery timing is nondeterministic — a signal sent
+# between `mv -f` and `CLAIMED_DIR=""` may or may not arrive before CLAIMED_DIR is cleared
+# depending on scheduler timing, making signal-based tests flaky in CI. Evaluating the
+# predicate in isolation gives identical logical coverage with zero flakiness.
+#
+# ANTI-DRIFT GUARD: a grep assertion verifies that init-run-ledger.sh still contains the
+# LITERAL predicate fragment. If a future trap edit changes the condition without updating
+# this test, the grep fails loudly rather than silently diverging from the implementation.
+#
+# Two directions:
+#   (a) PRESERVE: CLAIMED_DIR set, state.json PRESENT  -> predicate FALSE -> rm does NOT run
+#       -> run dir + state.json survive.
+#   (b) ORPHAN-CLEANUP: CLAIMED_DIR set, state.json ABSENT -> predicate TRUE  -> rm removes dir
+#       -> orphan cleaned up.
+# Both directions must hold: failing (a) breaks the committed-ledger preservation guarantee;
+# failing (b) breaks the orphan-cleanup guarantee.
+
+assert_init_trap_preserves_committed_ledger() {
+    local name="AA:init-trap-preserves-committed-ledger"
+
+    # ── Anti-drift guard: trap predicate must still exist verbatim in the source ──
+    # Uses the REAL INIT_ENGINE (not the fakeplugin copy) so the source-of-truth script is
+    # checked, not a snapshot that might lag. grep -F matches literally (no regex escaping needed
+    # for the brackets/hyphens). If this fails, the trap predicate drifted and the test suite
+    # no longer guards the correct condition.
+    local predicate_fragment='[ -n "${CLAIMED_DIR:-}" ] && [ ! -f "${ledger_path:-}" ]'
+    if ! grep -qF "$predicate_fragment" "$INIT_ENGINE"; then
+        failed "$name" "ANTI-DRIFT: init-run-ledger.sh no longer contains the literal trap predicate '${predicate_fragment}' — the trap may have changed without updating this test"
+        return
+    fi
+
+    # ── Shared workdir for both sub-cases ──────────────────────────────────────
+    local aa_base="$WORKDIR/aa-trap"
+    mkdir -p "$aa_base"
+
+    # ── (a) PRESERVE case ─────────────────────────────────────────────────────
+    # Construct: a run dir containing a PRESENT state.json. Set CLAIMED_DIR to the run dir
+    # and ledger_path to the state.json path. Evaluate the exact trap predicate in a subshell;
+    # assert it is FALSE (predicate exits non-zero) and that a guarded rm -rf would NOT run,
+    # leaving both the run dir and state.json intact.
+    local preserve_dir="$aa_base/preserve-run"
+    local preserve_ledger="$preserve_dir/state.json"
+    mkdir -p "$preserve_dir"
+    printf '%s\n' '{"committed":"ledger-must-survive"}' > "$preserve_ledger"
+
+    # Evaluate the predicate exactly as the trap does. The subshell uses the same variable
+    # names and same `:-` expansion so divergence from the real trap body is immediately visible.
+    local preserve_predicate_fired=no
+    local CLAIMED_DIR_test="$preserve_dir"
+    local ledger_path_test="$preserve_ledger"
+    # shellcheck disable=SC2034  # variables are intentionally named to match the trap body
+    if ( CLAIMED_DIR="$CLAIMED_DIR_test"; ledger_path="$ledger_path_test"
+         [ -n "${CLAIMED_DIR:-}" ] && [ ! -f "${ledger_path:-}" ] ); then
+        preserve_predicate_fired=yes
+        # Simulate what the trap would do (rm -rf $CLAIMED_DIR) so we can assert both
+        # the predicate result AND the filesystem outcome.
+        rm -rf "$preserve_dir"
+    fi
+
+    if [[ "$preserve_predicate_fired" == "yes" ]]; then
+        failed "$name" "(a) PRESERVE: predicate fired (TRUE) when state.json was PRESENT — committed ledger would be erased; trap regression"
+        return
+    fi
+    if [[ ! -f "$preserve_ledger" ]]; then
+        failed "$name" "(a) PRESERVE: state.json is missing after predicate evaluation — should have survived"
+        return
+    fi
+
+    # ── (b) ORPHAN-CLEANUP case ───────────────────────────────────────────────
+    # Construct: a CLAIMED dir with NO state.json. Set CLAIMED_DIR to that dir. Evaluate the
+    # same predicate; assert it is TRUE and that the guarded rm removes the dir (orphan cleaned).
+    local orphan_dir="$aa_base/orphan-run"
+    mkdir -p "$orphan_dir"
+    # Deliberately do NOT create state.json — this is the pre-ledger-failure orphan scenario.
+
+    local orphan_predicate_fired=no
+    CLAIMED_DIR_test="$orphan_dir"
+    ledger_path_test="$orphan_dir/state.json"   # does not exist
+    if ( CLAIMED_DIR="$CLAIMED_DIR_test"; ledger_path="$ledger_path_test"
+         [ -n "${CLAIMED_DIR:-}" ] && [ ! -f "${ledger_path:-}" ] ); then
+        orphan_predicate_fired=yes
+        rm -rf "$orphan_dir"
+    fi
+
+    if [[ "$orphan_predicate_fired" == "no" ]]; then
+        failed "$name" "(b) ORPHAN-CLEANUP: predicate did NOT fire (FALSE) when state.json was ABSENT — orphan dir would be leaked; trap regression"
+        return
+    fi
+    if [[ -e "$orphan_dir" ]]; then
+        failed "$name" "(b) ORPHAN-CLEANUP: orphan dir still exists after predicate+rm — cleanup failed"
+        return
+    fi
+
+    pass "$name" "trap predicate: (a) PRESERVES committed ledger (FALSE when state.json present), (b) CLEANS orphan (TRUE when state.json absent); anti-drift grep passed"
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1433,6 +1534,7 @@ assert_init_concurrent_reservation_fails_closed
 assert_init_inputs_external_rejected
 assert_record_inputs_external_rejected
 assert_init_pre_ledger_failure_rolls_back_then_retry_succeeds
+assert_init_trap_preserves_committed_ledger
 
 echo ''
 echo '=== Summary ==='
