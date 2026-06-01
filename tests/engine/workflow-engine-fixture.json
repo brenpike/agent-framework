@@ -1,0 +1,40 @@
+{
+  "id": "engine-fixture",
+  "version": 1,
+  "start": "plan",
+  "terminal": ["complete", "blocked", "cancelled", "user_input_required"],
+  "states": {
+    "plan": {
+      "type": "agent",
+      "description": "Engine-test fixture start state. Legal outcomes: advance to build, or blocked.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "ready": "build",
+        "blocked": "blocked"
+      }
+    },
+    "build": {
+      "type": "agent",
+      "description": "Engine-test work state. Legal outcomes: complete (terminal), or blocked.",
+      "allowed_agents": ["hivemind:drone"],
+      "transitions": {
+        "done": "complete",
+        "blocked": "blocked",
+        "needs-input": "user_input_required"
+      }
+    },
+    "review_remediation_plan": {
+      "type": "agent",
+      "description": "Engine-test SECOND cerebrate planning state (remediation-style name). Proves the engine's plan-write authorization is agent==cerebrate, not name==plan: a cerebrate state under a different name may persist plan.steps.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "ready": "build",
+        "blocked": "blocked"
+      }
+    },
+    "complete": { "type": "terminal" },
+    "blocked": { "type": "terminal" },
+    "cancelled": { "type": "terminal" },
+    "user_input_required": { "type": "terminal" }
+  }
+}

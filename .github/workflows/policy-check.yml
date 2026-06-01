@@ -26,3 +26,15 @@ jobs:
 
       - name: Run validate_reports.sh (batch)
         run: bash ./tools/validate_reports.sh --batch tests/reports/
+
+      - name: Run validate_workflows.sh --strict
+        run: bash ./tools/validate_workflows.sh --strict
+
+      - name: Run validate_workflows.sh --self-test
+        run: bash ./tools/validate_workflows.sh --self-test
+
+      - name: Run test_engine.sh
+        run: bash ./tools/test_engine.sh
+
+      - name: Run test_brood_compat.sh
+        run: bash ./tools/test_brood_compat.sh

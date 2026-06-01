@@ -1,0 +1,41 @@
+manifest_version: |-
+  2
+brood_id: |-
+  2026-05-30T22-10-00Z
+hatchery_session: |-
+
+base: |-
+  main
+hatchery:
+  run_id: |-
+    2026-05-30T22-10-00Z-hatchery
+  ledger: |-
+    .hivemind/runs/2026-05-30T22-10-00Z-hatchery/state.json
+  workflow: |-
+    hatchery-dispatch
+overlap_risk: |-
+  low
+overlap_details: |
+  No shared file scopes detected.
+strains:
+  - name: |-
+      api
+    description: |
+      Implement the API slice.
+    worktree_path: |-
+      /repo/.claude/worktrees/api
+    branch: |-
+      feature/api-slice
+    tmux_session: "brood-api"
+    status: running
+    pr: null
+    merged: false
+    rebased_after: []
+    run:
+      suggested_id: |-
+        2026-05-30T22-10-00Z--api
+      suggested_ledger: |-
+        TESTS_BROOD_DIR/child-ledger-present.json
+      workflow_hint: |-
+        standard-delivery
+merge_order: []

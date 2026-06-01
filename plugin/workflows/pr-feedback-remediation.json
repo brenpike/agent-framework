@@ -1,0 +1,123 @@
+{
+  "id": "pr-feedback-remediation",
+  "version": 1,
+  "start": "intake",
+  "terminal": ["complete", "blocked", "cancelled", "user_input_required", "review_rejected", "review_exhausted"],
+  "states": {
+    "intake": {
+      "type": "decision",
+      "description": "Within-workflow decision: watch the PR review loop or run a one-shot reviewer fix.",
+      "owner": "overlord",
+      "transitions": {
+        "watch": "pr_branch_preflight",
+        "fix": "pr_branch_preflight",
+        "blocked": "blocked"
+      }
+    },
+    "pr_branch_preflight": {
+      "type": "decision",
+      "owner": "overlord",
+      "description": "Overlord resolves and checks out the PR's target branch before any reviewer runs, so remediation commits land on the PR branch (not trunk or a stale branch). Lists outcome names only.",
+      "transitions": {
+        "watch": "github_review_loop",
+        "fix": "github_reviewer_fix",
+        "blocked": "blocked"
+      }
+    },
+    "github_review_loop": {
+      "type": "skill",
+      "description": "Watch the PR and remediate review feedback until a terminal condition; reviewer-return outcomes are named transitions matching the github-review-loop terminal exit_reason vocabulary.",
+      "skill": "hivemind:github-review-loop",
+      "transitions": {
+        "clean": "complete",
+        "pr-merged": "complete",
+        "pr-closed": "complete",
+        "max-cycles-reached": "review_exhausted",
+        "planner-escalation": "review_remediation_plan",
+        "injection-suspect": "blocked",
+        "high-severity-rejection": "review_rejected",
+        "user-input-required": "user_input_required",
+        "blocked": "blocked"
+      }
+    },
+    "github_reviewer_fix": {
+      "type": "agent",
+      "description": "One-shot GitHub reviewer fix pass; reviewer-return outcomes are named transitions matching the github-reviewer fix-mode exit_reason vocabulary.",
+      "agent": "hivemind:github-reviewer",
+      "transitions": {
+        "clean": "complete",
+        "planner-escalation": "review_remediation_plan",
+        "injection-suspect": "blocked",
+        "high-severity-rejection": "review_rejected",
+        "user-input-required": "user_input_required",
+        "blocked": "blocked"
+      }
+    },
+    "review_remediation_plan": {
+      "type": "agent",
+      "description": "Cerebrate re-plans remediation when review escalates to the planner. Declares every cerebrate outcome (single|multi|brood|open_questions|blocked); a re-plan that yields steps routes to implementation. There is no brood_confirm state in this workflow, so brood/open_questions/blocked surface to the user — a PR-feedback remediation cannot fan out to a brood.",
+      "agent": "hivemind:cerebrate",
+      "transitions": {
+        "single": "implement_next_step",
+        "multi": "implement_next_step",
+        "brood": "blocked",
+        "open_questions": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "implement_next_step": {
+      "type": "decision",
+      "description": "Explicit loop head: branch back to implement_step while steps remain, forward to validate when all steps complete.",
+      "owner": "overlord",
+      "transitions": {
+        "has_next_step": "implement_step",
+        "all_steps_complete": "validate",
+        "blocked": "blocked"
+      }
+    },
+    "implement_step": {
+      "type": "agent",
+      "description": "Overlord delegates the current remediation step to a static-allowed bioform, picked by intent.",
+      "allowed_agents": ["hivemind:drone", "hivemind:changeling"],
+      "transitions": {
+        "complete": "checkpoint",
+        "blocked": "blocked",
+        "needs_replan": "review_remediation_plan"
+      }
+    },
+    "checkpoint": {
+      "type": "skill",
+      "description": "Molt a checkpoint commit after the completed remediation step.",
+      "skill": "hivemind:molt",
+      "transitions": {
+        "complete": "implement_next_step",
+        "blocked": "blocked"
+      }
+    },
+    "validate": {
+      "type": "decision",
+      "description": "Overlord runs validation and judges pass/fail before pushing remediation commits.",
+      "owner": "overlord",
+      "transitions": {
+        "passed": "push_remediation",
+        "failed": "blocked",
+        "blocked": "blocked"
+      }
+    },
+    "push_remediation": {
+      "type": "skill",
+      "description": "Push the remediation commits to the working branch's remote (no PR creation) so the in-flight review loop resumes against the updated branch.",
+      "skill": "hivemind:push-branch",
+      "transitions": {
+        "complete": "github_review_loop",
+        "blocked": "blocked"
+      }
+    },
+    "complete": { "type": "terminal" },
+    "blocked": { "type": "terminal" },
+    "cancelled": { "type": "terminal" },
+    "user_input_required": { "type": "terminal" },
+    "review_rejected": { "type": "terminal" },
+    "review_exhausted": { "type": "terminal" }
+  }
+}

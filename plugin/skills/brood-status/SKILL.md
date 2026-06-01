@@ -8,15 +8,16 @@ allowed-tools:
   - Bash(gh pr *)
   - Bash(git rev-parse *)
   - Bash(cat *)
-  - Read
 shell: bash
 ---
 
 # Brood Status
 
-Check the status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables.
+Check the status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables, plus the manifest's static fields.
 
 This is an **interactive skill** — it produces user-visible text output.
+
+> Child-ledger workflow-state reporting is DEFERRED to issue #161. This skill does NOT open, `Read`, or `jq`-project any child `state.json`; it reports each strain's status ONLY from external observables (tmux/branch/PR) and the manifest's static fields. The manifest still carries `run.*` pointers for that future feature, and children still own and write their own ledgers — brood-status simply does not consume them.
 
 ## Procedure
 
@@ -67,10 +68,19 @@ This is an **interactive skill** — it produces user-visible text output.
       gh pr list --head "<branch>" --state all --json number,state --jq '.[0] // empty'
       ```
       If `gh` fails (not authenticated, rate-limited, etc.), report PR status as "unknown".
-   d. Derive status from observables. The manifest `status:` field takes
-      precedence over the alive-session inference for the `failed` case: a
-      strain recorded as `status: failed` in the manifest is reported as
-      `failed` regardless of whether its tmux session is still alive (spawn-brood
+   d. **Child-ledger workflow-state reporting is DEFERRED to issue #161.** Do NOT open,
+      `Read`, or `jq`-project this strain's `run.suggested_ledger` (or any child `state.json`).
+      brood-status reports `Workflow State` as `deferred (#161)` for every strain and derives
+      status from external observables + manifest static fields alone. The manifest's `run.*`
+      pointers are read-only static fields the skill carries forward but does not consume.
+   e. Derive status from observables. **Status-derivation priority (highest first):**
+      1. **External observables** (tmux session, branch existence, PR state) — ground
+         truth.
+      2. **Manifest static fields** — last resort.
+
+      The manifest `status:` field takes precedence over the alive-session inference for
+      the `failed` case: a strain recorded as `status: failed` in the manifest is reported
+      as `failed` regardless of whether its tmux session is still alive (spawn-brood
       deliberately leaves the session alive on injection failure for debugging).
       Apply in this order:
       1. If manifest `status:` is `failed` → `failed (injection failed; session alive for debug)` when tmux is alive, or `failed (session ended, no PR)` when tmux is dead.
@@ -84,11 +94,14 @@ This is an **interactive skill** — it produces user-visible text output.
       | dead | open | `blocked (session ended, PR #N still open)` |
       | dead | none | `failed (session ended, no PR)` |
 
+      Status is derived from observables alone; the `Workflow State` column always reads
+      `deferred (#161)` (child-ledger consumption is deferred — see step 2d).
+
 3. **Present the status table.** This is Markdown text output, not a shell command — manifest values (`name`, `branch`) are printed as-is, no quoting needed. Emit a single status table for the brood.
    ```
-   | Strain | Branch | Session | PR | Status |
-   |--------|--------|---------|-------|--------|
-   | <name> | <branch> | alive/dead | #N / — | <derived status> |
+   | Strain | Branch | Session | PR | Workflow State | Status |
+   |--------|--------|---------|----|----------------|--------|
+   | <name> | <branch> | alive/dead | #N / — | deferred (#161) | <derived status> |
    ```
 
 4. **Per-strain summary line.** Emit one summary line directly under the table.

@@ -1,8 +1,10 @@
 {
   "workflow": "monitor-request",
-  "description": "User request with watch/monitor keywords routes to the github-review-loop skill, which arms the main-session Monitor on its thin change-detect poll",
+  "description": "A watch/monitor request routes (by judgment, not keywords) to pr-feedback-remediation, whose intake decision selects the watch path into the github-review-loop skill, which arms the main-session Monitor on its thin change-detect poll",
   "steps": [
-    { "state": "Intake", "source": { "file": "plugin/agents/overlord.md", "pattern": "`watch`, `monitor`, `wait`, `poll`, or `loop`" } },
+    { "state": "Classify", "source": { "file": "plugin/skills/route-workflow/SKILL.md", "pattern": "the sole workflow classifier" } },
+    { "state": "Intake Decision", "source": { "file": "plugin/workflows/pr-feedback-remediation.json", "pattern": "\"watch\": \"github_review_loop\"" } },
+    { "state": "Watch Loop", "source": { "file": "plugin/workflows/pr-feedback-remediation.json", "pattern": "\"skill\": \"hivemind:github-review-loop\"" } },
     { "state": "Monitor Arm", "source": { "file": "plugin/skills/github-review-loop/SKILL.md", "pattern": "skills/github-review-loop/scripts/pr-change-detect-poll.sh" } }
   ]
 }
