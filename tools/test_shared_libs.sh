@@ -105,25 +105,33 @@ for v in "" "-rf" "/a/../b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a$
   fi
 done
 
-# ── Class 3: presentation (broadest printable; display-only name). ──
+# ── Class 3: presentation (positive allowlist; display-only name). ──
 # Space-bearing display name ACCEPTS — this is what lets `api worker` render not MALFORMED.
-# NOTE: `|` is NOT in the accept set — the presentation value is rendered into a Markdown table
-# cell by the brood-status navigator, so a `|` would inject extra cells (Codex #172 P1). It is
-# asserted in the reject list below alongside the shared floor bytes.
-for v in "api worker" "api" "a;b" "a#b" "a (worker)" "a/b-c.d_e"; do
+# The permitted set is: A-Za-z0-9 space . _ - / ( ) : , + @ # = ~ !
+# `|` is NOT in the permitted set (Markdown table-cell injector — excluded by construction,
+# no explicit carve-out required). `;` is also not permitted (shell-structural, not needed).
+for v in "api worker" "api" "api-slice" "api/v2" "feature (2)" "a.b_c" "a#b" "a (worker)" "a/b-c.d_e"; do
   if hivemind_assert_presentation "$v"; then
     pass "pres:accept" "accepted presentation value '$v'"
   else
     failed "pres:accept" "rejected a presentation value that should render: '$v'"
   fi
 done
-# presentation STILL enforces the shared floor (command-sub, '..', leading '-', framing) AND
-# rejects the Markdown table delimiter '|' (Codex #172 P1 — table-cell injection).
-for v in "" "-x" "a..b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b" 'a|b'; do
+# presentation enforces the shared floor (command-sub, '..', leading '-', framing) AND rejects
+# bytes not in the positive allowlist — each entry below proves a treadmill byte is closed BY
+# CONSTRUCTION (the byte is simply absent from the allowlist), not by a specific carve-out.
+esc=$'\033'; del=$'\177'; bidi=$'\xe2\x80\xae'
+for v in \
+  "" "-x" "a..b" \
+  "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" \
+  "a${tab}b" "a${nl}b" "a${cr}b" \
+  "a${esc}b" "a${vt}b" "a${ff}b" "a${del}b" \
+  "a${bidi}b" \
+  'a|b' 'a<b' 'a>b' 'a;b' 'a&b'; do
   if hivemind_assert_presentation "$v"; then
-    failed "pres:reject" "accepted a value the presentation floor must reject: '$v'"
+    failed "pres:reject" "accepted a value the presentation allowlist must reject: '$v'"
   else
-    pass "pres:reject" "rejected floor-violating presentation value '$v'"
+    pass "pres:reject" "rejected non-allowlist presentation value '$v'"
   fi
 done
 

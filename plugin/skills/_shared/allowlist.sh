@@ -38,12 +38,12 @@
 #       projection. None of the widened bytes is shell-active in this class's only
 #       downstream contexts (quoted `cd "$dir"` canonicalization, quoted prefix `case`
 #       matching, the TAB-delimited output field).
-#   hivemind_assert_presentation broadest printable set: every printable byte EXCEPT the
-#       shared floor bytes (`$`, backtick, the framing bytes, leading `-`, `..`).
+#   hivemind_assert_presentation POSITIVE ALLOWLIST closed by construction (broadest).
 #       FIELDS: strain `name` (display-only — emitted into the output field and used only as
-#       the quoted jq/awk `--arg`/`-v` lookup key, NEVER a shell-probe token). This is what
-#       lets a name like `api worker` (space) render instead of MALFORMED while a name
-#       carrying `$(...)`/backtick/framing is still rejected.
+#       the quoted jq/awk `--arg`/`-v` lookup key, NEVER a shell-probe token). All three
+#       classes are now POSITIVE ALLOWLISTS over the shared floor — the floor is a
+#       defense-in-depth denylist of universally-dangerous bytes, but each class is closed
+#       by construction so an unlisted byte is rejected by default.
 
 # ── Shared security floor ────────────────────────────────────────────────────────
 # hivemind__assert_floor <value>
@@ -122,36 +122,50 @@ hivemind_assert_path() {
   return 0
 }
 
-# ── Class 3: presentation (broadest) ─────────────────────────────────────────────
+# ── Class 3: presentation (broadest) — POSITIVE ALLOWLIST closed by construction ──
 # hivemind_assert_presentation <value>
-# Returns 0 iff <value> passes the shared floor AND every byte is PRINTABLE (excludes the
-# C0/DEL control bytes; the floor already rejected the TAB/LF/CR framing subset). This is the
-# broadest class: it permits arbitrary printable display bytes (shell-metacharacters,
-# quotes, brackets) because a value in this class is DISPLAY-ONLY — FIELD: strain `name`,
-# emitted into the output field and used only as the quoted jq/awk `--arg`/`-v` lookup key,
-# NEVER a shell-probe token or command word. The floor still rejects `$`/backtick (so even a
-# display value cannot smuggle command substitution into a re-parsed context) and the framing
-# bytes (so it cannot break the output grammar). This is what lets `api worker` render instead
-# of MALFORMED while a name bearing `$(...)`, a backtick, or a newline is still rejected.
+# Returns 0 iff <value> passes the shared floor AND every byte is in the explicit permitted
+# display set below. This is a POSITIVE ALLOWLIST: an unlisted byte is rejected by default,
+# closing the reject-enumeration treadmill (control bytes, non-ASCII bidi/homoglyph, and
+# markdown-structural bytes are all rejected without naming them one at a time).
+#
+# PERMITTED SET — bounded, justified for issue-title/slug-derived strain display labels:
+#   A-Z a-z         letters
+#   0-9             digits
+#   (space)         "api worker", "web frontend" — real multi-word display names
+#   . _ - /         slug separators and path components
+#   ( )             "feature (2)", "auth (legacy)"
+#   :               "api: v2"
+#   ,               "search, index"
+#   +               "auth+session"
+#   @               "@org/pkg"-style names
+#   # = ~ !         issue refs and label-style display (matches the path-class inert set)
+#
+# REJECTED BY CONSTRUCTION (not in the allowlist — no per-byte enumeration needed):
+#   ALL C0/C1 control bytes incl. NUL, BEL, ESC \033, VT \v, FF \f, DEL \177 — multibyte
+#     values ≥0x80 (Unicode bidi-override U+202E, homoglyphs, RTL marks) — because the
+#     bracket uses explicit ASCII ranges A-Za-z0-9 only, not locale-sensitive [:print:] or
+#     [:alnum:], so no locale widening can admit non-ASCII.
+#   | — Markdown table-cell delimiter; the brood-status navigator renders names into a
+#     Markdown table row; `|` would inject extra cells and visually falsify the dashboard.
+#     With a positive allowlist the explicit carve-out is unnecessary — `|` simply isn't
+#     in the set.
+#   ` ; & < > [ ] { } \ ^ " ' * ? — shell-structural / glob bytes not needed for display.
+#   $ and backtick — already rejected by the shared floor (command-substitution guard).
+#
+# FIELD: strain `name` — display-only, emitted into the output field and used only as the
+# quoted jq/awk `--arg`/`-v` lookup key, NEVER a shell-probe token or command word.
 # Pure: no side effects, no exit.
 hivemind_assert_presentation() {
   local value="$1"
   hivemind__assert_floor "$value" || return 1
-  # Reject any NON-printable byte. [:print:] is space + visible chars; the floor already
-  # excluded the framing-whitespace and command-sub bytes, so what remains here is the broad
-  # printable display set with the floor bytes carved out.
+  # INVARIANT: the bracket below is a POSITIVE allowlist — any byte NOT explicitly listed
+  # rejects the entire value. The bracket uses explicit ASCII ranges (A-Za-z0-9) and literal
+  # punctuation, NOT locale-sensitive classes like [:print:] or [:alnum:], so the LOCALE
+  # cannot widen the set to admit non-ASCII bytes. `-` is placed last in the bracket so it is
+  # a literal character, not a range operator.
   case "$value" in
-    *[![:print:]]*) return 1 ;;
-  esac
-  # Reject the Markdown table-cell delimiter `|`. The ONLY consumer of a presentation value is
-  # the brood-status navigator, which prints it directly into a Markdown table row
-  # (brood-status/SKILL.md step 3). A `|` in the value (e.g. a strain name
-  # `api | forged | alive | #999 | complete`) would inject extra table cells and visually
-  # falsify the dashboard row (Codex #172 P1). Pipe is not part of any legitimate strain name;
-  # rejecting it here keeps the rendered table row faithful without burdening the navigator with
-  # escaping. (The TAB-delimited transport itself is unaffected — TAB is already a floor byte.)
-  case "$value" in
-    *'|'*) return 1 ;;
+    *[!A-Za-z0-9._/=~#!\ \(\):,+@-]*) return 1 ;;
   esac
   return 0
 }
