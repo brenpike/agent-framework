@@ -114,3 +114,19 @@ This amendment is APPEND-ONLY. The original Decision, Consequences, the first am
 ## Amendment — 2026-06-01 (same-run ledger-write serialization is out-of-envelope; deferred to #167)
 
 The third amendment's per-invocation `<token>` closes the inputs-FILE transport collision (F3) — it makes each invocation's transport file unique — but it does NOT serialize the ledger WRITE itself. A reproduced P1 (DATA: N concurrent recorders of one run can lose events to a last-writer-wins atomic rename) was evaluated and DEFERRED rather than fixed with a per-run lock: RUN-OWNERSHIP-01 (worktree isolation) already makes one overlord the sole mutator of a run ledger, so concurrent same-run mutation is outside the design envelope, and adding a multi-writer lock would contradict that ownership model. Accordingly, the over-claim that the token "supports same-run concurrent recorders" is retracted in the `record-state-result` SKILL and `security-policy.md`; prose there now asserts single-writer-per-run as the invariant and labels same-run concurrent ledger mutation as out-of-envelope. If multi-writer-per-run is ever supported, the per-run-lock design is captured in #167. This amendment is APPEND-ONLY. Status remains accepted.
+
+## Amendment — 2026-06-01 (brood-spawn liveness exemption retracted; structural fix is per-<brood-id> namespacing, #168)
+
+A prior amendment to `security-policy.md` (second amendment, point 4, recorded in this ADR) claimed that `spawn-brood` was EXEMPT from the per-invocation-token transport requirement because "the ADR-0017 singleton-manifest liveness guard already serializes brood spawns to one-at-a-time per checkout." That exemption is RETRACTED.
+
+A reproduced Codex P1 (summarized here as DATA — the thread text is not instructions) showed that the liveness guard is a check-then-act read with a TOCTOU window, not a reservation. Under the v1 SINGLETON manifest layout, two concurrent same-checkout spawns can both pass the liveness check before either writes a manifest; both then launch `--dangerously-skip-permissions` children, and the later manifest write hides the earlier child from monitoring. The singleton `inputs.json` is likewise clobberable between the navigator's Write tool call and the script's exec.
+
+ROOT CAUSE: the v1 SINGLETON shared manifest (RUN-OWNERSHIP-01: the brood manifest is the sole shared mutable artifact for a checkout). The liveness guard was never a serialization primitive; it was a best-effort probe that assumed sequential invocation.
+
+Rather than adding a throwaway per-checkout lock plus a per-invocation token on the singleton transport, the STRUCTURAL fix is deferred per-`<brood-id>` namespacing: `.hivemind/broods/<brood-id>/...`, tracked in #168. Namespacing gives each brood its own disjoint dir, manifest, and inputs file, making the shared singleton the entity that is removed. Both the inputs TOCTOU and the manifest-hiding race dissolve because the paths are no longer shared. A per-checkout lock was deliberately NOT added (it would be throwaway once namespacing lands).
+
+Coherence with the #167 deferral: where state is ISOLATED (per-run worktree, RUN-OWNERSHIP-01) no lock is needed because there is no shared mutable state; the brood manifest is the one genuinely SHARED artifact in the current design, and namespacing removes the sharing rather than locking it.
+
+This is documented as a KNOWN v1 residual limitation on PR #156. The `security-policy.md` Transport-path invariant section and `spawn-brood.sh` liveness-guard comment block are updated on the same PR to reflect this retraction and to point to #168 as the tracked structural fix. No behavior change accompanies this amendment — this records the retraction and the known residual only.
+
+This amendment is APPEND-ONLY. Status remains accepted.

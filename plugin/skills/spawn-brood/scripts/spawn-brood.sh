@@ -400,14 +400,24 @@ mkdir -p "$STATE"
 
 # LIVENESS GUARD (the only overlap protection). Before overwriting the singleton
 # manifest, probe the tmux session(s) the existing manifest records. If ANY is still
-# live, a brood is already active in this checkout — refuse to overwrite it. This is
-# trivially correct: it reads observable tmux liveness, holds no lock, and has no
-# reservation/TOCTOU window. Fail OPEN to overwrite when the manifest is absent, when
-# it records no live session (stale/completed brood), or when no tmux_session value is
-# extractable (malformed manifest) — a stale or malformed manifest must not wedge the
-# checkout. Extract tmux_session the SAME way hivemind:brood-status parses it (the
-# producer emits `tmux_session: "<value>"`, a double-quoted YAML line), so both
-# consumers parse identically.
+# live, a brood is already active in this checkout — refuse to overwrite it.
+#
+# KNOWN v1 TOCTOU LIMITATION: this liveness probe is a check-then-act read with a
+# TOCTOU window — it is NOT a reservation. Under the v1 SINGLETON manifest, two
+# concurrent same-checkout spawns can both pass this check before either writes a
+# manifest and both launch --dangerously-skip-permissions children; the later manifest
+# write then hides the earlier child from monitoring. Single-brood-per-checkout is
+# therefore only softly enforced here. The structural fix is per-<brood-id> namespacing
+# (issue #168), which removes the shared singleton and dissolves both races. A
+# per-checkout lock was deliberately NOT added here — it would be throwaway once
+# namespacing lands.
+#
+# Fail OPEN to overwrite when the manifest is absent, when it records no live session
+# (stale/completed brood), or when no tmux_session value is extractable (malformed
+# manifest) — a stale or malformed manifest must not wedge the checkout. Extract
+# tmux_session the SAME way hivemind:brood-status parses it (the producer emits
+# `tmux_session: "<value>"`, a double-quoted YAML line), so both consumers parse
+# identically.
 if [ -f "$STATE/manifest.yaml" ]; then
   while IFS= read -r recorded_session; do
     [ -n "$recorded_session" ] || continue
