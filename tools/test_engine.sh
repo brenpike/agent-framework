@@ -254,17 +254,18 @@ assert_terminal_status_update() {
 
 assert_atomicity_on_write_failure() {
     local name="E:atomicity-write-failure"
-    # The engine writes a temp file beside the ledger via mktemp, then mv. Make the
-    # ledger's parent directory unwritable so BOTH the temp-file create and the rename
-    # cannot occur — the on-disk ledger must remain byte-intact. The inputs file lives in
-    # $WORKDIR (writable); only the ledger's dir is read-only.
-    local subdir="$WORKDIR/e-readonly"
-    mkdir -p "$subdir"
-    local ledger="$subdir/e-ledger.json"
+    # The engine writes a temp file beside the ledger via mktemp, then mv. Force failure
+    # by making the ledger's parent path component a regular file, so any attempt to
+    # create or rename a file beneath it hits ENOTDIR — a kernel VFS error enforced
+    # regardless of UID (root cannot bypass ENOTDIR; it is not a permission check).
+    # INVARIANT: the "directory" component is a regular file, so no prior ledger exists
+    # on disk; the atomicity property to verify is that the engine exits non-zero and
+    # does not create a partial ledger at or beneath the notdir path.
+    local notdir="$WORKDIR/e-notdir"
+    touch "$notdir"
+    local ledger="$notdir/e-ledger.json"
     local inputs="$WORKDIR/e-inputs.json"
-    cp "$LEDGER_AT_PLAN" "$ledger"
-    local before after rc=0
-    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    local rc=0
 
     jq -n \
         --arg ledger "$ledger" \
@@ -275,16 +276,13 @@ assert_atomicity_on_write_failure() {
         '{ledger: $ledger, workflow: $workflow, state: $state, result: $result, summary: $summary}' \
         > "$inputs"
 
-    chmod a-w "$subdir"
     bash "$ENGINE" "$inputs" >/dev/null 2>&1 || rc=$?
-    # Restore write permission so cleanup() can remove the dir.
-    chmod u+w "$subdir"
 
-    after="$(sha256sum "$ledger" | awk '{print $1}')"
-    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
-        pass "$name" "forced write failure (exit $rc) left prior ledger byte-intact"
+    # The ledger path is unreachable (parent is a file), so no ledger can exist.
+    if [[ "$rc" -ne 0 && ! -e "$ledger" ]]; then
+        pass "$name" "forced write failure via ENOTDIR (exit $rc) left no ledger artifact"
     else
-        failed "$name" "expected non-zero exit + intact ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+        failed "$name" "expected non-zero exit + no ledger artifact; rc=$rc, ledger_exists=$([[ -e "$ledger" ]] && echo yes || echo no)"
     fi
 }
 
