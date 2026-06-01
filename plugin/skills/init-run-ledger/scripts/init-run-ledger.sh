@@ -222,7 +222,60 @@ esac
 # spawn-brood.sh's repo_root precedent. Empty result = not inside a git checkout = blocker.
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -n "$repo_root" ] || blocker "not inside a git repository"
-run_dir="$repo_root/.hivemind/runs/$run_id"
+
+# ── Canonical-containment guard (refines ADR-0019) ────────────────────────────
+# Derive-from-ground-truth (repo_root) must be PAIRED with canonicalize-and-verify-
+# containment. The ledger path was previously derived TEXTUALLY as
+# "$repo_root/.hivemind/runs/<run_id>/state.json"; that text does NOT confine the write
+# when an ANCESTOR component is a SYMLINK. A repo that commits .hivemind (or
+# .hivemind/runs) as a symlink to an external dir makes the derived path resolve OUTSIDE
+# the checkout, so mkdir/mktemp/mv would write externally. We canonicalize every EXISTING
+# component with the portable `cd ... && pwd -P` idiom (pwd -P resolves every symlink
+# component; NOT realpath/readlink -f, which BSD/macOS lack or spell differently) and
+# verify containment BEFORE any filesystem mutation. init CREATES the run dir (the leaf
+# does not exist yet), so we guard the deepest EXISTING ancestor plus an explicit symlink
+# reject. Under `set -u` a failed `cd` yields an EMPTY command-substitution result — we
+# TEST for empty and blocker rather than proceed with an empty canonical path.
+canon_repo_root="$(cd "$repo_root" && pwd -P)"
+# Canonicalizing repo_root handles a repo_root that itself sits under a symlinked path
+# (e.g. macOS /tmp -> /private/tmp) so an equal-but-symlinked root does not false-reject.
+[ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root"
+
+# Explicit symlink reject (POSIX `[ -L ]` detects a symlink component regardless of whether
+# its target exists). Reject .hivemind first; only probe .hivemind/runs when .hivemind is a
+# real dir (no symlink hop already taken).
+[ -L "$canon_repo_root/.hivemind" ] \
+  && blocker "refusing symlinked .hivemind under $canon_repo_root"
+if [ -d "$canon_repo_root/.hivemind" ]; then
+  [ -L "$canon_repo_root/.hivemind/runs" ] \
+    && blocker "refusing symlinked .hivemind/runs under $canon_repo_root"
+fi
+
+# For whichever of .hivemind / .hivemind/runs ALREADY EXISTS as a real dir, canonicalize it
+# and require its canonical path stay prefixed by the expected contained location. Append a
+# trailing slash to BOTH operands so a sibling like .hivemind-evil cannot prefix-match
+# .hivemind. (A first-init checkout where neither exists yet skips both — the leaf run dir is
+# created later under the verified-contained canonical root.)
+if [ -d "$canon_repo_root/.hivemind" ]; then
+  canon_hivemind="$(cd "$canon_repo_root/.hivemind" && pwd -P)"
+  [ -n "$canon_hivemind" ] || blocker "failed to canonicalize $canon_repo_root/.hivemind"
+  case "$canon_hivemind/" in
+    "$canon_repo_root/.hivemind/"*) : ;;
+    *) blocker "refusing .hivemind that resolves outside the checkout: $canon_hivemind" ;;
+  esac
+  if [ -d "$canon_repo_root/.hivemind/runs" ]; then
+    canon_runs="$(cd "$canon_repo_root/.hivemind/runs" && pwd -P)"
+    [ -n "$canon_runs" ] || blocker "failed to canonicalize $canon_repo_root/.hivemind/runs"
+    case "$canon_runs/" in
+      "$canon_repo_root/.hivemind/runs/"*) : ;;
+      *) blocker "refusing .hivemind/runs that resolves outside the checkout: $canon_runs" ;;
+    esac
+  fi
+fi
+
+# Derive the ledger path from the CANONICAL root (not the raw $repo_root) so the subsequent
+# mkdir -p / mktemp / mv all operate on the verified-contained canonical path.
+run_dir="$canon_repo_root/.hivemind/runs/$run_id"
 ledger_path="$run_dir/state.json"
 
 [ -e "$ledger_path" ] && blocker "a ledger already exists at $ledger_path; refusing to overwrite"

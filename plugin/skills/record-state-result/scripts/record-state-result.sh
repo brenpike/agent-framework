@@ -216,6 +216,49 @@ ledger_run_id="$(jq -r '.run.id // ""' "$ledger")"
 [ "$ledger_run_id" = "$run_id" ] \
   || blocker "ledger run.id '$ledger_run_id' does not match run_id '$run_id'; ledger unchanged"
 
+# ── Canonical-containment guard (refines ADR-0019) ────────────────────────────
+# Derive-from-ground-truth (repo_root) must be PAIRED with canonicalize-and-verify-
+# containment. The ledger path is derived TEXTUALLY as
+# "$repo_root/.hivemind/runs/<run_id>/state.json"; that text does NOT confine the write
+# when an ANCESTOR component is a SYMLINK. A repo that commits .hivemind (or .hivemind/runs)
+# as a symlink to an external dir makes the derived path resolve OUTSIDE the checkout, so the
+# mktemp/mv below would temp-write and rename EXTERNALLY. record requires the ledger to
+# EXIST, so we canonicalize the existing ledger file (via its dir) with the portable
+# `cd ... && pwd -P` idiom (pwd -P resolves every symlink component; NOT realpath/readlink -f,
+# which BSD/macOS lack or spell differently) and verify containment BEFORE any mktemp/mv.
+# Under `set -u` a failed `cd` yields an EMPTY command-substitution result — we TEST for empty
+# and blocker rather than proceed with an empty canonical path. ALL of this runs BEFORE
+# mktemp, so a rejection never creates a temp file and the on-disk ledger is byte-unchanged.
+canon_repo_root="$(cd "$repo_root" && pwd -P)"
+[ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root; ledger unchanged"
+
+# Explicit symlink reject (POSIX `[ -L ]`), even if the symlink resolves to a real external
+# dir. .hivemind first; only probe .hivemind/runs when .hivemind is a real dir.
+[ -L "$canon_repo_root/.hivemind" ] \
+  && blocker "refusing symlinked .hivemind under $canon_repo_root; ledger unchanged"
+if [ -d "$canon_repo_root/.hivemind" ]; then
+  [ -L "$canon_repo_root/.hivemind/runs" ] \
+    && blocker "refusing symlinked .hivemind/runs under $canon_repo_root; ledger unchanged"
+fi
+
+# Canonicalize the contained runs dir and the existing ledger's own dir, then require the
+# ledger live at "$canon_runs/<run_id>/state.json". Trailing-slash-guarded prefix so a
+# sibling like .hivemind/runs-evil cannot prefix-match. basename asserts confirm the leaf
+# component is exactly <run_id> and the file is exactly state.json.
+canon_runs="$(cd "$repo_root/.hivemind/runs" && pwd -P)"
+[ -n "$canon_runs" ] || blocker "failed to canonicalize $repo_root/.hivemind/runs; ledger unchanged"
+canon_ledger_dir="$(cd "$(dirname "$ledger")" && pwd -P)"
+[ -n "$canon_ledger_dir" ] || blocker "failed to canonicalize the ledger directory; ledger unchanged"
+canon_ledger="$canon_ledger_dir/state.json"
+case "$canon_ledger/" in
+  "$canon_runs/"*) : ;;
+  *) blocker "ledger resolves outside the checkout runs dir: $canon_ledger; ledger unchanged" ;;
+esac
+[ "$(basename "$canon_ledger")" = "state.json" ] \
+  || blocker "canonical ledger leaf is not state.json: $canon_ledger; ledger unchanged"
+[ "$(basename "$canon_ledger_dir")" = "$run_id" ] \
+  || blocker "canonical ledger dir name does not match run_id '$run_id': $canon_ledger_dir; ledger unchanged"
+
 # ── DERIVE the workflow definition from the (trusted) ledger's run.workflow ────
 # The definition is resolved against the self-located PACKAGED workflows dir, never a caller
 # path — so a forged definition cannot bypass the transition gate or the plan-write auth.
@@ -333,7 +376,10 @@ fi
 now_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # ── Atomic write: temp file beside the ledger, then mv into place ──────────────
-ledger_dir="$(dirname "$ledger")"
+# Use the CANONICAL (verified-contained) dir for the temp-write + atomic rename so both
+# operate on the path that passed containment, not the raw textual one.
+ledger_dir="$canon_ledger_dir"
+ledger="$canon_ledger"
 tmp_ledger="$(mktemp "$ledger_dir/.state.json.XXXXXX")" \
   || blocker "failed to create temp ledger file under $ledger_dir"
 
