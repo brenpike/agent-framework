@@ -260,6 +260,60 @@ else
   pass "manifest:hostile-no-side-effect" "description command-sub payload did not execute"
 fi
 
+# ── Single-snapshot content helpers: shape validation + index extraction ─────────
+# hivemind_manifest_validate_shape folds the old `jq empty` syntax probe into a shape check:
+# `.strains` must EXIST as an ARRAY with every element an OBJECT. The content-snapshot helpers
+# (count_snapshot / field_at) operate on the in-memory snapshot the engine reads ONCE.
+
+# A valid full manifest passes shape validation.
+V3_CONTENT="$(cat "$MANIFEST_V3")"
+if hivemind_manifest_validate_shape "$V3_CONTENT"; then
+  pass "shape:v3-valid" "full v3 manifest passes shape validation"
+else
+  failed "shape:v3-valid" "full v3 manifest rejected by shape validation"
+fi
+# A valid EMPTY manifest ({"strains":[]}) passes (all() over an empty array is true) — legit
+# empty brood, NOT unreadable.
+if hivemind_manifest_validate_shape '{"strains":[]}'; then
+  pass "shape:empty-valid" "valid empty manifest passes shape validation"
+else
+  failed "shape:empty-valid" "valid empty manifest wrongly rejected by shape validation"
+fi
+# Wrong-shape / invalid manifests must FAIL shape validation: missing .strains, null .strains,
+# non-array .strains, non-object element, and syntactically-invalid JSON (folds the old jq empty).
+for bad in '{}' '{"strains":null}' '{"strains":"x"}' '{"strains":[1]}' '{"strains":[{"name":"a"}'; do
+  if hivemind_manifest_validate_shape "$bad"; then
+    failed "shape:reject" "wrong-shape/invalid manifest wrongly passed shape validation: $bad"
+  else
+    pass "shape:reject" "wrong-shape/invalid manifest rejected: $bad"
+  fi
+done
+# An object element MISSING `name` still passes shape (it is an object) — per-strain field
+# degradation is the contract, not a whole-manifest structural failure.
+if hivemind_manifest_validate_shape '{"strains":[{}]}'; then
+  pass "shape:object-no-name" "object element missing name passes shape (per-strain degradation, not structural)"
+else
+  failed "shape:object-no-name" "object element missing name wrongly rejected by shape validation"
+fi
+
+# Strain count from the in-memory snapshot.
+assert_eq "snapshot:v3-count" "1" \
+  "$(hivemind_manifest_strain_count_snapshot "$V3_CONTENT")" "v3 strain count from snapshot"
+assert_eq "snapshot:empty-count" "0" \
+  "$(hivemind_manifest_strain_count_snapshot '{"strains":[]}')" "empty manifest strain count from snapshot"
+
+# Index-based field extraction against the snapshot resolves the same values as the path-based
+# pair, selecting by position rather than by name.
+assert_eq "snapshot:v3-field-branch" "feature/api-slice" \
+  "$(hivemind_manifest_field_at "$V3_CONTENT" 0 "branch")" "field_at branch at index 0"
+assert_eq "snapshot:v3-field-worktree" "/repo/.claude/worktrees/api" \
+  "$(hivemind_manifest_field_at "$V3_CONTENT" 0 "worktree_path")" "field_at worktree_path at index 0"
+assert_eq "snapshot:v3-field-ledger" "/repo/.claude/worktrees/api/.hivemind/runs/2026-05-30T22-10-00Z--api/state.json" \
+  "$(hivemind_manifest_field_at "$V3_CONTENT" 0 "run.suggested_ledger")" "field_at run.suggested_ledger at index 0"
+# An object element missing `name`/run fields → field_at yields empty (// empty), never an error.
+assert_eq "snapshot:objnoname-field" "" \
+  "$(hivemind_manifest_field_at '{"strains":[{}]}' 0 "branch")" "field_at on fieldless object → empty"
+
 # ── Section 3: ledger-project.sh ────────────────────────────────────────────────
 echo ''
 echo '=== ledger-project.sh: hivemind_project_run_status / hivemind_project_state_current ==='

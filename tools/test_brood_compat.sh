@@ -1250,6 +1250,73 @@ assert_proj_valid_empty_manifest() {
     fi
 }
 
+# ── Projection 13: VALID-JSON-but-WRONG-SHAPE manifest → MANIFEST_UNREADABLE + exit 2 ──
+# A manifest that is syntactically VALID JSON but structurally wrong-shape ({}, {"strains":null},
+# {"strains":"x"}, {"strains":[1]} — a non-object element) must NOT be silently projected as zero
+# strains. The old `jq empty` probe was syntax-only: all four passed it, then `.strains[]?.name`
+# yielded nothing → projected as a legitimate EMPTY brood, hiding live children. The single
+# shape-validating read now requires `.strains` to EXIST as an ARRAY with every element an
+# OBJECT; each of these fails it → MANIFEST_UNREADABLE sentinel + exit 2 (joining the wrong-shape
+# class to the syntactically-invalid class). Pure DATA written with LF.
+assert_proj_wrong_shape_unreadable() {
+    local name="PROJ-WRONGSHAPE:valid-json-wrong-shape-unreadable"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/wrongshape"
+    mkdir -p "$wd"
+    # Each is valid JSON but structurally wrong: missing .strains, null .strains, non-array
+    # .strains, and an array whose element is not an object.
+    local cases=( '{}' '{"strains":null}' '{"strains":"x"}' '{"strains":[1]}' )
+    local all_ok=yes detail=""
+    local i=0
+    for body in "${cases[@]}"; do
+        local manifest="$wd/manifest-$i.json"
+        printf '%s\n' "$body" > "$manifest"
+        local out rc=0
+        out="$(run_project "$manifest")" || rc=$?
+        local strain_lines; strain_lines="$(count_strain_lines "$out")"
+        local sentinel_path
+        sentinel_path="$(printf '%s\n' "$out" | awk -F'\t' '/^MANIFEST_UNREADABLE\t/ { print $2; exit }')"
+        if [[ "$rc" -ne 2 || "$strain_lines" -ne 0 || "$sentinel_path" != "$manifest" ]]; then
+            all_ok=no
+            detail+=" [$body → rc=$rc lines=$strain_lines sentinel=$sentinel_path]"
+        fi
+        i=$((i + 1))
+    done
+    if [[ "$all_ok" == "yes" ]]; then
+        pass "$name" "all 4 wrong-shape manifests → exit 2 + MANIFEST_UNREADABLE + 0 STRAIN lines"
+    else
+        failed "$name" "expected exit 2 + sentinel + 0 strains for each;$detail"
+    fi
+}
+
+# ── Projection 14: object element missing `name` → projects (per-strain MALFORMED), NOT unreadable ──
+# A strain element that IS a JSON object but lacks `name` ({"strains":[{}]}) passes SHAPE
+# validation (it is an object) — per-strain field degradation is the existing contract, distinct
+# from a whole-manifest structural failure. The strain projects with a MALFORMED name token (the
+# presentation class rejects the empty name) and exit 0, NOT MANIFEST_UNREADABLE. This proves the
+# wrong-shape verdict (Projection 13) fires on non-object elements, not on object elements that
+# merely lack fields.
+assert_proj_object_element_missing_name() {
+    local name="PROJ-OBJNONAME:object-element-no-name-projects-malformed"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/objnoname"
+    mkdir -p "$wd"
+    local manifest="$wd/manifest.json"
+    printf '%s\n' '{"strains":[{}]}' > "$manifest"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local strain_lines; strain_lines="$(count_strain_lines "$out")"
+    local sentinel_seen=no
+    printf '%s\n' "$out" | grep -q '^MANIFEST_UNREADABLE	' && sentinel_seen=yes
+    if [[ "$rc" -eq 0 \
+          && "$strain_lines" -eq 1 \
+          && "$sentinel_seen" == "no" \
+          && "$(strain_field "$out" 2)" == "MALFORMED" ]]; then
+        pass "$name" "exit 0; one STRAIN line; name=MALFORMED; no MANIFEST_UNREADABLE sentinel (per-strain degradation, not structural failure)"
+    else
+        failed "$name" "rc=$rc lines=$strain_lines sentinel_seen=$sentinel_seen name=$(strain_field "$out" 2) expected exit 0 + 1 strain + name MALFORMED + no sentinel"
+    fi
+}
+
 # ── Projection 10: multi-strain — one healthy + one malformed, independent ───────
 # Two strains: a healthy one projects fully; a second whose state.current carries an
 # injection payload projects state_current=MALFORMED. One STRAIN line each, exit 0.
@@ -1344,6 +1411,8 @@ assert_proj_missing_arg
 assert_proj_multi_strain
 assert_proj_unreadable_manifest
 assert_proj_valid_empty_manifest
+assert_proj_wrong_shape_unreadable
+assert_proj_object_element_missing_name
 
 echo ''
 echo '=== Summary ==='

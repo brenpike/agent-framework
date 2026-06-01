@@ -53,13 +53,18 @@
 #   manifest_status, state_current, run_status.
 #
 #   INTEGRITY SENTINEL (distinct from any STRAIN line): when the manifest is PRESENT but
-#   UNPARSEABLE (torn / truncated / invalid JSON), the script emits exactly ONE line
+#   UNREADABLE — either UNPARSEABLE (torn / truncated / invalid JSON) OR VALID-JSON-BUT-WRONG-SHAPE
+#   (`.strains` missing / null / non-array, or any non-object element) — the script emits exactly
+#   ONE line
 #     MANIFEST_UNREADABLE <TAB> <manifest_path>
-#   to stdout and exits nonzero (see EXIT CONTRACT). This is DISTINCT from "manifest absent"
-#   (a pre-flight blocker on stderr) and from "valid empty brood" (`{"strains":[]}` → exit 0,
-#   zero STRAIN lines, no sentinel). A present-but-unparseable manifest must NEVER be
-#   silently projected as zero strains: corruption is otherwise indistinguishable from an
-#   empty brood and would hide live children from the monitoring dashboard.
+#   to stdout and exits nonzero (see EXIT CONTRACT). The wrong-shape class joins the
+#   syntactically-invalid class via a SINGLE shape-validating read (one open, one verdict). This
+#   is DISTINCT from "manifest absent" (a pre-flight blocker on stderr) and from "valid empty
+#   brood" (`{"strains":[]}` → exit 0, zero STRAIN lines, no sentinel). A present-but-unreadable
+#   manifest must NEVER be silently projected as zero strains: corruption (or a wrong-shape
+#   manifest) is otherwise indistinguishable from an empty brood and would hide live children from
+#   the monitoring dashboard. (A strain object that is well-formed but lacks `name` is NOT a
+#   structural failure — it projects with per-strain MALFORMED/MISSING tokens.)
 #
 # EXIT CONTRACT:
 #   0  projected all strains (including zero strains for a VALID empty manifest). PER-STRAIN
@@ -68,10 +73,10 @@
 #   1  pre-flight blocker ONLY: missing arg, jq absent, manifest path escapes the checkout
 #      (symlinked ancestor). Reported via blocker() on stderr. No per-strain condition reaches
 #      exit 1.
-#   2  manifest PRESENT but UNPARSEABLE: emits the MANIFEST_UNREADABLE sentinel line to stdout
-#      (above) and exits 2. A distinct nonzero code so the navigator can tell a corruption
-#      integrity-failure (live children may exist but cannot be enumerated) apart from the
-#      absent-manifest stderr blocker.
+#   2  manifest PRESENT but UNREADABLE (unparseable OR valid-JSON-but-wrong-shape): emits the
+#      MANIFEST_UNREADABLE sentinel line to stdout (above) and exits 2. A distinct nonzero code so
+#      the navigator can tell a corruption/wrong-shape integrity-failure (live children may exist
+#      but cannot be enumerated) apart from the absent-manifest stderr blocker.
 #
 # set -u: every value is read explicitly; an unset variable is a programming error here. We do
 # NOT use `set -e`: per-strain field/ledger problems are caught and rendered as tokens, never
@@ -136,18 +141,29 @@ fi
 hivemind_assert_inputs_contained "$CHECKOUT_ROOT" "$MANIFEST" >/dev/null \
   || blocker "refusing to read the manifest: $MANIFEST resolves outside the checkout root $CHECKOUT_ROOT (symlinked ancestor)"
 
-# ── Manifest PARSEABILITY probe (integrity, not "no strains") ─────────────────────
+# ── Single-snapshot read + shape validation (one open, one verdict) ───────────────
 # The manifest passed every pre-flight (present, regular file, not a symlink leaf, contained).
-# Now probe that it is VALID JSON. hivemind_manifest_strain_names (below) swallows jq parse
-# errors and yields zero names, so a torn / truncated / invalid-JSON manifest would otherwise
-# project as an empty brood — corruption indistinguishable from a genuinely empty brood, hiding
-# live children from the dashboard. Distinguish the two HERE: a present-but-unparseable manifest
-# emits a single MANIFEST_UNREADABLE sentinel to stdout and exits 2 (integrity failure), while a
-# VALID empty manifest (`{"strains":[]}`) falls through to the strain loop and exits 0 with no
-# STRAIN lines (legit empty brood). This is the READ-side response only; the WRITE-side liveness
-# guard in spawn-brood.sh deliberately keeps its fail-open-on-malformed behavior (a corrupt
-# manifest must not wedge spawning) — same jq parse, different RESPONSE.
-if ! jq empty "$MANIFEST" 2>/dev/null; then
+# Open it EXACTLY ONCE into an in-memory snapshot; every projection below runs against THIS
+# snapshot via jq stdin, never re-opening the file. This closes BOTH read-side issues at once:
+#   1. SNAPSHOT SKEW — probe and per-field projections previously re-opened the manifest at
+#      different instants, so a concurrent write mid-read could yield inconsistent reads. One
+#      open means one consistent view.
+#   2. SCHEMA GAP — the old `jq empty` probe was SYNTAX-only: a valid-JSON-but-wrong-shape
+#      manifest ({}, {"strains":null}, {"strains":"x"}, {"strains":[1]}) passed it, then the
+#      per-field projection yielded zero strains and was reported as a legitimate EMPTY brood,
+#      hiding live children. The shape validation here requires `.strains` to EXIST as an ARRAY
+#      with every element an OBJECT, folding the wrong-shape class into the UNREADABLE class.
+# On shape failure (invalid JSON OR wrong shape) emit one MANIFEST_UNREADABLE sentinel to stdout
+# and exit 2 (integrity failure). A VALID empty manifest (`{"strains":[]}`) PASSES shape (all()
+# over an empty array is true) and falls through to the loop, exiting 0 with no STRAIN lines
+# (legit empty brood). An element that IS an object but lacks `name` passes shape validation and
+# projects with per-strain MALFORMED/MISSING tokens — per-strain degradation is the existing
+# contract, distinct from a whole-manifest structural failure. This is the READ-side response
+# only; the WRITE-side liveness guard in spawn-brood.sh deliberately keeps its
+# fail-open-on-malformed behavior (a corrupt manifest must not wedge spawning).
+# The manifest is UNTRUSTED bytes; held only in a shell var passed to jq stdin, never eval'd.
+manifest_content="$(cat -- "$MANIFEST")"
+if ! hivemind_manifest_validate_shape "$manifest_content"; then
   printf 'MANIFEST_UNREADABLE\t%s\n' "$MANIFEST"
   exit 2
 fi
@@ -157,20 +173,30 @@ fi
 # every downstream value through the allowlist, confine the ledger path beneath the strain's
 # own worktree, and project the two ledger scalars. Any per-strain problem renders the affected
 # field(s) as a token and CONTINUES — never aborts the whole read.
-while IFS= read -r strain_name; do
-  [ -n "$strain_name" ] || continue
-
-  # 1. Extract manifest static fields + the suggested_ledger pointer out-of-band.
-  worktree_path="$(hivemind_manifest_field "$MANIFEST" "$strain_name" "worktree_path")"
-  branch="$(hivemind_manifest_field "$MANIFEST" "$strain_name" "branch")"
-  tmux_session="$(hivemind_manifest_field "$MANIFEST" "$strain_name" "tmux_session")"
-  manifest_status="$(hivemind_manifest_field "$MANIFEST" "$strain_name" "status")"
-  suggested_ledger="$(hivemind_manifest_field "$MANIFEST" "$strain_name" "run.suggested_ledger")"
+#
+# DELIMITER-INJECTION AVOIDANCE: the loop is driven by INDEX off the strain COUNT, not by
+# splitting a newline-delimited name stream. An untrusted strain name containing a newline is
+# rejected by the presentation value-class floor — but that rejection happens AFTER extraction,
+# so splitting a name stream on newline could forge an extra loop iteration BEFORE validation.
+# Index-based extraction (hivemind_manifest_field_at, name read via `.strains[$i].name`) selects
+# each strain by position against the in-memory snapshot, so no field value is ever parsed as a
+# loop delimiter before it has passed its value class.
+strain_count="$(hivemind_manifest_strain_count_snapshot "$manifest_content")"
+idx=0
+while [ "$idx" -lt "$strain_count" ]; do
+  # 1. Extract the strain NAME + static fields + the suggested_ledger pointer out-of-band, all
+  #    selected by INDEX against the single in-memory snapshot.
+  strain_name="$(jq -r --argjson i "$idx" '.strains[$i].name // empty' <<<"$manifest_content" 2>/dev/null)"
+  worktree_path="$(hivemind_manifest_field_at "$manifest_content" "$idx" "worktree_path")"
+  branch="$(hivemind_manifest_field_at "$manifest_content" "$idx" "branch")"
+  tmux_session="$(hivemind_manifest_field_at "$manifest_content" "$idx" "tmux_session")"
+  manifest_status="$(hivemind_manifest_field_at "$manifest_content" "$idx" "status")"
+  suggested_ledger="$(hivemind_manifest_field_at "$manifest_content" "$idx" "run.suggested_ledger")"
 
   # 2. Re-gate every value through the allowlist value-class matching its field. A failing
   #    value renders MALFORMED for that field. The strain NAME is DISPLAY-ONLY — it is emitted
-  #    in the output field and used only as the quoted jq `--arg want=` lookup key in
-  #    hivemind_manifest_field, never as a shell probe token. spawn-brood accepts and safely
+  #    in the output field; it is NOT used to select the strain (selection is by INDEX against
+  #    the in-memory snapshot), so it never reaches a shell probe token. spawn-brood accepts and safely
   #    derives names containing SPACES, so a valid `api worker` strain must not be rendered
   #    MALFORMED (which would make the navigator skip the strain's live probes and lose its
   #    status entirely — Codex #172 P1). Gate the name with the broadest PRESENTATION class
@@ -293,6 +319,8 @@ while IFS= read -r strain_name; do
   #    name, worktree_path, branch, tmux_session, manifest_status, state_current, run_status.
   printf 'STRAIN\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$name_out" "$wt_out" "$branch_out" "$tmux_out" "$status_out" "$state_out" "$run_out"
-done < <(hivemind_manifest_strain_names "$MANIFEST")
+
+  idx=$((idx + 1))
+done
 
 exit 0

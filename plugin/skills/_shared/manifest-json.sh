@@ -27,6 +27,17 @@
 # a --arg binding, NEVER interpolated into the jq program string. An unparseable / torn
 # manifest yields no output (jq error swallowed) — the caller treats absent fields as empty.
 #
+# SINGLE-SNAPSHOT READ (read-side projection path): the projection engine
+# (brood-status-project.sh) reads the manifest file EXACTLY ONCE into an in-memory shell
+# variable (`content="$(cat -- "$path")"`) and then runs every projection against THAT snapshot
+# via jq stdin (`jq ... <<<"$content"`) — it never re-opens the file. This closes the read-side
+# SNAPSHOT-SKEW class: a concurrent write mid-read can no longer make the probe and the per-field
+# projections observe different instants. Bytes held in a shell variable and passed only to jq
+# stdin are inert — bash does not re-evaluate them as command source. The content-snapshot
+# helpers below (suffix `_snapshot` / `_at`) take the CONTENT, not the path; the legacy
+# path-based pair (hivemind_manifest_strain_names / hivemind_manifest_field) is retained for the
+# unit-test callers that pass a fixture path directly.
+#
 # MANIFEST SHAPE (mirrors spawn-brood.sh's jq emitter): a top-level object with a `strains`
 # array; each strain is an object with `name`, `worktree_path`, `branch`, `tmux_session`,
 # `status`, and a nested `run` object carrying `suggested_id` / `suggested_ledger` /
@@ -87,5 +98,73 @@ hivemind_manifest_field() {
   jq -r --arg want "$strain_name" \
     "first(.strains[]? | select(.name == \$want)) | $jq_path // empty" \
     "$manifest_path" 2>/dev/null
+  return 0
+}
+
+# ── Single-snapshot content helpers (read-side projection path) ──────────────────
+# These operate on an in-memory CONTENT snapshot the caller read ONCE from the manifest file,
+# never re-opening it. The content enters jq ONLY via stdin (a here-string), never spliced into
+# the program; an index enters as --argjson. This is what lets the projection engine open the
+# manifest exactly once and run all projections + shape validation against one consistent view.
+
+# hivemind_manifest_validate_shape <content>
+# Returns 0 iff <content> is valid JSON AND `.strains` EXISTS and is an ARRAY AND every element
+# of `.strains` is an OBJECT. Returns non-zero otherwise (invalid JSON, missing/null/non-array
+# `.strains`, or any non-object element). This FOLDS the old `jq empty` syntax-only probe into a
+# single shape-validating read: invalid JSON fails `jq -e` here just as it failed `jq empty`, and
+# a valid-JSON-but-wrong-shape manifest ({}, {"strains":null}, {"strains":"x"}, {"strains":[1]})
+# now ALSO fails — joining the wrong-shape class to the syntactically-invalid class so the caller
+# treats both as UNREADABLE rather than silently projecting zero strains. A valid `{"strains":[]}`
+# passes (all() over an empty array is true): a legitimate EMPTY brood, NOT unreadable. An element
+# that IS an object but lacks `name` still passes shape validation — per-strain field degradation
+# (MALFORMED/MISSING tokens) is the existing per-strain contract, not a whole-manifest verdict.
+# Emits nothing; pure (no side effects, no exit).
+hivemind_manifest_validate_shape() {
+  local content="$1"
+  jq -e '(.strains | type == "array") and (all(.strains[]; type == "object"))' \
+    >/dev/null 2>&1 <<<"$content"
+}
+
+# hivemind_manifest_strain_count_snapshot <content>
+# Emit the number of strains (length of the `.strains` array) for the in-memory snapshot. Assumes
+# the snapshot already passed hivemind_manifest_validate_shape (so `.strains` is an array). Emits
+# `0` on any jq error. The caller drives an INDEX-based loop off this count rather than splitting
+# a newline-delimited name stream — so an untrusted field value containing a newline (already
+# rejected by the value-class floor, but only AFTER extraction) can never split the loop or forge
+# an extra iteration before validation. Pure (no side effects, no exit).
+hivemind_manifest_strain_count_snapshot() {
+  local content="$1"
+  jq -r '.strains | length' <<<"$content" 2>/dev/null || printf '0'
+}
+
+# hivemind_manifest_field_at <content> <index> <field>
+# Emit the scalar value of <field> for the strain at array position <index> (0-based) in the
+# in-memory snapshot. Same supported fields and the same fixed-jq-path closed-case mapping as
+# hivemind_manifest_field; the strain is selected by INDEX (--argjson i), never by a name that
+# could collide or carry a delimiter. `// empty` drops a null/absent field. The field selector is
+# a fixed literal from the closed case below — never attacker content. An unrecognized field
+# selects nothing. Pure (no side effects, no exit).
+hivemind_manifest_field_at() {
+  local content="$1"
+  local index="$2"
+  local field="$3"
+
+  local jq_path
+  case "$field" in
+    worktree_path|branch|tmux_session|status)
+      jq_path=".${field}" ;;
+    run.suggested_id|suggested_id)
+      jq_path=".run.suggested_id" ;;
+    run.suggested_ledger|suggested_ledger)
+      jq_path=".run.suggested_ledger" ;;
+    run.workflow_hint|workflow_hint)
+      jq_path=".run.workflow_hint" ;;
+    *)
+      return 0 ;;
+  esac
+
+  jq -r --argjson i "$index" \
+    ".strains[\$i] | $jq_path // empty" \
+    <<<"$content" 2>/dev/null
   return 0
 }

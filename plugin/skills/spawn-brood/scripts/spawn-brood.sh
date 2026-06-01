@@ -877,6 +877,16 @@ manifest_json="$(printf '%s' "$strains_objects" | jq -s '.' \
   blocker "failed to construct brood manifest JSON; refusing to report success with no current manifest"
 }
 
+# NON-ATOMIC WRITE — concurrent-spawn read-skew race DEFERRED to #168 (do NOT add atomic-write
+# machinery here). This is a truncating redirect: it is NOT atomic (no temp-file + rename). A
+# concurrent same-checkout spawn truncating this singleton manifest mid-read can skew a reader
+# (brood-status), which could observe a partially-written manifest. This is the WRITE side of the
+# v1 SINGLETON shared-manifest race (the same root the liveness-guard TOCTOU note above
+# describes). The READ side already mitigates by reading the manifest in ONE snapshot (cat into a
+# shell var, all jq projections against that snapshot — brood-status-project.sh). The STRUCTURAL
+# fix is per-<brood-id> namespacing (#168), which gives each brood its own disjoint manifest and
+# dissolves the shared-singleton race entirely. Do NOT add interim atomic-write (temp+mv) on the
+# doomed singleton — it would be throwaway once namespacing lands.
 printf '%s\n' "$manifest_json" > "$manifest_path" || {
   printf 'recovery: manifest write failed; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
   blocker "failed to write brood manifest to $manifest_path (target unwritable, e.g. a stale directory at that path); refusing to report success with no current manifest"
