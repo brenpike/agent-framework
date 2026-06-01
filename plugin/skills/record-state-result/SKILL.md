@@ -153,9 +153,14 @@ on-disk ledger is byte-unchanged.
 2. **Write the inputs file** via the Write tool to a PER-INVOCATION-UNIQUE gitignored path
    `.hivemind/runs/.record-inputs-<token>.json`. GENERATE an invocation-unique `<token>` for the
    filename (a UTC timestamp plus a random component, such as `20260601T014132Z-a1b2c3`) so two
-   concurrent same-checkout overlord sessions recording — including two recording the SAME run —
-   author DISTINCT inputs files and cannot clobber each other's payload between the Write and the
-   script exec (closes the singleton-inputs TOCTOU; see ADR-0019). `file_path` =
+   concurrent same-checkout overlord sessions (distinct runs) author DISTINCT inputs files and
+   cannot clobber each other's payload between the Write and the script exec; safe sequential
+   re-records of the same run are also protected (closes the singleton-inputs TRANSPORT TOCTOU;
+   see ADR-0019). Note: the token makes the TRANSPORT FILE invocation-unique — it does NOT make
+   concurrent mutation of ONE run's ledger safe. A run ledger is owned and mutated by exactly one
+   overlord instance (RUN-OWNERSHIP-01, worktree isolation); concurrent same-run ledger mutation
+   is outside the design envelope. Serializing same-run ledger writes (a per-run lock) is tracked
+   as deferred in issue #167, not implemented here. `file_path` =
    `.hivemind/runs/.record-inputs-<token>.json`, `content` = the JSON object from step 1. The
    leading-dot `.record-inputs-*` name is a SIBLING of the run dirs (`runs/<run-id>/`), not one of
    them, so it stays OUT of the `runs/<run-id>/` glob — it never collides with `state.json` or the
