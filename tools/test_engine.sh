@@ -135,6 +135,13 @@
 #                           resolving path via a symlinked ancestor. record's shared read-guard
 #                           refuses to read it: non-zero exit AND the staged ledger byte-unchanged.
 #                           Proves the shared read-guard for record.
+#   Z. init-pre-ledger-failure-rollback-then-retry -> a deterministic post-claim failure (a failing
+#                           `mktemp` stub shadowed on PATH, invoked AFTER the atomic `mkdir "$run_dir"`
+#                           claim) makes init block (exit 1); the EXIT-trap rollback removes the
+#                           invocation-owned run dir, leaving NO orphan. Then, with the stub removed, a
+#                           retry pinned to the SAME suggested_run_id re-claims the dir and writes a
+#                           valid ledger (run.id round-trips). Proves the orphaned-reservation P1 fix:
+#                           a transient failure does not permanently brick a stable (brood) run_id.
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -1335,6 +1342,68 @@ assert_record_inputs_external_rejected() {
     fi
 }
 
+# ── Z. init pre-ledger failure rolls back the claimed run dir; same-id retry succeeds ─
+
+assert_init_pre_ledger_failure_rolls_back_then_retry_succeeds() {
+    local name="Z:init-pre-ledger-failure-rollback-then-retry"
+    # REGRESSION for the orphaned-reservation P1: when init fails AFTER the atomic claim
+    # `mkdir "$run_dir"` but BEFORE the ledger is durably written, the EXIT trap must remove the
+    # invocation-owned run dir so a retry with the SAME run_id can re-claim it. Without rollback a
+    # stable brood suggested_run_id would be permanently bricked at the `mkdir` after one transient
+    # failure. Deterministic failure injection: shadow `mktemp` (called AFTER the claim, before the
+    # ledger mv) on PATH with a failing stub for ONE invocation. Assert (a) init blocks (exit 1) AND
+    # the run dir does NOT exist afterward (trap cleaned it up), then (b) remove the stub and re-run
+    # init with the SAME suggested_run_id and assert it now succeeds and writes a valid ledger.
+    local gitroot fixed_id rundir inputs stubdir rc1=0 rc2=0
+    gitroot="$(new_gitroot z-git)"
+    fixed_id="engine-case-z"
+    rundir="$gitroot/.hivemind/runs/$fixed_id"
+    # Inputs authored at a REAL in-checkout path so the read-guard passes and the reservation /
+    # post-claim path is the behavior under test. Pinned to suggested_run_id=<fixed_id> so BOTH
+    # invocations derive the identical run_id — proving the retry re-claims the same dir.
+    inputs="$gitroot/z-inputs.json"
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test pre-ledger rollback" \
+        --arg normalized "engine test pre-ledger rollback" \
+        --arg suggested_run_id "$fixed_id" \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized, suggested_run_id: $suggested_run_id}' \
+        > "$inputs"
+
+    # Failing `mktemp` stub, first on PATH. mktemp is invoked AFTER the atomic `mkdir "$run_dir"`
+    # claim (run dir + evidence already created), so this fires post-claim and exercises the
+    # rollback. The real mktemp stays reachable via the rest of PATH once the stub dir is removed.
+    stubdir="$WORKDIR/z-stubbin"
+    mkdir -p "$stubdir"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "$stubdir/mktemp"
+    chmod +x "$stubdir/mktemp"
+
+    # (a) Forced post-claim failure: init must block AND leave NO orphan run dir (trap cleaned up).
+    ( cd "$gitroot" && PATH="$stubdir:$PATH" bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc1=$?
+    local orphan=no
+    [[ -e "$rundir" ]] && orphan=yes
+
+    # (b) Remove the stub and retry with the SAME suggested_run_id: must succeed and write a valid
+    # ledger at runs/<fixed_id>/state.json with run.id == fixed_id.
+    rm -rf "$stubdir"
+    local out ledger ledger_id valid=no
+    out="$( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" )" || rc2=$?
+    ledger="$(printf '%s\n' "$out" | sed -n 's/^ledger: //p')"
+    if [[ "$rc2" -eq 0 && -n "$ledger" && -f "$ledger" ]] \
+        && jq -e . "$ledger" >/dev/null 2>&1; then
+        ledger_id="$(jq -r '.run.id' "$ledger")"
+        [[ "$ledger_id" == "$fixed_id" ]] && valid=yes
+    fi
+
+    if [[ "$rc1" -ne 0 && "$orphan" == "no" && "$valid" == "yes" ]]; then
+        pass "$name" "post-claim failure rolled back claimed dir (exit $rc1, no orphan); same-id retry wrote valid ledger"
+    else
+        failed "$name" "expected (a) non-zero exit + no orphan dir, (b) retry success + valid ledger; rc1=$rc1 orphan=$orphan rc2=$rc2 valid=$valid"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1363,6 +1432,7 @@ assert_init_nested_symlink_escape_rejected
 assert_init_concurrent_reservation_fails_closed
 assert_init_inputs_external_rejected
 assert_record_inputs_external_rejected
+assert_init_pre_ledger_failure_rolls_back_then_retry_succeeds
 
 echo ''
 echo '=== Summary ==='

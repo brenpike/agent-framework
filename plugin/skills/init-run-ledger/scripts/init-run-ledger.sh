@@ -99,6 +99,18 @@ set -u
 
 blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 
+# Invocation-owned run-dir cleanup. CLAIMED_DIR is set ONLY after the atomic bare
+# `mkdir "$run_dir"` below succeeds — the point at which THIS invocation exclusively owns the
+# leaf dir. The EXIT trap removes that invocation-owned dir IFF the ledger was not durably
+# committed (CLAIMED_DIR still non-empty). Set CLAIMED_DIR up front (before any post-claim
+# blocker could fire) for set -u safety. INVARIANT: the trap body MUST end with a guaranteed-
+# zero statement (`:`) so a failing `rm`/test can never override the script's intended exit
+# code — this script runs under `set -u` with no `set -e`, and blocker() exits 1; an EXIT trap
+# whose last command fails would otherwise clobber that 1 (the EXIT-trap-exit-code gotcha fixed
+# in tools/test_brood_compat.sh @ 21290bf). Top-level `return` is invalid in a trap here; `:`.
+CLAIMED_DIR=""
+trap 'if [ -n "${CLAIMED_DIR:-}" ]; then rm -rf "$CLAIMED_DIR" 2>/dev/null; fi; :' EXIT
+
 # SAFE_ID charset for run-id components and suggested run ids.
 SAFE_ID_RE='^[A-Za-z0-9._-]+$'
 
@@ -296,14 +308,22 @@ def_start="$(jq -r '.start // ""' "$def")"
 # exists, so the loser of a concurrent race fails closed here and the winner's ledger is
 # never overwritten. Parents are created with -p first (a shared ancestor is fine); only the
 # <run_id> leaf is claimed atomically. Operating on the canonical $canon_repo_root-derived
-# $run_dir keeps the claim on the verified-contained path. If a LATER step fails after this
-# claim, an empty <run_id> dir is left behind — harmless, ephemeral, gitignored state under
-# .hivemind/; we deliberately do NOT roll it back (no rmdir) so a concurrent winner is never
-# disturbed.
+# $run_dir keeps the claim on the verified-contained path. OWNERSHIP + ROLLBACK: the invocation
+# whose bare `mkdir "$run_dir"` SUCCEEDS exclusively owns the leaf; it records CLAIMED_DIR and
+# the EXIT trap removes that invocation-owned dir on ANY pre-ledger failure (evidence mkdir /
+# mktemp / jq serialize / mv) so a transient filesystem failure does NOT permanently brick
+# retry — critical for brood children, whose suggested_run_id is STABLE, so an orphan would
+# reject every same-id retry at this `mkdir`. A concurrent LOSER's `mkdir "$run_dir"` FAILS, so
+# it blocks BEFORE setting CLAIMED_DIR and the trap never touches the winner's dir (the
+# exclusive-ownership property: cleanup targets only the path THIS invocation created).
 mkdir -p "$canon_repo_root/.hivemind/runs" \
   || blocker "failed to create .hivemind/runs under $canon_repo_root"
 mkdir "$run_dir" \
   || blocker "run dir already claimed (concurrent init or pre-existing run): $run_dir; refusing to overwrite"
+# Claim succeeded: this invocation now exclusively owns $run_dir. Arm rollback so any pre-ledger
+# failure below removes it (see the EXIT trap). Cleared only after the final mv -f durably
+# installs the ledger.
+CLAIMED_DIR="$run_dir"
 mkdir -p "$run_dir/evidence" \
   || blocker "failed to create evidence dir under $run_dir"
 
@@ -385,6 +405,10 @@ jq -n \
 
 mv -f "$tmp_ledger" "$ledger_path" \
   || { rm -f "$tmp_ledger"; blocker "failed to atomically install the run ledger at $ledger_path"; }
+
+# Ledger durably written: disarm rollback so the EXIT trap does NOT delete the now-complete run
+# dir on normal exit 0. Past this point the run dir is committed state, not an unfinished claim.
+CLAIMED_DIR=""
 
 # ── Success routing ───────────────────────────────────────────────────────────
 printf 'run_id: %s\n' "$run_id"

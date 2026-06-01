@@ -30,6 +30,13 @@
 #              path that resolves outside the checkout via a symlinked ANCESTOR; the shared
 #              READ-guard (hivemind_assert_inputs_contained) refuses to read it. Both assert
 #              non-zero exit AND nothing written under the external target.
+#   CHILD-ESCAPE — the COORDINATOR checkout is safe (real `.hivemind`/`.claude`), but the `base`
+#              ref's TREE tracks `.hivemind` as a SYMLINK to an external dir. `git worktree add`
+#              materializes that symlink INTO the child worktree, so the coordinator-side guard
+#              (which ran before the worktree existed) cannot catch it. The child-worktree
+#              recheck (the helper re-run against the NEW worktree root after worktree-add, before
+#              any mkdir/cp/task-write/tmux) rejects it, removes the worktree, and fails the
+#              strain — never launching a privileged child in an escaping worktree.
 #
 # Usage:
 #   ./tools/test_brood_compat.sh
@@ -299,12 +306,139 @@ assert_spawn_brood_inputs_external_rejected() {
     fi
 }
 
+# ── Assertion 6: spawn-brood CHILD-WORKTREE symlink-escape blocked (P0) ─────────
+# The coordinator-side write-chain guard (assertion 4) only proves the COORDINATOR checkout is
+# safe — it runs BEFORE any worktree exists. But `base` can resolve to a commit whose TREE
+# tracks `.hivemind` (or `.claude`) as a SYMLINK to an external dir. `git worktree add`
+# materializes that tree INTO the child worktree, so the symlink lands inside $wt; provisioning
+# (task.md under .hivemind/brood, settings.local.json under .claude) then follows it externally
+# and a --dangerously-skip-permissions child launches in an escaping worktree. spawn-brood.sh
+# (this session) closes this by re-running the depth-complete shared helper against the NEW
+# WORKTREE ROOT immediately after worktree-add, before any mkdir/cp/task-write/tmux, removing the
+# offending worktree and failing the strain on reject.
+#
+# REPRO of the OLD behavior this proves blocked: with a SAFE coordinator checkout (real
+# `.hivemind`/`.claude`) and an `evil` base ref whose tree tracks `.hivemind -> external`, the
+# pre-fix script passed the coordinator guard, `git worktree add` checked the symlink into $wt,
+# and provisioning wrote $external/brood/task.md before launching the child (script exited 0).
+# This case asserts: spawn-brood exits non-zero, writes NOTHING under the external target, and
+# (because the strain is the only one) reports failure.
+#
+# DEPENDENCY GATING: identical to assertions 4/5 — spawn-brood's tmux/claude/jq dep checks
+# precede everything and exit at the first missing binary, so the guard is only reachable when
+# all three are present. SKIP cleanly when any is absent (CI lacks `claude`, so this SKIPs in CI).
+assert_spawn_brood_child_worktree_symlink_escape_blocked() {
+    local name="CHILD-ESCAPE:spawn-brood-child-worktree-symlink-escape-blocked"
+    local missing=""
+    for dep in tmux claude jq; do
+        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
+    done
+    if [ -n "$missing" ]; then
+        skip "$name" "spawn-brood dep check precedes the child-worktree guard; skipping (missing: $missing)"
+        return
+    fi
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    git -C "$gitroot" config user.email test@example.com
+    git -C "$gitroot" config user.name test
+    # The COORDINATOR checkout is SAFE: its OWN `.hivemind`/`.claude` are REAL dirs, so the
+    # coordinator-side write-chain guard passes (this case is NOT testing that guard).
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    # Seed an initial commit on the default branch so a worktree can be added from a base ref.
+    git -C "$gitroot" commit -q --allow-empty -m "init"
+    # A reachable bare `origin` is REQUIRED: spawn-brood's per-strain remote branch-collision
+    # check (`git ls-remote --exit-code --heads origin <branch>`) FAILS CLOSED on an unreachable
+    # origin (blocker), and that check runs at pre-flight BEFORE the per-strain worktree-add loop
+    # where the child-worktree guard lives. Without a reachable origin the run would blocker at
+    # the remote check and never reach worktree-add — the case would pass for the WRONG reason
+    # (exit 1 from the remote check, guard never exercised). With this origin present, ls-remote
+    # returns "no such ref" cleanly and the run proceeds to worktree-add, where the child-worktree
+    # guard becomes the only blocker the valid inputs reach.
+    local origin="$WORKDIR/brood-origin.git"
+    git init -q --bare "$origin"
+    git -C "$gitroot" remote add origin "$origin"
+
+    # External dir OUTSIDE the checkout — the symlink's escape target.
+    local external="$WORKDIR/brood-external"
+    mkdir -p "$external"
+
+    # Build the hostile `evil` base ref: a commit whose TREE tracks `.hivemind` as a SYMLINK to
+    # the external dir. `git worktree add ... evil` will materialize this symlink INTO the child
+    # worktree. Author it on a dedicated branch so the coordinator's own working tree keeps its
+    # real `.hivemind` dir (the coordinator-side guard must still pass).
+    git -C "$gitroot" checkout -q -b evil
+    # Remove the real dir from the index/working tree for THIS branch, replace with a symlink.
+    rm -rf "$gitroot/.hivemind"
+    ln -s "$external" "$gitroot/.hivemind"
+    git -C "$gitroot" add -A
+    git -C "$gitroot" commit -q -m "evil: track .hivemind as external symlink"
+    # Confirm it is committed as a symlink (mode 120000) — the vector under test.
+    if ! git -C "$gitroot" ls-files -s -- .hivemind | grep -q '^120000 '; then
+        failed "$name" "fixture error: .hivemind was not committed as a symlink on evil ref"
+        return
+    fi
+    # Return the coordinator working tree to a SAFE state (real `.hivemind`) so the
+    # coordinator-side guard passes and the CHILD-worktree guard is the only thing that can fire.
+    git -C "$gitroot" checkout -q -
+    [ -L "$gitroot/.hivemind" ] && rm -f "$gitroot/.hivemind"
+    mkdir -p "$gitroot/.hivemind"
+
+    # Minimal VALID brood inputs whose `base` is the hostile `evil` ref. Every other field passes
+    # pre-flight; the child-worktree containment recheck is the only blocker the run reaches.
+    # The inputs file lives INSIDE the coordinator checkout (a real subdir, no symlinked ancestor)
+    # so the inputs READ-guard passes — otherwise the read-guard, not the child-worktree guard,
+    # would be what fires (the inputs file must resolve inside the checkout for this case to
+    # isolate the CHILD-worktree vector).
+    local inputs="$gitroot/brood-inputs.json"
+    jq -n \
+        --arg brood_id "2026-05-31T17:30:00Z" \
+        --arg base "evil" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "brood compat child-worktree symlink-escape test" \
+        --arg strain_name "api" \
+        --arg strain_desc "child worktree symlink escape test strain" \
+        --arg strain_branch "feature/api-slice" \
+        '{
+            brood_id: $brood_id,
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+        }' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    # The child-worktree guard must reject (non-zero — the single strain fails) AND nothing may
+    # have been written under the external escape target. A successful escape (OLD behavior) would
+    # land $external/brood/task.md (the provisioned task file) under the external target.
+    local escaped=no
+    if find "$external" -mindepth 1 -print 2>/dev/null | grep -q .; then
+        escaped=yes
+    fi
+    # The offending worktree must also be removed (not left dangling for a later launch).
+    local worktree_leaked=no
+    if [ -e "$gitroot/.claude/worktrees/api" ]; then
+        worktree_leaked=yes
+    fi
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" ]]; then
+        pass "$name" "child-worktree symlinked .hivemind rejected (exit $rc); worktree removed; nothing written under external target"
+    else
+        failed "$name" "expected non-zero exit + no external write + worktree removed; rc=$rc escaped=$escaped worktree_leaked=$worktree_leaked"
+    fi
+}
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
 assert_brood_instruction_flag_parity
 assert_spawn_brood_symlink_escape_blocked
 assert_spawn_brood_inputs_external_rejected
+assert_spawn_brood_child_worktree_symlink_escape_blocked
 
 echo ''
 echo '=== Summary ==='

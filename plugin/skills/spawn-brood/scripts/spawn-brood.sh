@@ -496,6 +496,37 @@ for idx in $(seq 0 $((strain_count - 1))); do
   fi
   created_worktree=true
 
+  # 3a-guard: CHILD-WORKTREE containment recheck (P0). The coordinator-side guards
+  # (the hivemind_assert_contained calls over $repo_root above) ran BEFORE this worktree
+  # existed, so they only proved the COORDINATOR checkout is safe. But `base` can resolve to a
+  # commit whose TREE tracks `.hivemind` or `.claude` as a SYMLINK to an external dir; `git
+  # worktree add` just MATERIALIZED that tree into $wt, so the symlink now lives INSIDE the
+  # child worktree. Every provisioning write below derives textually from $wt
+  # ("$wt/.hivemind/brood/task.md", "$wt/.claude/settings.local.json"), so a symlinked
+  # `.hivemind`/`.claude` here would make those writes — and then a
+  # --dangerously-skip-permissions child launched in $wt — escape the checkout. Re-run the
+  # SAME depth-complete shared helper against the NEW WORKTREE ROOT $wt (not $repo_root) for
+  # BOTH write chains, BEFORE any mkdir/cp/task-write AND before any tmux/child launch. On
+  # EITHER failing this is a HARD per-strain pre-launch failure: remove the just-created
+  # worktree+branch, mark the strain failed, and skip its launch — never launch a privileged
+  # child in a worktree whose `.hivemind`/`.claude` escapes the checkout. Per-strain, matching
+  # the existing worktree-add / task-provisioning failure model (one bad base does not abort
+  # the whole brood).
+  if ! hivemind_assert_contained "$wt" ".hivemind/brood" >/dev/null \
+     || ! hivemind_assert_contained "$wt" ".claude" >/dev/null; then
+    printf 'warning: child worktree %s has a symlinked .hivemind/.claude that escapes the checkout (base ref tracks it); refusing to provision or launch strain %s\n' "$wt" "${S_NAME[$idx]}" >&2
+    mark_failed "$idx"
+    # DESTRUCTIVE cleanup: this invocation created the worktree+branch via worktree-add above
+    # (created_worktree=true), so removing them is removing only OUR own provisional resource.
+    git worktree remove --force "$wt" >/dev/null 2>&1 || true
+    git branch -D "$branch" >/dev/null 2>&1 || true
+    rm -rf "$wt" >/dev/null 2>&1 || true
+    # Worktree+branch removed; clear so the interrupt trap does not report them as a leak.
+    cur_wt=""
+    cur_branch=""
+    continue
+  fi
+
   # 3b: propagate config into the new worktree, if present.
   if [ -f "$settings_local" ]; then
     mkdir -p "$wt/.claude"
