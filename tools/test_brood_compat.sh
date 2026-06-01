@@ -50,8 +50,9 @@ MANIFEST_V1="$FIX_DIR/manifest-v1-old.yaml"
 MANIFEST_V2="$FIX_DIR/manifest-v2-new.yaml"
 SPAWN_SCRIPT="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
 INIT_SCRIPT="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
+PROJECT_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-status-project.sh"
 
-for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT"; do
+for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT" "$PROJECT_SCRIPT"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required fixture missing: $required" >&2; exit 2; }
 done
@@ -108,6 +109,9 @@ cleanup() {
     reap_brood_sessions
     tmux kill-server 2>/dev/null || true   # tear down the private tmux server entirely
     [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"
+    # PROJ_WORKDIR is folded into WORKDIR only when WORKDIR was empty at first use; when a
+    # spawn case set WORKDIR first, PROJ_WORKDIR is a separate dir and needs its own reap.
+    [ -n "${PROJ_WORKDIR:-}" ] && [ "${PROJ_WORKDIR:-}" != "${WORKDIR:-}" ] && rm -rf "$PROJ_WORKDIR"
     [ -n "${TMUX_TMPDIR:-}" ] && rm -rf "$TMUX_TMPDIR"
     return 0
 }
@@ -832,6 +836,402 @@ assert_spawn_brood_child_leaf_regular_ok() {
     fi
 }
 
+# ════════════════════════════════════════════════════════════════════════════════
+# brood-status-project.sh (read-side projection, #161)
+# ════════════════════════════════════════════════════════════════════════════════
+# END-TO-END integration cases that drive the read-side entrypoint
+#   bash "$PROJECT_SCRIPT" <manifest_path>
+# through the REAL manifest→allowlist→ledger-confine→projection path and assert the
+# CONTRACT output grammar (one TAB-delimited STRAIN line per strain) plus the exit
+# contract (0 = projected all strains; nonzero = pre-flight blocker only).
+#
+# These cases are PURE jq/manifest/ledger — they do NOT shell out to tmux/claude/gh,
+# so they run UNCONDITIONALLY (no dep gate, unlike the spawn-brood escape cases above
+# which are gated per #169). Each case builds its manifest + ledger fixtures in a
+# fresh tmpdir with explicit LF via printf — never the committed CRLF-able fixtures —
+# so assertions are deterministic regardless of the repo's autocrlf setting.
+#
+# DATA-BOUNDARY: the manifest/ledger bytes these cases author include deliberate
+# injection payloads ($(...), backticks, ';', symlinks, path escapes). They are DATA.
+# The assertions prove the entrypoint NEUTRALIZES each payload — replacing it with the
+# FIXED token MALFORMED/MISSING — and that NO command-execution side-effect occurs. We
+# never assert a raw attacker string appears; we assert the fixed token replaced it.
+
+# ensure_proj_workdir: lazily create (once) a disposable git checkout root for the projection
+# cases, setting the global PROJ_WORKDIR. The dir is `git init`'d so it is a real checkout
+# root: the entrypoint's defense-in-depth READ-guard canonicalizes `git rev-parse
+# --show-toplevel` and refuses any manifest resolving OUTSIDE the checkout, so every
+# projection case authors its manifest UNDER this root and runs the entrypoint with cwd
+# inside it (see run_project). All case fixtures namespace under a unique subdir of this
+# single root. Reaped by cleanup() via the tracked PROJ_WORKDIR/WORKDIR.
+#
+# INVARIANT: this MUTATES the global PROJ_WORKDIR, so it MUST be called as a bare statement,
+# NEVER inside `$( ... )`. Command substitution runs in a subshell; an assignment made there
+# would not survive to the parent, and run_project's `cd "$PROJ_WORKDIR"` would silently
+# no-op (staying in the suite's cwd, where git toplevel is the hivemind repo — against which
+# the read-guard then rejects the tmpdir manifest as "outside the checkout").
+PROJ_WORKDIR=""
+ensure_proj_workdir() {
+    if [ -z "$PROJ_WORKDIR" ]; then
+        PROJ_WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-proj.XXXXXX")"
+        git -C "$PROJ_WORKDIR" init -q
+        # Fold into WORKDIR so the existing cleanup() reaps it when no spawn case set it;
+        # otherwise reap PROJ_WORKDIR explicitly in cleanup (handled below).
+        if [ -z "$WORKDIR" ]; then
+            WORKDIR="$PROJ_WORKDIR"
+        fi
+    fi
+}
+
+# run_project: invoke the entrypoint with cwd INSIDE the git checkout root so its READ-guard
+# (git rev-parse --show-toplevel) resolves and the manifest path is contained. Echoes the
+# entrypoint stdout; stderr is discarded (callers asserting stderr capture it themselves).
+# $1 = manifest path.
+run_project() {
+    ( cd "$PROJ_WORKDIR" && bash "$PROJECT_SCRIPT" "$1" 2>/dev/null )
+}
+
+# write_manifest_v2: author a v2 brood manifest (with run: block) at $1 using explicit
+# LF, for ONE strain. Args: $1=path $2=strain_name $3=worktree_path $4=branch
+# $5=tmux_session $6=status $7=suggested_ledger. Mirrors the producer shape in
+# manifest.sh exactly (block scalars at content indent; tmux_session inline-quoted;
+# status bare).
+write_manifest_v2() {
+    local out="$1" name="$2" wt="$3" branch="$4" sess="$5" status="$6" ledger="$7"
+    {
+        printf 'manifest_version: |-\n  2\n'
+        printf 'brood_id: |-\n  2026-05-30T22-10-00Z\n'
+        printf 'base: |-\n  main\n'
+        printf 'overlap_risk: |-\n  low\n'
+        printf 'strains:\n'
+        printf '  - name: |-\n      %s\n' "$name"
+        printf '    description: |\n      test strain\n'
+        printf '    worktree_path: |-\n      %s\n' "$wt"
+        printf '    branch: |-\n      %s\n' "$branch"
+        printf '    tmux_session: "%s"\n' "$sess"
+        printf '    status: %s\n' "$status"
+        printf '    run:\n'
+        printf '      suggested_id: |-\n        run-id\n'
+        printf '      suggested_ledger: |-\n        %s\n' "$ledger"
+        printf '      workflow_hint: |-\n        standard-delivery\n'
+        printf 'merge_order: []\n'
+    } > "$out"
+}
+
+# write_ledger: author a child run-ledger JSON at $1 with run.status=$2,
+# state.current=$3 via jq -n (safe construction). Parent dirs must already exist.
+write_ledger() {
+    local out="$1" run_status="$2" state_current="$3"
+    jq -n --arg rs "$run_status" --arg sc "$state_current" \
+        '{run:{status:$rs}, state:{current:$sc}}' > "$out"
+}
+
+# strain_field: split the FIRST STRAIN line of $1 (entrypoint output) on TAB and echo
+# the field at 1-based index $2. Field order (1-based): 1=STRAIN 2=name 3=worktree_path
+# 4=branch 5=tmux_session 6=manifest_status 7=state_current 8=run_status.
+strain_field() {
+    local output="$1" idx="$2"
+    printf '%s\n' "$output" | awk -F'\t' -v i="$idx" '/^STRAIN\t/ { print $i; exit }'
+}
+
+# count_strain_lines: number of STRAIN lines in $1.
+count_strain_lines() {
+    printf '%s\n' "$1" | grep -c '^STRAIN	' || true
+}
+
+# ── Projection 1: happy path — v2 manifest + valid confined ledger on disk ───────
+# Asserts exit 0, exactly one STRAIN line, and exact TAB-delimited field values
+# including state_current=implement_step run_status=running projected from the ledger.
+assert_proj_happy_path() {
+    local name="PROJ-HAPPY:v2-manifest-valid-ledger"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/happy"
+    local wt="$wd/wt"
+    mkdir -p "$wt/.hivemind/runs/run-id"
+    write_ledger "$wt/.hivemind/runs/run-id/state.json" running implement_step
+    local manifest="$wd/manifest.yaml"
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
+        "$wt/.hivemind/runs/run-id/state.json"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local lines; lines="$(count_strain_lines "$out")"
+    if [[ "$rc" -eq 0 \
+          && "$lines" -eq 1 \
+          && "$(strain_field "$out" 2)" == "api" \
+          && "$(strain_field "$out" 3)" == "$wt" \
+          && "$(strain_field "$out" 4)" == "feature/api-slice" \
+          && "$(strain_field "$out" 5)" == "brood-api" \
+          && "$(strain_field "$out" 6)" == "running" \
+          && "$(strain_field "$out" 7)" == "implement_step" \
+          && "$(strain_field "$out" 8)" == "running" ]]; then
+        pass "$name" "exit 0; one STRAIN line; state_current=implement_step run_status=running"
+    else
+        failed "$name" "rc=$rc lines=$lines fields=[$(strain_field "$out" 2)|$(strain_field "$out" 3)|$(strain_field "$out" 4)|$(strain_field "$out" 5)|$(strain_field "$out" 6)|$(strain_field "$out" 7)|$(strain_field "$out" 8)]"
+    fi
+}
+
+# ── Projection 2: v1 manifest (no run: block) → ledger scalars MISSING ───────────
+# A manifest with no run: block yields an empty suggested_ledger pointer; both ledger
+# scalars render MISSING (never read). Static manifest fields still project; exit 0.
+assert_proj_v1_no_run_block() {
+    local name="PROJ-V1:no-run-block-ledger-missing"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/v1"
+    local wt="$wd/wt"
+    mkdir -p "$wt"
+    local manifest="$wd/manifest.yaml"
+    {
+        printf 'brood_id: |-\n  2026-05-30T22-10-00Z\n'
+        printf 'base: |-\n  main\n'
+        printf 'overlap_risk: |-\n  low\n'
+        printf 'strains:\n'
+        printf '  - name: |-\n      api\n'
+        printf '    description: |\n      test strain\n'
+        printf '    worktree_path: |-\n      %s\n' "$wt"
+        printf '    branch: |-\n      feature/api-slice\n'
+        printf '    tmux_session: "brood-api"\n'
+        printf '    status: running\n'
+        printf 'merge_order: []\n'
+    } > "$manifest"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 2)" == "api" \
+          && "$(strain_field "$out" 3)" == "$wt" \
+          && "$(strain_field "$out" 7)" == "MISSING" \
+          && "$(strain_field "$out" 8)" == "MISSING" ]]; then
+        pass "$name" "exit 0; static fields project; ledger scalars MISSING (no run: block)"
+    else
+        failed "$name" "rc=$rc name=$(strain_field "$out" 2) wt=$(strain_field "$out" 3) state=$(strain_field "$out" 7) run=$(strain_field "$out" 8)"
+    fi
+}
+
+# ── Projection 3: ledger pointer present but file absent → MISSING ───────────────
+# A well-formed pointer to a path that does not exist on disk → both scalars MISSING.
+assert_proj_missing_ledger_file() {
+    local name="PROJ-MISSING:pointer-present-file-absent"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/missing"
+    local wt="$wd/wt"
+    mkdir -p "$wt/.hivemind/runs/run-id"   # dir exists, state.json does NOT
+    local manifest="$wd/manifest.yaml"
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
+        "$wt/.hivemind/runs/run-id/state.json"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 7)" == "MISSING" \
+          && "$(strain_field "$out" 8)" == "MISSING" ]]; then
+        pass "$name" "exit 0; absent ledger file → state_current/run_status MISSING"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8)"
+    fi
+}
+
+# ── Projection 4: malformed run.status, valid state.current → per-scalar independence ──
+# run.status=frobnicate (out-of-enum) → run_status MALFORMED; a VALID state.current
+# still projects (the two scalars are independent).
+assert_proj_malformed_run_status() {
+    local name="PROJ-MALFORMED-RUN:bad-run-status-good-state-current"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/malrun"
+    local wt="$wd/wt"
+    mkdir -p "$wt/.hivemind/runs/run-id"
+    write_ledger "$wt/.hivemind/runs/run-id/state.json" frobnicate implement_step
+    local manifest="$wd/manifest.yaml"
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
+        "$wt/.hivemind/runs/run-id/state.json"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 8)" == "MALFORMED" \
+          && "$(strain_field "$out" 7)" == "implement_step" ]]; then
+        pass "$name" "exit 0; run_status=MALFORMED while state_current=implement_step (per-scalar independence)"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8)"
+    fi
+}
+
+# ── Projection 5: injection state.current → MALFORMED, no side-effect ─────────────
+# state.current carries a command-substitution payload `$(touch <marker>)`. The
+# projector validates against ^[a-z0-9_]+$ → MALFORMED. ASSERT the marker file was
+# NEVER created (no command execution).
+assert_proj_injection_state_current() {
+    local name="PROJ-INJECT-STATE:state-current-command-sub-neutralized"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/injstate"
+    local wt="$wd/wt"
+    mkdir -p "$wt/.hivemind/runs/run-id"
+    local marker="$wd/pwn_state_marker"
+    # state.current is a literal command-substitution string; it is DATA in the JSON.
+    write_ledger "$wt/.hivemind/runs/run-id/state.json" running "\$(touch $marker)"
+    local manifest="$wd/manifest.yaml"
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
+        "$wt/.hivemind/runs/run-id/state.json"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 7)" == "MALFORMED" \
+          && ! -e "$marker" ]]; then
+        pass "$name" "exit 0; state_current=MALFORMED; no command-sub side-effect ($marker absent)"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 7) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
+    fi
+}
+
+# ── Projection 6: metachar worktree_path → ledger scalars MALFORMED, no side-effect ──
+# worktree_path carries `$(...)` metachars → fails the allowlist; the script cannot
+# confine a ledger under an unsafe worktree, so wt_out + both ledger scalars render
+# MALFORMED and NO path derivation/read occurs. ASSERT no command-execution side-effect.
+assert_proj_metachar_worktree() {
+    local name="PROJ-INJECT-WT:metachar-worktree-path-neutralized"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/metawt"
+    mkdir -p "$wd"
+    local marker="$wd/pwn_wt_marker"
+    local manifest="$wd/manifest.yaml"
+    # worktree_path AND suggested_ledger both carry command-sub payloads. Pure DATA.
+    write_manifest_v2 "$manifest" "api" "/tmp/\$(touch $marker)/wt" "feature/api-slice" \
+        "brood-api" "running" "/tmp/\$(touch $marker)/wt/.hivemind/runs/run-id/state.json"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 3)" == "MALFORMED" \
+          && "$(strain_field "$out" 7)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MALFORMED" \
+          && ! -e "$marker" ]]; then
+        pass "$name" "exit 0; worktree_path+ledger MALFORMED; no command-sub side-effect ($marker absent)"
+    else
+        failed "$name" "rc=$rc wt=$(strain_field "$out" 3) state=$(strain_field "$out" 7) run=$(strain_field "$out" 8) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
+    fi
+}
+
+# ── Projection 7: symlinked state.json leaf → MALFORMED, target NOT read ──────────
+# A REAL symlink at the confined leaf path points at an external file holding a VALID
+# ledger. The leaf guard (hivemind_assert_file_contained) rejects the non-regular leaf
+# → MALFORMED; the symlink target's content (a sentinel state.current) must NOT appear.
+assert_proj_symlink_leaf() {
+    local name="PROJ-SYMLINK-LEAF:symlinked-state-json-rejected"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/symleaf"
+    local wt="$wd/wt"
+    mkdir -p "$wt/.hivemind/runs/run-id"
+    # External target holds a VALID-looking ledger whose state.current is a sentinel that
+    # would project cleanly IF the symlink were followed. It must NOT appear in output.
+    local target="$wd/external_state.json"
+    write_ledger "$target" running leakedsentinel
+    ln -s "$target" "$wt/.hivemind/runs/run-id/state.json"
+    local manifest="$wd/manifest.yaml"
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
+        "$wt/.hivemind/runs/run-id/state.json"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 7)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MALFORMED" ]] \
+          && ! printf '%s' "$out" | grep -q 'leakedsentinel'; then
+        pass "$name" "exit 0; symlinked leaf rejected → MALFORMED; symlink target content not leaked"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8); leaked=$(printf '%s' "$out" | grep -q leakedsentinel && echo yes || echo no)"
+    fi
+}
+
+# ── Projection 8: suggested_ledger escaping the worktree → MALFORMED, not read ────
+# An absolute pointer to /etc/passwd does not match the required
+# "<worktree>/.hivemind/runs/<id>/state.json" shape → MALFORMED, never read. ASSERT no
+# /etc/passwd bytes (the `root:` line) appear in output.
+assert_proj_ledger_escape() {
+    local name="PROJ-ESCAPE-LEDGER:pointer-escapes-worktree-rejected"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/escledger"
+    local wt="$wd/wt"
+    mkdir -p "$wt"
+    local manifest="$wd/manifest.yaml"
+    # Pointer is an absolute path well outside the worktree. allowlist-clean charset but
+    # wrong SHAPE → escape attempt → MALFORMED, no read.
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
+        "/etc/passwd"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 7)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MALFORMED" ]] \
+          && ! printf '%s' "$out" | grep -q 'root:'; then
+        pass "$name" "exit 0; escaping pointer → MALFORMED; no /etc/passwd bytes in output"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8); leaked=$(printf '%s' "$out" | grep -q 'root:' && echo yes || echo no)"
+    fi
+}
+
+# ── Projection 9: missing argument → nonzero exit, blocker: on stderr ────────────
+assert_proj_missing_arg() {
+    local name="PROJ-MISSING-ARG:no-manifest-arg-blocks"
+    local err rc=0
+    err="$(bash "$PROJECT_SCRIPT" 2>&1 >/dev/null)" || rc=$?
+    if [[ "$rc" -ne 0 ]] && printf '%s' "$err" | grep -q '^blocker:'; then
+        pass "$name" "exit $rc (nonzero); blocker: emitted on stderr"
+    else
+        failed "$name" "rc=$rc stderr=[$err]"
+    fi
+}
+
+# ── Projection 10: multi-strain — one healthy + one malformed, independent ───────
+# Two strains: a healthy one projects fully; a second whose state.current carries an
+# injection payload projects state_current=MALFORMED. One STRAIN line each, exit 0.
+assert_proj_multi_strain() {
+    local name="PROJ-MULTI:two-strains-independent-projection"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/multi"
+    local wt_a="$wd/wt-api" wt_b="$wd/wt-web"
+    mkdir -p "$wt_a/.hivemind/runs/run-id" "$wt_b/.hivemind/runs/run-id"
+    write_ledger "$wt_a/.hivemind/runs/run-id/state.json" running implement_step
+    write_ledger "$wt_b/.hivemind/runs/run-id/state.json" running "State With Spaces"
+    local manifest="$wd/manifest.yaml"
+    {
+        printf 'manifest_version: |-\n  2\n'
+        printf 'brood_id: |-\n  2026-05-30T22-10-00Z\n'
+        printf 'base: |-\n  main\n'
+        printf 'overlap_risk: |-\n  low\n'
+        printf 'strains:\n'
+        printf '  - name: |-\n      api\n'
+        printf '    description: |\n      strain a\n'
+        printf '    worktree_path: |-\n      %s\n' "$wt_a"
+        printf '    branch: |-\n      feature/api-slice\n'
+        printf '    tmux_session: "brood-api"\n'
+        printf '    status: running\n'
+        printf '    run:\n'
+        printf '      suggested_id: |-\n        run-id\n'
+        printf '      suggested_ledger: |-\n        %s\n' "$wt_a/.hivemind/runs/run-id/state.json"
+        printf '      workflow_hint: |-\n        standard-delivery\n'
+        printf '  - name: |-\n      web\n'
+        printf '    description: |\n      strain b\n'
+        printf '    worktree_path: |-\n      %s\n' "$wt_b"
+        printf '    branch: |-\n      feature/web-slice\n'
+        printf '    tmux_session: "brood-web"\n'
+        printf '    status: running\n'
+        printf '    run:\n'
+        printf '      suggested_id: |-\n        run-id\n'
+        printf '      suggested_ledger: |-\n        %s\n' "$wt_b/.hivemind/runs/run-id/state.json"
+        printf '      workflow_hint: |-\n        standard-delivery\n'
+        printf 'merge_order: []\n'
+    } > "$manifest"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local lines; lines="$(count_strain_lines "$out")"
+    # Field 7 (state_current) of the api line and the web line, extracted by name.
+    local api_state web_state
+    api_state="$(printf '%s\n' "$out" | awk -F'\t' '$2=="api"{print $7; exit}')"
+    web_state="$(printf '%s\n' "$out" | awk -F'\t' '$2=="web"{print $7; exit}')"
+    if [[ "$rc" -eq 0 \
+          && "$lines" -eq 2 \
+          && "$api_state" == "implement_step" \
+          && "$web_state" == "MALFORMED" ]]; then
+        pass "$name" "exit 0; 2 STRAIN lines; api state_current=implement_step, web state_current=MALFORMED (independent)"
+    else
+        failed "$name" "rc=$rc lines=$lines api_state=$api_state web_state=$web_state"
+    fi
+}
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
@@ -842,6 +1242,19 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked
 assert_spawn_brood_child_leaf_task_escape_blocked
 assert_spawn_brood_child_leaf_settings_escape_blocked
 assert_spawn_brood_child_leaf_regular_ok
+
+echo ''
+echo '=== brood-status-project.sh read-side projection tests (#161) ==='
+assert_proj_happy_path
+assert_proj_v1_no_run_block
+assert_proj_missing_ledger_file
+assert_proj_malformed_run_status
+assert_proj_injection_state_current
+assert_proj_metachar_worktree
+assert_proj_symlink_leaf
+assert_proj_ledger_escape
+assert_proj_missing_arg
+assert_proj_multi_strain
 
 echo ''
 echo '=== Summary ==='

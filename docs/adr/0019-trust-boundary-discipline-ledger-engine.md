@@ -156,3 +156,33 @@ Two post-merge hardening fixes are recorded here. Neither reverses prior decisio
    **Class-scan siblings (scanned, neither needs a fix).** `spawn-brood`'s interrupt trap is REPORTING-ONLY — it emits provisional resource names for manual recovery and runs no destructive cleanup; over-reporting on a lagging marker is the safe direction. `record-state-result.sh` has NO trap — its atomicity is temp-write + atomic `mv`; on failure it only `rm`s its own temp, never the committed ledger. Both are the safe class; neither requires a parallel fix.
 
 This amendment is APPEND-ONLY. The original Decision, Consequences, and all prior amendments stand. Status remains accepted.
+
+## Amendment — 2026-06-01 (Boundary 3 CLOSED: read-side discipline for hostile child-ledger projection, #161)
+
+Boundary 3 (#161), staged in the original Decision as "not closed," is now CLOSED. The coordinator's read of hostile, cross-worktree child-ledger content is brought under the same trust-boundary discipline as the write side — identifiers + derivation + bounded-token projection — via a committed helper and shared library stack.
+
+**What changed.**
+
+A committed helper (`plugin/skills/brood-status/scripts/brood-status-project.sh`) takes a trusted manifest PATH as its only identifier input (layout-agnostic; the same helper is reused by #168 when the manifest layout changes). It derives every other path out-of-band from that trusted manifest, storing each in inert `"$var"` shell variable references. Manifest values are NEVER spliced into generated shell source — the same lesson applied on the write side in ADR-0017.
+
+Each child-ledger path is confined BENEATH its own strain `worktree_path` as `.hivemind/runs/<safe-id>/state.json` via the shared `_shared/containment.sh` (`hivemind_assert_file_contained`), which rejects a symlinked or non-regular-file leaf and performs a canonical-prefix recheck, closing the same leaf-symlink escape class closed on the write side.
+
+Exactly two scalars are jq-projected from the untrusted child ledger and validated before any use:
+
+- `run.status` — validated against the exact enum `running|complete|blocked|cancelled`; emits the fixed token `MALFORMED` on mismatch, `MISSING` when the field is absent.
+- `state.current` — validated against `^[a-z0-9_]+$` with length ≤ 64; same fixed-token fallback.
+
+Neither raw bytes nor any other ledger field ever reaches agent context. The whole untrusted ledger is never read into agent context (project-before-ingest).
+
+The projection is INFORMATIONAL-ONLY and never overrides observable-derived status. ADR-0007 ground-truth observables (tmux liveness, git branch state, PR state) remain authoritative; a hostile child cannot hide a runaway session by corrupting its ledger.
+
+**Shared library decomposition (ADR-0020).** The logic is factored across three focused `_shared/` function libraries — `_shared/allowlist.sh` (safe-token gate), `_shared/manifest.sh` (manifest field extraction), `_shared/ledger-project.sh` (ledger scalar projection and validation) — each unit-tested in `tools/test_shared_libs.sh` and orchestrated by the thin `brood-status/scripts/brood-status-project.sh` entrypoint. This factoring is the first deliberate application of the single-responsibility shell library pattern recorded in ADR-0020.
+
+**Four PR-#156 read-side P0 review comments resolved.** The following Codex review thread IDs were explicitly deferred to #161 on PR #156 and are closed by this implementation:
+
+- `3330646588` — confine reads: each child-ledger read is path-confined beneath its own strain `worktree_path` via `hivemind_assert_file_contained`.
+- `3330904208` — project-before-ingest: only the two validated scalar tokens reach agent context; the raw ledger is never surfaced.
+- `3330936097` — keep manifest paths out of generated shell: manifest values are stored in inert `"$var"` references, never spliced into command source.
+- `3330936099` — reject untrusted projected strings: both projected scalars are allowlist-validated; only fixed `MALFORMED`/`MISSING` tokens are emitted on failure, never raw ledger bytes.
+
+This amendment is APPEND-ONLY. The original Decision, Consequences, and all prior amendments stand. Boundary 3 (#161) is now CLOSED. Status remains accepted.

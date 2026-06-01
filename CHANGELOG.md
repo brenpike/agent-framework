@@ -8,9 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Brood-status child-ledger workflow-state projection.** A committed, injection-closed helper (`plugin/skills/brood-status/scripts/brood-status-project.sh`) projects exactly two allowlist-validated scalars (`run.status`, `state.current`) from each child's JSON ledger into the coordinator dashboard. The helper is layout-agnostic and reusable by #168. Three single-responsibility `_shared/` function libraries back it — `allowlist.sh` (safe-token gate), `manifest.sh` (manifest field extraction), `ledger-project.sh` (ledger scalar projection/validation) — each individually unit-tested in `tools/test_shared_libs.sh`. See ADR-0020.
+
 ### Changed
 
 ### Fixed
+
+### Security
+
+- **Closes the read side of the brood ledger bridge (ADR-0019 Boundary 3, #161): path-injection-safe, output-validated projection of untrusted cross-worktree child ledgers.** Each child-ledger path is confined beneath its own strain `worktree_path` via `hivemind_assert_file_contained` (symlinked/non-regular leaf rejected, canonical-prefix recheck). Manifest values are never spliced into generated shell source (inert `"$var"` references only). Exactly two scalars are jq-projected and enum/regex-validated; raw ledger bytes never reach agent context (project-before-ingest). Projection is informational-only — ADR-0007 observables remain authoritative. Resolves the four PR-#156 read-side P0 review comments explicitly deferred to #161: `3330646588` (confine reads), `3330904208` (project-before-ingest), `3330936097` (manifest paths out of generated shell), `3330936099` (reject untrusted projected strings). See ADR-0019 (Boundary 3 CLOSED amendment).
 
 ## [2.19.1] - 2026-06-01
 

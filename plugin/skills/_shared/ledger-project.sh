@@ -1,0 +1,87 @@
+# shellcheck shell=bash
+#
+# ledger-project.sh — shared child run-ledger scalar projector (read side, issue #161).
+#
+# THIS FILE IS SOURCED, NOT EXECUTED. No shebang: each caller sources it by absolute
+# path derived from its OWN script_dir (`. "$plugin_root/skills/_shared/ledger-project.sh"`).
+# It defines functions only; it runs no top-level statements and changes no caller state
+# beyond defining the functions below. `bash -n` validates it as a sourced fragment.
+#
+# SINGLE RESPONSIBILITY: project + validate the two workflow-state scalars (run.status and
+# state.current) from a CONFINED child run-ledger path. The ledger is JSON, parsed READ-ONLY
+# with jq. This file sources nothing and writes nothing — pure projection.
+#
+# DATA-BOUNDARY (MANDATORY): a child run-ledger (`<worktree>/.hivemind/runs/<id>/state.json`)
+# is UNTRUSTED, attacker-controllable bytes — a brood child runs detached
+# --dangerously-skip-permissions, so its ledger contents are adversary-influenced. These
+# functions NEVER echo raw ledger bytes: they emit ONLY a value that passed strict validation,
+# or one of the fixed tokens MISSING / MALFORMED. The caller is expected to have already
+# CONFINED the ledger path (containment + allowlist) before calling; these functions add the
+# value-shape validation layer.
+#
+# PER-SCALAR INDEPENDENCE: the two projectors are independent. A bad run.status never blanks
+# state.current and vice versa — the caller reads both and renders each on its own merit.
+#
+# TOKEN SEMANTICS:
+#   MISSING   — the ledger file/dir is absent, OR the field is absent/empty in a parseable file
+#               (`// empty` yielded nothing). "Nothing to report", not an attack.
+#   MALFORMED — the file exists but jq could not parse it (torn/partial/invalid JSON), OR the
+#               field is present but fails its value contract (out-of-enum status, or a
+#               state.current that violates the identifier shape / length cap). "Present but
+#               invalid" — never echoed raw.
+
+# hivemind_project_run_status <ledger_path>
+# Emit the validated run.status, or MISSING (absent file / absent-or-empty field) or MALFORMED
+# (unparseable JSON / value outside the fixed enum running|complete|blocked|cancelled).
+hivemind_project_run_status() {
+  local ledger_path="$1"
+  if [ ! -f "$ledger_path" ]; then
+    printf 'MISSING\n'
+    return 0
+  fi
+  local value
+  if ! value="$(jq -r '.run.status // empty' "$ledger_path" 2>/dev/null)"; then
+    # jq failed: unparseable / torn JSON.
+    printf 'MALFORMED\n'
+    return 0
+  fi
+  if [ -z "$value" ]; then
+    printf 'MISSING\n'
+    return 0
+  fi
+  case "$value" in
+    running|complete|blocked|cancelled) printf '%s\n' "$value" ;;
+    *) printf 'MALFORMED\n' ;;
+  esac
+  return 0
+}
+
+# hivemind_project_state_current <ledger_path>
+# Emit the validated state.current, or MISSING (absent file / absent-or-empty field) or
+# MALFORMED (unparseable JSON / value failing ^[a-z0-9_]+$ / value longer than 64 chars).
+hivemind_project_state_current() {
+  local ledger_path="$1"
+  if [ ! -f "$ledger_path" ]; then
+    printf 'MISSING\n'
+    return 0
+  fi
+  local value
+  if ! value="$(jq -r '.state.current // empty' "$ledger_path" 2>/dev/null)"; then
+    printf 'MALFORMED\n'
+    return 0
+  fi
+  if [ -z "$value" ]; then
+    printf 'MISSING\n'
+    return 0
+  fi
+  # Length cap (64) BEFORE charset, so an over-long value is rejected even if all-lowercase.
+  if [ "${#value}" -gt 64 ]; then
+    printf 'MALFORMED\n'
+    return 0
+  fi
+  case "$value" in
+    *[!a-z0-9_]*) printf 'MALFORMED\n' ;;
+    *) printf '%s\n' "$value" ;;
+  esac
+  return 0
+}
