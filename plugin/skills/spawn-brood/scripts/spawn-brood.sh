@@ -185,6 +185,34 @@ declare -a S_RUN_ID S_RUN_LEDGER S_RUN_HINT
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" \
   || { printf 'blocker: not inside a git repository\n' >&2; exit 1; }
+[ -n "$repo_root" ] || { printf 'blocker: not inside a git repository\n' >&2; exit 1; }
+
+# ── Depth-complete canonical-containment guard (shared helper; refines ADR-0019) ──
+# spawn-brood is the THIRD writer derived from repo_root: it mkdir's
+# "$repo_root/.hivemind/brood" (STATE) and adds worktrees under
+# "$repo_root/.claude/worktrees/<short>". Both are derived TEXTUALLY, so a SYMLINKED
+# .hivemind, .claude, or .claude/worktrees pointing outside the checkout would make those
+# writes land EXTERNALLY. Use the SAME shared helper the other two writers use to reject any
+# existing symlink component at ANY depth of BOTH write chains, BEFORE the per-strain loop
+# and BEFORE any worktree-add / tmux / mkdir. The dependency checks (tmux/claude/jq) ran
+# above; this guard sits right after repo_root resolution and before the per-strain
+# derivation loop, so it fires before any filesystem/worktree mutation. plugin_root is
+# self-located from THIS script (layout plugin/skills/spawn-brood/scripts/ => 3 dirs up is
+# the plugin root); the helper is portable (cd && pwd -P + [ -L ]) and set -u-safe. We adopt
+# the helper's canonical root for ALL derived paths (STATE, worktree paths) thereafter.
+# Recursive brood is preserved: a brood-child worktree has REAL .hivemind/.claude dirs (not
+# symlinks), so the helper passes.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
+. "$plugin_root/skills/_shared/containment.sh"
+canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/brood")" \
+  || blocker "refusing to spawn: ${canon_repo_root:-$repo_root}/.hivemind/brood resolves outside the checkout (symlinked ancestor); no worktree or session created"
+[ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root"
+# Also verify the worktree-parent chain: .claude and .claude/worktrees must not be symlinks.
+hivemind_assert_contained "$repo_root" ".claude/worktrees" >/dev/null \
+  || blocker "refusing to spawn: $canon_repo_root/.claude/worktrees resolves outside the checkout (symlinked ancestor); no worktree or session created"
+# Adopt the verified-contained canonical root for every derived path below (STATE, worktrees).
+repo_root="$canon_repo_root"
 
 for idx in $(seq 0 $((strain_count - 1))); do
   name="$(jq -r ".strains[$idx].name // \"\"" "$INPUTS_FILE")"

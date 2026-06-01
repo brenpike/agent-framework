@@ -216,37 +216,34 @@ ledger_run_id="$(jq -r '.run.id // ""' "$ledger")"
 [ "$ledger_run_id" = "$run_id" ] \
   || blocker "ledger run.id '$ledger_run_id' does not match run_id '$run_id'; ledger unchanged"
 
-# ── Canonical-containment guard (refines ADR-0019) ────────────────────────────
+# ── Depth-complete canonical-containment guard (shared helper; refines ADR-0019) ──
 # Derive-from-ground-truth (repo_root) must be PAIRED with canonicalize-and-verify-
 # containment. The ledger path is derived TEXTUALLY as
 # "$repo_root/.hivemind/runs/<run_id>/state.json"; that text does NOT confine the write
-# when an ANCESTOR component is a SYMLINK. A repo that commits .hivemind (or .hivemind/runs)
-# as a symlink to an external dir makes the derived path resolve OUTSIDE the checkout, so the
-# mktemp/mv below would temp-write and rename EXTERNALLY. record requires the ledger to
-# EXIST, so we canonicalize the existing ledger file (via its dir) with the portable
-# `cd ... && pwd -P` idiom (pwd -P resolves every symlink component; NOT realpath/readlink -f,
-# which BSD/macOS lack or spell differently) and verify containment BEFORE any mktemp/mv.
-# Under `set -u` a failed `cd` yields an EMPTY command-substitution result — we TEST for empty
-# and blocker rather than proceed with an empty canonical path. ALL of this runs BEFORE
-# mktemp, so a rejection never creates a temp file and the on-disk ledger is byte-unchanged.
-canon_repo_root="$(cd "$repo_root" && pwd -P)"
+# when ANY component of the chain is a SYMLINK pointing outside the checkout, so the
+# mktemp/mv below would temp-write and rename EXTERNALLY. The shared helper walks EVERY
+# component of the FULL chain (INCLUDING the <run_id> leaf) and rejects any existing symlink
+# component at ANY depth, then verifies the deepest existing prefix stays inside the
+# checkout — BEFORE any mktemp/mv, so a rejection never creates a temp file and the on-disk
+# ledger is byte-unchanged. The helper is portable (cd && pwd -P + [ -L ], no
+# realpath/readlink -f) and set -u-safe (empty canonical => non-zero return). All of record's
+# components (.hivemind, .hivemind/runs, .hivemind/runs/<run_id>) ALREADY EXIST (record
+# requires the ledger to exist), so the helper checks them all. We then KEEP record's
+# existing basename/parent/state.json-existence assertions on the canonicalized ledger dir
+# so net behavior is identical to today; only the symlink-rejection primitive is now shared.
+. "$plugin_root/skills/_shared/containment.sh"
+canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id")" \
+  || blocker "refusing: ${canon_repo_root:-$repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged"
 [ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root; ledger unchanged"
-
-# Explicit symlink reject (POSIX `[ -L ]`), even if the symlink resolves to a real external
-# dir. .hivemind first; only probe .hivemind/runs when .hivemind is a real dir.
-[ -L "$canon_repo_root/.hivemind" ] \
-  && blocker "refusing symlinked .hivemind under $canon_repo_root; ledger unchanged"
-if [ -d "$canon_repo_root/.hivemind" ]; then
-  [ -L "$canon_repo_root/.hivemind/runs" ] \
-    && blocker "refusing symlinked .hivemind/runs under $canon_repo_root; ledger unchanged"
-fi
 
 # Canonicalize the contained runs dir and the existing ledger's own dir, then require the
 # ledger live at "$canon_runs/<run_id>/state.json". Trailing-slash-guarded prefix so a
 # sibling like .hivemind/runs-evil cannot prefix-match. basename asserts confirm the leaf
-# component is exactly <run_id> and the file is exactly state.json.
-canon_runs="$(cd "$repo_root/.hivemind/runs" && pwd -P)"
-[ -n "$canon_runs" ] || blocker "failed to canonicalize $repo_root/.hivemind/runs; ledger unchanged"
+# component is exactly <run_id> and the file is exactly state.json. (The helper above
+# already rejected any symlinked component; these assertions preserve record's exact prior
+# end behavior on the now-verified-contained path.)
+canon_runs="$(cd "$canon_repo_root/.hivemind/runs" && pwd -P)"
+[ -n "$canon_runs" ] || blocker "failed to canonicalize $canon_repo_root/.hivemind/runs; ledger unchanged"
 canon_ledger_dir="$(cd "$(dirname "$ledger")" && pwd -P)"
 [ -n "$canon_ledger_dir" ] || blocker "failed to canonicalize the ledger directory; ledger unchanged"
 canon_ledger="$canon_ledger_dir/state.json"
