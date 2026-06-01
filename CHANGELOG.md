@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+### Security
+
+- **Workflow engine no longer accepts caller-supplied `ledger`/`workflow` paths — it derives every path from ground truth.** `record-state-result.sh` now takes a `run_id` instead of a ledger path and a workflow-definition path: it derives the ledger from the git checkout root + a SAFE_ID_RE-validated `run_id` (`^[A-Za-z0-9._-]+$`, `.`/`..` rejected) as `<git-root>/.hivemind/runs/<run_id>/state.json`, coherence-checks `ledger.run.id == run_id`, and derives the workflow definition from the ledger's own `run.workflow` against the script's self-located packaged `workflows/` dir (`BASH_SOURCE` + `pwd -P`, independent of `${CLAUDE_PLUGIN_ROOT}` and any caller value). `init-run-ledger.sh` validates the packaged workflow definition (exists, `.version` == `workflow_version`, `.start` == `start_state`) before creating the run dir (#162). Closes the two reproduced Codex P0s: arbitrary-file overwrite via a forged caller ledger path, and a forged-definition transition-gate + plan-write-authorization bypass via a caller workflow path. See ADR-0019.
+
 ### Added
 
 ### Changed

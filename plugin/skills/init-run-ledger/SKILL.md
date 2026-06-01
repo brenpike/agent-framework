@@ -118,8 +118,14 @@ canonical value); else a safe `suggested_run_id` verbatim; else derived
    ```bash
    bash ${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh .hivemind/runs/.init-inputs.json
    ```
-   EXECUTE (do not Read) the script — it owns dependency check, input validation, run-id
-   derivation, directory creation, and the atomic temp-write + rename of `state.json`.
+   EXECUTE (do not Read) the script — it owns dependency check, input validation,
+   packaged-definition validation, run-id derivation, directory creation, and the atomic
+   temp-write + rename of `state.json`. BEFORE creating the run dir, the script validates the
+   packaged workflow definition against the script's self-located `workflows/` dir
+   (`workflows/<workflow>.json` must EXIST, its `.version` must equal `workflow_version`, and
+   its `.start` must equal `start_state`) and fails early with a blocker on any mismatch, so a
+   bad `workflow`/`workflow_version`/`start_state` never leaves an orphan run dir. The caller
+   supplies NO definition path — it is derived from the workflow id against the packaged dir.
 
 4. **Interpret the result.** Exit 0: the script printed YAML routing lines on stdout —
    ```yaml

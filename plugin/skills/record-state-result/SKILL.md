@@ -27,9 +27,11 @@ intent-driven).
 
 The overlord resolves and passes these; the skill does not invent them.
 
-- `ledger`: path to the run ledger `state.json` (from `init-run-ledger`).
-- `workflow`: path to the workflow definition JSON — the `<id>.json` under
-  `${CLAUDE_PLUGIN_ROOT}/workflows/`.
+- `run_id`: the run identifier (from `init-run-ledger`). The engine DERIVES the ledger
+  from it — `<git-root>/.hivemind/runs/<run_id>/state.json` — and DERIVES the workflow
+  definition from the ledger's own `run.workflow` against the script's self-located
+  packaged `workflows/` dir. The overlord passes NO ledger or workflow PATH; both are
+  derived from ground truth, so a caller can never point the engine at an arbitrary file.
 - `state`: the state the run is currently in (MUST equal `ledger.state.current`).
 - `result`: the named outcome to record (MUST be a legal transition key under that state).
 - `summary`: human-readable summary of the outcome — UNTRUSTED, serialized only.
@@ -67,8 +69,7 @@ interpolates it into shell source or the jq program source. Shape:
 
 ```json
 {
-  "ledger": "<required> path to the run ledger state.json",
-  "workflow": "<required> path to the workflow definition JSON",
+  "run_id": "<required> run identifier; the engine DERIVES the ledger as <git-root>/.hivemind/runs/<run_id>/state.json and the workflow definition from the ledger's run.workflow against the self-located packaged workflows dir. NO path is accepted.",
   "state": "<required> state the run is currently in (must match ledger.state.current)",
   "result": "<required> named outcome to record (must be a legal transition key)",
   "summary": "<required> human-readable summary (UNTRUSTED, serialized only)",
@@ -79,7 +80,9 @@ interpolates it into shell source or the jq program source. Shape:
 ```
 
 Field rules:
-- `ledger`, `workflow`, `state`, `result`, `summary` are required non-empty strings.
+- `run_id`, `state`, `result`, `summary` are required non-empty strings. `run_id` must be a
+  single safe path component (`^[A-Za-z0-9._-]+$`; `.`/`..` rejected) — it is the ONLY
+  identity the caller supplies, and every path the engine touches is DERIVED from it.
 - `outputs` is optional. KEY-PRESENCE semantics: a MISSING key OR a present-but-null value
   is ABSENT (the event's `outputs` defaults to `{}`); a present non-null value MUST be a JSON
   object and is recorded verbatim. UNTRUSTED — serialized only via `--argjson`.
@@ -94,18 +97,33 @@ Field rules:
 
 The script validates, in order, ALL before any write:
 
-1. `outputs` (if present and non-null) must be a JSON object; `plan_steps` (if present and
+1. `run_id` SAFE_ID_RE validation — `run_id` must match `^[A-Za-z0-9._-]+$`; `.`/`..` are
+   rejected (path traversal). This is the ONLY identity the caller supplies.
+2. LEDGER DERIVATION + existence — the ledger path is DERIVED as
+   `<git-root>/.hivemind/runs/<run_id>/state.json` (`git rev-parse --show-toplevel`; not
+   inside a git checkout → blocker). The file must exist and be valid JSON. No caller path
+   is ever accepted, so an arbitrary-file overwrite via a supplied ledger path is impossible.
+3. COHERENCE CHECK — `ledger.run.id == run_id` (the on-disk ledger must self-identify with
+   the passed run_id; mismatch → blocker, ledger unchanged).
+4. DEFINITION DERIVATION — the workflow definition is DERIVED from the (trusted) ledger's
+   `run.workflow` (SAFE_ID_RE + `.`/`..` rejected even though the ledger is trusted) against
+   the script's SELF-LOCATED packaged `workflows/` dir (`BASH_SOURCE` + `pwd -P`, independent
+   of `${CLAUDE_PLUGIN_ROOT}` and of any caller value). The caller supplies NO definition
+   path, so a forged definition can never be injected.
+5. `outputs` (if present and non-null) must be a JSON object; `plan_steps` (if present and
    non-null) must be a JSON array — both validated up front for a clear blocker before any temp-write.
-2. `definition.id == ledger.run.workflow` — BINDING GUARD (engine hard-reject; ledger unchanged).
-3. `definition.version == ledger.run.workflow_version` — BINDING GUARD. The engine HARD-REJECTS
+6. `definition.id == ledger.run.workflow` — BINDING GUARD (engine hard-reject; ledger
+   unchanged). Now compares the trusted ledger against the self-derived PACKAGED definition,
+   not a caller-supplied path.
+7. `definition.version == ledger.run.workflow_version` — BINDING GUARD. The engine HARD-REJECTS
    an id/version mismatch and exposes NO rebind; the overlord resume-on-start gate owns the
    TWO version-skew DOORS (start fresh / proceed intent-driven). There is NO deterministic-resume
    door. The engine never reconciles skew — it rejects a non-binding definition outright.
-4. `ledger.state.current == state`.
-5. `state` exists in `definition.states` (state-existence — a renamed/removed state never
+8. `ledger.state.current == state`.
+9. `state` exists in `definition.states` (state-existence — a renamed/removed state never
    guesses; this is NOT version-skew).
-6. `result` is a key under `states.<state>.transitions`; resolves `next_state`.
-7. PLAN-WRITE AUTHORIZATION — if `plan_steps` or `plan_path` was supplied (present and
+10. `result` is a key under `states.<state>.transitions`; resolves `next_state`.
+11. PLAN-WRITE AUTHORIZATION — if `plan_steps` or `plan_path` was supplied (present and
    non-null), the recording state MUST be a cerebrate planning state
    (`states.<state>.agent == "hivemind:cerebrate"`, i.e. `plan` / `review_remediation_plan` /
    `review_remediation_plan_postpr` / `brood_plan`); otherwise the engine rejects (exit 1,
