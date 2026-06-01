@@ -30,7 +30,7 @@
 # SINGLE-SNAPSHOT READ (read-side projection path): the projection engine
 # (brood-status-project.sh) reads the manifest file EXACTLY ONCE into an in-memory shell
 # variable (`content="$(cat -- "$path")"`) and then runs every projection against THAT snapshot
-# via jq stdin (`jq ... <<<"$content"`) — it never re-opens the file. This closes the read-side
+# via jq stdin (`printf '%s' "$content" | jq ...`) — it never re-opens the file. This closes the read-side
 # SNAPSHOT-SKEW class: a concurrent write mid-read can no longer make the probe and the per-field
 # projections observe different instants. Bytes held in a shell variable and passed only to jq
 # stdin are inert — bash does not re-evaluate them as command source. The content-snapshot
@@ -103,7 +103,7 @@ hivemind_manifest_field() {
 
 # ── Single-snapshot content helpers (read-side projection path) ──────────────────
 # These operate on an in-memory CONTENT snapshot the caller read ONCE from the manifest file,
-# never re-opening it. The content enters jq ONLY via stdin (a here-string), never spliced into
+# never re-opening it. The content enters jq ONLY via pipe (`printf '%s' "$content" | jq ...`), never spliced into
 # the program; an index enters as --argjson. This is what lets the projection engine open the
 # manifest exactly once and run all projections + shape validation against one consistent view.
 
@@ -121,8 +121,9 @@ hivemind_manifest_field() {
 # Emits nothing; pure (no side effects, no exit).
 hivemind_manifest_validate_shape() {
   local content="$1"
-  jq -e '(.strains | type == "array") and (all(.strains[]; type == "object"))' \
-    >/dev/null 2>&1 <<<"$content"
+  printf '%s' "$content" \
+    | jq -e '(.strains | type == "array") and (all(.strains[]; type == "object"))' \
+      >/dev/null 2>&1
 }
 
 # hivemind_manifest_strain_count_snapshot <content>
@@ -134,7 +135,7 @@ hivemind_manifest_validate_shape() {
 # an extra iteration before validation. Pure (no side effects, no exit).
 hivemind_manifest_strain_count_snapshot() {
   local content="$1"
-  jq -r '.strains | length' <<<"$content" 2>/dev/null || printf '0'
+  printf '%s' "$content" | jq -r '.strains | length' 2>/dev/null || printf '0'
 }
 
 # hivemind_manifest_field_at <content> <index> <field>
@@ -163,8 +164,7 @@ hivemind_manifest_field_at() {
       return 0 ;;
   esac
 
-  jq -r --argjson i "$index" \
-    ".strains[\$i] | $jq_path // empty" \
-    <<<"$content" 2>/dev/null
+  printf '%s' "$content" \
+    | jq -r --argjson i "$index" ".strains[\$i] | $jq_path // empty" 2>/dev/null
   return 0
 }

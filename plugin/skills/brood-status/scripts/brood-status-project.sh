@@ -186,7 +186,7 @@ idx=0
 while [ "$idx" -lt "$strain_count" ]; do
   # 1. Extract the strain NAME + static fields + the suggested_ledger pointer out-of-band, all
   #    selected by INDEX against the single in-memory snapshot.
-  strain_name="$(jq -r --argjson i "$idx" '.strains[$i].name // empty' <<<"$manifest_content" 2>/dev/null)"
+  strain_name="$(printf '%s' "$manifest_content" | jq -r --argjson i "$idx" '.strains[$i].name // empty' 2>/dev/null)"
   worktree_path="$(hivemind_manifest_field_at "$manifest_content" "$idx" "worktree_path")"
   branch="$(hivemind_manifest_field_at "$manifest_content" "$idx" "branch")"
   tmux_session="$(hivemind_manifest_field_at "$manifest_content" "$idx" "tmux_session")"
