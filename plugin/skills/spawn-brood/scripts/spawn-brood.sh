@@ -9,7 +9,7 @@
 #
 # STATE LAYOUT (singleton): a checkout hosts at most ONE brood at a time. Brood state
 # lives in a single, non-namespaced directory — .hivemind/brood/{inputs.json,
-# manifest.yaml} — anchored to the checkout root. There is no per-brood_id slug and no
+# manifest.json} — anchored to the checkout root. There is no per-brood_id slug and no
 # disjoint per-brood path. The ONLY overlap protection is a liveness guard (below):
 # before overwriting the singleton manifest, this script probes the tmux session(s)
 # the existing manifest records and refuses to proceed if any are still live.
@@ -37,11 +37,11 @@
 #
 # OUTPUT:
 #   - Writes per-strain task.md files under each worktree's gitignored .hivemind/.
-#   - Writes the brood manifest to .hivemind/brood/manifest.yaml in the coordinator
-#     checkout (anchored to the checkout root).
+#   - Writes the brood manifest to .hivemind/brood/manifest.json (JSON,
+#     manifest_version: 3) in the coordinator checkout (anchored to the checkout root).
 #   - On full success: prints `manifest: <abs path>` to stdout, exits 0.
 #   - On any per-strain failure: writes the manifest with failed strains marked
-#     `status: failed`, prints `blocker: <n> of <m> strains failed to spawn` and
+#     "status": "failed", prints `blocker: <n> of <m> strains failed to spawn` and
 #     `manifest: <abs path>` to stderr, exits 1.
 #   - On any pre-flight blocker (missing dep, bad inputs, collision, unresolved
 #     base): prints `blocker: <reason>` to stderr, exits 1, writes no manifest.
@@ -128,21 +128,23 @@ base="$(jq -r '.base // ""' "$INPUTS_FILE")"
 overlap_risk="$(jq -r '.overlap_risk // ""' "$INPUTS_FILE")"
 overlap_details="$(jq -r '.overlap_details // ""' "$INPUTS_FILE")"
 
-# ── manifest-v2 hatchery bridge fields (ADDITIVE; ledger-bridge STEP-007) ────────
-# manifest_version: 2 marks the ledger-bridge extension. Old consumers ignore unknown
-# fields, so this is back-compat. The hatchery run metadata POINTS at the coordinator's
+# ── manifest hatchery bridge fields (ADDITIVE; ledger-bridge) ────────────────────
+# manifest_version: 3 marks the JSON manifest format. Version 3 has NO backwards-compat
+# with the pre-JSON (YAML, version 2) manifest: a brood spawned before this change is not
+# supported (a stale YAML manifest is treated as no-live-session by the JSON liveness guard
+# below, which fails OPEN to overwrite). The hatchery run metadata POINTS at the coordinator's
 # own run ledger (which the hatchery overlord owns and writes in its OWN worktree — this
-# script never creates it; it only records suggested pointers). All three values are
-# either overlord-supplied scalars or derived from the already-validated brood_id, so no
-# new untrusted bytes enter here. They are emitted later through emit_block, never inline.
-manifest_version='2'
+# script never creates it; it only records suggested pointers). All three values are either
+# overlord-supplied scalars or derived from the already-validated brood_id, so no new
+# untrusted bytes enter here. They enter the manifest jq construction below as --arg bindings.
+manifest_version='3'
 hatchery_run_id="$(jq -r '.hatchery.run_id // ""' "$INPUTS_FILE")"
 [ -n "$hatchery_run_id" ] || hatchery_run_id="$brood_id-hatchery"
 hatchery_workflow="$(jq -r '.hatchery.workflow // ""' "$INPUTS_FILE")"
 [ -n "$hatchery_workflow" ] || hatchery_workflow="hatchery-dispatch"
-# The hatchery ledger is JSON (state.json) even though the manifest carrying the pointer
-# is YAML — format-follows-consumer (ADR-0018 §A): the ledger is jq-parsed, the manifest
-# is human/brood-status-read. Anchored to the coordinator checkout root, resolved below.
+# The hatchery ledger is JSON (state.json), as is the manifest carrying the pointer —
+# format-follows-consumer (ADR-0018 §A): both are machine-consumed by jq (the ledger by the
+# child/engine, the manifest by brood-status). Anchored to the coordinator checkout root.
 
 [ -n "$brood_id" ]     || { printf 'blocker: inputs file is missing brood_id\n' >&2; exit 1; }
 [ -n "$base" ]         || { printf 'blocker: inputs file is missing base\n' >&2; exit 1; }
@@ -238,12 +240,10 @@ for idx in $(seq 0 $((strain_count - 1))); do
   branch="$(jq -r ".strains[$idx].branch // \"\"" "$INPUTS_FILE")"
 
   [ -n "$name" ]   || { printf 'blocker: strain %d is missing name\n' "$idx" >&2; exit 1; }
-  # Reject an embedded newline in the strain name. The manifest emits the name as a `name: |-`
-  # block scalar; a multiline name would write extra body lines that a consumer could parse as
-  # forged strain STRUCTURE (e.g. a second line "status: failed" overriding the genuine status
-  # field). The name must be a single line — fail closed at the producer rather than rely on the
-  # reader to neutralize every injected body line. (Codex #172 P1; pairs with the consumer's
-  # full name-body skip in _shared/manifest.sh.)
+  # Reject an embedded newline in the strain name. The manifest is JSON; jq emits each field as
+  # a discrete value, so there is no block-scalar / body-skip risk. The name must still be a
+  # single line — a newline in a strain name is invalid input and we fail closed at the producer.
+  # (Codex #172 P1.)
   newline='
 '
   case "$name" in
@@ -401,7 +401,7 @@ git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
 
 # ── Singleton brood state directory + liveness guard ────────────────────────────
 # A checkout hosts at most ONE brood at a time, so brood state lives in a single,
-# non-namespaced directory: .hivemind/brood/{inputs.json,manifest.yaml}. Anchor STATE
+# non-namespaced directory: .hivemind/brood/{inputs.json,manifest.json}. Anchor STATE
 # to the CHECKOUT ROOT (repo_root, resolved above), NOT $(pwd): when the skill is
 # invoked from a repo subdirectory, a pwd-relative manifest would land under that
 # subdir, but hivemind:brood-status resolves the checkout root — a pwd-anchored
@@ -424,18 +424,19 @@ mkdir -p "$STATE"
 # namespacing lands.
 #
 # Fail OPEN to overwrite when the manifest is absent, when it records no live session
-# (stale/completed brood), or when no tmux_session value is extractable (malformed
-# manifest) — a stale or malformed manifest must not wedge the checkout. Extract
-# tmux_session the SAME way hivemind:brood-status parses it (the producer emits
-# `tmux_session: "<value>"`, a double-quoted YAML line), so both consumers parse
-# identically.
-if [ -f "$STATE/manifest.yaml" ]; then
+# (stale/completed brood), or when no tmux_session value is extractable (absent file,
+# unparseable JSON, or a stale pre-JSON manifest) — a stale or malformed manifest must not
+# wedge the checkout. Extract tmux_session the SAME way hivemind:brood-status parses it
+# (jq over the JSON manifest), so both consumers parse identically. A jq parse failure on a
+# stale/torn manifest yields no sessions (2>/dev/null swallows the error), preserving the
+# fail-OPEN-to-overwrite behavior the prior sed path had on an absent/malformed manifest.
+if [ -f "$STATE/manifest.json" ]; then
   while IFS= read -r recorded_session; do
     [ -n "$recorded_session" ] || continue
     if tmux has-session -t "$recorded_session" 2>/dev/null; then
       blocker "a brood is already active in this checkout (live session $recorded_session); refusing to overwrite"
     fi
-  done < <(sed -n 's/^[[:space:]]*tmux_session:[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$STATE/manifest.yaml")
+  done < <(jq -r '.strains[].tmux_session // empty' "$STATE/manifest.json" 2>/dev/null)
 fi
 
 # ── Per-strain failure helpers ──────────────────────────────────────────────────
@@ -612,7 +613,7 @@ for idx in $(seq 0 $((strain_count - 1))); do
     # different identifier in the child than the manifest carries (lineage mismatch).
     printf '  brood_id: |-\n';          printf '%s\n' "$brood_id"            | sed 's/^/    /'
     printf '  hatchery_run_id: |-\n';   printf '%s\n' "$hatchery_run_id"     | sed 's/^/    /'
-    printf '  hatchery_manifest: |-\n'; printf '%s\n' "$repo_root/.hivemind/brood/manifest.yaml" | sed 's/^/    /'
+    printf '  hatchery_manifest: |-\n'; printf '%s\n' "$repo_root/.hivemind/brood/manifest.json" | sed 's/^/    /'
     printf 'strain:\n'
     printf '  id: |-\n';            printf '%s\n' "$short"          | sed 's/^/    /'
     printf '  name: |-\n';          printf '%s\n' "$name_meta"      | sed 's/^/    /'
@@ -773,98 +774,102 @@ for idx in "${pending[@]+"${pending[@]}"}"; do
 done
 
 # ── Manifest emission ───────────────────────────────────────────────────────────
-# Block-scalar discipline preserves YAML validity for untrusted/path values without
-# a true serializer (ADR-0017 rejected yq/python as a hard dep; jq is READ-only):
-#   |-  (STRIP) for exact-value identifier/path/shell-arg fields (name, branch,
-#       base, worktree_path) — no trailing newline.
-#   |   (CLIP)  for free-text prose fields (description, overlap_details) — a
-#       trailing newline is harmless.
-# Any embedded newline in an untrusted value is reproduced at the block-scalar
-# content indent. Field names MUST NOT be renamed (brood-status consumes them).
+# The manifest is JSON, constructed with jq (ADR-0018 §A format-follows-consumer: it is
+# machine-consumed by hivemind:brood-status via jq). Every untrusted value enters jq ONLY as
+# a --arg / --argjson binding, NEVER spliced into a jq program string or shell source — jq
+# performs the JSON-safe serialization (correct escaping of quotes, backslashes, control
+# bytes, embedded newlines), so the YAML block-scalar discipline and the manifest-side
+# C0-strip the prior YAML emitter needed are GONE: jq cannot confuse content for structure.
+# Numbers/booleans/null/arrays are emitted as their JSON TYPES (manifest_version a number,
+# merged:false a boolean, pr:null, rebased_after:[]), never stringified. Field names MUST
+# NOT be renamed (brood-status consumes them).
 # The launched sessions are about to be recorded in the manifest; the interruption
 # guard is no longer needed (and must not fire over the manifest write itself, which
 # has its own recovery: path).
 trap - INT TERM
 
-manifest_path="$STATE/manifest.yaml"
+manifest_path="$STATE/manifest.json"
 hatchery_session="${TMUX:-}"   # current tmux session identifier, if any; inert literal
+# hatchery_ledger is derived here (repo_root in scope) and anchored to the coordinator
+# checkout root; it POINTS at the coordinator overlord's own JSON run ledger (this script
+# never creates it).
+hatchery_ledger=".hivemind/runs/$hatchery_run_id/state.json"
 
-# emit_block: print a key as a YAML block scalar, indenting every content line to
-# `indent` spaces. $1 chomp indicator (|- or |), $2 key, $3 value, $4 key indent,
-# $5 content indent.
-emit_block() {
-  local chomp="$1" key="$2" value="$3" key_indent="$4" content_indent="$5"
-  printf '%*s%s: %s\n' "$key_indent" '' "$key" "$chomp"
-  # Indent each line of value to content_indent. printf %s preserves embedded
-  # newlines; sed adds the indent prefix to every line.
-  printf '%s\n' "$value" | sed "s/^/$(printf '%*s' "$content_indent" '')/"
+# Build the strains array as JSON. Each strain object is constructed by a per-strain jq -n
+# invocation binding every untrusted value (name, description, worktree_path, branch,
+# tmux_session, status, run.*) as a --arg, plus the JSON-typed literals (pr:null,
+# merged:false, rebased_after:[]). The compact one-line objects are accumulated newline-
+# separated, then folded into a JSON array with `jq -s` below. No untrusted byte is ever
+# placed in a jq program string.
+strains_objects=""
+for idx in $(seq 0 $((strain_count - 1))); do
+  strain_obj="$(jq -nc \
+    --arg name "${S_NAME[$idx]}" \
+    --arg description "${S_DESC[$idx]}" \
+    --arg worktree_path "${S_WT[$idx]}" \
+    --arg branch "${S_BRANCH[$idx]}" \
+    --arg tmux_session "${S_TMUX[$idx]}" \
+    --arg status "${S_STATUS[$idx]}" \
+    --arg suggested_id "${S_RUN_ID[$idx]}" \
+    --arg suggested_ledger "${S_RUN_LEDGER[$idx]}" \
+    --arg workflow_hint "${S_RUN_HINT[$idx]}" \
+    '{
+      name: $name,
+      description: $description,
+      worktree_path: $worktree_path,
+      branch: $branch,
+      tmux_session: $tmux_session,
+      status: $status,
+      pr: null,
+      merged: false,
+      rebased_after: [],
+      run: {
+        suggested_id: $suggested_id,
+        suggested_ledger: $suggested_ledger,
+        workflow_hint: $workflow_hint
+      }
+    }')" || {
+    printf 'recovery: manifest construction failed; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
+    blocker "failed to construct brood manifest strain object for strain ${S_NAME[$idx]}; refusing to report success with no current manifest"
+  }
+  strains_objects="${strains_objects}${strain_obj}
+"
+done
+
+# Assemble the full manifest object. The per-strain objects are slurped into an array with
+# `jq -s`; the top-level scalars enter as --arg (strings) / --argjson (the manifest_version
+# number and the strains array). merge_order is a JSON-typed empty array literal.
+manifest_json="$(printf '%s' "$strains_objects" | jq -s '.' \
+  | jq \
+    --argjson manifest_version "$manifest_version" \
+    --arg brood_id "$brood_id" \
+    --arg hatchery_session "$hatchery_session" \
+    --arg base "$base" \
+    --arg hatchery_run_id "$hatchery_run_id" \
+    --arg hatchery_ledger "$hatchery_ledger" \
+    --arg hatchery_workflow "$hatchery_workflow" \
+    --arg overlap_risk "$overlap_risk" \
+    --arg overlap_details "$overlap_details" \
+    '{
+      manifest_version: $manifest_version,
+      brood_id: $brood_id,
+      hatchery_session: $hatchery_session,
+      base: $base,
+      hatchery: {
+        run_id: $hatchery_run_id,
+        ledger: $hatchery_ledger,
+        workflow: $hatchery_workflow
+      },
+      overlap_risk: $overlap_risk,
+      overlap_details: $overlap_details,
+      strains: .,
+      merge_order: []
+    }')" || {
+  printf 'recovery: manifest construction failed; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
+  blocker "failed to construct brood manifest JSON; refusing to report success with no current manifest"
 }
 
-{
-  # ledger-bridge (STEP-007, ADDITIVE): manifest_version marks the v2 extension. It is a
-  # fixed trusted literal '2', but routed through emit_block for one YAML-safe path.
-  # OLD consumers ignore this and the hatchery:/run: blocks below (back-compat).
-  emit_block '|-' 'manifest_version' "$manifest_version" 0 2
-  # brood_id and overlap_risk are pre-flight-validated, but routed through the
-  # block-scalar helper (not emitted inline) so every untrusted/exact-value scalar
-  # uses one YAML-safe emission path. brood_id is an exact value (|-); overlap_risk
-  # is a validated enum, also emitted exact for consistency.
-  emit_block '|-' 'brood_id' "$brood_id" 0 2
-  # hatchery_session derives from $TMUX, whose first comma-delimited field is the
-  # server socket path; tmux -S permits a socket path containing '"' or a newline,
-  # either of which would break an inline double-quoted YAML string. Emit via the
-  # same block-scalar discipline as every other exact-value field. |- (STRIP).
-  emit_block '|-' 'hatchery_session' "$hatchery_session" 0 2
-  emit_block '|-' 'base' "$base" 0 2
-  # ledger-bridge (STEP-007, ADDITIVE): hatchery run metadata. POINTS at the coordinator
-  # overlord's own run ledger (JSON state.json inside ITS worktree — this script never
-  # creates it). All three fields are exact values (|-). The ledger path is derived here
-  # (repo_root in scope) and anchored to the coordinator checkout root.
-  hatchery_ledger=".hivemind/runs/$hatchery_run_id/state.json"
-  printf 'hatchery:\n'
-  emit_block '|-' 'run_id'   "$hatchery_run_id"  2 4
-  emit_block '|-' 'ledger'   "$hatchery_ledger"  2 4
-  emit_block '|-' 'workflow' "$hatchery_workflow" 2 4
-  emit_block '|-' 'overlap_risk' "$overlap_risk" 0 2
-  # Strip C0 control bytes (except TAB/LF) + DEL from free-text manifest values so an
-  # issue-sourced control byte can never produce an unreadable manifest brood-status
-  # then fails to parse. Same expression already applied to the task-file description.
-  overlap_details_clean="$(printf '%s' "$overlap_details" | tr -d '\000-\010\013-\037\177')"
-  emit_block '|' 'overlap_details' "$overlap_details_clean" 0 2
-  printf 'strains:\n'
-  for idx in $(seq 0 $((strain_count - 1))); do
-    desc_clean="$(printf '%s' "${S_DESC[$idx]}" | tr -d '\000-\010\013-\037\177')"
-    # Strip C0 control bytes (except TAB/LF) + DEL from the strain name at manifest
-    # emission ONLY: a valid JSON name carrying a literal control byte passes the
-    # non-empty + short-name gates, launches, then would write a raw control byte YAML
-    # 1.2 forbids → unreadable manifest. S_NAME is left untouched everywhere else (the
-    # short-id sanitization derives from the raw value); this cleans only the value
-    # written to the manifest. Same expression as desc_clean/overlap_details_clean.
-    name_clean="$(printf '%s' "${S_NAME[$idx]}" | tr -d '\000-\010\013-\037\177')"
-    printf '  - name: |-\n'
-    printf '%s\n' "$name_clean"        | sed 's/^/      /'
-    printf '    description: |\n'
-    printf '%s\n' "$desc_clean"        | sed 's/^/      /'
-    printf '    worktree_path: |-\n'
-    printf '%s\n' "${S_WT[$idx]}"     | sed 's/^/      /'
-    printf '    branch: |-\n'
-    printf '%s\n' "${S_BRANCH[$idx]}" | sed 's/^/      /'
-    printf '    tmux_session: "%s"\n' "${S_TMUX[$idx]}"
-    printf '    status: %s\n' "${S_STATUS[$idx]}"
-    printf '    pr: null\n'
-    printf '    merged: false\n'
-    printf '    rebased_after: []\n'
-    # ledger-bridge (STEP-007, ADDITIVE): per-strain suggested run metadata. POINTS at
-    # where the child SHOULD init its own JSON run ledger; this script never creates it.
-    # `run:` key at the strain's 4-space content indent; its fields at 6, values at 8.
-    # All exact values (|-). suggested_ledger ends in state.json (child ledger is JSON).
-    printf '    run:\n'
-    emit_block '|-' 'suggested_id'     "${S_RUN_ID[$idx]}"     6 8
-    emit_block '|-' 'suggested_ledger' "${S_RUN_LEDGER[$idx]}" 6 8
-    emit_block '|-' 'workflow_hint'    "${S_RUN_HINT[$idx]}"   6 8
-  done
-  printf 'merge_order: []\n'
-} > "$manifest_path" || {
+printf '%s\n' "$manifest_json" > "$manifest_path" || {
   printf 'recovery: manifest write failed; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
   blocker "failed to write brood manifest to $manifest_path (target unwritable, e.g. a stale directory at that path); refusing to report success with no current manifest"
 }

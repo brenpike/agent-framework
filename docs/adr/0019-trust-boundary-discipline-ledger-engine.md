@@ -186,3 +186,27 @@ The projection is INFORMATIONAL-ONLY and never overrides observable-derived stat
 - `3330936099` — reject untrusted projected strings: both projected scalars are allowlist-validated; only fixed `MALFORMED`/`MISSING` tokens are emitted on failure, never raw ledger bytes.
 
 This amendment is APPEND-ONLY. The original Decision, Consequences, and all prior amendments stand. Boundary 3 (#161) is now CLOSED. Status remains accepted.
+
+## Amendment — 2026-06-01 (Boundary 3 closure rests on jq-parse of a JSON manifest; hand-parse injection class closed by construction; 3-class value-validation contract)
+
+The Boundary 3 CLOSED amendment above recorded that `brood-status-project.sh` brings the coordinator's read of hostile child-ledger content under trust-boundary discipline. This amendment sharpens the description of the MANIFEST read side: the closure rests on a `jq`-parse of a JSON manifest — NOT a block-scalar-aware `sed` extractor — and the ad-hoc `safe_token`/`safe_path` validator pair is replaced by a 3-class canonical contract.
+
+**JSON manifest root fix.** The brood manifest is now JSON (`manifest_version: 3`), written by `spawn-brood.sh` via `jq --arg`/`--argjson` and read by `jq` in both `spawn-brood`'s liveness guard and `brood-status`. `_shared/manifest.sh` (the `sed`/`awk` hand-scraper) is DELETED; replaced by `_shared/manifest-json.sh` (jq projections). A real `jq` parser cannot conflate structure with content, closing the hand-parse injection class by construction:
+
+- **Block-scalar field-override** — a strain's `description:` block body containing a counterfeit `branch:` / `worktree_path:` / `status:` line can no longer override the genuine field. The structure/content boundary is enforced by the parser, not a per-field line-anchor heuristic.
+- **Multiline-name injection** — an issue-sourced name spanning multiple lines cannot insert a synthetic strain entry or corrupt field adjacency.
+- **Nested-mapping key spoof** — a `description` block cannot emit a fake `run:` sub-object or `suggested_ledger:` key that the extractor misreads as a peer field.
+
+These three attack shapes all required the `sed`/`awk` extractor to confuse CONTENT for STRUCTURE; `jq` on JSON has no such confusion surface.
+
+**3-class value-validation contract.** The ad-hoc `safe_token` / `safe_path` validator pair used in the earlier `_shared/manifest.sh` is replaced by THREE canonical value-class validators in `_shared/allowlist.sh`, sharing one security floor (reject `$`/backtick command-substitution, `..`, leading `-`, and TAB/LF/CR framing):
+
+| Class | Validator | Charset | Applies to |
+|---|---|---|---|
+| Identifier | `hivemind_assert_identifier` | `^[A-Za-z0-9._/-]+$` | branch, tmux session name, status enum, ledger-id |
+| Path | `hivemind_assert_path` | identifier + space + `# = ~ !` | worktree_path, suggested_ledger |
+| Presentation | `hivemind_assert_presentation` | printable display (no command-sub, no framing control) | strain name |
+
+All three classes share the same security floor; the presentation class adds a printable-character pass gate rather than a charset allowlist, because strain names are display-only and never shell-interpolated. The two former ad-hoc validators are subsumed: `safe_token` maps to identifier, `safe_path` maps to path.
+
+This amendment records that the manifest read-side of Boundary 3 is sound because a `jq` parser on a JSON artifact is the read primitive — not a line-oriented heuristic that required per-pattern block-scalar awareness to resist injection. The three-call-site decomposition (allowlist + manifest-json + ledger-project) remains as described in the previous amendment. Status remains accepted.

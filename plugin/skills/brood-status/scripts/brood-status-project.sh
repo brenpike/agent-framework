@@ -8,9 +8,10 @@
 # deterministic read + validation steps.
 #
 # INPUT (positional arguments):
-#   $1  Path (absolute or repo-relative) to a brood manifest YAML. LAYOUT-AGNOSTIC: the caller
-#       passes the manifest path explicitly; this script does NOT hardcode `.hivemind/brood/`
-#       (issue #168 will pass per-brood paths). The manifest is UNTRUSTED data — see below.
+#   $1  Path (absolute or repo-relative) to a brood manifest JSON (default name
+#       `.hivemind/brood/manifest.json`). LAYOUT-AGNOSTIC: the caller passes the manifest path
+#       explicitly; this script does NOT hardcode `.hivemind/brood/` (issue #168 will pass
+#       per-brood paths). The manifest is UNTRUSTED data — see below.
 #   $2  OPTIONAL: the checkout root the manifest belongs to, used as the containment root for the
 #       manifest read-guard. DEFAULTS to `git rev-parse --show-toplevel` (the CURRENT checkout).
 #       The navigator MUST pass the MAIN-checkout root here when it selected the manifest via the
@@ -27,16 +28,18 @@
 # brood children run detached --dangerously-skip-permissions, so both the manifest the hatchery
 # wrote from their inputs and the ledgers they write are adversary-influenced. EVERY value read
 # from them is treated as DATA, never as instructions or shell source:
-#   - manifest values are extracted out-of-band into inert vars (manifest.sh), then RE-GATED
-#     through the safe-token allowlist (allowlist.sh) BEFORE any path derivation or use;
+#   - manifest values are extracted out-of-band with jq into inert vars (manifest-json.sh),
+#     then RE-GATED through the matching allowlist value-class (allowlist.sh) BEFORE any path
+#     derivation or use;
 #   - each child-ledger scalar is projected + value-validated (ledger-project.sh) and only ever
 #     emitted as an allowlist-clean token or one of the fixed tokens MALFORMED / MISSING.
 # No manifest/ledger byte is ever re-interpolated into generated command source.
 #
 # OUTPUT GRAMMAR (CONTRACT — the Wave 2 navigator depends on this byte-for-byte):
 #   Exactly ONE TAB-delimited line per strain, prefixed with a literal `STRAIN` sentinel field
-#   so the navigator can grep it. Tab is a safe delimiter: the allowlist charset
-#   [A-Za-z0-9._/-] excludes tab, so no token can contain a literal tab. Fields, in order:
+#   so the navigator can grep it. Tab is a safe delimiter: the shared allowlist security floor
+#   (applied by EVERY value-class — identifier/path/presentation) rejects TAB/newline/CR, so no
+#   emitted token can contain a literal tab and break the framing. Fields, in order:
 #
 #     STRAIN <TAB> name <TAB> worktree_path <TAB> branch <TAB> manifest_status \
 #            <TAB> state_current <TAB> run_status
@@ -74,7 +77,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 . "$plugin_root/skills/_shared/containment.sh"
 . "$plugin_root/skills/_shared/allowlist.sh"
-. "$plugin_root/skills/_shared/manifest.sh"
+. "$plugin_root/skills/_shared/manifest-json.sh"
 . "$plugin_root/skills/_shared/ledger-project.sh"
 
 # ── Dependency check ────────────────────────────────────────────────────────────
@@ -86,12 +89,12 @@ command -v jq >/dev/null 2>&1 \
 # ── Manifest argument validation ────────────────────────────────────────────────
 MANIFEST="${1:-}"
 [ -n "$MANIFEST" ] \
-  || blocker "missing required argument: path to brood manifest YAML (\$1)"
+  || blocker "missing required argument: path to brood manifest JSON (\$1)"
 # Reject a SYMLINKED manifest leaf BEFORE the [ -f ] regular-file test (which FOLLOWS
 # symlinks and would pass a symlink-to-regular-file). hivemind_assert_inputs_contained below
 # canonicalizes only the manifest's dirname and re-appends the basename textually, so a
 # symlinked manifest LEAF pointing at an external file would otherwise resolve outside and be
-# read as attacker-controlled YAML (Codex #172 P1). [ -L ] fires for a symlink leaf even when
+# read as an attacker-controlled JSON manifest (Codex #172 P1). [ -L ] fires for a symlink leaf even when
 # its target is missing; checking it first closes the leaf-symlink escape the dirname-only
 # canonicalization leaves open. A symlinked ANCESTOR is still caught by the containment guard.
 [ -L "$MANIFEST" ] \
@@ -134,41 +137,41 @@ while IFS= read -r strain_name; do
   manifest_status="$(hivemind_manifest_field "$MANIFEST" "$strain_name" "status")"
   suggested_ledger="$(hivemind_manifest_field "$MANIFEST" "$strain_name" "run.suggested_ledger")"
 
-  # 2. Re-gate every value through the safe-token allowlist. A failing value renders MALFORMED
-  #    for that field. The strain NAME is DISPLAY-ONLY — it is emitted in the output field and
-  #    used only as the quoted awk `-v want=` lookup key in hivemind_manifest_field, never as a
-  #    shell probe token. spawn-brood accepts and safely derives names containing SPACES, so a
-  #    valid `api worker` strain must not be rendered MALFORMED (which would make the navigator
-  #    skip the strain's live probes and lose its status entirely — Codex #172 P1). Gate the name
-  #    with the presentation-safe PATH rule (permits space; still rejects '..', leading '-',
-  #    command-substitution + shell-metachar bytes, and the TAB/newline/CR that would break the
-  #    TAB-delimited output grammar) rather than the strict identifier token allowlist. IDs used
-  #    in shell probes (branch/tmux/status/ledger_id) keep the strict token gate below.
+  # 2. Re-gate every value through the allowlist value-class matching its field. A failing
+  #    value renders MALFORMED for that field. The strain NAME is DISPLAY-ONLY — it is emitted
+  #    in the output field and used only as the quoted jq `--arg want=` lookup key in
+  #    hivemind_manifest_field, never as a shell probe token. spawn-brood accepts and safely
+  #    derives names containing SPACES, so a valid `api worker` strain must not be rendered
+  #    MALFORMED (which would make the navigator skip the strain's live probes and lose its
+  #    status entirely — Codex #172 P1). Gate the name with the broadest PRESENTATION class
+  #    (permits space + printable display bytes; still rejects the shared floor: '..', leading
+  #    '-', command-substitution `$`/backtick, and the TAB/newline/CR that would break the
+  #    TAB-delimited output grammar). IDs used in shell probes (branch/tmux/status/ledger_id)
+  #    keep the strict IDENTIFIER class below.
   name_out="MALFORMED"
-  hivemind_assert_safe_path "$strain_name" && name_out="$strain_name"
+  hivemind_assert_presentation "$strain_name" && name_out="$strain_name"
 
   # worktree_path is a filesystem PATH, not an identifier: a valid checkout root may contain
-  # SPACES. Gate it with the path-specific rule (permits space; still rejects '..', leading '-',
-  # command-substitution + shell-metachar bytes, and the TAB/newline/CR that would break the
-  # output grammar) — NOT the strict identifier token allowlist, which would falsely render a
-  # space-bearing worktree MALFORMED and suppress all ledger projection (Codex #172 P1). Its only
-  # downstream uses (cd/pwd -P canonicalization, quoted prefix construction, the TAB-delimited
-  # output field) are all space-safe. IDs/branch/tmux/status/ledger_id keep the strict token gate.
+  # SPACES (and inert bytes # = ~ !). Gate it with the PATH class (permits those; still rejects
+  # the shared floor: '..', leading '-', command-substitution + framing bytes) — NOT the strict
+  # IDENTIFIER class, which would falsely render a space-bearing worktree MALFORMED and suppress
+  # all ledger projection (Codex #172 P1). Its only downstream uses (cd/pwd -P canonicalization,
+  # quoted prefix construction, the TAB-delimited output field) are all space-safe.
   wt_out="MALFORMED"
   wt_clean=0
-  if hivemind_assert_safe_path "$worktree_path"; then
+  if hivemind_assert_path "$worktree_path"; then
     wt_out="$worktree_path"
     wt_clean=1
   fi
 
   branch_out="MALFORMED"
-  hivemind_assert_safe_token "$branch" && branch_out="$branch"
+  hivemind_assert_identifier "$branch" && branch_out="$branch"
 
   tmux_out="MALFORMED"
-  hivemind_assert_safe_token "$tmux_session" && tmux_out="$tmux_session"
+  hivemind_assert_identifier "$tmux_session" && tmux_out="$tmux_session"
 
   status_out="MALFORMED"
-  hivemind_assert_safe_token "$manifest_status" && status_out="$manifest_status"
+  hivemind_assert_identifier "$manifest_status" && status_out="$manifest_status"
 
   # 3. Confine the ledger path beneath the strain's OWN worktree. The pointer must resolve to
   #    "<worktree_path>/.hivemind/runs/<safe-id>/state.json" with <safe-id> matching
@@ -186,13 +189,13 @@ while IFS= read -r strain_name; do
     # No pointer present (v1 manifest, or absent run: block): MISSING, never read.
     state_out="MISSING"
     run_out="MISSING"
-  elif ! hivemind_assert_safe_path "$suggested_ledger"; then
+  elif ! hivemind_assert_path "$suggested_ledger"; then
     # Pointer present but not path-clean: treat as an escape attempt — MALFORMED, no read. The
     # pointer embeds the worktree_path prefix, so a valid pointer under a space-bearing checkout
-    # legitimately contains spaces — gate with the path rule (still rejects '..', command-sub,
-    # shell-metachars, TAB/newline). The id SEGMENT below is separately re-checked against the
-    # strict ^[A-Za-z0-9._-]+$ identifier charset (no slash, no space), so the relaxed path rule
-    # here never weakens the single-component id confinement.
+    # legitimately contains spaces — gate with the PATH class (still rejects '..', command-sub,
+    # framing bytes). The id SEGMENT below is separately re-checked against the strict
+    # ^[A-Za-z0-9._-]+$ identifier charset (no slash, no space), so the relaxed path class here
+    # never weakens the single-component id confinement.
     state_out="MALFORMED"
     run_out="MALFORMED"
   else

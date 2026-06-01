@@ -4,8 +4,8 @@
 #
 # PURE UNIT TESTS — CI-runnable with ONLY jq present (NO tmux / claude / gh). Exercises the
 # three sourced libraries the brood-status-project.sh entrypoint composes:
-#   - plugin/skills/_shared/allowlist.sh      (hivemind_assert_safe_token)
-#   - plugin/skills/_shared/manifest.sh       (hivemind_manifest_strain_names / _field)
+#   - plugin/skills/_shared/allowlist.sh      (identifier / path / presentation)
+#   - plugin/skills/_shared/manifest-json.sh  (hivemind_manifest_strain_names / _field)
 #   - plugin/skills/_shared/ledger-project.sh (hivemind_project_run_status / _state_current)
 #
 # Each lib is SOURCED (these are sourced fragments, not executables) and its functions called
@@ -22,12 +22,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 SHARED_DIR="$REPO_ROOT/plugin/skills/_shared"
 FIX_DIR="$REPO_ROOT/tests/brood"
-MANIFEST_V1="$FIX_DIR/manifest-v1-old.yaml"
-MANIFEST_V2="$FIX_DIR/manifest-v2-new.yaml"
 LEDGER_PRESENT="$FIX_DIR/child-ledger-present.json"
 
-for required in "$MANIFEST_V1" "$MANIFEST_V2" "$LEDGER_PRESENT" \
-                "$SHARED_DIR/allowlist.sh" "$SHARED_DIR/manifest.sh" "$SHARED_DIR/ledger-project.sh"; do
+for required in "$LEDGER_PRESENT" \
+                "$SHARED_DIR/allowlist.sh" "$SHARED_DIR/manifest-json.sh" "$SHARED_DIR/ledger-project.sh"; do
   [ -f "$required" ] || { echo "FAIL: required fixture/lib missing: $required" >&2; exit 2; }
 done
 
@@ -37,7 +35,7 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/allowlist.sh"
 # shellcheck source=/dev/null
-. "$SHARED_DIR/manifest.sh"
+. "$SHARED_DIR/manifest-json.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/ledger-project.sh"
 
@@ -61,120 +59,206 @@ assert_eq() {
   fi
 }
 
-# ── Section 1: allowlist.sh ─────────────────────────────────────────────────────
-echo '=== allowlist.sh: hivemind_assert_safe_token ==='
+# ── Section 1: allowlist.sh — three value classes sharing one security floor ─────
+echo '=== allowlist.sh: identifier / path / presentation ==='
 
-# Accept cases.
-for v in "feat/x" "brood-auth" "/abs/path-1.json" "a.b_c" "2026-05-30T22-10-00Z--api"; do
-  if hivemind_assert_safe_token "$v"; then
-    pass "allow:accept" "accepted safe token '$v'"
-  else
-    failed "allow:accept" "rejected a token that should be safe: '$v'"
-  fi
-done
-
-# Reject cases. The metacharacter cases ALSO must not produce a side-effect file.
+# Side-effect probe: any payload referencing PWN_MARKER must NOT touch it (proves the
+# validators never eval/expand command substitution). Cleared once, asserted once at the end.
 PWN_MARKER="$WORKDIR/pwn-marker"
 rm -f "$PWN_MARKER"
-# Build the metacharacter payloads referencing PWN_MARKER so an accidental eval would touch it.
-declare -a reject_cases=(
-  ""
-  "-rf"
-  "a..b"
-  "x\$(touch $PWN_MARKER)"
-  "\`touch $PWN_MARKER\`"
-  "a b"
-  "a;b"
-)
-for v in "${reject_cases[@]}"; do
-  if hivemind_assert_safe_token "$v"; then
-    failed "allow:reject" "accepted a token that should be rejected: '$v'"
+
+# ── Class 1: identifier (strictest, ^[A-Za-z0-9._/-]+$). ──
+for v in "feat/x" "brood-auth" "/abs/path-1.json" "a.b_c" "2026-05-30T22-10-00Z--api"; do
+  if hivemind_assert_identifier "$v"; then
+    pass "id:accept" "accepted identifier '$v'"
   else
-    pass "allow:reject" "rejected unsafe token '$v'"
+    failed "id:accept" "rejected an identifier that should be safe: '$v'"
   fi
 done
-# No metacharacter case may have created the marker (proves no command substitution ran).
+# identifier REJECTS space and the path-class inert bytes (those belong to the wider classes).
+for v in "" "-rf" "a..b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a b" "a;b" "a#b" "a=b" "a~b" "a!b"; do
+  if hivemind_assert_identifier "$v"; then
+    failed "id:reject" "accepted a value identifier must reject: '$v'"
+  else
+    pass "id:reject" "rejected non-identifier '$v'"
+  fi
+done
+
+# ── Class 2: path (identifier charset PLUS space and inert bytes # = ~ !). ──
+# Space-bearing ACCEPTS (the Codex #172 P1 case): a real checkout root with a space.
+for v in "/home/me/hive review/wt" "/repo/.claude/worktrees/api" "/home/me/hive#review/wt" "/a/b=c~d!e/wt" "feat/x"; do
+  if hivemind_assert_path "$v"; then
+    pass "path:accept" "accepted path '$v'"
+  else
+    failed "path:accept" "rejected a path that should be safe: '$v'"
+  fi
+done
+# path STILL enforces the shared floor: command-sub, '..', leading '-', framing bytes reject.
+tab=$'\t'; nl=$'\n'; cr=$'\r'
+for v in "" "-rf" "/a/../b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b" "a;b" 'a|b' 'a>b'; do
+  if hivemind_assert_path "$v"; then
+    failed "path:reject" "accepted a value the path floor must reject: '$v'"
+  else
+    pass "path:reject" "rejected unsafe path '$v'"
+  fi
+done
+
+# ── Class 3: presentation (broadest printable; display-only name). ──
+# Space-bearing display name ACCEPTS — this is what lets `api worker` render not MALFORMED.
+for v in "api worker" "api" "a;b" 'a|b' "a#b" "a (worker)" "a/b-c.d_e"; do
+  if hivemind_assert_presentation "$v"; then
+    pass "pres:accept" "accepted presentation value '$v'"
+  else
+    failed "pres:accept" "rejected a presentation value that should render: '$v'"
+  fi
+done
+# presentation STILL enforces the shared floor: command-sub, '..', leading '-', framing reject.
+for v in "" "-x" "a..b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b"; do
+  if hivemind_assert_presentation "$v"; then
+    failed "pres:reject" "accepted a value the presentation floor must reject: '$v'"
+  else
+    pass "pres:reject" "rejected floor-violating presentation value '$v'"
+  fi
+done
+
+# No payload across ANY class created the marker (proves no command substitution ran).
 if [ -e "$PWN_MARKER" ]; then
-  failed "allow:no-side-effect" "a metacharacter case created the side-effect marker $PWN_MARKER"
+  failed "allow:no-side-effect" "a command-sub payload created the side-effect marker $PWN_MARKER"
 else
-  pass "allow:no-side-effect" "no metacharacter case created a side-effect file"
+  pass "allow:no-side-effect" "no command-sub payload created a side-effect file"
 fi
 
-# ── Section 2: manifest.sh ──────────────────────────────────────────────────────
+# ── Section 2: manifest-json.sh ─────────────────────────────────────────────────
 echo ''
-echo '=== manifest.sh: hivemind_manifest_strain_names / hivemind_manifest_field ==='
+echo '=== manifest-json.sh: hivemind_manifest_strain_names / hivemind_manifest_field ==='
+#
+# JSON manifests are built inline in WORKDIR so this section is self-contained (the shared
+# JSON manifest fixtures under tests/brood/ are owned by STEP-004). Each fixture mirrors the
+# shape spawn-brood.sh's jq emitter writes (manifest_version 3): a top-level object with a
+# `strains` array; each strain carries name/worktree_path/branch/tmux_session/status and a
+# nested `run` object.
 
-# v2: strain names.
-names_v2="$(hivemind_manifest_strain_names "$MANIFEST_V2")"
-assert_eq "manifest:v2-names" "api" "$names_v2" "v2 strain names"
+# v3 manifest with a single "api" strain carrying a full run block.
+MANIFEST_V3="$WORKDIR/manifest-v3.json"
+jq -n '{
+  manifest_version: 3,
+  brood_id: "2026-05-30T22-10-00Z",
+  strains: [
+    {
+      name: "api",
+      description: "Implement the API slice.",
+      worktree_path: "/repo/.claude/worktrees/api",
+      branch: "feature/api-slice",
+      tmux_session: "brood-api",
+      status: "running",
+      pr: null, merged: false, rebased_after: [],
+      run: {
+        suggested_id: "2026-05-30T22-10-00Z--api",
+        suggested_ledger: "/repo/.claude/worktrees/api/.hivemind/runs/2026-05-30T22-10-00Z--api/state.json",
+        workflow_hint: "standard-delivery"
+      }
+    }
+  ],
+  merge_order: []
+}' > "$MANIFEST_V3"
 
-# v2: each static field + block-scalar parity.
-assert_eq "manifest:v2-worktree" "/repo/.claude/worktrees/api" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "api" "worktree_path")" "v2 worktree_path (|- block scalar)"
-assert_eq "manifest:v2-branch" "feature/api-slice" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "api" "branch")" "v2 branch (|- block scalar)"
-assert_eq "manifest:v2-tmux" "brood-api" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "api" "tmux_session")" "v2 tmux_session (inline quoted)"
-assert_eq "manifest:v2-status" "running" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "api" "status")" "v2 status (inline bare)"
-assert_eq "manifest:v2-suggested-id" "2026-05-30T22-10-00Z--api" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "api" "run.suggested_id")" "v2 run.suggested_id (nested |-)"
-assert_eq "manifest:v2-suggested-ledger" "TESTS_BROOD_DIR/child-ledger-present.json" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "api" "run.suggested_ledger")" "v2 run.suggested_ledger (nested |-)"
-assert_eq "manifest:v2-workflow-hint" "standard-delivery" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "api" "workflow_hint")" "v2 workflow_hint (nested |-)"
+assert_eq "manifest:v3-names" "api" \
+  "$(hivemind_manifest_strain_names "$MANIFEST_V3")" "v3 strain names"
+assert_eq "manifest:v3-worktree" "/repo/.claude/worktrees/api" \
+  "$(hivemind_manifest_field "$MANIFEST_V3" "api" "worktree_path")" "v3 worktree_path"
+assert_eq "manifest:v3-branch" "feature/api-slice" \
+  "$(hivemind_manifest_field "$MANIFEST_V3" "api" "branch")" "v3 branch"
+assert_eq "manifest:v3-tmux" "brood-api" \
+  "$(hivemind_manifest_field "$MANIFEST_V3" "api" "tmux_session")" "v3 tmux_session"
+assert_eq "manifest:v3-status" "running" \
+  "$(hivemind_manifest_field "$MANIFEST_V3" "api" "status")" "v3 status"
+assert_eq "manifest:v3-suggested-id" "2026-05-30T22-10-00Z--api" \
+  "$(hivemind_manifest_field "$MANIFEST_V3" "api" "run.suggested_id")" "v3 run.suggested_id"
+assert_eq "manifest:v3-suggested-ledger" "/repo/.claude/worktrees/api/.hivemind/runs/2026-05-30T22-10-00Z--api/state.json" \
+  "$(hivemind_manifest_field "$MANIFEST_V3" "api" "run.suggested_ledger")" "v3 run.suggested_ledger"
+assert_eq "manifest:v3-workflow-hint" "standard-delivery" \
+  "$(hivemind_manifest_field "$MANIFEST_V3" "api" "workflow_hint")" "v3 workflow_hint"
 
-# run.* prefix-stripping parity: passing the bare field name yields the same value.
-assert_eq "manifest:v2-suggested-ledger-bare" "TESTS_BROOD_DIR/child-ledger-present.json" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "api" "suggested_ledger")" "v2 suggested_ledger (bare name)"
+# run.* prefix parity: bare field name resolves the same as the run.-prefixed name.
+assert_eq "manifest:v3-suggested-ledger-bare" "/repo/.claude/worktrees/api/.hivemind/runs/2026-05-30T22-10-00Z--api/state.json" \
+  "$(hivemind_manifest_field "$MANIFEST_V3" "api" "suggested_ledger")" "v3 suggested_ledger (bare name)"
 
-# v1: names + static fields still extract; run.* fields are empty (no run: block).
-assert_eq "manifest:v1-names" "api" \
-  "$(hivemind_manifest_strain_names "$MANIFEST_V1")" "v1 strain names"
-assert_eq "manifest:v1-branch" "feature/api-slice" \
-  "$(hivemind_manifest_field "$MANIFEST_V1" "api" "branch")" "v1 branch (|- block scalar)"
-assert_eq "manifest:v1-tmux" "brood-api" \
-  "$(hivemind_manifest_field "$MANIFEST_V1" "api" "tmux_session")" "v1 tmux_session (inline quoted)"
-assert_eq "manifest:v1-suggested-ledger-empty" "" \
-  "$(hivemind_manifest_field "$MANIFEST_V1" "api" "run.suggested_ledger")" "v1 has no run: block"
+# A v1-shape manifest (no run block): static fields extract, run.* fields are empty.
+MANIFEST_NORUN="$WORKDIR/manifest-norun.json"
+jq -n '{
+  manifest_version: 3,
+  strains: [
+    { name: "api", worktree_path: "/repo/.claude/worktrees/api",
+      branch: "feature/api-slice", tmux_session: "brood-api", status: "running" }
+  ]
+}' > "$MANIFEST_NORUN"
+assert_eq "manifest:norun-names" "api" \
+  "$(hivemind_manifest_strain_names "$MANIFEST_NORUN")" "no-run strain names"
+assert_eq "manifest:norun-branch" "feature/api-slice" \
+  "$(hivemind_manifest_field "$MANIFEST_NORUN" "api" "branch")" "no-run branch"
+assert_eq "manifest:norun-suggested-ledger-empty" "" \
+  "$(hivemind_manifest_field "$MANIFEST_NORUN" "api" "run.suggested_ledger")" "no run block → empty"
 
 # Absent strain → empty.
 assert_eq "manifest:absent-strain" "" \
-  "$(hivemind_manifest_field "$MANIFEST_V2" "nope" "branch")" "absent strain yields empty"
+  "$(hivemind_manifest_field "$MANIFEST_V3" "nope" "branch")" "absent strain yields empty"
 
-# ── Hostile-description containment (#161 P1) ────────────────────────────────────
-# A strain `description: |` block carries untrusted issue-sourced free text. The fixture's
-# description body embeds counterfeit `status:`, `worktree_path:`, `branch:`, `tmux_session:`,
-# nested `run.suggested_ledger:`, and an injected `- name:` strain entry. The extractor MUST
-# treat all of it as inert block-scalar BODY — never as strain structure — and return the
-# GENUINE field values that follow the description block.
-MANIFEST_HOSTILE="$FIX_DIR/manifest-v2-hostile-desc.yaml"
-[ -f "$MANIFEST_HOSTILE" ] || { echo "FAIL: missing fixture $MANIFEST_HOSTILE" >&2; exit 2; }
+# Absent / unparseable manifest → empty, never an error (caller treats as no fields).
+assert_eq "manifest:absent-file-names" "" \
+  "$(hivemind_manifest_strain_names "$WORKDIR/does-not-exist.json")" "absent manifest → no names"
+TORN_MANIFEST="$WORKDIR/torn-manifest.json"
+printf '{"strains":[{"name":"api"\n' > "$TORN_MANIFEST"
+assert_eq "manifest:torn-names" "" \
+  "$(hivemind_manifest_strain_names "$TORN_MANIFEST")" "torn manifest → no names"
+assert_eq "manifest:torn-field" "" \
+  "$(hivemind_manifest_field "$TORN_MANIFEST" "api" "branch")" "torn manifest → empty field"
 
-# Only the genuine "api" strain is discovered; the description-embedded "- name: injected-strain"
-# must NOT surface as a second strain.
+# ── Hostile-content containment (the WHOLE POINT of the JSON flip) ───────────────
+# A strain `description` string carries untrusted issue-sourced free text. The text embeds
+# counterfeit `status: failed`, a `worktree_path:` line, and a command-substitution payload.
+# Because the manifest is JSON parsed by jq, the description is JUST A STRING VALUE — jq can
+# never re-parse its bytes as sibling keys. The genuine fields MUST be returned unchanged and
+# no command substitution can run. This is the injection class that the YAML reader had to
+# defend against with block-scalar-aware awk, now DEAD BY CONSTRUCTION.
+MANIFEST_HOSTILE="$WORKDIR/manifest-hostile.json"
+HOSTILE_DESC='Implement the API slice.
+status: failed
+worktree_path: /attacker/escape
+$(touch '"$PWN_MARKER"')
+- name: injected-strain'
+jq -n --arg d "$HOSTILE_DESC" '{
+  manifest_version: 3,
+  strains: [
+    {
+      name: "api",
+      description: $d,
+      worktree_path: "/repo/.claude/worktrees/api",
+      branch: "feature/api-slice",
+      tmux_session: "brood-api",
+      status: "running",
+      run: { suggested_ledger: "/repo/.claude/worktrees/api/.hivemind/runs/2026-05-30T22-10-00Z--api/state.json" }
+    }
+  ]
+}' > "$MANIFEST_HOSTILE"
+
+# The hostile description's injected `- name:` line is NOT a second strain.
 assert_eq "manifest:hostile-names" "api" \
-  "$(hivemind_manifest_strain_names "$MANIFEST_HOSTILE")" "injected '- name:' in description body is not a strain"
-
-# Genuine status wins over the counterfeit "status: failed" inside the description body.
+  "$(hivemind_manifest_strain_names "$MANIFEST_HOSTILE")" "injected name in description string is not a strain"
+# Genuine status wins over the counterfeit "status: failed" inside the description string.
 assert_eq "manifest:hostile-status" "running" \
-  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "status")" "counterfeit status in description body is ignored"
-
-# Genuine worktree_path wins over the counterfeit "/attacker/escape".
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "status")" "counterfeit status in description is inert"
 assert_eq "manifest:hostile-worktree" "/repo/.claude/worktrees/api" \
-  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "worktree_path")" "counterfeit worktree_path in description body is ignored"
-
-# Genuine branch wins over the counterfeit "attacker-branch".
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "worktree_path")" "counterfeit worktree_path in description is inert"
 assert_eq "manifest:hostile-branch" "feature/api-slice" \
-  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "branch")" "counterfeit branch in description body is ignored"
-
-# Genuine tmux_session wins over the counterfeit "brood-attacker".
-assert_eq "manifest:hostile-tmux" "brood-api" \
-  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "tmux_session")" "counterfeit tmux_session in description body is ignored"
-
-# Genuine run.suggested_ledger wins over the counterfeit nested "/attacker/escape/...".
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "branch")" "genuine branch returned"
 assert_eq "manifest:hostile-ledger" "/repo/.claude/worktrees/api/.hivemind/runs/2026-05-30T22-10-00Z--api/state.json" \
-  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "run.suggested_ledger")" "counterfeit nested run.suggested_ledger in description body is ignored"
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "run.suggested_ledger")" "genuine run.suggested_ledger returned"
+# The command-substitution payload in the description never ran (re-uses the Section 1 marker).
+if [ -e "$PWN_MARKER" ]; then
+  failed "manifest:hostile-no-side-effect" "description command-sub payload created $PWN_MARKER"
+else
+  pass "manifest:hostile-no-side-effect" "description command-sub payload did not execute"
+fi
 
 # ── Section 3: ledger-project.sh ────────────────────────────────────────────────
 echo ''

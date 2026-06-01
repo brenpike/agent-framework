@@ -4,8 +4,8 @@
 #
 # Proves the hivemind:brood-status manifest read works on BOTH manifest
 # generations without error:
-#   - an OLD manifest (no manifest_version, no per-strain run:/ledger block);
-#   - a NEW manifest_version: 2 manifest carrying the additive run: block.
+#   - an OLD manifest (no manifest_version, no per-strain run/ledger block);
+#   - a NEW manifest_version: 3 manifest carrying the additive run block.
 # In both, the consumer extracts the strain's tmux_session and branch identically.
 #
 # NOTE: child-ledger workflow-state projection is DEFERRED to issue #161. brood-status
@@ -14,8 +14,9 @@
 # yield identical tmux_session/branch extraction.
 #
 # This runner replicates the manifest parse the brood-status SKILL.md prose
-# performs (sed extraction of tmux_session/branch — identical to the spawn-brood
-# liveness guard's extraction). It does NOT shell out to tmux/git/gh: external
+# performs (jq extraction of tmux_session/branch from the JSON manifest — identical to
+# the spawn-brood liveness guard's `jq -r '.strains[].tmux_session // empty'`
+# extraction). It does NOT shell out to tmux/git/gh: external
 # observables are out of scope for a back-compat parse test. It is READ-ONLY: it
 # never writes a manifest or a child ledger.
 #
@@ -46,8 +47,8 @@ set -euo pipefail
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 FIX_DIR="$REPO_ROOT/tests/brood"
-MANIFEST_V1="$FIX_DIR/manifest-v1-old.yaml"
-MANIFEST_V2="$FIX_DIR/manifest-v2-new.yaml"
+MANIFEST_V1="$FIX_DIR/manifest-v1-old.json"
+MANIFEST_V2="$FIX_DIR/manifest-v2-new.json"
 SPAWN_SCRIPT="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
 INIT_SCRIPT="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
 PROJECT_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-status-project.sh"
@@ -118,19 +119,17 @@ cleanup() {
 trap cleanup EXIT
 
 # extract_tmux_session: pull the first strain's tmux_session value the SAME way the
-# spawn-brood liveness guard and brood-status prose extract it (a double-quoted YAML
-# line). Mirrors the producer/consumer parity the manifest contract relies on.
+# spawn-brood liveness guard and brood-status read it from the JSON manifest — `jq -r
+# '.strains[].tmux_session // empty'`. The manifest is JSON, so jq cannot confuse
+# attacker CONTENT (a counterfeit tmux_session line inside a description string) for
+# manifest STRUCTURE; the value is whatever the genuine sibling field holds.
 extract_tmux_session() {
-    sed -n 's/^[[:space:]]*tmux_session:[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$1" | head -1
+    jq -r '.strains[].tmux_session // empty' "$1" 2>/dev/null | head -1
 }
 
-# extract_branch: pull the first strain's branch value from its |- block scalar (the
-# value is on the line FOLLOWING the `branch: |-` key, indented).
+# extract_branch: pull the first strain's branch value from the JSON manifest with jq.
 extract_branch() {
-    awk '
-        /^[[:space:]]*branch:[[:space:]]*\|-[[:space:]]*$/ { grab=1; next }
-        grab { gsub(/^[[:space:]]+/, ""); print; exit }
-    ' "$1"
+    jq -r '.strains[].branch // empty' "$1" 2>/dev/null | head -1
 }
 
 # ── Assertion 1: OLD v1 manifest parses, yields the expected session/branch ─────
@@ -266,7 +265,7 @@ assert_spawn_brood_symlink_escape_blocked() {
 
     # The guard must reject (non-zero) AND nothing may have been written under the external
     # escape target: no brood/ STATE dir, no manifest, no worktree. A successful escape would
-    # land .hivemind/brood/manifest.yaml (and possibly worktrees) under the external target.
+    # land .hivemind/brood/manifest.json (and possibly worktrees) under the external target.
     local escaped=no
     if find "$external" -mindepth 1 -print 2>/dev/null | grep -q .; then
         escaped=yes
@@ -343,7 +342,7 @@ assert_spawn_brood_inputs_external_rejected() {
     # external target. The inputs file itself lands at $external/brood-inputs.json (the harness
     # authored it THROUGH the symlinked ancestor — that is the escape vector being tested), so it
     # is the test's OWN artifact and is excluded; a successful escape would create spawn-brood
-    # outputs (a `brood/` STATE dir / manifest.yaml / worktrees) BESIDE it.
+    # outputs (a `brood/` STATE dir / manifest.json / worktrees) BESIDE it.
     local escaped=no
     if find "$external" -mindepth 1 ! -name 'brood-inputs.json' -print 2>/dev/null | grep -q .; then
         escaped=yes
@@ -891,31 +890,48 @@ run_project() {
     ( cd "$PROJ_WORKDIR" && bash "$PROJECT_SCRIPT" "$1" 2>/dev/null )
 }
 
-# write_manifest_v2: author a v2 brood manifest (with run: block) at $1 using explicit
-# LF, for ONE strain. Args: $1=path $2=strain_name $3=worktree_path $4=branch
-# $5=tmux_session $6=status $7=suggested_ledger. Mirrors the producer shape in
-# manifest.sh exactly (block scalars at content indent; tmux_session inline-quoted;
-# status bare).
+# write_manifest_v2: author a brood manifest (manifest_version 3, with run block) at $1
+# for ONE strain. Args: $1=path $2=strain_name $3=worktree_path $4=branch
+# $5=tmux_session $6=status $7=suggested_ledger. Mirrors the JSON producer shape in
+# spawn-brood.sh exactly (jq-constructed object; manifest_version a number; pr:null,
+# merged:false, rebased_after:[] as JSON types; run block carrying the suggested_ledger).
+# Every untrusted value enters jq as a --arg binding (jq does the JSON-safe escaping), so
+# a metachar-bearing worktree_path/ledger is serialized as inert string content, never
+# manifest structure.
 write_manifest_v2() {
     local out="$1" name="$2" wt="$3" branch="$4" sess="$5" status="$6" ledger="$7"
-    {
-        printf 'manifest_version: |-\n  2\n'
-        printf 'brood_id: |-\n  2026-05-30T22-10-00Z\n'
-        printf 'base: |-\n  main\n'
-        printf 'overlap_risk: |-\n  low\n'
-        printf 'strains:\n'
-        printf '  - name: |-\n      %s\n' "$name"
-        printf '    description: |\n      test strain\n'
-        printf '    worktree_path: |-\n      %s\n' "$wt"
-        printf '    branch: |-\n      %s\n' "$branch"
-        printf '    tmux_session: "%s"\n' "$sess"
-        printf '    status: %s\n' "$status"
-        printf '    run:\n'
-        printf '      suggested_id: |-\n        run-id\n'
-        printf '      suggested_ledger: |-\n        %s\n' "$ledger"
-        printf '      workflow_hint: |-\n        standard-delivery\n'
-        printf 'merge_order: []\n'
-    } > "$out"
+    jq -n \
+        --arg name "$name" \
+        --arg wt "$wt" \
+        --arg branch "$branch" \
+        --arg sess "$sess" \
+        --arg status "$status" \
+        --arg ledger "$ledger" \
+        '{
+            manifest_version: 3,
+            brood_id: "2026-05-30T22-10-00Z",
+            base: "main",
+            overlap_risk: "low",
+            strains: [
+                {
+                    name: $name,
+                    description: "test strain",
+                    worktree_path: $wt,
+                    branch: $branch,
+                    tmux_session: $sess,
+                    status: $status,
+                    pr: null,
+                    merged: false,
+                    rebased_after: [],
+                    run: {
+                        suggested_id: "run-id",
+                        suggested_ledger: $ledger,
+                        workflow_hint: "standard-delivery"
+                    }
+                }
+            ],
+            merge_order: []
+        }' > "$out"
 }
 
 # write_ledger: author a child run-ledger JSON at $1 with run.status=$2,
@@ -948,7 +964,7 @@ assert_proj_happy_path() {
     local wt="$wd/wt"
     mkdir -p "$wt/.hivemind/runs/run-id"
     write_ledger "$wt/.hivemind/runs/run-id/state.json" running implement_step
-    local manifest="$wd/manifest.yaml"
+    local manifest="$wd/manifest.json"
     write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
         "$wt/.hivemind/runs/run-id/state.json"
 
@@ -978,20 +994,26 @@ assert_proj_v1_no_run_block() {
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/v1"
     local wt="$wd/wt"
     mkdir -p "$wt"
-    local manifest="$wd/manifest.yaml"
-    {
-        printf 'brood_id: |-\n  2026-05-30T22-10-00Z\n'
-        printf 'base: |-\n  main\n'
-        printf 'overlap_risk: |-\n  low\n'
-        printf 'strains:\n'
-        printf '  - name: |-\n      api\n'
-        printf '    description: |\n      test strain\n'
-        printf '    worktree_path: |-\n      %s\n' "$wt"
-        printf '    branch: |-\n      feature/api-slice\n'
-        printf '    tmux_session: "brood-api"\n'
-        printf '    status: running\n'
-        printf 'merge_order: []\n'
-    } > "$manifest"
+    local manifest="$wd/manifest.json"
+    # A v1-shape manifest: NO run block, so the suggested_ledger pointer is absent and both
+    # ledger scalars must render MISSING (never read). manifest_version omitted intentionally.
+    jq -n --arg wt "$wt" \
+        '{
+            brood_id: "2026-05-30T22-10-00Z",
+            base: "main",
+            overlap_risk: "low",
+            strains: [
+                {
+                    name: "api",
+                    description: "test strain",
+                    worktree_path: $wt,
+                    branch: "feature/api-slice",
+                    tmux_session: "brood-api",
+                    status: "running"
+                }
+            ],
+            merge_order: []
+        }' > "$manifest"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
@@ -1013,7 +1035,7 @@ assert_proj_missing_ledger_file() {
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/missing"
     local wt="$wd/wt"
     mkdir -p "$wt/.hivemind/runs/run-id"   # dir exists, state.json does NOT
-    local manifest="$wd/manifest.yaml"
+    local manifest="$wd/manifest.json"
     write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
         "$wt/.hivemind/runs/run-id/state.json"
 
@@ -1037,7 +1059,7 @@ assert_proj_malformed_run_status() {
     local wt="$wd/wt"
     mkdir -p "$wt/.hivemind/runs/run-id"
     write_ledger "$wt/.hivemind/runs/run-id/state.json" frobnicate implement_step
-    local manifest="$wd/manifest.yaml"
+    local manifest="$wd/manifest.json"
     write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
         "$wt/.hivemind/runs/run-id/state.json"
 
@@ -1064,7 +1086,7 @@ assert_proj_injection_state_current() {
     local marker="$wd/pwn_state_marker"
     # state.current is a literal command-substitution string; it is DATA in the JSON.
     write_ledger "$wt/.hivemind/runs/run-id/state.json" running "\$(touch $marker)"
-    local manifest="$wd/manifest.yaml"
+    local manifest="$wd/manifest.json"
     write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
         "$wt/.hivemind/runs/run-id/state.json"
 
@@ -1088,7 +1110,7 @@ assert_proj_metachar_worktree() {
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/metawt"
     mkdir -p "$wd"
     local marker="$wd/pwn_wt_marker"
-    local manifest="$wd/manifest.yaml"
+    local manifest="$wd/manifest.json"
     # worktree_path AND suggested_ledger both carry command-sub payloads. Pure DATA.
     write_manifest_v2 "$manifest" "api" "/tmp/\$(touch $marker)/wt" "feature/api-slice" \
         "brood-api" "running" "/tmp/\$(touch $marker)/wt/.hivemind/runs/run-id/state.json"
@@ -1120,7 +1142,7 @@ assert_proj_symlink_leaf() {
     local target="$wd/external_state.json"
     write_ledger "$target" running leakedsentinel
     ln -s "$target" "$wt/.hivemind/runs/run-id/state.json"
-    local manifest="$wd/manifest.yaml"
+    local manifest="$wd/manifest.json"
     write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
         "$wt/.hivemind/runs/run-id/state.json"
 
@@ -1145,7 +1167,7 @@ assert_proj_ledger_escape() {
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/escledger"
     local wt="$wd/wt"
     mkdir -p "$wt"
-    local manifest="$wd/manifest.yaml"
+    local manifest="$wd/manifest.json"
     # Pointer is an absolute path well outside the worktree. allowlist-clean charset but
     # wrong SHAPE → escape attempt → MALFORMED, no read.
     write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
@@ -1185,35 +1207,47 @@ assert_proj_multi_strain() {
     mkdir -p "$wt_a/.hivemind/runs/run-id" "$wt_b/.hivemind/runs/run-id"
     write_ledger "$wt_a/.hivemind/runs/run-id/state.json" running implement_step
     write_ledger "$wt_b/.hivemind/runs/run-id/state.json" running "State With Spaces"
-    local manifest="$wd/manifest.yaml"
-    {
-        printf 'manifest_version: |-\n  2\n'
-        printf 'brood_id: |-\n  2026-05-30T22-10-00Z\n'
-        printf 'base: |-\n  main\n'
-        printf 'overlap_risk: |-\n  low\n'
-        printf 'strains:\n'
-        printf '  - name: |-\n      api\n'
-        printf '    description: |\n      strain a\n'
-        printf '    worktree_path: |-\n      %s\n' "$wt_a"
-        printf '    branch: |-\n      feature/api-slice\n'
-        printf '    tmux_session: "brood-api"\n'
-        printf '    status: running\n'
-        printf '    run:\n'
-        printf '      suggested_id: |-\n        run-id\n'
-        printf '      suggested_ledger: |-\n        %s\n' "$wt_a/.hivemind/runs/run-id/state.json"
-        printf '      workflow_hint: |-\n        standard-delivery\n'
-        printf '  - name: |-\n      web\n'
-        printf '    description: |\n      strain b\n'
-        printf '    worktree_path: |-\n      %s\n' "$wt_b"
-        printf '    branch: |-\n      feature/web-slice\n'
-        printf '    tmux_session: "brood-web"\n'
-        printf '    status: running\n'
-        printf '    run:\n'
-        printf '      suggested_id: |-\n        run-id\n'
-        printf '      suggested_ledger: |-\n        %s\n' "$wt_b/.hivemind/runs/run-id/state.json"
-        printf '      workflow_hint: |-\n        standard-delivery\n'
-        printf 'merge_order: []\n'
-    } > "$manifest"
+    local manifest="$wd/manifest.json"
+    jq -n \
+        --arg wt_a "$wt_a" \
+        --arg wt_b "$wt_b" \
+        --arg ledger_a "$wt_a/.hivemind/runs/run-id/state.json" \
+        --arg ledger_b "$wt_b/.hivemind/runs/run-id/state.json" \
+        '{
+            manifest_version: 3,
+            brood_id: "2026-05-30T22-10-00Z",
+            base: "main",
+            overlap_risk: "low",
+            strains: [
+                {
+                    name: "api",
+                    description: "strain a",
+                    worktree_path: $wt_a,
+                    branch: "feature/api-slice",
+                    tmux_session: "brood-api",
+                    status: "running",
+                    run: {
+                        suggested_id: "run-id",
+                        suggested_ledger: $ledger_a,
+                        workflow_hint: "standard-delivery"
+                    }
+                },
+                {
+                    name: "web",
+                    description: "strain b",
+                    worktree_path: $wt_b,
+                    branch: "feature/web-slice",
+                    tmux_session: "brood-web",
+                    status: "running",
+                    run: {
+                        suggested_id: "run-id",
+                        suggested_ledger: $ledger_b,
+                        workflow_hint: "standard-delivery"
+                    }
+                }
+            ],
+            merge_order: []
+        }' > "$manifest"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?

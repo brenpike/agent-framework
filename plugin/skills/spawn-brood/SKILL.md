@@ -26,16 +26,16 @@ Before:
 - [ ] `base` resolves to a real commit (the script verifies this once, up front).
 - [ ] No strain branch exists locally/remotely; no `brood-<short>` session or
       worktree path collides (the script pre-flights all of these).
-- [ ] One brood per checkout: if the singleton `manifest.yaml` records a live
+- [ ] One brood per checkout: if the singleton `manifest.json` records a live
       `tmux_session`, the script blocks the new spawn; otherwise it proceeds
       (overwriting the prior singleton state).
 
 After:
-- [ ] Brood manifest written to `.hivemind/brood/manifest.yaml` as
-      `manifest_version: 2` — additively carrying a top-level `hatchery:` block
-      (`run_id`, `ledger`, `workflow`) and a per-strain `run:` block
+- [ ] Brood manifest written to `.hivemind/brood/manifest.json` as
+      `manifest_version: 3` (JSON integer) — carrying a top-level `hatchery`
+      block (`run_id`, `ledger`, `workflow`) and a per-strain `run` block
       (`suggested_id`, `suggested_ledger`, `workflow_hint`) alongside the v1
-      fields. Old consumers ignore the new fields (back-compat).
+      fields. Parsed exclusively by jq (machine consumer); no YAML back-compat.
 - [ ] Each strain has a worktree + branch off `base`, a detached tmux session
       `brood-<short>` running claude, and its injected `task.md` — which emits
       the data-boundary preamble FIRST, THEN the YAML child-task metadata block

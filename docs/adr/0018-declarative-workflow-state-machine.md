@@ -85,3 +85,17 @@ The Decision-8 engine scripts and the first inert-inputs-file implementation not
 The Write-grant soundness argument for the inert DATA fields (`user_request`, `normalized`, `summary`, `outputs`, `plan_steps`, `plan_path` enter `jq` only as `--arg`/`--argjson` bindings, never command/program source) is UNCHANGED by this transport correction — only the transport FILENAME shape changed, not how content is consumed.
 
 This amendment is APPEND-ONLY. The original Decision, Consequences, and prior implementation notes stand; this records that the "single fixed-path inputs file" wording is updated to the fixed-prefix + invocation-token transport. Status remains accepted.
+
+## Amendment — 2026-06-01 (brood manifest is now JSON; Decision 2 §A format-follows-consumer applied to the manifest itself; `_shared/manifest.sh` dissolved → `_shared/manifest-json.sh`)
+
+Decision 2 (§A format-follows-consumer) states: "No file is read by both `jq` and 'only a human.'" The brood manifest at `.hivemind/brood/manifest.json` gained a `jq` consumer when `brood-status` was implemented in #161. By Decision 2's own invariant, the manifest MUST therefore be JSON — machine-parsed by `jq`, not hand-scraped by `sed`/`awk`.
+
+**What changed.** The brood manifest is now JSON (`manifest_version: 3`), WRITTEN by `spawn-brood.sh` via `jq --arg`/`--argjson` (injection-safe serialization) and READ by `jq` both in the spawn-brood liveness guard and in `brood-status`. The YAML hand-scraper (`_shared/manifest.sh`, built on `sed`/`awk`) is DELETED; it is replaced by `_shared/manifest-json.sh` (pure-jq projections). A real `jq` parser cannot confuse content for structure, so the entire hand-parse injection class — block-scalar field-override, multiline-name injection, nested-mapping key spoof — is dead by construction.
+
+**Why this reverses the earlier sed/awk choice.** The #161 interrogation chose `sed`/`awk` "for consistency" rather than converting the manifest to JSON. That choice doubled down on the wrong side of a decision that had ALREADY rejected `yq` (see Considered Options — "All-YAML definitions + ledger, adopt yq": rejected because it "reopens the untrusted-text YAML-serialization injection class"). Sed/awk structurally cannot separate YAML structure from attacker-controlled content; by #161 the manifest already had a `jq` consumer, making Decision 2 §A directly applicable. The JSON flip REVERSES the sed/awk consistency choice and is consistent with the alternatives table's `yq` rejection.
+
+**What stays YAML.** The child-task `task.md` preamble and the inter-agent communication contracts (router I/O, skill I/O, cerebrate plan block, delegation payloads) remain YAML — they are human/inter-agent-read, not jq-consumed. Decision 2's format boundary is unchanged: machine-parsed persisted artifacts → JSON; inter-agent/human-read contracts → YAML.
+
+**No migration.** The manifest is ephemeral gitignored runtime state (`manifest_version` bumped 2→3). The plugin is unreleased at 2.20.0; there are no persisted cross-version manifests to migrate. Writer and reader move together in this PR.
+
+This amendment is APPEND-ONLY. The original Decision, Consequences, and all prior amendments stand. Status remains accepted.
