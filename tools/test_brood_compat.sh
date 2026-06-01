@@ -69,14 +69,26 @@ skip() { echo "SKIP [$1] $2"; SKIP_COUNT=$((SKIP_COUNT + 1)); }
 WORKDIR=""
 # Private tmux server isolation. Every escape/positive case uses strain name `api` →
 # session `brood-api`, which is ALSO the production session name spawn-brood.sh derives
-# for a real strain named `api` (session = `brood-$short`). If this suite reaped
-# `brood-api` on the DEFAULT tmux server, running validation while a real strain named
-# `api` is live would kill the user's in-progress session. So the entire suite runs on a
-# throwaway tmux server: TMUX_TMPDIR points tmux at a private socket directory, and it is
-# EXPORTED so the child `tmux` calls inside spawn-brood.sh (which the spawn-invoking cases
-# exec) inherit it — both this suite's tmux calls and the spawned children land on the
-# disposable server, never the caller's default server. The user's real `brood-api` is
-# unreachable from here. The server and its dir are torn down on EXIT.
+# for a real strain named `api` (session = `brood-$short`). If this suite touched the
+# DEFAULT tmux server, running validation while a real strain named `api` is live would
+# kill the user's in-progress session — and the EXIT `tmux kill-server` below would
+# destroy the WHOLE server. So the entire suite runs on a throwaway tmux server.
+#
+# Two env levers are BOTH required, because TMUX_TMPDIR alone is insufficient:
+#   1. unset TMUX (and TMUX_PANE): when this suite is run from INSIDE an existing tmux
+#      pane, `$TMUX` is inherited and pins every tmux CLIENT to the enclosing server's
+#      socket REGARDLESS of TMUX_TMPDIR — so without this unset, our `kill-session` and
+#      especially the EXIT `tmux kill-server` would hit the developer's live server.
+#      Clearing TMUX/TMUX_PANE forces tmux to fall back to choosing a socket under
+#      TMUX_TMPDIR. These are unset+exported so the spawn-brood.sh children inherit the
+#      cleared values too (it reads `$TMUX` only as an inert reporting literal).
+#   2. export TMUX_TMPDIR: with TMUX cleared, tmux locates its default socket under this
+#      private dir; exporting it makes the child `tmux` calls inside spawn-brood.sh (which
+#      the spawn-invoking cases exec) share the SAME disposable server.
+# Net: both this suite's tmux calls and the spawned children land on the disposable
+# server only; the caller's default server (and any real `brood-api`) is unreachable.
+# The server and its dir are torn down on EXIT.
+unset TMUX TMUX_PANE
 TMUX_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-tmux.XXXXXX")"
 export TMUX_TMPDIR
 # reap_brood_sessions: kill the deterministic tmux session(s) the spawn-invoking escape
@@ -88,8 +100,9 @@ export TMUX_TMPDIR
 # reach the leaf guard — so the leaf-guard assertion would never run (and, with the weaker
 # pre-fix assertion, falsely PASS). Reaping before each spawn-invoking case and on EXIT
 # keeps cases isolated. Scoped to the exact `brood-api` name these fixtures use — never a
-# wildcard — AND, because TMUX_TMPDIR isolates the server, it can only ever touch the
-# disposable server's sessions, never the caller's default-server sessions.
+# wildcard — AND, because TMUX is cleared and TMUX_TMPDIR isolates the server (see above),
+# it can only ever touch the disposable server's sessions, never the caller's
+# default-server sessions.
 reap_brood_sessions() { tmux kill-session -t brood-api 2>/dev/null || true; return 0; }
 cleanup() {
     reap_brood_sessions
