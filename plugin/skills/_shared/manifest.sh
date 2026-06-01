@@ -47,6 +47,21 @@
 # field from that region. The tmux_session/status inline forms and the `key: |-` block-scalar
 # form (value on the following content line) are both handled, matching the producer exactly.
 # DEPENDENCY-FREE beyond sed/awk (both POSIX); no jq, no yq.
+#
+# BLOCK-SCALAR BODY DISCIPLINE (untrusted-content containment, #161 P1): the `description: |`
+# field carries UNTRUSTED, issue-sourced free text reproduced verbatim at the block-scalar
+# content indent. A hostile description such as
+#       status: failed
+#       worktree_path: |-
+#         /attacker/path
+# would otherwise be re-interpreted as strain STRUCTURE by a naive `^[[:space:]]*key:` match,
+# letting description text override genuine strain fields (falsify the dashboard, redirect the
+# ledger projector). To prevent this, BOTH functions are block-scalar-aware: when a `key: |` /
+# `key: |-` line opens a block scalar, every following line MORE-INDENTED than that key is the
+# scalar's BODY and is skipped for field/structure matching. Field keys are matched ONLY at the
+# strain's direct field indent (the indent of the `- name:`/sibling keys), never inside a body.
+# This is the schema-faithful read of the producer's emission (fields at the strain indent,
+# block-scalar bodies strictly deeper) and contains description content as inert DATA.
 
 # hivemind_manifest_strain_names <manifest_path>
 # Emit one strain name per line, in manifest order. A strain block begins with a
@@ -58,11 +73,36 @@ hivemind_manifest_strain_names() {
   local manifest_path="$1"
   [ -f "$manifest_path" ] || return 0
   awk '
+    # indent_of(s): count leading spaces of a line (tabs are not emitted by the producer).
+    function indent_of(s,   n) { n = 0; while (substr(s, n + 1, 1) == " ") n++; return n }
+
     # Enter the strains: region at the top-level (column-0) strains: key.
-    /^strains:[[:space:]]*$/ { in_strains = 1; next }
+    /^strains:[[:space:]]*$/ { in_strains = 1; in_scalar = 0; next }
     # Any other top-level (column-0) key ends the strains region.
-    /^[^[:space:]]/ { if (in_strains) in_strains = 0 }
-    in_strains {
+    /^[^[:space:]]/ { if (in_strains) in_strains = 0; in_scalar = 0 }
+    !in_strains { next }
+
+    # BLOCK-SCALAR BODY SKIP: while inside a block-scalar body, every line deeper than the
+    # opening key is untrusted content (e.g. the description body) — never structure. The body
+    # ends at the first line whose indent is <= the key indent (or a blank line is tolerated as
+    # interior content and skipped too). This MUST run before any `- name:` match so an injected
+    # "- name:" inside a description body cannot be mistaken for a strain entry.
+    in_scalar {
+      if ($0 ~ /^[[:space:]]*$/) { next }           # blank interior line: still body
+      if (indent_of($0) > scalar_indent) { next }   # deeper than key: body content, skip
+      in_scalar = 0                                  # dedented to/under the key: body ended
+      # fall through to evaluate this line as structure
+    }
+
+    {
+      # A pending block-scalar NAME value (line after "  - name: |-") is consumed first.
+      if (grab) {
+        line = $0
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+        print line
+        grab = 0
+        next
+      }
       # Block-scalar name entry: "  - name: |-" — value is on the next content line.
       if ($0 ~ /^[[:space:]]*-[[:space:]]*name:[[:space:]]*\|-?[[:space:]]*$/) {
         grab = 1
@@ -76,11 +116,12 @@ hivemind_manifest_strain_names() {
         if (val != "") { print val }
         next
       }
-      if (grab) {
-        line = $0
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-        print line
-        grab = 0
+      # Any OTHER "key: |" / "key: |-" opens a block scalar whose body must be skipped (e.g.
+      # description). Record the key indent so the in_scalar rule above can skip the body.
+      if ($0 ~ /^[[:space:]]*[^:[:space:]][^:]*:[[:space:]]*\|-?[[:space:]]*$/) {
+        scalar_indent = indent_of($0)
+        in_scalar = 1
+        next
       }
     }
   ' "$manifest_path"
@@ -106,11 +147,45 @@ hivemind_manifest_field() {
   awk -v want="$strain_name" -v field="$field" '
     function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     function unquote(s) { gsub(/^"|"$/, "", s); return s }
+    function indent_of(s,   n) { n = 0; while (substr(s, n + 1, 1) == " ") n++; return n }
 
     # Track the strains: region (top-level strains: key down to the next column-0 key).
-    /^strains:[[:space:]]*$/ { in_strains = 1; next }
-    /^[^[:space:]]/ { if (in_strains) in_strains = 0; in_target = 0 }
+    /^strains:[[:space:]]*$/ { in_strains = 1; in_scalar = 0; next }
+    /^[^[:space:]]/ { if (in_strains) in_strains = 0; in_target = 0; in_scalar = 0 }
     !in_strains { next }
+
+    # Resolve a pending block-scalar NAME value (the line after "- name: |-"). This is the
+    # genuine name value, so it is consumed BEFORE the body-skip rule (it sits one level deeper
+    # than the "- name:" key but is the value we actually want, not skippable body).
+    pending_name_block {
+      nm = trim($0)
+      cur_is_target = (nm == want)
+      in_target = cur_is_target
+      pending_name_block = 0
+      next
+    }
+
+    # Once a FIELD block scalar was opened for the TARGET strain, the very next content line
+    # carries the value. Consumed before the body-skip rule for the same reason as the name.
+    grab_field {
+      print trim($0)
+      grab_field = 0
+      found = 1
+      exit
+    }
+
+    # BLOCK-SCALAR BODY SKIP (untrusted-content containment): while inside a block-scalar body
+    # we are NOT capturing (description, overlap_details, or any non-target scalar), every line
+    # deeper than the opening key is content — NEVER structure. An injected "status: failed" or
+    # "worktree_path: |-" inside a description body therefore can never be matched as a field.
+    # The body ends at the first non-blank line whose indent is <= the key indent. This rule
+    # runs BEFORE the field/name matchers so injected keys never reach them.
+    in_scalar {
+      if ($0 ~ /^[[:space:]]*$/) { next }
+      if (indent_of($0) > scalar_indent) { next }
+      in_scalar = 0
+      # fall through to evaluate this line as structure
+    }
 
     # A new strain block begins at "  - name:". Decide whether it is the target strain.
     /^[[:space:]]*-[[:space:]]*name:/ {
@@ -133,27 +208,11 @@ hivemind_manifest_field() {
       next
     }
 
-    # Resolve a pending block-scalar name value (the line after "- name: |-").
-    pending_name_block {
-      nm = trim($0)
-      cur_is_target = (nm == want)
-      in_target = cur_is_target
-      pending_name_block = 0
-      next
-    }
-
-    # Once a field block scalar was opened for the target strain, the very next content
-    # line carries the value.
-    grab_field {
-      print trim($0)
-      grab_field = 0
-      found = 1
-      exit
-    }
-
     in_target {
-      # Match "<indent><field>:" possibly with an inline value or a block-scalar indicator.
-      # The field token must be the exact key (anchored with a trailing colon).
+      # Match "<indent><field>:" with the field token anchored as the exact key (trailing
+      # colon). The field must be a DIRECT key, not a key buried in a deeper block-scalar body —
+      # the in_scalar rule above already discarded body lines, so any "key: |" line reaching
+      # here is a genuine strain (or nested run.) field.
       pat = "^[[:space:]]*" field ":"
       if ($0 ~ pat) {
         # Extract everything after the first colon following the field name.
@@ -168,6 +227,13 @@ hivemind_manifest_field() {
         print unquote(rest)
         found = 1
         exit
+      }
+      # A NON-target block-scalar key (e.g. description, or a run.* scalar we were not asked for)
+      # opens a body that must be skipped so its untrusted content is never matched as a field.
+      if ($0 ~ /^[[:space:]]*[^:[:space:]][^:]*:[[:space:]]*\|-?[[:space:]]*$/) {
+        scalar_indent = indent_of($0)
+        in_scalar = 1
+        next
       }
     }
   ' "$manifest_path"

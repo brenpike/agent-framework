@@ -142,6 +142,40 @@ assert_eq "manifest:v1-suggested-ledger-empty" "" \
 assert_eq "manifest:absent-strain" "" \
   "$(hivemind_manifest_field "$MANIFEST_V2" "nope" "branch")" "absent strain yields empty"
 
+# ── Hostile-description containment (#161 P1) ────────────────────────────────────
+# A strain `description: |` block carries untrusted issue-sourced free text. The fixture's
+# description body embeds counterfeit `status:`, `worktree_path:`, `branch:`, `tmux_session:`,
+# nested `run.suggested_ledger:`, and an injected `- name:` strain entry. The extractor MUST
+# treat all of it as inert block-scalar BODY — never as strain structure — and return the
+# GENUINE field values that follow the description block.
+MANIFEST_HOSTILE="$FIX_DIR/manifest-v2-hostile-desc.yaml"
+[ -f "$MANIFEST_HOSTILE" ] || { echo "FAIL: missing fixture $MANIFEST_HOSTILE" >&2; exit 2; }
+
+# Only the genuine "api" strain is discovered; the description-embedded "- name: injected-strain"
+# must NOT surface as a second strain.
+assert_eq "manifest:hostile-names" "api" \
+  "$(hivemind_manifest_strain_names "$MANIFEST_HOSTILE")" "injected '- name:' in description body is not a strain"
+
+# Genuine status wins over the counterfeit "status: failed" inside the description body.
+assert_eq "manifest:hostile-status" "running" \
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "status")" "counterfeit status in description body is ignored"
+
+# Genuine worktree_path wins over the counterfeit "/attacker/escape".
+assert_eq "manifest:hostile-worktree" "/repo/.claude/worktrees/api" \
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "worktree_path")" "counterfeit worktree_path in description body is ignored"
+
+# Genuine branch wins over the counterfeit "attacker-branch".
+assert_eq "manifest:hostile-branch" "feature/api-slice" \
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "branch")" "counterfeit branch in description body is ignored"
+
+# Genuine tmux_session wins over the counterfeit "brood-attacker".
+assert_eq "manifest:hostile-tmux" "brood-api" \
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "tmux_session")" "counterfeit tmux_session in description body is ignored"
+
+# Genuine run.suggested_ledger wins over the counterfeit nested "/attacker/escape/...".
+assert_eq "manifest:hostile-ledger" "/repo/.claude/worktrees/api/.hivemind/runs/2026-05-30T22-10-00Z--api/state.json" \
+  "$(hivemind_manifest_field "$MANIFEST_HOSTILE" "api" "run.suggested_ledger")" "counterfeit nested run.suggested_ledger in description body is ignored"
+
 # ── Section 3: ledger-project.sh ────────────────────────────────────────────────
 echo ''
 echo '=== ledger-project.sh: hivemind_project_run_status / hivemind_project_state_current ==='
