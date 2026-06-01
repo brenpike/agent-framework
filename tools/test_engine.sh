@@ -109,6 +109,13 @@
 #                           rejection is by CONTAINMENT (file reachable but unmutated), not by
 #                           file-absence — the pre-staged file proves the guard, not a missing
 #                           file, blocked the write.
+#   V. init-nested-symlink-escape-rejected -> the gitroot has a REAL .hivemind/runs/, but the
+#                           <run_id> RUN dir itself is a symlink to an EXTERNAL dir outside the
+#                           checkout. init-run-ledger.sh's depth-complete containment guard walks
+#                           EVERY component of the derived chain (not just .hivemind/.hivemind/runs)
+#                           and rejects the symlinked <run_id> leaf BEFORE any state.json/evidence
+#                           write: non-zero exit AND zero write under the external target. Covers
+#                           the finding-1 leaf vector case T (symlinked .hivemind ANCESTOR) does not.
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -166,6 +173,15 @@ cp "$INIT_ENGINE" "$FAKE_INIT_ENGINE"
 # The fixture def id=engine-fixture / version 1 / start plan; the filename stem MUST equal the
 # id so `ledger.run.workflow=engine-fixture` resolves to <fakeplugin>/workflows/engine-fixture.json.
 cp "$WORKFLOW_DEF" "$FAKE_WORKFLOW_DEF"
+# The copied engines SOURCE their self-located <plugin_root>/skills/_shared/containment.sh
+# (3 dirs up from their scripts/ dir => <fakeplugin>). Stage the shared helper into the
+# fakeplugin so the sourced path resolves. A COPY, never a symlink: the engines self-locate
+# via `cd && pwd -P`, which would resolve a symlink back to the real tree and defeat isolation.
+SHARED_CONTAINMENT="$REPO_ROOT/plugin/skills/_shared/containment.sh"
+[[ -f "$SHARED_CONTAINMENT" ]] \
+    || { echo "FAIL: required input missing: $SHARED_CONTAINMENT" >&2; exit 2; }
+mkdir -p "$FAKEPLUGIN/skills/_shared"
+cp "$SHARED_CONTAINMENT" "$FAKEPLUGIN/skills/_shared/containment.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1108,6 +1124,61 @@ assert_record_symlink_escape_rejected() {
     fi
 }
 
+# ── V. init nested symlink-escape rejected: symlinked <run_id> leaf, no external write ──
+
+assert_init_nested_symlink_escape_rejected() {
+    local name="V:init-nested-symlink-escape-rejected"
+    # The gitroot keeps a REAL .hivemind/runs/ (NOT a symlinked ancestor — that is case T),
+    # but the <run_id> RUN dir itself is a symlink to an EXTERNAL dir outside the checkout.
+    # A by-name ancestor guard (.hivemind / .hivemind/runs only) would MISS this leaf; the
+    # depth-complete containment helper walks every component, sees the symlinked <run_id>
+    # leaf, and rejects BEFORE any mkdir/write. Assert: non-zero exit AND zero write under the
+    # external target (no state.json, no evidence/). The symlink lives ONLY in the ledger
+    # gitroot — self-location is via the fakeplugin tree. suggested_run_id pins the derived
+    # run id to the symlinked component name so the engine's chain hits exactly that leaf.
+    local gitroot external run_id inputs rc=0
+    gitroot="$(new_gitroot v-git)"
+    run_id="engine-case-v"
+    # REAL .hivemind/runs/ in the gitroot (only the <run_id> leaf is hostile).
+    mkdir -p "$gitroot/.hivemind/runs"
+    # External dir OUTSIDE the gitroot (a sibling under $WORKDIR), the symlink's escape target.
+    external="$WORKDIR/v-external"
+    mkdir -p "$external"
+    # Symlink the <run_id> RUN dir itself to the external dir: the derived
+    # <gitroot>/.hivemind/runs/<run_id> resolves THROUGH the symlink to the external target.
+    ln -s "$external" "$gitroot/.hivemind/runs/$run_id"
+    inputs="$WORKDIR/v-inputs.json"
+
+    # Valid init inputs (workflow=engine-fixture, version 1, start plan — matches the fakeplugin
+    # def), authored SAFELY via jq. suggested_run_id == the symlinked component so the engine
+    # derives that exact run id and walks straight onto the hostile leaf. The ONLY hostile
+    # element is the symlinked <run_id> leaf.
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init nested symlink escape" \
+        --arg normalized "engine test init nested symlink escape" \
+        --arg suggested_run_id "$run_id" \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized, suggested_run_id: $suggested_run_id}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    # The guard must reject (non-zero) AND nothing may have been written under the external
+    # escape target: no state.json AND no evidence/ (a successful escape would create both
+    # through the symlink).
+    local escaped=no
+    if find "$external" \( -name state.json -o -name evidence \) -print 2>/dev/null | grep -q .; then
+        escaped=yes
+    fi
+    if [[ "$rc" -ne 0 && "$escaped" == "no" ]]; then
+        pass "$name" "symlinked <run_id> leaf rejected (exit $rc); no state.json/evidence written under external target"
+    else
+        failed "$name" "expected non-zero exit + no external write; rc=$rc escaped=$escaped"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1132,6 +1203,7 @@ assert_forged_definition_not_honored
 assert_coherence_mismatch_unchanged
 assert_init_symlink_escape_rejected
 assert_record_symlink_escape_rejected
+assert_init_nested_symlink_escape_rejected
 
 echo ''
 echo '=== Summary ==='
