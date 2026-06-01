@@ -7,10 +7,20 @@
 # per-strain projection line. The skill body (navigator) calls this once; this script OWNS the
 # deterministic read + validation steps.
 #
-# INPUT (single positional argument):
+# INPUT (positional arguments):
 #   $1  Path (absolute or repo-relative) to a brood manifest YAML. LAYOUT-AGNOSTIC: the caller
 #       passes the manifest path explicitly; this script does NOT hardcode `.hivemind/brood/`
 #       (issue #168 will pass per-brood paths). The manifest is UNTRUSTED data — see below.
+#   $2  OPTIONAL: the checkout root the manifest belongs to, used as the containment root for the
+#       manifest read-guard. DEFAULTS to `git rev-parse --show-toplevel` (the CURRENT checkout).
+#       The navigator MUST pass the MAIN-checkout root here when it selected the manifest via the
+#       documented main-checkout FALLBACK from a linked worktree (SKILL.md step 1c): in that case
+#       the manifest lives under the main checkout, NOT the current linked worktree, so confining
+#       it beneath `--show-toplevel` (the linked worktree) would falsely reject a valid
+#       main-checkout manifest and stop status reporting before any strain probe (Codex #172 P1).
+#       This argument bounds ONLY which checkout the manifest must sit under; it does NOT relax
+#       the symlinked-ancestor escape guard, and each strain's child ledger is still confined
+#       beneath that strain's OWN worktree (unchanged).
 #
 # DATA-BOUNDARY (MANDATORY): the brood manifest AND every child run-ledger
 # (`<worktree>/.hivemind/runs/<id>/state.json`) are UNTRUSTED, attacker-controllable bytes —
@@ -80,10 +90,25 @@ MANIFEST="${1:-}"
 [ -f "$MANIFEST" ] \
   || blocker "brood manifest $MANIFEST does not exist or is not a regular file"
 
+# Determine the containment root the manifest must sit beneath. DEFAULT: the current checkout
+# (`git rev-parse --show-toplevel`). OVERRIDE: an explicit $2 supplied by the navigator when it
+# selected the manifest via the main-checkout fallback from a linked worktree (see header / Codex
+# #172 P1). The override must name an EXISTING DIRECTORY; an unreadable or non-directory override
+# is a pre-flight blocker (we never silently fall back, which could hide a wrong root).
+CHECKOUT_ROOT="${2:-}"
+if [ -n "$CHECKOUT_ROOT" ]; then
+  [ -d "$CHECKOUT_ROOT" ] \
+    || blocker "supplied checkout root $CHECKOUT_ROOT does not exist or is not a directory"
+else
+  CHECKOUT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+fi
+
 # Defense-in-depth READ-guard: refuse to read a manifest whose canonical path escapes the
-# checkout (e.g. via a symlinked ancestor). The helper never exits; map non-zero to blocker.
-hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$MANIFEST" >/dev/null \
-  || blocker "refusing to read the manifest: $MANIFEST resolves outside the checkout (symlinked ancestor)"
+# selected checkout root (e.g. via a symlinked ancestor). The helper never exits; map non-zero
+# to blocker. With a fallback-supplied root this confines the manifest beneath the MAIN checkout
+# (where the fallback manifest actually lives) instead of the current linked worktree.
+hivemind_assert_inputs_contained "$CHECKOUT_ROOT" "$MANIFEST" >/dev/null \
+  || blocker "refusing to read the manifest: $MANIFEST resolves outside the checkout root $CHECKOUT_ROOT (symlinked ancestor)"
 
 # ── Per-strain projection ───────────────────────────────────────────────────────
 # For each strain, extract the manifest static fields out-of-band into inert vars, re-gate
@@ -106,9 +131,16 @@ while IFS= read -r strain_name; do
   name_out="MALFORMED"
   hivemind_assert_safe_token "$strain_name" && name_out="$strain_name"
 
+  # worktree_path is a filesystem PATH, not an identifier: a valid checkout root may contain
+  # SPACES. Gate it with the path-specific rule (permits space; still rejects '..', leading '-',
+  # command-substitution + shell-metachar bytes, and the TAB/newline/CR that would break the
+  # output grammar) — NOT the strict identifier token allowlist, which would falsely render a
+  # space-bearing worktree MALFORMED and suppress all ledger projection (Codex #172 P1). Its only
+  # downstream uses (cd/pwd -P canonicalization, quoted prefix construction, the TAB-delimited
+  # output field) are all space-safe. IDs/branch/tmux/status/ledger_id keep the strict token gate.
   wt_out="MALFORMED"
   wt_clean=0
-  if hivemind_assert_safe_token "$worktree_path"; then
+  if hivemind_assert_safe_path "$worktree_path"; then
     wt_out="$worktree_path"
     wt_clean=1
   fi
@@ -138,8 +170,13 @@ while IFS= read -r strain_name; do
     # No pointer present (v1 manifest, or absent run: block): MISSING, never read.
     state_out="MISSING"
     run_out="MISSING"
-  elif ! hivemind_assert_safe_token "$suggested_ledger"; then
-    # Pointer present but not allowlist-clean: treat as an escape attempt — MALFORMED, no read.
+  elif ! hivemind_assert_safe_path "$suggested_ledger"; then
+    # Pointer present but not path-clean: treat as an escape attempt — MALFORMED, no read. The
+    # pointer embeds the worktree_path prefix, so a valid pointer under a space-bearing checkout
+    # legitimately contains spaces — gate with the path rule (still rejects '..', command-sub,
+    # shell-metachars, TAB/newline). The id SEGMENT below is separately re-checked against the
+    # strict ^[A-Za-z0-9._-]+$ identifier charset (no slash, no space), so the relaxed path rule
+    # here never weakens the single-component id confinement.
     state_out="MALFORMED"
     run_out="MALFORMED"
   else

@@ -49,12 +49,21 @@ Workflow state (`state_current` / `run.status`) is now projected via the committ
         ```bash
         git worktree list | head -1 | awk '{print $1}'
         ```
-        and read `<main_checkout>/.hivemind/brood/manifest.yaml`.
+        and read `<main_checkout>/.hivemind/brood/manifest.yaml`. **Record that
+        this manifest came from the main-checkout fallback** — you MUST pass
+        `<main_checkout>` as the helper's second argument in step 2 so the
+        read-guard confines the manifest beneath the main checkout (where it
+        actually lives) rather than the current linked worktree. Omitting it
+        would make the helper reject the valid fallback manifest as resolving
+        outside the (linked-worktree) checkout and stop reporting.
    d. If neither manifest exists, report "No active brood found." and stop.
 
-2. **Probe each strain.** Call the helper ONCE with the resolved manifest path and capture its output:
+2. **Probe each strain.** Call the helper ONCE with the resolved manifest path and capture its output. When the manifest came from the main-checkout **fallback** (step 1c), pass `<main_checkout>` as the second argument so the read-guard confines the manifest beneath the checkout it actually belongs to; when the manifest is the **current checkout's own** manifest, omit the second argument (the helper defaults to the current checkout):
    ```bash
+   # current-checkout manifest (default containment root):
    bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh "<manifest_path>"
+   # main-checkout fallback manifest (confine beneath the main checkout):
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh "<manifest_path>" "<main_checkout>"
    ```
    If the helper exits nonzero, it has printed a pre-flight blocker to stderr. Report that blocker message and stop — do not proceed to per-strain probes.
 
