@@ -1317,6 +1317,98 @@ assert_proj_object_element_missing_name() {
     fi
 }
 
+# ── Projection NOTMPDIR: read path needs no writable TMPDIR ──────────────────────
+# brood-status-project.sh was converted from here-strings to `printf | jq` pipes so
+# the read path no longer requires a writable $TMPDIR (here-strings spill to a temp
+# file when the string is above the kernel's pipe-buffer threshold). This case locks
+# that property by running the entrypoint with TMPDIR pointed at a NON-WRITABLE path
+# and asserting that it STILL projects both strains (exit 0, two STRAIN lines).
+#
+# Mechanism: create a dir and chmod 000 it so no process can write into it, then
+# restore 0700 before teardown so rm -rf can remove it. Using a dir we own and
+# chmod ourselves is CI-safe (ubuntu-latest, non-root) — no /proc or system paths.
+assert_proj_no_tmpdir_needed() {
+    local name="PROJ-NOTMPDIR:read-path-needs-no-writable-tmpdir"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/notmpdir"
+    local wt_a="$wd/wt-api" wt_b="$wd/wt-web"
+    mkdir -p "$wt_a/.hivemind/runs/run-id" "$wt_b/.hivemind/runs/run-id"
+    write_ledger "$wt_a/.hivemind/runs/run-id/state.json" running implement_step
+    write_ledger "$wt_b/.hivemind/runs/run-id/state.json" done review_step
+    local manifest="$wd/manifest.json"
+    jq -n \
+        --arg wt_a "$wt_a" \
+        --arg wt_b "$wt_b" \
+        --arg ledger_a "$wt_a/.hivemind/runs/run-id/state.json" \
+        --arg ledger_b "$wt_b/.hivemind/runs/run-id/state.json" \
+        '{
+            manifest_version: 3,
+            brood_id: "2026-06-01T22-00-00Z",
+            base: "main",
+            overlap_risk: "low",
+            strains: [
+                {
+                    name: "api",
+                    description: "api strain",
+                    worktree_path: $wt_a,
+                    branch: "feature/api-slice",
+                    tmux_session: "brood-api",
+                    status: "running",
+                    pr: null,
+                    merged: false,
+                    rebased_after: [],
+                    run: {
+                        suggested_id: "run-id",
+                        suggested_ledger: $ledger_a,
+                        workflow_hint: "standard-delivery"
+                    }
+                },
+                {
+                    name: "web",
+                    description: "web strain",
+                    worktree_path: $wt_b,
+                    branch: "feature/web-slice",
+                    tmux_session: "brood-web",
+                    status: "done",
+                    pr: null,
+                    merged: false,
+                    rebased_after: [],
+                    run: {
+                        suggested_id: "run-id",
+                        suggested_ledger: $ledger_b,
+                        workflow_hint: "standard-delivery"
+                    }
+                }
+            ],
+            merge_order: []
+        }' > "$manifest"
+
+    # Create a non-writable TMPDIR: chmod 000 prevents any process from creating files
+    # inside it. Restore 0700 before the function returns so cleanup()'s rm -rf can
+    # descend into and remove it (rm -rf on a 000 dir fails on non-root).
+    local bad_tmpdir="$wd/no_writable_tmpdir"
+    mkdir -p "$bad_tmpdir"
+    chmod 000 "$bad_tmpdir"
+
+    local out rc=0
+    out="$(TMPDIR="$bad_tmpdir" run_project "$manifest")" || rc=$?
+
+    # Restore perms immediately after the run so teardown can remove the dir.
+    chmod 0700 "$bad_tmpdir"
+
+    local lines; lines="$(count_strain_lines "$out")"
+    local api_name web_name
+    api_name="$(printf '%s\n' "$out" | awk -F'\t' '$2=="api"{print $2; exit}')"
+    web_name="$(printf '%s\n' "$out" | awk -F'\t' '$2=="web"{print $2; exit}')"
+    if [[ "$rc" -eq 0 \
+          && "$lines" -eq 2 \
+          && "$api_name" == "api" \
+          && "$web_name" == "web" ]]; then
+        pass "$name" "exit 0; 2 STRAIN lines (api, web) with non-writable TMPDIR — no writable-temp dependency"
+    else
+        failed "$name" "rc=$rc lines=$lines api_name=[$api_name] web_name=[$web_name] — read path requires writable TMPDIR"
+    fi
+}
+
 # ── Projection 10: multi-strain — one healthy + one malformed, independent ───────
 # Two strains: a healthy one projects fully; a second whose state.current carries an
 # injection payload projects state_current=MALFORMED. One STRAIN line each, exit 0.
@@ -1408,6 +1500,7 @@ assert_proj_metachar_worktree
 assert_proj_symlink_leaf
 assert_proj_ledger_escape
 assert_proj_missing_arg
+assert_proj_no_tmpdir_needed
 assert_proj_multi_strain
 assert_proj_unreadable_manifest
 assert_proj_valid_empty_manifest
