@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [2.19.1] - 2026-06-01
+
 ### Security
 
 - **Workflow engine no longer accepts caller-supplied `ledger`/`workflow` paths — it derives every path from ground truth.** `record-state-result.sh` now takes a `run_id` instead of a ledger path and a workflow-definition path: it derives the ledger from the git checkout root + a SAFE_ID_RE-validated `run_id` (`^[A-Za-z0-9._-]+$`, `.`/`..` rejected) as `<git-root>/.hivemind/runs/<run_id>/state.json`, coherence-checks `ledger.run.id == run_id`, and derives the workflow definition from the ledger's own `run.workflow` against the script's self-located packaged `workflows/` dir (`BASH_SOURCE` + `pwd -P`, independent of `${CLAUDE_PLUGIN_ROOT}` and any caller value). `init-run-ledger.sh` validates the packaged workflow definition (exists, `.version` == `workflow_version`, `.start` == `start_state`) before creating the run dir (#162). Closes the two reproduced Codex P0s: arbitrary-file overwrite via a forged caller ledger path, and a forged-definition transition-gate + plan-write-authorization bypass via a caller workflow path. See ADR-0019.
@@ -19,12 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documented (not yet fixed) a known v1 singleton-manifest brood-spawn TOCTOU.** The liveness guard in `spawn-brood.sh` is a check-then-act read, not a reservation: two concurrent same-checkout spawns can both pass the liveness check before either writes a manifest, both launch `--dangerously-skip-permissions` children, and the later manifest write hides the earlier child from monitoring; the singleton `inputs.json` is likewise clobberable between the navigator Write and the script exec. The `security-policy.md` "liveness serializes" exemption is retracted as a known v1 limitation of the singleton shared-manifest layout (RUN-OWNERSHIP-01: the manifest is the sole shared mutable artifact). The STRUCTURAL fix is per-`<brood-id>` namespacing tracked in #168 (`.hivemind/broods/<brood-id>/...`), which removes the shared singleton and dissolves both races; a per-checkout lock/token was rejected as throwaway once namespacing lands. No behavior change in this PR. See ADR-0019 (fifth amendment).
 - **`spawn-brood` child-provisioning writes now validate the write-target LEAF for symlink, closing a deeper variant of the child-worktree symlink-escape P0 (Codex Finding D).** The prior canonical-containment guard (`hivemind_assert_contained`) validated only directory-ancestor chains; a committed symlinked LEAF below a clean ancestor chain — materialized by `git worktree add` from a hostile `base` ref — still redirected the write outside the checkout. A new `hivemind_assert_file_contained` primitive in `_shared/containment.sh` composes the existing chain guard on the leaf's parent directory, then adds a `[ -L ]` reject on the leaf itself. It cannot reuse the directory primitive directly because `cd` into a regular-file leaf yields empty and false-rejects valid overwrites. `spawn-brood.sh` calls it before each of its two child-provisioning writes; the init/record engines are scanned and excluded (their leaf names are SAFE_ID_RE-gated and the depth-complete chain guard already covers their leaf when the run dir exists). See ADR-0019 (sixth amendment).
 - **`init-run-ledger.sh` reservation-rollback EXIT trap re-keyed on ledger-file ground truth, closing a signal-window race that destroyed a committed ledger (Codex Finding E).** The prior trap keyed destructive `rm -rf "$CLAIMED_DIR"` on the mutable `CLAIMED_DIR` disarm flag, which lags the durable `mv -f` ledger install; a TERM/INT in the `mv`→disarm window fired the trap with `CLAIMED_DIR` set and erased the just-committed ledger. The trap cleanup now keys on `[ -n "${CLAIMED_DIR:-}" ] && [ ! -f "${ledger_path:-}" ]` — rollback runs only when the committed ledger is absent (genuine orphan); a signal anywhere relative to the `mv` is harmless. `CLAIMED_DIR=""` disarm retained as belt-and-suspenders; trap ends in guaranteed-zero `:`. `spawn-brood`'s reporting-only interrupt trap and `record`'s no-trap atomicity are scanned and confirmed safe-class siblings requiring no fix. See ADR-0019 (sixth amendment).
-
-### Added
-
-### Changed
-
-### Fixed
 
 ## [2.19.0] - 2026-05-31
 
