@@ -50,7 +50,7 @@ skip() { echo "SKIP [$1] $2"; SKIP_COUNT=$((SKIP_COUNT + 1)); }
 # on exit). The parse/parity assertions above touch only read-only fixtures, so this is only
 # armed for the symlink-escape case.
 WORKDIR=""
-cleanup() { [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"; }
+cleanup() { [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"; return 0; }
 trap cleanup EXIT
 
 # extract_tmux_session: pull the first strain's tmux_session value the SAME way the
