@@ -130,6 +130,12 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 workflows_dir="$plugin_root/workflows"
 
+# Source the shared containment helper ONCE, early — it provides both the inputs-file
+# READ-guard (hivemind_assert_inputs_contained, used right after the inputs validity
+# checks) and the write-chain guard (hivemind_assert_contained, used before the ledger
+# temp-write). Sourcing once here keeps a single load point for both call sites below.
+. "$plugin_root/skills/_shared/containment.sh"
+
 # ── Dependency check ──────────────────────────────────────────────────────────
 command -v jq >/dev/null 2>&1 \
   || blocker "jq is required to read and write the run ledger but is not installed"
@@ -146,6 +152,15 @@ INPUTS_FILE="${1:-}"
   || blocker "record-state-result inputs file $INPUTS_FILE does not exist"
 jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
   || blocker "record-state-result inputs file $INPUTS_FILE is not valid JSON"
+
+# ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
+# Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
+# symlinked ancestor) — converting a silent external-read into a hard blocker BEFORE the
+# first jq field read below. This guards the READ source; the later hivemind_assert_contained
+# call guards the WRITE chain — both are needed. The helper never exits; map non-zero to our
+# blocker. The authoritative not-in-a-repo gate remains the repo_root check further below.
+hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
+  || blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)"
 
 # ── Parse fields into inert variables ─────────────────────────────────────────
 # Required strings via `jq -r '.field // ""'`. The presence bools derive from KEY-PRESENCE on
@@ -231,7 +246,7 @@ ledger_run_id="$(jq -r '.run.id // ""' "$ledger")"
 # requires the ledger to exist), so the helper checks them all. We then KEEP record's
 # existing basename/parent/state.json-existence assertions on the canonicalized ledger dir
 # so net behavior is identical to today; only the symlink-rejection primitive is now shared.
-. "$plugin_root/skills/_shared/containment.sh"
+# (containment.sh was sourced once early, just after plugin_root is computed.)
 canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id")" \
   || blocker "refusing: ${canon_repo_root:-$repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged"
 [ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root; ledger unchanged"

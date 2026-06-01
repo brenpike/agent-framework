@@ -134,3 +134,63 @@ hivemind_assert_contained() {
   printf '%s' "$canon_root"
   return 0
 }
+
+# hivemind_assert_inputs_contained <raw_repo_root> <inputs_file_path>
+#
+# Defense-in-depth READ-guard for the three inputs-file navigators (init-run-ledger,
+# record-state-result, spawn-brood). The model authors an inputs JSON file via the Write
+# tool BEFORE the committed engine runs. This function lets each engine REFUSE TO READ an
+# inputs file whose canonical path escapes the checkout (e.g. via a symlinked ancestor),
+# converting a silent external-write-and-consume into a hard, loud blocker.
+#
+# HONEST SCOPE NOTE: this does NOT prevent the external Write itself — the model's Write tool
+# runs before any committed code executes, so a path escaped via symlink is already written
+# by the time this guard runs. What this guard does is REFUSE TO READ such a file, making
+# the violation loud (hard non-zero return) rather than silent. The PRIMARY fix for the
+# write-through-symlink class is the navigator transport-path correction (record's
+# fixed-literal-sibling path + token transport), not this guard. This guard is a
+# defense-in-depth backstop only.
+#
+# PRECONDITION: the caller must verify the file exists ([ -f "$inputs_file" ]) before
+# calling this function. Behavior on a missing file is unspecified.
+#
+# On success: echoes the canonical repo root and returns 0.
+# On reject:  prints a concise reason to stderr and returns non-zero. Never exits.
+hivemind_assert_inputs_contained() {
+  local raw_root="$1"
+  local inputs_file_path="$2"
+
+  local canon_root
+  canon_root="$(hivemind_canon_root "$raw_root")"
+  if [ -z "$canon_root" ]; then
+    printf 'failed to canonicalize repo root %s\n' "$raw_root" >&2
+    return 1
+  fi
+
+  # Canonicalize the inputs file path using the same cd && pwd -P idiom as the rest of this
+  # file. We cd into dirname (which must already exist — the file exists per precondition)
+  # and re-append the basename. This resolves every symlink component in the directory path.
+  local inputs_dir inputs_base canon_inputs
+  inputs_dir="$(dirname "$inputs_file_path")"
+  inputs_base="$(basename "$inputs_file_path")"
+  canon_inputs="$(cd "$inputs_dir" 2>/dev/null && pwd -P)"
+  if [ -z "$canon_inputs" ]; then
+    printf 'failed to canonicalize inputs file directory %s\n' "$inputs_dir" >&2
+    return 1
+  fi
+  canon_inputs="$canon_inputs/$inputs_base"
+
+  # Trailing-slash-guarded prefix match — mirrors hivemind_assert_contained's case pattern
+  # exactly so a sibling path like /repo-evil cannot prefix-match /repo.
+  case "$canon_inputs/" in
+    "$canon_root/"*)
+      ;;
+    *)
+      printf 'inputs file %s resolves outside the checkout: %s\n' "$inputs_file_path" "$canon_inputs" >&2
+      return 1
+      ;;
+  esac
+
+  printf '%s' "$canon_root"
+  return 0
+}

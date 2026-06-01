@@ -21,6 +21,16 @@
 #
 # Exits non-zero if EITHER manifest fails to parse or yields the wrong extraction.
 #
+# Beyond the manifest-parity parse tests, this runner also exercises two spawn-brood
+# containment guards (dep-gated on tmux/claude/jq; SKIP when any is absent — CI lacks `claude`):
+#   ESCAPE   — a committed `.hivemind` SYMLINK to an external dir makes the write-chain
+#              `.hivemind/brood` STATE path resolve outside the checkout; the depth-complete
+#              write-chain guard rejects before any worktree/tmux/mkdir.
+#   EXTERNAL — `.hivemind` stays a REAL dir, but the spawn-brood INPUTS file is authored at a
+#              path that resolves outside the checkout via a symlinked ANCESTOR; the shared
+#              READ-guard (hivemind_assert_inputs_contained) refuses to read it. Both assert
+#              non-zero exit AND nothing written under the external target.
+#
 # Usage:
 #   ./tools/test_brood_compat.sh
 
@@ -213,11 +223,88 @@ assert_spawn_brood_symlink_escape_blocked() {
     fi
 }
 
+# ── Assertion 5: spawn-brood inputs-file external-resolution read-guard ──────────
+# spawn-brood.sh (this session) sources the shared read-guard (hivemind_assert_inputs_contained)
+# right after the inputs validity gate and REFUSES TO READ an inputs file whose canonical path
+# resolves OUTSIDE the checkout via a symlinked ancestor. Unlike the write-chain `.hivemind/brood`
+# guard (assertion 4, which symlinks `.hivemind` itself), this keeps `.hivemind` a REAL dir so the
+# write-chain guard is NOT what fires — the inputs file is authored at a path that escapes the
+# checkout via a symlinked ANCESTOR ($gitroot/link -> external), so the READ-guard is the only
+# blocker. Assert: spawn-brood exits non-zero AND nothing is written under the external target.
+#
+# DEPENDENCY GATING: identical to assertion 4 — spawn-brood's tmux/claude/jq dep checks precede the
+# read-guard and exit at the first missing binary, so the guard is only reachable when all three
+# are present. SKIP cleanly when any is absent (CI lacks `claude`, so this case SKIPs in CI,
+# matching the existing escape case). When present, the read-guard is the only non-zero gate the
+# valid inputs reach.
+assert_spawn_brood_inputs_external_rejected() {
+    local name="EXTERNAL:spawn-brood-inputs-external-rejected"
+    local missing=""
+    for dep in tmux claude jq; do
+        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
+    done
+    if [ -n "$missing" ]; then
+        skip "$name" "spawn-brood dep check precedes the read-guard; skipping (missing: $missing)"
+        return
+    fi
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    # `.hivemind` stays a REAL dir (the write-chain guard is NOT the subject here). The hostile
+    # element is a symlinked ANCESTOR for the inputs file: $gitroot/link -> external.
+    local external="$WORKDIR/brood-external"
+    mkdir -p "$external"
+    ln -s "$external" "$gitroot/link"
+
+    # Minimal VALID brood inputs authored SAFELY via jq -n, identical in shape to assertion 4 —
+    # every field passes pre-flight validation so the read-guard, not a malformed input, is the
+    # only blocker. The inputs file is authored THROUGH the symlinked ancestor so its canonical
+    # path resolves under $external (outside the checkout).
+    local inputs="$gitroot/link/brood-inputs.json"
+    jq -n \
+        --arg brood_id "2026-05-31T17:30:00Z" \
+        --arg base "main" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "brood compat inputs-external read-guard test" \
+        --arg strain_name "api" \
+        --arg strain_desc "external inputs read-guard test strain" \
+        --arg strain_branch "feature/api-slice" \
+        '{
+            brood_id: $brood_id,
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+        }' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    # The read-guard must reject (non-zero) AND spawn-brood must have written NOTHING under the
+    # external target. The inputs file itself lands at $external/brood-inputs.json (the harness
+    # authored it THROUGH the symlinked ancestor — that is the escape vector being tested), so it
+    # is the test's OWN artifact and is excluded; a successful escape would create spawn-brood
+    # outputs (a `brood/` STATE dir / manifest.yaml / worktrees) BESIDE it.
+    local escaped=no
+    if find "$external" -mindepth 1 ! -name 'brood-inputs.json' -print 2>/dev/null | grep -q .; then
+        escaped=yes
+    fi
+    if [[ "$rc" -ne 0 && "$escaped" == "no" ]]; then
+        pass "$name" "externally-resolving inputs refused by read-guard (exit $rc); nothing written under external target"
+    else
+        failed "$name" "expected non-zero exit + no external write; rc=$rc escaped=$escaped"
+    fi
+}
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
 assert_brood_instruction_flag_parity
 assert_spawn_brood_symlink_escape_blocked
+assert_spawn_brood_inputs_external_rejected
 
 echo ''
 echo '=== Summary ==='

@@ -104,6 +104,24 @@ INPUTS_FILE="${1:-}"
 jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
   || { printf 'blocker: brood inputs file %s is not valid JSON\n' "$INPUTS_FILE" >&2; exit 1; }
 
+# ── Script self-location + shared containment helper (sourced early) ────────────
+# Self-locate from THIS script (layout plugin/skills/spawn-brood/scripts/ => 3 dirs up is the
+# plugin root; cd && pwd -P is portable, no readlink -f). Source the shared containment helper
+# ONCE here so BOTH the inputs READ-guard (immediately below) and the later write-chain guard
+# (hivemind_assert_contained over .hivemind/brood and .claude/worktrees) share one load point.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
+. "$plugin_root/skills/_shared/containment.sh"
+
+# ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
+# Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
+# symlinked ancestor) — converting a silent external-read into a hard blocker BEFORE the first
+# jq field read below. This guards the READ source; the later hivemind_assert_contained calls
+# guard the WRITE chains — all are needed. The helper never exits; map non-zero to spawn-brood's
+# blocker idiom. The authoritative not-in-a-repo gate remains the repo_root check further below.
+hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
+  || { printf 'blocker: refusing to read the inputs file: %s resolves outside the checkout (symlinked ancestor)\n' "$INPUTS_FILE" >&2; exit 1; }
+
 # Parse top-level scalars into inert variables.
 brood_id="$(jq -r '.brood_id // ""' "$INPUTS_FILE")"
 base="$(jq -r '.base // ""' "$INPUTS_FILE")"
@@ -202,9 +220,9 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" \
 # the helper's canonical root for ALL derived paths (STATE, worktree paths) thereafter.
 # Recursive brood is preserved: a brood-child worktree has REAL .hivemind/.claude dirs (not
 # symlinks), so the helper passes.
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
-. "$plugin_root/skills/_shared/containment.sh"
+# (script_dir/plugin_root self-location + containment.sh source happen once early, just after
+# the inputs-file validity checks, so both the early READ-guard and these write-chain guards
+# share one load point.)
 canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/brood")" \
   || blocker "refusing to spawn: ${canon_repo_root:-$repo_root}/.hivemind/brood resolves outside the checkout (symlinked ancestor); no worktree or session created"
 [ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root"

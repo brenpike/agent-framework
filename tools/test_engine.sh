@@ -116,6 +116,25 @@
 #                           and rejects the symlinked <run_id> leaf BEFORE any state.json/evidence
 #                           write: non-zero exit AND zero write under the external target. Covers
 #                           the finding-1 leaf vector case T (symlinked .hivemind ANCESTOR) does not.
+#   W. init-concurrent-reservation -> deterministic stand-in for "the race winner already claimed
+#                           the run dir": the <fixed_id> run dir is PRE-CREATED with a sentinel
+#                           state.json, then init runs pinned to that same run_id via
+#                           suggested_run_id. init's fail-closed reservation (the early [ -e ]
+#                           blocker / the atomic bare `mkdir` without -p) rejects: non-zero exit,
+#                           the sentinel state.json BYTE-UNCHANGED, and no leaked .state.json.* temp
+#                           in the run dir. Proves F2 — the loser fails closed and never overwrites
+#                           the winner's ledger.
+#   X. init-inputs-external-rejected -> a VALID init inputs file authored at a path that resolves
+#                           OUTSIDE the checkout via a symlinked ANCESTOR ($gitroot/link -> external)
+#                           is refused by the shared read-guard (hivemind_assert_inputs_contained):
+#                           non-zero exit AND no ledger/state.json written anywhere (inside or under
+#                           the external target). Proves the shared read-guard for init.
+#   Y. record-inputs-external-rejected -> a VALID ledger is staged at runs/<id>/state.json FIRST
+#                           (so the ONLY thing that can block is the read-guard, not a missing
+#                           ledger), then a valid record inputs file is authored at an externally-
+#                           resolving path via a symlinked ancestor. record's shared read-guard
+#                           refuses to read it: non-zero exit AND the staged ledger byte-unchanged.
+#                           Proves the shared read-guard for record.
 #
 # Prints PASS/FAIL per assertion. Exits non-zero if ANY assertion FAILs.
 #
@@ -232,7 +251,7 @@ assert_valid_transition() {
     gitroot="$(new_gitroot a-git)"
     run_id="engine-case-a"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
-    inputs="$WORKDIR/a-inputs.json"
+    inputs="$gitroot/a-inputs.json"
 
     # SAFE authoring: every field bound via jq --arg; NO ledger/workflow path keys.
     jq -n \
@@ -269,7 +288,7 @@ assert_illegal_result_unchanged() {
     gitroot="$(new_gitroot b-git)"
     run_id="engine-case-b"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
-    inputs="$WORKDIR/b-inputs.json"
+    inputs="$gitroot/b-inputs.json"
     before="$(sha256sum "$ledger" | awk '{print $1}')"
 
     jq -n \
@@ -299,7 +318,7 @@ assert_stale_state_unchanged() {
     run_id="engine-case-c"
     # Ledger is at state.current=build; pass a stale state=plan.
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
-    inputs="$WORKDIR/c-inputs.json"
+    inputs="$gitroot/c-inputs.json"
     before="$(sha256sum "$ledger" | awk '{print $1}')"
 
     jq -n \
@@ -329,7 +348,7 @@ assert_terminal_status_update() {
     run_id="engine-case-d"
     # Ledger at build; record done -> complete (a declared done-terminal).
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
-    inputs="$WORKDIR/d-inputs.json"
+    inputs="$gitroot/d-inputs.json"
 
     jq -n \
         --arg run_id "$run_id" \
@@ -375,7 +394,7 @@ assert_atomicity_on_write_failure() {
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
     rundir="$gitroot/.hivemind/runs/$run_id"
     before="$(sha256sum "$ledger" | awk '{print $1}')"
-    inputs="$WORKDIR/e-inputs.json"
+    inputs="$gitroot/e-inputs.json"
 
     jq -n \
         --arg run_id "$run_id" \
@@ -415,7 +434,7 @@ assert_plan_steps_seed() {
     # version 1, start plan all match the fixture, so init passes.
     local gitroot inputs
     gitroot="$(new_gitroot f-git)"
-    inputs="$WORKDIR/f-inputs.json"
+    inputs="$gitroot/f-inputs.json"
 
     jq -n \
         --arg workflow engine-fixture \
@@ -463,7 +482,7 @@ assert_id_mismatch_unchanged() {
     gitroot="$(new_gitroot g-git)"
     run_id="engine-case-g"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_WORKFLOW" other-workflow)"
-    inputs="$WORKDIR/g-inputs.json"
+    inputs="$gitroot/g-inputs.json"
     before="$(sha256sum "$ledger" | awk '{print $1}')"
 
     jq -n \
@@ -495,7 +514,7 @@ assert_version_mismatch_unchanged() {
     gitroot="$(new_gitroot h-git)"
     run_id="engine-case-h"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION" engine-fixture 2)"
-    inputs="$WORKDIR/h-inputs.json"
+    inputs="$gitroot/h-inputs.json"
     before="$(sha256sum "$ledger" | awk '{print $1}')"
 
     jq -n \
@@ -524,7 +543,7 @@ assert_plan_steps_record_time() {
     gitroot="$(new_gitroot i-git)"
     run_id="engine-case-i"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
-    inputs="$WORKDIR/i-inputs.json"
+    inputs="$gitroot/i-inputs.json"
 
     jq -n \
         --arg run_id "$run_id" \
@@ -563,7 +582,7 @@ assert_plan_write_unauthorized_unchanged() {
     gitroot="$(new_gitroot j-git)"
     run_id="engine-case-j"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
-    inputs="$WORKDIR/j-inputs.json"
+    inputs="$gitroot/j-inputs.json"
     before="$(sha256sum "$ledger" | awk '{print $1}')"
 
     jq -n \
@@ -594,7 +613,7 @@ assert_init_anchored_to_checkout_root() {
     local gitroot inputs
     gitroot="$(new_gitroot k-git)"
     mkdir -p "$gitroot/sub"
-    inputs="$WORKDIR/k-inputs.json"
+    inputs="$gitroot/k-inputs.json"
 
     jq -n \
         --arg workflow engine-fixture \
@@ -632,7 +651,7 @@ assert_brood_child_canonical_id() {
     # (2) PERSIST .parent.brood_id VERBATIM with colons, (3) derive the sanitized run-id.
     local gitroot inputs
     gitroot="$(new_gitroot l-git)"
-    inputs="$WORKDIR/l-inputs.json"
+    inputs="$gitroot/l-inputs.json"
     local canonical="2026-05-31T17:30:00Z" short="my-strain"
     local safe="${canonical//:/-}"
 
@@ -695,7 +714,7 @@ assert_plan_write_remediation_state_authorized() {
     gitroot="$(new_gitroot m-git)"
     run_id="engine-case-m"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_REMEDIATION_PLAN")"
-    inputs="$WORKDIR/m-inputs.json"
+    inputs="$gitroot/m-inputs.json"
 
     jq -n \
         --arg run_id "$run_id" \
@@ -734,7 +753,7 @@ assert_intervention_terminal_blocked() {
     gitroot="$(new_gitroot n-git)"
     run_id="engine-case-n"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
-    inputs="$WORKDIR/n-inputs.json"
+    inputs="$gitroot/n-inputs.json"
 
     jq -n \
         --arg run_id "$run_id" \
@@ -786,7 +805,7 @@ assert_init_injection_safe() {
     # .request.raw and NEVER execute (no PWNED / PWNED2 anywhere).
     local gitroot inputs
     gitroot="$(new_gitroot o-git)"
-    inputs="$WORKDIR/o-inputs.json"
+    inputs="$gitroot/o-inputs.json"
 
     # The payload is DATA, authored SAFELY via jq --arg (jq JSON-escapes the literal). The
     # single-quoted bash literal below is never evaluated by bash — it is a string handed to jq.
@@ -839,7 +858,7 @@ assert_record_injection_safe() {
     gitroot="$(new_gitroot p-git)"
     run_id="engine-case-p"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
-    inputs="$WORKDIR/p-inputs.json"
+    inputs="$gitroot/p-inputs.json"
 
     local payload='inject $(touch PWNED3) and `touch PWNED3b` end'
     local outputs plan_steps
@@ -893,7 +912,7 @@ assert_run_id_traversal_rejected() {
     local sentinel="$gitroot/.hivemind/Q-TRAVERSAL-TARGET"
 
     # Form 1: separator. jq --arg keeps the slash as inert string bytes in the inputs file.
-    inputs="$WORKDIR/q1-inputs.json"
+    inputs="$gitroot/q1-inputs.json"
     jq -n \
         --arg run_id "a/b" \
         --arg state plan \
@@ -909,7 +928,7 @@ assert_run_id_traversal_rejected() {
 
     # Form 2: reserved `..` component.
     rc=0
-    inputs="$WORKDIR/q2-inputs.json"
+    inputs="$gitroot/q2-inputs.json"
     jq -n \
         --arg run_id ".." \
         --arg state plan \
@@ -948,7 +967,7 @@ assert_forged_definition_not_honored() {
     gitroot="$(new_gitroot r-git)"
     run_id="engine-case-r"
     ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
-    inputs="$WORKDIR/r-inputs.json"
+    inputs="$gitroot/r-inputs.json"
     before="$(sha256sum "$ledger" | awk '{print $1}')"
 
     # Hostile def: same id/version so it WOULD bind if it were ever consulted, but it grants a
@@ -1006,7 +1025,7 @@ assert_coherence_mismatch_unchanged() {
         '.run.id = $other | .run.workflow = "engine-fixture"' \
         "$LEDGER_AT_PLAN" > "$ledger"
     before="$(sha256sum "$ledger" | awk '{print $1}')"
-    inputs="$WORKDIR/s-inputs.json"
+    inputs="$gitroot/s-inputs.json"
 
     jq -n \
         --arg run_id "$run_id" \
@@ -1042,7 +1061,7 @@ assert_init_symlink_escape_rejected() {
     mkdir -p "$external"
     # Replace the gitroot's .hivemind with a symlink to the external dir.
     ln -s "$external" "$gitroot/.hivemind"
-    inputs="$WORKDIR/t-inputs.json"
+    inputs="$gitroot/t-inputs.json"
 
     # Valid init inputs (workflow=engine-fixture, version 1, start plan — matches the fakeplugin
     # def), authored SAFELY via jq. The ONLY hostile element is the symlinked .hivemind.
@@ -1098,7 +1117,7 @@ assert_record_symlink_escape_rejected() {
     # external ledger (so `[ -f ]` passes and the guard — not a missing file — is what blocks).
     ln -s "$external" "$gitroot/.hivemind"
     before="$(sha256sum "$ext_ledger" | awk '{print $1}')"
-    inputs="$WORKDIR/u-inputs.json"
+    inputs="$gitroot/u-inputs.json"
 
     # A valid transition (plan ready -> build) the engine WOULD record absent the containment guard.
     jq -n \
@@ -1147,7 +1166,7 @@ assert_init_nested_symlink_escape_rejected() {
     # Symlink the <run_id> RUN dir itself to the external dir: the derived
     # <gitroot>/.hivemind/runs/<run_id> resolves THROUGH the symlink to the external target.
     ln -s "$external" "$gitroot/.hivemind/runs/$run_id"
-    inputs="$WORKDIR/v-inputs.json"
+    inputs="$gitroot/v-inputs.json"
 
     # Valid init inputs (workflow=engine-fixture, version 1, start plan — matches the fakeplugin
     # def), authored SAFELY via jq. suggested_run_id == the symlinked component so the engine
@@ -1179,6 +1198,143 @@ assert_init_nested_symlink_escape_rejected() {
     fi
 }
 
+# ── W. init concurrent same-run_id atomic reservation: loser fails closed ────
+
+assert_init_concurrent_reservation_fails_closed() {
+    local name="W:init-concurrent-reservation-fails-closed"
+    # Deterministic stand-in for "the race winner already claimed the dir": pre-create the
+    # <fixed_id> run dir AND stage a sentinel state.json inside it, then run init pinned to
+    # that same run_id via suggested_run_id. init derives the identical run_id and hits the
+    # fail-closed reservation (the early [ -e ledger ] blocker / the atomic bare `mkdir`
+    # without -p) — it must NOT overwrite the winner's ledger. Proves F2: the loser blocks and
+    # the winner's bytes are never touched. The inputs file sits at a REAL in-checkout path so
+    # the read-guard passes and the reservation is the gate under test.
+    local gitroot fixed_id rundir sentinel inputs before after rc=0
+    gitroot="$(new_gitroot w-git)"
+    fixed_id="engine-case-w"
+    # Pre-create the run dir and a sentinel ledger as the "winner" already on disk.
+    rundir="$gitroot/.hivemind/runs/$fixed_id"
+    mkdir -p "$rundir"
+    sentinel="$rundir/state.json"
+    printf '%s\n' '{"winner":"sentinel-do-not-overwrite"}' > "$sentinel"
+    before="$(sha256sum "$sentinel" | awk '{print $1}')"
+    inputs="$gitroot/w-inputs.json"
+
+    # Valid init inputs pinned to suggested_run_id=<fixed_id> so init derives that EXACT run_id
+    # and lands on the already-claimed dir. workflow=engine-fixture/version 1/start plan match
+    # the fakeplugin def, so the ONLY blocking condition is the reservation.
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test concurrent reservation" \
+        --arg normalized "engine test concurrent reservation" \
+        --arg suggested_run_id "$fixed_id" \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized, suggested_run_id: $suggested_run_id}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$sentinel" | awk '{print $1}')"
+    # No engine temp file (.state.json.XXXXXX) may have leaked into the claimed run dir.
+    local leaked=no
+    if find "$rundir" -name '.state.json.*' -print 2>/dev/null | grep -q .; then
+        leaked=yes
+    fi
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" ]]; then
+        pass "$name" "loser failed closed (exit $rc); winner sentinel byte-unchanged, no temp leaked"
+    else
+        failed "$name" "expected non-zero exit + unchanged sentinel + no temp; rc=$rc changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
+    fi
+}
+
+# ── X. init inputs-file external-resolution rejected by the read-guard ───────
+
+assert_init_inputs_external_rejected() {
+    local name="X:init-inputs-external-rejected"
+    # The shared read-guard (hivemind_assert_inputs_contained) refuses to READ an inputs file
+    # whose canonical path resolves OUTSIDE the checkout via a symlinked ancestor. Author a
+    # VALID init inputs file at $gitroot/link/init-inputs.json where `link` is a symlink to an
+    # EXTERNAL dir, so the file's canonical path is under $external. init must exit non-zero on
+    # the read-guard AND write no ledger/state.json anywhere (inside or under $external).
+    local gitroot external inputs rc=0
+    gitroot="$(new_gitroot x-git)"
+    external="$WORKDIR/x-external"
+    mkdir -p "$external"
+    # Symlinked ANCESTOR: $gitroot/link -> $external. The inputs file authored under it
+    # canonicalizes to $external/init-inputs.json (outside the checkout).
+    ln -s "$external" "$gitroot/link"
+    inputs="$gitroot/link/init-inputs.json"
+
+    # A perfectly VALID init inputs payload — the ONLY hostile element is the externally-
+    # resolving path. Authored through the symlink so its canonical dir is $external.
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init external inputs" \
+        --arg normalized "engine test init external inputs" \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    # No state.json may have been written under the external target NOR under the gitroot's
+    # real runs tree (the read-guard rejects before any path derivation).
+    local wrote=no
+    if find "$external" -name state.json -print 2>/dev/null | grep -q .; then wrote=yes; fi
+    if [[ -d "$gitroot/.hivemind/runs" ]] && find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then
+        wrote=yes
+    fi
+    if [[ "$rc" -ne 0 && "$wrote" == "no" ]]; then
+        pass "$name" "externally-resolving inputs refused by read-guard (exit $rc); no ledger written"
+    else
+        failed "$name" "expected non-zero exit + no ledger; rc=$rc wrote=$wrote"
+    fi
+}
+
+# ── Y. record inputs-file external-resolution rejected by the read-guard ─────
+
+assert_record_inputs_external_rejected() {
+    local name="Y:record-inputs-external-rejected"
+    # record-state-result.sh requires the ledger to EXIST, so stage a VALID ledger at
+    # $gitroot/.hivemind/runs/<id>/state.json FIRST — then the ONLY thing that can block is the
+    # shared read-guard, not a missing ledger. Author a valid record inputs file at an
+    # externally-resolving path (via a symlinked ancestor). record must exit non-zero on the
+    # read-guard AND leave the staged ledger byte-unchanged.
+    local gitroot external run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot y-git)"
+    run_id="engine-case-y"
+    # Stage a real, well-formed ledger the engine WOULD accept absent the read-guard.
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    external="$WORKDIR/y-external"
+    mkdir -p "$external"
+    # Symlinked ANCESTOR: $gitroot/link -> $external. The record inputs authored under it
+    # canonicalizes to $external/record-inputs.json (outside the checkout).
+    ln -s "$external" "$gitroot/link"
+    inputs="$gitroot/link/record-inputs.json"
+
+    # A VALID record transition (plan ready -> build) the engine WOULD record absent the
+    # read-guard. The ONLY hostile element is the externally-resolving inputs path.
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test record external inputs" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "externally-resolving inputs refused by read-guard (exit $rc); staged ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1204,6 +1360,9 @@ assert_coherence_mismatch_unchanged
 assert_init_symlink_escape_rejected
 assert_record_symlink_escape_rejected
 assert_init_nested_symlink_escape_rejected
+assert_init_concurrent_reservation_fails_closed
+assert_init_inputs_external_rejected
+assert_record_inputs_external_rejected
 
 echo ''
 echo '=== Summary ==='

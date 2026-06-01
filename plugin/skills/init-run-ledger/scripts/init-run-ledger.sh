@@ -111,6 +111,12 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 workflows_dir="$plugin_root/workflows"
 
+# Source the shared containment helper ONCE, early — it provides both the inputs-file
+# READ-guard (hivemind_assert_inputs_contained, used right after the inputs validity
+# checks) and the write-chain guard (hivemind_assert_contained, used before the run-dir
+# create). Sourcing once here keeps a single load point for both call sites below.
+. "$plugin_root/skills/_shared/containment.sh"
+
 # ── Dependency check ──────────────────────────────────────────────────────────
 command -v jq >/dev/null 2>&1 \
   || blocker "jq is required to write the run ledger but is not installed"
@@ -127,6 +133,16 @@ INPUTS_FILE="${1:-}"
   || blocker "run-ledger inputs file $INPUTS_FILE does not exist"
 jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
   || blocker "run-ledger inputs file $INPUTS_FILE is not valid JSON"
+
+# ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
+# Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
+# symlinked ancestor) — converting a silent external-read into a hard blocker BEFORE the
+# first jq field read below. This guards the READ source; the later hivemind_assert_contained
+# call guards the WRITE chain — both are needed. The helper never exits; map non-zero to our
+# blocker. Empty git root (not inside a checkout) is tolerated by the helper's own canonical
+# guard; the write-chain repo_root check below remains the authoritative not-in-a-repo gate.
+hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
+  || blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)"
 
 # Parse every field into the SAME inert variables the downstream logic already uses.
 # Strings via `jq -r '.field // ""'`; the workflow_version stays a JSON number (read as
@@ -237,7 +253,7 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 # helper is portable (cd && pwd -P + [ -L ], no realpath/readlink -f) and set -u-safe
 # (empty canonical => non-zero return). It echoes the canonical root on success; we derive
 # every write path from that canonical root. A non-zero return maps to our blocker.
-. "$plugin_root/skills/_shared/containment.sh"
+# (containment.sh was sourced once early, just after plugin_root is computed.)
 canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id")" \
   || blocker "refusing to write the run ledger: ${canon_repo_root:-$repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf)"
 [ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root"
@@ -270,8 +286,26 @@ def_start="$(jq -r '.start // ""' "$def")"
 [ "$def_start" = "$start_state" ] \
   || blocker "packaged workflow definition start '$def_start' does not match start_state '$start_state'"
 
+# ── Atomic run-dir reservation (closes the F2 reservation TOCTOU) ──────────────
+# The earlier `[ -e "$ledger_path" ]` check is a friendly EARLY blocker for the common
+# non-concurrent case, but it is a check-then-create TOCTOU: two same-checkout initializers
+# that derive the SAME run_id (identical suggested_run_id, or the same
+# <utc-timestamp>-<workflow-id> within one second) can both pass that existence check and
+# both proceed, and the second `mv -f` would silently replace the first's ledger. The bare
+# `mkdir "$run_dir"` WITHOUT -p below is the ATOMIC CLAIM: mkdir fails if the leaf already
+# exists, so the loser of a concurrent race fails closed here and the winner's ledger is
+# never overwritten. Parents are created with -p first (a shared ancestor is fine); only the
+# <run_id> leaf is claimed atomically. Operating on the canonical $canon_repo_root-derived
+# $run_dir keeps the claim on the verified-contained path. If a LATER step fails after this
+# claim, an empty <run_id> dir is left behind — harmless, ephemeral, gitignored state under
+# .hivemind/; we deliberately do NOT roll it back (no rmdir) so a concurrent winner is never
+# disturbed.
+mkdir -p "$canon_repo_root/.hivemind/runs" \
+  || blocker "failed to create .hivemind/runs under $canon_repo_root"
+mkdir "$run_dir" \
+  || blocker "run dir already claimed (concurrent init or pre-existing run): $run_dir; refusing to overwrite"
 mkdir -p "$run_dir/evidence" \
-  || blocker "failed to create run directory $run_dir/evidence"
+  || blocker "failed to create evidence dir under $run_dir"
 
 # ── Parent block (argjson assembled from --arg bindings) ──────────────────────
 # Build the parent object inside jq from named --arg bindings so untrusted parent

@@ -4,7 +4,7 @@ description: Record the outcome of the current workflow state into the run ledge
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh *)
   - Read
-  - Write   # inert inputs-file only: authors run-id-keyed path .hivemind/runs/<run_id>/.record-inputs.json; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0018/0019
+  - Write   # inert inputs-file only: authors per-invocation-unique path .hivemind/runs/.record-inputs-<token>.json; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0018/0019
 shell: bash
 ---
 
@@ -150,24 +150,27 @@ on-disk ledger is byte-unchanged.
    `outputs`, `plan_steps`, `plan_path`) is structured JSON data, never spliced into command
    source.
 
-2. **Write the inputs file** via the Write tool to the RUN-ID-KEYED gitignored path
-   `.hivemind/runs/<run_id>/.record-inputs.json` (substitute the `run_id` you are recording).
-   `file_path` = `.hivemind/runs/<run_id>/.record-inputs.json`, `content` = the JSON object
-   from step 1. This path is naturally invocation-unique: record ALWAYS knows its `run_id`,
-   and each run owns its own dir, so two concurrent same-checkout overlord sessions recording
-   DIFFERENT runs author DISTINCT inputs files and cannot clobber each other's payload between
-   the Write and the script exec (closes the singleton-inputs TOCTOU; see ADR-0019). The run
-   dir already EXISTS when record runs — record requires an existing ledger
-   (`.hivemind/runs/<run_id>/state.json`), so the dir is present and writable. The leading-dot
-   `.record-inputs.json` filename does NOT collide with the engine's atomic temp
-   `.state.json.XXXXXX` or with `state.json` in that same dir (distinct names), and `.hivemind/`
-   is gitignored. Cleanup is not required: this is transient gitignored state — the next record
-   for the same run overwrites it, and `.hivemind/` is ephemeral. Write performs no shell parsing
-   of the values, so untrusted `summary` / `outputs` / `plan_steps` / `plan_path` text is inert.
+2. **Write the inputs file** via the Write tool to a PER-INVOCATION-UNIQUE gitignored path
+   `.hivemind/runs/.record-inputs-<token>.json`. GENERATE an invocation-unique `<token>` for the
+   filename (a UTC timestamp plus a random component, such as `20260601T014132Z-a1b2c3`) so two
+   concurrent same-checkout overlord sessions recording — including two recording the SAME run —
+   author DISTINCT inputs files and cannot clobber each other's payload between the Write and the
+   script exec (closes the singleton-inputs TOCTOU; see ADR-0019). `file_path` =
+   `.hivemind/runs/.record-inputs-<token>.json`, `content` = the JSON object from step 1. The
+   leading-dot `.record-inputs-*` name is a SIBLING of the run dirs (`runs/<run-id>/`), not one of
+   them, so it stays OUT of the `runs/<run-id>/` glob — it never collides with `state.json` or the
+   engine's atomic temp `.state.json.XXXXXX` inside a run dir (distinct names, different dir level),
+   and never pollutes the run-dir scan. The path carries NO `run_id` (no caller-derived component
+   below the fixed-literal `.hivemind/runs/` level), so a committed symlinked run-dir leaf cannot
+   redirect the Write outside the checkout. `.hivemind/` is gitignored. Do NOT pass the inputs via
+   stdin/heredoc: a heredoc reintroduces the very delimiter-injection class the inert Write-tool-file
+   pattern exists to avoid (ADR-0017). Cleanup is not required: this is transient gitignored state and
+   `.hivemind/` is ephemeral. Write performs no shell parsing of the values, so untrusted `summary` /
+   `outputs` / `plan_steps` / `plan_path` text is inert.
 
 3. **Execute the script** with one Bash call, passing the inputs file path:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh .hivemind/runs/<run_id>/.record-inputs.json
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh .hivemind/runs/.record-inputs-<token>.json
    ```
    EXECUTE (do not Read) the script — it owns the deterministic read -> validate -> mutate
    -> atomic-write and reads the allowed-result set directly from the definition.
@@ -193,7 +196,7 @@ This is a pipeline skill:
 
 - Produce zero chat text during execution. Outputs are tool calls only.
 - The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat text and
-  authors ONLY the inputs file (`.hivemind/runs/<run_id>/.record-inputs.json`). The final
+  authors ONLY the inputs file (`.hivemind/runs/.record-inputs-<token>.json`). The final
   action is the Bash script call (step 3), which performs every atomic ledger write.
 - Exit 0 = overlord advances to `current_state`; routing data is on stdout.
   Exit 1 = blocked; the reason is on stderr and the ledger is unchanged.
@@ -204,7 +207,7 @@ This is a pipeline skill:
   definition.
 - advance to any state other than the `current_state` the script returns.
 - mutate the ledger by hand or with any tool other than the script.
-- use the Write tool for anything other than the `.hivemind/runs/<run_id>/.record-inputs.json`
+- use the Write tool for anything other than the `.hivemind/runs/.record-inputs-<token>.json`
   inputs file.
 - commit, push, or open a PR.
 - Read or reconstruct the script body — invoke it with the documented inputs file path.
