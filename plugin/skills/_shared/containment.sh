@@ -37,10 +37,13 @@
 #     On success: echoes the CANONICAL checkout root (cd && pwd -P) to stdout and returns 0.
 #     On reject:  prints a reason to stderr and returns non-zero (never exits).
 #     LEAF BEHAVIOR CONTRACT: a NON-EXISTENT leaf passes (caller CREATES it fresh); a
-#       REGULAR-FILE leaf passes (caller OVERWRITES in place); only a SYMLINK leaf is
-#       REJECTED. The [ -L ] leaf test fires regardless of whether the symlink target
-#       exists (covers dangling symlinks). A symlinked ANCESTOR is caught by the reused
-#       parent-dir guard below — no gap.
+#       REGULAR-FILE leaf passes (caller OVERWRITES in place); any OTHER existing leaf type
+#       is REJECTED — a SYMLINK leaf (via [ -L ], fires even for a dangling target) AND a
+#       DIRECTORY / FIFO / device leaf (an existing leaf that is not a regular file). The
+#       directory case matters because `cp <src> <leaf>` treats an existing directory leaf
+#       as a DESTINATION DIR and copies the source INTO it, following any nested symlink to
+#       an external target. A symlinked ANCESTOR is caught by the reused parent-dir guard
+#       below — no gap.
 #     PRECONDITION: the leaf must be a file target. A chain whose leaf is "." or ".." is
 #       OUT OF CONTRACT (no special handling); callers must not pass such chains.
 #
@@ -164,9 +167,10 @@ hivemind_assert_contained() {
 # hivemind_assert_file_contained <raw_repo_root> <relative_file_chain>
 # File-target containment: the chain's LEAF is a write-target FILE, not a directory.
 # COMPOSES hivemind_assert_contained — it does NOT reimplement the ancestor walk. The parent
-# directory chain is validated by the existing depth-complete guard; only the leaf gets an
-# additional [ -L ] symlink test. See the WHY block in the header for the false-reject the
-# directory-only guard would hit on a regular-file leaf.
+# directory chain is validated by the existing depth-complete guard; the leaf gets an
+# additional [ -L ] symlink test PLUS a non-regular-file reject (existing dir/FIFO/device).
+# See the WHY block in the header for the false-reject the directory-only guard would hit on
+# a regular-file leaf.
 # Echoes the canonical root on success (return 0); prints a reason to stderr and returns
 # non-zero on reject. Never exits — the caller maps non-zero to its own blocker.
 hivemind_assert_file_contained() {
@@ -191,10 +195,22 @@ hivemind_assert_file_contained() {
     return 1
   fi
 
-  # Apply the symlink test to the FULL leaf path. [ -L ] fires for a dangling symlink too
-  # (target need not exist). A non-existent or regular-file leaf passes per the contract.
-  if [ -L "$canon_root/$rel_chain" ]; then
+  # Leaf test on the FULL leaf path. A non-existent leaf passes (caller CREATES it); a
+  # regular-file leaf passes (caller OVERWRITES in place). Any OTHER existing leaf type is
+  # REJECTED. [ -L ] (checked first, before -e/-f which follow symlinks) covers a symlinked
+  # leaf incl. a dangling one. The [ -e ] && ! [ -f ] arm covers a DIRECTORY (or FIFO/device)
+  # occupying the leaf path: a real `.claude/settings.local.json/` dir tracked by a hostile
+  # base ref passes [ -L ], but then `cp <src> <leaf>` treats the dir as a DESTINATION and
+  # copies the source INTO it (following any nested symlink to an external target before the
+  # privileged child launches). Rejecting a non-regular existing leaf closes that vector while
+  # preserving the non-existent-leaf and regular-file-leaf pass behaviors.
+  local leaf_path="$canon_root/$rel_chain"
+  if [ -L "$leaf_path" ]; then
     printf 'refusing symlinked file leaf %s under %s\n' "$rel_chain" "$canon_root" >&2
+    return 1
+  fi
+  if [ -e "$leaf_path" ] && [ ! -f "$leaf_path" ]; then
+    printf 'refusing non-regular file leaf %s under %s\n' "$rel_chain" "$canon_root" >&2
     return 1
   fi
 
