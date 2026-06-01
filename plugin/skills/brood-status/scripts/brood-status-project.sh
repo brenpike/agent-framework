@@ -168,6 +168,17 @@ if ! hivemind_manifest_validate_shape "$manifest_content"; then
   exit 2
 fi
 
+# Canonical containment anchor for the per-strain worktree-residency check below. The manifest
+# is UNTRUSTED: a tampered `worktree_path` could point at an unrelated external dir (e.g.
+# /tmp/...), and confining the ledger ONLY beneath that attacker-declared worktree (the path
+# guard's anchor) would let a crafted manifest redirect the bounded ledger reader outside every
+# brood worktree owned by this checkout and surface its scalars in the dashboard (Codex #172 P1).
+# Canonicalize CHECKOUT_ROOT once here; each strain's worktree_path must canonically sit beneath
+# it before it is trusted as the ledger-containment anchor.
+canon_checkout="$(hivemind_canon_root "$CHECKOUT_ROOT")"
+[ -n "$canon_checkout" ] \
+  || blocker "failed to canonicalize checkout root $CHECKOUT_ROOT for worktree-residency check"
+
 # ── Per-strain projection ───────────────────────────────────────────────────────
 # For each strain, extract the manifest static fields out-of-band into inert vars, re-gate
 # every downstream value through the allowlist, confine the ledger path beneath the strain's
@@ -213,11 +224,28 @@ while [ "$idx" -lt "$strain_count" ]; do
   # IDENTIFIER class, which would falsely render a space-bearing worktree MALFORMED and suppress
   # all ledger projection (Codex #172 P1). Its only downstream uses (cd/pwd -P canonicalization,
   # quoted prefix construction, the TAB-delimited output field) are all space-safe.
+  # wt_clean gates whether worktree_path may anchor a ledger READ. It requires BOTH (a) the path
+  # value-class AND (b) canonical RESIDENCY beneath this checkout. The manifest is untrusted, so a
+  # charset-clean but EXTERNAL worktree_path (e.g. /tmp/evil) must NOT anchor the ledger reader —
+  # confining the ledger only beneath the attacker-declared worktree would let a tampered manifest
+  # redirect the bounded reader outside every brood worktree owned by this checkout (Codex #172
+  # P1). A non-resident worktree still DISPLAYS its (charset-clean) value, but its ledger is
+  # rendered MALFORMED (no external read) via the wt_clean gate below.
   wt_out="MALFORMED"
   wt_clean=0
   if hivemind_assert_path "$worktree_path"; then
     wt_out="$worktree_path"
-    wt_clean=1
+    # Residency check: the worktree must canonically sit beneath the owning checkout root. cd &&
+    # pwd -P resolves every symlink component; a worktree that does not exist, or whose canonical
+    # path escapes canon_checkout, fails residency and is denied as a ledger anchor (but is still
+    # shown as a value). Trailing-slash-guarded so a sibling like <checkout>-evil cannot prefix-match.
+    canon_wt_resident="$(cd "$worktree_path" 2>/dev/null && pwd -P)"
+    if [ -n "$canon_wt_resident" ]; then
+      case "$canon_wt_resident/" in
+        "$canon_checkout/"*) wt_clean=1 ;;
+        *) wt_clean=0 ;;
+      esac
+    fi
   fi
 
   branch_out="MALFORMED"

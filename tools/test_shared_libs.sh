@@ -94,8 +94,10 @@ for v in "/home/me/hive review/wt" "/repo/.claude/worktrees/api" "/home/me/hive#
   fi
 done
 # path STILL enforces the shared floor: command-sub, '..', leading '-', framing bytes reject.
-tab=$'\t'; nl=$'\n'; cr=$'\r'
-for v in "" "-rf" "/a/../b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b" "a;b" 'a|b' 'a>b'; do
+# Plus VT (\v) and FF (\f): the path whitespace widening is a LITERAL space only — `[:space:]`
+# would have admitted these C0 control bytes (Codex #172 P1), so they must reject here.
+tab=$'\t'; nl=$'\n'; cr=$'\r'; vt=$'\v'; ff=$'\f'
+for v in "" "-rf" "/a/../b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b" "a${vt}b" "a${ff}b" "a;b" 'a|b' 'a>b'; do
   if hivemind_assert_path "$v"; then
     failed "path:reject" "accepted a value the path floor must reject: '$v'"
   else
@@ -105,15 +107,19 @@ done
 
 # ── Class 3: presentation (broadest printable; display-only name). ──
 # Space-bearing display name ACCEPTS — this is what lets `api worker` render not MALFORMED.
-for v in "api worker" "api" "a;b" 'a|b' "a#b" "a (worker)" "a/b-c.d_e"; do
+# NOTE: `|` is NOT in the accept set — the presentation value is rendered into a Markdown table
+# cell by the brood-status navigator, so a `|` would inject extra cells (Codex #172 P1). It is
+# asserted in the reject list below alongside the shared floor bytes.
+for v in "api worker" "api" "a;b" "a#b" "a (worker)" "a/b-c.d_e"; do
   if hivemind_assert_presentation "$v"; then
     pass "pres:accept" "accepted presentation value '$v'"
   else
     failed "pres:accept" "rejected a presentation value that should render: '$v'"
   fi
 done
-# presentation STILL enforces the shared floor: command-sub, '..', leading '-', framing reject.
-for v in "" "-x" "a..b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b"; do
+# presentation STILL enforces the shared floor (command-sub, '..', leading '-', framing) AND
+# rejects the Markdown table delimiter '|' (Codex #172 P1 — table-cell injection).
+for v in "" "-x" "a..b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b" 'a|b'; do
   if hivemind_assert_presentation "$v"; then
     failed "pres:reject" "accepted a value the presentation floor must reject: '$v'"
   else

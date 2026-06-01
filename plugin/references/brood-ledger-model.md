@@ -1,6 +1,6 @@
 # Brood Ledger Model
 
-Read this file to understand how the brood manifest bridges to per-strain run ledgers: the additive `manifest_version: 2` extension, the injected child-task metadata, hatchery read-only monitoring with status-derivation priority, and the reconciliation concept.
+Read this file to understand how the brood manifest bridges to per-strain run ledgers: the JSON `manifest_version: 3` shape (top-level `hatchery` block + per-strain `run` pointers), the injected child-task metadata, hatchery read-only monitoring with status-derivation priority (live child-ledger projection per issue #161, informational-only), and the reconciliation concept.
 
 ## Format split: manifest JSON, child ledgers JSON
 

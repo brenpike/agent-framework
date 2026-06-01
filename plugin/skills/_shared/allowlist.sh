@@ -109,13 +109,16 @@ hivemind_assert_identifier() {
 hivemind_assert_path() {
   local value="$1"
   hivemind__assert_floor "$value" || return 1
-  # Reject any byte NOT in {identifier charset} ∪ {space, #, =, ~, !}. The negated bracket
-  # expression lists the full permitted set; any byte outside it rejects the whole value.
+  # Reject any byte NOT in {identifier charset} ∪ {literal SPACE, #, =, ~, !}. The negated
+  # bracket expression lists the full permitted set; any byte outside it rejects the whole
+  # value. The whitespace widening is a LITERAL SPACE only — NOT `[:space:]`, which also admits
+  # VT (\v) and FF (\f); the shared floor only rejects TAB/LF/CR, so a `[:space:]` widening
+  # would let those C0 control bytes through and the engine would emit raw VT/FF into the
+  # navigator stream (Codex #172 P1). A single literal space is the only whitespace a real
+  # checkout root carries; admit exactly that.
   case "$value" in
-    *[!A-Za-z0-9._/[:space:]=~#!-]*) return 1 ;;
+    *[!A-Za-z0-9._/=~#!\ -]*) return 1 ;;
   esac
-  # [:space:] in the bracket above admits TAB/CR too, but the floor already rejected those —
-  # the only whitespace that reaches here is a literal SPACE.
   return 0
 }
 
@@ -139,6 +142,16 @@ hivemind_assert_presentation() {
   # printable display set with the floor bytes carved out.
   case "$value" in
     *[![:print:]]*) return 1 ;;
+  esac
+  # Reject the Markdown table-cell delimiter `|`. The ONLY consumer of a presentation value is
+  # the brood-status navigator, which prints it directly into a Markdown table row
+  # (brood-status/SKILL.md step 3). A `|` in the value (e.g. a strain name
+  # `api | forged | alive | #999 | complete`) would inject extra table cells and visually
+  # falsify the dashboard row (Codex #172 P1). Pipe is not part of any legitimate strain name;
+  # rejecting it here keeps the rendered table row faithful without burdening the navigator with
+  # escaping. (The TAB-delimited transport itself is unaffected — TAB is already a floor byte.)
+  case "$value" in
+    *'|'*) return 1 ;;
   esac
   return 0
 }
