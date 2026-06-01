@@ -693,9 +693,15 @@ assert_spawn_brood_child_leaf_settings_escape_blocked() {
         }' \
         > "$inputs"
 
+    # Capture stderr separately to assert the SPECIFIC leaf-guard rejection fired — not some
+    # coincidental downstream/pre-flight failure. On the VULNERABLE impl the cp follows the
+    # symlink and writes external/settings.local.json (escaped=yes), so this case fails there;
+    # on the FIXED impl the [ -L ] leaf test rejects before any write, emitting the guard's
+    # warning to stderr.
     local rc=0
+    local stderr_out="$WORKDIR/spawn-stderr.txt"
     reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
-    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
 
     # Leaf guard must reject (non-zero) AND nothing written under external escape target.
     # A successful escape would write external/settings.local.json via cp.
@@ -703,14 +709,21 @@ assert_spawn_brood_child_leaf_settings_escape_blocked() {
     if find "$external" -mindepth 1 -print 2>/dev/null | grep -q .; then
         escaped=yes
     fi
+    # The leaf guard emits a specific rejection message before tearing down the worktree.
+    # Its presence proves the LEAF GUARD (not a coincidental pre-flight/provisioning failure)
+    # blocked — without this an unrelated early blocker would let the case pass vacuously.
+    local leaf_guard_rejected=no
+    if grep -qE 'symlinked \.claude/settings\.local\.json leaf' "$stderr_out" 2>/dev/null; then
+        leaf_guard_rejected=yes
+    fi
     local worktree_leaked=no
     if [ -e "$gitroot/.claude/worktrees/api" ]; then
         worktree_leaked=yes
     fi
-    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" ]]; then
-        pass "$name" "settings.local.json symlinked leaf rejected (exit $rc); worktree removed; nothing written under external target"
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$leaf_guard_rejected" == "yes" ]]; then
+        pass "$name" "settings.local.json symlinked leaf rejected by leaf guard (exit $rc); worktree removed; nothing written under external target"
     else
-        failed "$name" "expected non-zero exit + no external write + worktree removed; rc=$rc escaped=$escaped worktree_leaked=$worktree_leaked"
+        failed "$name" "expected non-zero exit + leaf-guard rejection + no external write + worktree removed; rc=$rc escaped=$escaped leaf_guard_rejected=$leaf_guard_rejected worktree_leaked=$worktree_leaked stderr: $(cat "$stderr_out" 2>/dev/null)"
     fi
 }
 
