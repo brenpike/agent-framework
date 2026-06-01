@@ -61,12 +61,24 @@ hivemind_assert_safe_token() {
 #     AND does not contain '..' (path-traversal guard) AND contains NONE of the dangerous bytes
 #     below.
 #   - REJECTED bytes (the boundary): command-substitution / shell-metacharacter bytes
-#     `$` ` `` ` `;` `&` `|` `<` `>` `(` `)` `{` `}` `*` `?` `[` `]` `\` `!` `#` `~` `=`, single
-#     and double quotes, AND the whitespace bytes TAB / newline / carriage-return. TAB and
-#     newline are rejected because the engine emits this value into a TAB-delimited,
-#     newline-terminated output grammar; allowing either would let a crafted path break the
-#     per-strain line framing the navigator parses. A literal SPACE is the ONLY whitespace
-#     permitted.
+#     `$` ` `` ` `;` `&` `|` `<` `>` `(` `)` `{` `}` `*` `?` `[` `]` `\`, single and double
+#     quotes, AND the whitespace bytes TAB / newline / carriage-return. TAB and newline are
+#     rejected because the engine emits this value into a TAB-delimited, newline-terminated
+#     output grammar; allowing either would let a crafted path break the per-strain line
+#     framing the navigator parses. A literal SPACE is the ONLY whitespace permitted.
+#   - PERMITTED bytes that an earlier revision over-rejected (Codex #172 P1): `#`, `=`, `~`,
+#     and `!`. These are valid filesystem bytes a real checkout root may carry (e.g.
+#     `/home/me/hivemind#review`), and spawn-brood.sh supports such roots by consistently
+#     quoting derived paths. None is shell-active in this rule's only downstream contexts:
+#     `#` is a comment introducer ONLY at an unquoted word start, `=` is an assignment token
+#     ONLY as a bare word, `~` undergoes tilde expansion ONLY unquoted at a word start, and
+#     `!` is history expansion (interactive-only, disabled in scripts) — each is an inert
+#     literal inside the quoted `cd "$dir"` canonicalization, the double-quoted `case`-pattern
+#     prefix construction (a quoted expansion is matched literally, so it cannot expand), and
+#     the TAB-delimited output field. Rejecting them falsely rendered a valid checkout root
+#     MALFORMED and suppressed all ledger projection; permitting them does NOT reopen the
+#     command-substitution (`$`/backtick), glob, redirection, or framing classes still closed
+#     above.
 #
 # WHY THIS IS STILL SOUND under the allowlist-before-quoting boundary (allowlist.sh header):
 # the only contexts a path validated here reaches are (1) cd/pwd -P canonicalization inside
@@ -97,11 +109,13 @@ hivemind_assert_safe_path() {
     *"$tab"*|*"$nl"*|*"$cr"*) return 1 ;;
   esac
   # Reject every dangerous shell-metacharacter / command-substitution byte. SPACE is NOT in this
-  # set. The bracket expression lists each forbidden byte literally; `]` is placed first (the
-  # only position where `]` is a literal member of a bracket expression) and `\` is included to
-  # forbid backslash escapes.
+  # set, and neither are the inert filesystem bytes `#`/`=`/`~`/`!` (see header — they are not
+  # shell-active in this rule's quoted-only downstream contexts and a real checkout root may
+  # carry them; Codex #172 P1). The bracket expression lists each forbidden byte literally; `]`
+  # is placed first (the only position where `]` is a literal member of a bracket expression)
+  # and `\` is included to forbid backslash escapes.
   case "$value" in
-    *[]\$\`\;\&\|\<\>\(\)\{\}\*\?\[\\\!\#\~\=\'\"]*) return 1 ;;
+    *[]\$\`\;\&\|\<\>\(\)\{\}\*\?\[\\\'\"]*) return 1 ;;
   esac
   return 0
 }
