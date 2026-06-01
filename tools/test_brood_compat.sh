@@ -67,19 +67,37 @@ skip() { echo "SKIP [$1] $2"; SKIP_COUNT=$((SKIP_COUNT + 1)); }
 # on exit). The parse/parity assertions above touch only read-only fixtures, so this is only
 # armed for the symlink-escape case.
 WORKDIR=""
-# reap_brood_sessions: kill the deterministic tmux session(s) the spawn-invoking escape cases
-# create. Every escape/positive case uses strain name `api` → session `brood-api`. A case that
-# proceeds PAST the guards to `tmux new-session` (e.g. the regular-file positive case, or any
-# case run with claude/tmux present) LEAVES a detached `brood-api` session behind: the suite's
-# EXIT trap previously reaped only WORKDIR, never tmux state. A leaked `brood-api` then makes a
-# LATER case abort at spawn-brood pre-flight step 1d ("tmux session brood-api already exists")
-# BEFORE it can reach the leaf guard — so the leaf-guard assertion would never run (and, with
-# the weaker pre-fix assertion, falsely PASS). Reaping the deterministic session name before
-# each spawn-invoking case and on EXIT keeps cases isolated and avoids polluting the caller's
-# tmux server. Scoped to the exact `brood-api` name these fixtures use — never a wildcard — so
-# an unrelated user session is never touched.
+# Private tmux server isolation. Every escape/positive case uses strain name `api` →
+# session `brood-api`, which is ALSO the production session name spawn-brood.sh derives
+# for a real strain named `api` (session = `brood-$short`). If this suite reaped
+# `brood-api` on the DEFAULT tmux server, running validation while a real strain named
+# `api` is live would kill the user's in-progress session. So the entire suite runs on a
+# throwaway tmux server: TMUX_TMPDIR points tmux at a private socket directory, and it is
+# EXPORTED so the child `tmux` calls inside spawn-brood.sh (which the spawn-invoking cases
+# exec) inherit it — both this suite's tmux calls and the spawned children land on the
+# disposable server, never the caller's default server. The user's real `brood-api` is
+# unreachable from here. The server and its dir are torn down on EXIT.
+TMUX_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-tmux.XXXXXX")"
+export TMUX_TMPDIR
+# reap_brood_sessions: kill the deterministic tmux session(s) the spawn-invoking escape
+# cases create. A case that proceeds PAST the guards to `tmux new-session` (e.g. the
+# regular-file positive case, or any case run with claude/tmux present) LEAVES a detached
+# `brood-api` session behind on the private server: the suite's EXIT trap previously
+# reaped only WORKDIR, never tmux state. A leaked `brood-api` then makes a LATER case abort
+# at spawn-brood pre-flight step 1d ("tmux session brood-api already exists") BEFORE it can
+# reach the leaf guard — so the leaf-guard assertion would never run (and, with the weaker
+# pre-fix assertion, falsely PASS). Reaping before each spawn-invoking case and on EXIT
+# keeps cases isolated. Scoped to the exact `brood-api` name these fixtures use — never a
+# wildcard — AND, because TMUX_TMPDIR isolates the server, it can only ever touch the
+# disposable server's sessions, never the caller's default-server sessions.
 reap_brood_sessions() { tmux kill-session -t brood-api 2>/dev/null || true; return 0; }
-cleanup() { reap_brood_sessions; [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"; return 0; }
+cleanup() {
+    reap_brood_sessions
+    tmux kill-server 2>/dev/null || true   # tear down the private tmux server entirely
+    [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"
+    [ -n "${TMUX_TMPDIR:-}" ] && rm -rf "$TMUX_TMPDIR"
+    return 0
+}
 trap cleanup EXIT
 
 # extract_tmux_session: pull the first strain's tmux_session value the SAME way the
