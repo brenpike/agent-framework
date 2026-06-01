@@ -9,6 +9,16 @@
       "description": "Within-workflow decision: watch the PR review loop or run a one-shot reviewer fix.",
       "owner": "overlord",
       "transitions": {
+        "watch": "pr_branch_preflight",
+        "fix": "pr_branch_preflight",
+        "blocked": "blocked"
+      }
+    },
+    "pr_branch_preflight": {
+      "type": "decision",
+      "owner": "overlord",
+      "description": "Overlord resolves and checks out the PR's target branch before any reviewer runs, so remediation commits land on the PR branch (not trunk or a stale branch). Lists outcome names only.",
+      "transitions": {
         "watch": "github_review_loop",
         "fix": "github_reviewer_fix",
         "blocked": "blocked"

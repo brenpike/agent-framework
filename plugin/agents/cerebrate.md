@@ -110,6 +110,8 @@ Use **compact** output when all are true: one specialist owner, one or two exist
 
 Otherwise use **full** output.
 
+Output style (compact vs full) is independent of the machine-readable `plan:` block: ANY plan that routes to an implementation loop MUST also emit the `plan:` block with populated `steps[]` (see Machine-Readable Plan Block), even when compact — the overlord needs `plan.steps` to drive the implement loop.
+
 ### Compact
 
 ```text
@@ -176,7 +178,7 @@ Open questions:
 
 ### Machine-Readable Plan Block
 
-For every non-trivial implementation plan (any plan that uses **full** output), append a machine-readable YAML `plan:` block after the prose. This is the communication contract the overlord reformats into the JSON run ledger at the §A seam (cerebrate stays read-only and writes nothing; it only emits this block as part of its report).
+Append a machine-readable YAML `plan:` block after the prose for ANY plan that routes to an implementation loop — regardless of compact vs full output. Each `steps[]` entry must carry a `STEP-NNN` id, `owner`, `files`, `outcome`, and `depends_on`. This is mandatory the moment a plan routes to implementation: the overlord feeds `plan.steps` to `hivemind:record-state-result --plan-steps` to drive the implement loop, so a compact plan that omits the machine block leaves that loop with no steps. The compact prose template stays available for trivial single-owner plans, but a compact plan that routes to implementation still emits this block. This is the communication contract the overlord reformats into the JSON run ledger at the §A seam (cerebrate stays read-only and writes nothing; it only emits this block as part of its report).
 
 ```yaml
 plan:
@@ -235,4 +237,4 @@ blocker                  -> blocked
 
 ### Finalization Gate
 
-Do not finalize until every step has: one owner, exact file scope. Full output additionally requires: `Depends on`, full versioning block, delivery block, and the machine-readable `plan:` block (with matching `steps[]`). When the delivery block sets `delivery: brood` it must also carry `Strains`, `overlap_risk`, and `overlap_details` (and `plan.delivery` must mirror them). Every step with a `STEP-NNN` identifier is a phase boundary for the orchestrator.
+Do not finalize until every step has: one owner, exact file scope. Any plan that routes to an implementation loop — compact or full — additionally requires the machine-readable `plan:` block with populated `steps[]` (each step: `STEP-NNN` id, owner, files, outcome, depends_on); without it the overlord's implement loop has no steps. Full output additionally requires: `Depends on`, full versioning block, and delivery block. When the delivery block sets `delivery: brood` it must also carry `Strains`, `overlap_risk`, and `overlap_details` (and `plan.delivery` must mirror them). Every step with a `STEP-NNN` identifier is a phase boundary for the orchestrator.

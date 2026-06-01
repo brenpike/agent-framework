@@ -473,8 +473,9 @@ for idx in $(seq 0 $((strain_count - 1))); do
   desc="$(printf '%s' "$desc" | tr -d '\000-\010\013-\037\177')"
   task_file="$wt/.hivemind/brood/task.md"
   # ── ledger-bridge child-task metadata (STEP-007, ADDITIVE) ────────────────────
-  # Prepend the inter-agent brood metadata ABOVE the existing data-boundary preamble +
-  # description. The metadata is YAML (an inter-agent contract — ADR-0018 §A keeps human/
+  # Emit the inter-agent brood metadata BELOW the data-boundary preamble (the preamble stays
+  # FIRST); the description is carried inside this block as `task.description`. The metadata
+  # is YAML (an inter-agent contract — ADR-0018 §A keeps human/
   # agent-read contracts as YAML); it tells the child it is a normal hivemind:overlord
   # owning its OWN run ledger in this worktree, points at its suggested run id/ledger, and
   # forbids it from touching the hatchery manifest/ledger (RUN-OWNERSHIP-01). Untrusted
@@ -483,8 +484,9 @@ for idx in $(seq 0 $((strain_count - 1))); do
   # exact-value fields, | (clip) for the free-text description, each reproduced at its
   # block-scalar content indent via printf %s | sed. Control bytes are already stripped
   # from desc above; name is stripped here for the same YAML-validity reason. The metadata
-  # then becomes the FRONT of the same single-write primitive — the existing preamble +
-  # description tail is preserved byte-for-byte as the child's actual prompt payload.
+  # is then emitted via the same single-write primitive BELOW the preamble — the preamble
+  # stays FIRST and the description rides inside this block as `task.description`, the child's
+  # actual prompt payload.
   name_meta="$(printf '%s' "$name" | tr -d '\000-\010\013-\037\177')"
   brood_meta="$( {
     printf 'parent:\n'

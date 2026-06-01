@@ -60,7 +60,7 @@ None of these fields point at a ledger the hatchery creates — they are pointer
 
 ## Injected child-task metadata
 
-The task injected into each child strain carries, below the data-boundary preamble, a YAML metadata block above the task description. This is an inter-agent contract, so it is YAML.
+The task injected into each child strain carries the data-boundary preamble FIRST, then a YAML metadata block whose `task.description` field carries the task description. This is an inter-agent contract, so it is YAML.
 
 ```yaml
 parent:
