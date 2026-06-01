@@ -152,11 +152,20 @@ hivemind_manifest_field() {
   [ -f "$manifest_path" ] || return 0
 
   # Normalize run.* field names: callers may pass `run.suggested_ledger` or `suggested_ledger`.
+  # Track whether the requested field is a run.* field so awk can anchor it to the deeper
+  # indent NESTED under the strain's `run:` key, never at the strain's direct field indent.
+  # The run.* fields (suggested_id, suggested_ledger, workflow_hint) only ever live under `run:`;
+  # the direct fields (worktree_path, branch, tmux_session, status) only ever live at the strain
+  # field indent. Anchoring each to its expected indent is what closes the nested-key spoof
+  # (Codex #172 P1): a tampered `metadata:`/other nested mapping carrying an indented duplicate
+  # key sits at a DIFFERENT indent than the genuine field and is no longer matched.
+  is_run=0
   case "$field" in
-    run.*) field="${field#run.}" ;;
+    run.*) field="${field#run.}"; is_run=1 ;;
+    suggested_id|suggested_ledger|workflow_hint) is_run=1 ;;
   esac
 
-  awk -v want="$strain_name" -v field="$field" '
+  awk -v want="$strain_name" -v field="$field" -v is_run="$is_run" '
     function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     function unquote(s) { gsub(/^"|"$/, "", s); return s }
     function indent_of(s,   n) { n = 0; while (substr(s, n + 1, 1) == " ") n++; return n }
@@ -205,10 +214,18 @@ hivemind_manifest_field() {
       # fall through to evaluate this line as structure
     }
 
-    # A new strain block begins at "  - name:". Decide whether it is the target strain.
+    # A new strain block begins at "  - name:". Decide whether it is the target strain, and
+    # CAPTURE the strain DIRECT-FIELD INDENT: the column where `name` (the first sibling key)
+    # begins, i.e. the chars consumed by the leading "<indent>- " dash marker. Sibling fields
+    # (worktree_path/branch/tmux_session/status/run) sit at exactly this indent; run.* children
+    # sit deeper. Anchoring to this indent is the structural defense against nested-key spoofing.
     /^[[:space:]]*-[[:space:]]*name:/ {
       pending_name_block = 0
       cur_is_target = 0
+      in_run = 0
+      # Field indent = leading "<indent>- " length (where the `name` key starts).
+      match($0, /^[[:space:]]*-[[:space:]]*/)
+      field_indent = RLENGTH
       # Inline name?
       if (match($0, /^[[:space:]]*-[[:space:]]*name:[[:space:]]*/)) {
         rest = substr($0, RLENGTH + 1)
@@ -227,27 +244,54 @@ hivemind_manifest_field() {
     }
 
     in_target {
-      # Match "<indent><field>:" with the field token anchored as the exact key (trailing
-      # colon). The field must be a DIRECT key, not a key buried in a deeper block-scalar body —
-      # the in_scalar rule above already discarded body lines, so any "key: |" line reaching
-      # here is a genuine strain (or nested run.) field.
-      pat = "^[[:space:]]*" field ":"
-      if ($0 ~ pat) {
-        # Extract everything after the first colon following the field name.
-        idx = index($0, ":")
-        rest = trim(substr($0, idx + 1))
-        if (rest ~ /^\|-?[[:space:]]*$/) {
-          # Block scalar: value is on the next content line.
-          grab_field = 1
-          next
+      cur_indent = indent_of($0)
+
+      # INDENT-ANCHORED key matching (nested-key-spoof defense, Codex #172 P1). A genuine strain
+      # DIRECT field sits at exactly field_indent; the strain `run:` mapping opens at field_indent
+      # and its run.* children sit deeper than field_indent. A tampered nested mapping (e.g.
+      # `metadata:` carrying an indented duplicate `status: failed`) places the duplicate key at a
+      # DIFFERENT indent, so anchoring each match to its expected indent rejects the spoof. The
+      # in_scalar body-skip above already discards block-scalar bodies; this anchoring additionally
+      # closes NESTED-MAPPING (non-block-scalar) injection that the body-skip does not cover.
+
+      # Track entry into / exit from the strain `run:` mapping. `run:` opens at field_indent; we
+      # leave it as soon as we see a line at field_indent or shallower that is not deeper content.
+      if (in_run && cur_indent <= field_indent) { in_run = 0 }
+      if (!in_run && cur_indent == field_indent \
+          && $0 ~ /^[[:space:]]*run:[[:space:]]*$/) {
+        in_run = 1
+        next
+      }
+
+      # Decide the indent this field is allowed to match at: direct fields at field_indent;
+      # run.* fields strictly deeper than field_indent AND only while inside the `run:` mapping.
+      matched = 0
+      if (is_run == 0 && cur_indent == field_indent) { matched = 1 }
+      if (is_run == 1 && in_run && cur_indent > field_indent) { matched = 1 }
+
+      if (matched) {
+        # Match "<field>:" with the field token anchored as the exact key (trailing colon) at the
+        # already-verified indent.
+        pat = "^[[:space:]]*" field ":"
+        if ($0 ~ pat) {
+          # Extract everything after the first colon following the field name.
+          idx = index($0, ":")
+          rest = trim(substr($0, idx + 1))
+          if (rest ~ /^\|-?[[:space:]]*$/) {
+            # Block scalar: value is on the next content line.
+            grab_field = 1
+            next
+          }
+          # Inline value (handles tmux_session: "x" and status: x).
+          print unquote(rest)
+          found = 1
+          exit
         }
-        # Inline value (handles tmux_session: "x" and status: x).
-        print unquote(rest)
-        found = 1
-        exit
       }
       # A NON-target block-scalar key (e.g. description, or a run.* scalar we were not asked for)
       # opens a body that must be skipped so its untrusted content is never matched as a field.
+      # Skip regardless of indent — a deeper block scalar (e.g. an injected description body) must
+      # still be consumed as body so its content never reaches the structural matchers.
       if ($0 ~ /^[[:space:]]*[^:[:space:]][^:]*:[[:space:]]*\|-?[[:space:]]*$/) {
         scalar_indent = indent_of($0)
         in_scalar = 1

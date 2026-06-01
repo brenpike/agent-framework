@@ -87,6 +87,15 @@ command -v jq >/dev/null 2>&1 \
 MANIFEST="${1:-}"
 [ -n "$MANIFEST" ] \
   || blocker "missing required argument: path to brood manifest YAML (\$1)"
+# Reject a SYMLINKED manifest leaf BEFORE the [ -f ] regular-file test (which FOLLOWS
+# symlinks and would pass a symlink-to-regular-file). hivemind_assert_inputs_contained below
+# canonicalizes only the manifest's dirname and re-appends the basename textually, so a
+# symlinked manifest LEAF pointing at an external file would otherwise resolve outside and be
+# read as attacker-controlled YAML (Codex #172 P1). [ -L ] fires for a symlink leaf even when
+# its target is missing; checking it first closes the leaf-symlink escape the dirname-only
+# canonicalization leaves open. A symlinked ANCESTOR is still caught by the containment guard.
+[ -L "$MANIFEST" ] \
+  && blocker "refusing to read the manifest: $MANIFEST is a symlink leaf"
 [ -f "$MANIFEST" ] \
   || blocker "brood manifest $MANIFEST does not exist or is not a regular file"
 
@@ -126,10 +135,17 @@ while IFS= read -r strain_name; do
   suggested_ledger="$(hivemind_manifest_field "$MANIFEST" "$strain_name" "run.suggested_ledger")"
 
   # 2. Re-gate every value through the safe-token allowlist. A failing value renders MALFORMED
-  #    for that field. The strain NAME itself is rendered as the field value when clean,
-  #    MALFORMED otherwise (it still came from hivemind_manifest_strain_names — untrusted).
+  #    for that field. The strain NAME is DISPLAY-ONLY — it is emitted in the output field and
+  #    used only as the quoted awk `-v want=` lookup key in hivemind_manifest_field, never as a
+  #    shell probe token. spawn-brood accepts and safely derives names containing SPACES, so a
+  #    valid `api worker` strain must not be rendered MALFORMED (which would make the navigator
+  #    skip the strain's live probes and lose its status entirely — Codex #172 P1). Gate the name
+  #    with the presentation-safe PATH rule (permits space; still rejects '..', leading '-',
+  #    command-substitution + shell-metachar bytes, and the TAB/newline/CR that would break the
+  #    TAB-delimited output grammar) rather than the strict identifier token allowlist. IDs used
+  #    in shell probes (branch/tmux/status/ledger_id) keep the strict token gate below.
   name_out="MALFORMED"
-  hivemind_assert_safe_token "$strain_name" && name_out="$strain_name"
+  hivemind_assert_safe_path "$strain_name" && name_out="$strain_name"
 
   # worktree_path is a filesystem PATH, not an identifier: a valid checkout root may contain
   # SPACES. Gate it with the path-specific rule (permits space; still rejects '..', leading '-',
