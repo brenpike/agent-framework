@@ -132,33 +132,49 @@ extract_branch() {
     jq -r '.strains[].branch // empty' "$1" 2>/dev/null | head -1
 }
 
-# ── Assertion 1: OLD v1 manifest parses, yields the expected session/branch ─────
-# Child-ledger projection is deferred to issue #161; this asserts only that the v1
-# manifest (no run: block) parses and yields identical tmux_session/branch extraction.
+# The v4 brood-id-namespaced identifiers the committed fixtures carry. Both fixtures share one
+# generated GUID (^brood-[0-9a-f-]+$); the per-strain branch/tmux_session are DERIVED from it
+# (branch = strain/<brood-id>/<short>, tmux = <brood-id>-<short>) — no longer the old
+# feature/api-slice + brood-api forms. These literals must stay in lock-step with the fixtures.
+FIX_BROOD_ID="brood-1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+FIX_BRANCH="strain/${FIX_BROOD_ID}/api"
+FIX_TMUX="${FIX_BROOD_ID}-api"
+
+# ── Assertion 1: OLD v1 manifest parses, yields the expected v4 session/branch ───
+# Both committed fixtures are manifest_version 4 now (the v1/v2 filenames are historical: v1 is
+# the no-run-block shape, v2 carries the additive run block). This asserts the no-run-block
+# fixture parses and yields the brood-id-derived tmux_session/branch, AND that manifest_version
+# is 4 (version parity).
 assert_v1_old() {
-    local name="V1:old-manifest-no-ledger-fields"
-    local session branch
+    local name="V1:old-manifest-no-run-block"
+    local session branch version
     session="$(extract_tmux_session "$MANIFEST_V1")"
     branch="$(extract_branch "$MANIFEST_V1")"
-    if [[ "$session" == "brood-api" && "$branch" == "feature/api-slice" ]]; then
-        pass "$name" "v1 manifest read without error: session=$session branch=$branch"
+    version="$(jq -r '.manifest_version' "$MANIFEST_V1")"
+    if [[ "$session" == "$FIX_TMUX" && "$branch" == "$FIX_BRANCH" && "$version" == "4" ]]; then
+        pass "$name" "v1 (no-run-block) manifest_version=4; session=$session branch=$branch"
     else
-        failed "$name" "expected brood-api/feature/api-slice, got session=$session branch=$branch"
+        failed "$name" "expected $FIX_TMUX/$FIX_BRANCH/v4, got session=$session branch=$branch version=$version"
     fi
 }
 
-# ── Assertion 2: NEW v2 manifest parses, yields the expected session/branch ─────
-# The additive run: block is ignored by the consumer; only tmux_session/branch are
-# extracted (child-ledger projection deferred to issue #161).
+# ── Assertion 2: NEW v2 manifest parses, yields the expected v4 session/branch ───
+# The additive run: block is carried (run.suggested_id kept, run.suggested_ledger DROPPED in v4).
+# Asserts the run-block fixture parses, yields the brood-id-derived session/branch, manifest_version
+# is 4, AND that the dropped run.suggested_ledger is genuinely absent while run.suggested_id remains.
 assert_v2_new() {
     local name="V2:new-manifest-additive-run-block"
-    local session branch
+    local session branch version sid sledger
     session="$(extract_tmux_session "$MANIFEST_V2")"
     branch="$(extract_branch "$MANIFEST_V2")"
-    if [[ "$session" == "brood-api" && "$branch" == "feature/api-slice" ]]; then
-        pass "$name" "v2 manifest read without error: session=$session branch=$branch"
+    version="$(jq -r '.manifest_version' "$MANIFEST_V2")"
+    sid="$(jq -r '.strains[0].run.suggested_id // ""' "$MANIFEST_V2")"
+    sledger="$(jq -r '.strains[0].run | has("suggested_ledger")' "$MANIFEST_V2")"
+    if [[ "$session" == "$FIX_TMUX" && "$branch" == "$FIX_BRANCH" && "$version" == "4" \
+          && "$sid" == "${FIX_BROOD_ID}--api" && "$sledger" == "false" ]]; then
+        pass "$name" "v2 manifest_version=4; session=$session branch=$branch; suggested_id kept, suggested_ledger dropped"
     else
-        failed "$name" "expected brood-api/feature/api-slice, got session=$session branch=$branch"
+        failed "$name" "expected v4 + $FIX_TMUX/$FIX_BRANCH + suggested_id=${FIX_BROOD_ID}--api + no suggested_ledger; got version=$version session=$session branch=$branch sid=$sid has_ledger=$sledger"
     fi
 }
 
@@ -243,19 +259,16 @@ assert_spawn_brood_symlink_escape_blocked() {
     # the only blocker the run reaches. The ONLY hostile element is the symlinked .hivemind.
     local inputs="$WORKDIR/brood-inputs.json"
     jq -n \
-        --arg brood_id "2026-05-31T17:30:00Z" \
         --arg base "main" \
         --arg overlap_risk "low" \
         --arg overlap_details "brood compat symlink-escape test" \
         --arg strain_name "api" \
         --arg strain_desc "symlink escape test strain" \
-        --arg strain_branch "feature/api-slice" \
         '{
-            brood_id: $brood_id,
             base: $base,
             overlap_risk: $overlap_risk,
             overlap_details: $overlap_details,
-            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+            strains: [ { name: $strain_name, description: $strain_desc } ]
         }' \
         > "$inputs"
 
@@ -318,19 +331,16 @@ assert_spawn_brood_inputs_external_rejected() {
     # path resolves under $external (outside the checkout).
     local inputs="$gitroot/link/brood-inputs.json"
     jq -n \
-        --arg brood_id "2026-05-31T17:30:00Z" \
         --arg base "main" \
         --arg overlap_risk "low" \
         --arg overlap_details "brood compat inputs-external read-guard test" \
         --arg strain_name "api" \
         --arg strain_desc "external inputs read-guard test strain" \
-        --arg strain_branch "feature/api-slice" \
         '{
-            brood_id: $brood_id,
             base: $base,
             overlap_risk: $overlap_risk,
             overlap_details: $overlap_details,
-            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+            strains: [ { name: $strain_name, description: $strain_desc } ]
         }' \
         > "$inputs"
 
@@ -442,19 +452,16 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked() {
     # isolate the CHILD-worktree vector).
     local inputs="$gitroot/brood-inputs.json"
     jq -n \
-        --arg brood_id "2026-05-31T17:30:00Z" \
         --arg base "evil" \
         --arg overlap_risk "low" \
         --arg overlap_details "brood compat child-worktree symlink-escape test" \
         --arg strain_name "api" \
         --arg strain_desc "child worktree symlink escape test strain" \
-        --arg strain_branch "feature/api-slice" \
         '{
-            brood_id: $brood_id,
             base: $base,
             overlap_risk: $overlap_risk,
             overlap_details: $overlap_details,
-            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+            strains: [ { name: $strain_name, description: $strain_desc } ]
         }' \
         > "$inputs"
 
@@ -470,8 +477,14 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked() {
         escaped=yes
     fi
     # The offending worktree must also be removed (not left dangling for a later launch).
+    # v4 namespacing: the worktree path is .claude/worktrees/<brood-id>/<short> with an
+    # internally-generated brood-id. The guard removes the worktree LEAF (git worktree remove +
+    # rm -rf "$wt") but leaves the now-empty <brood-id>/ PARENT dir behind — that empty parent is
+    # benign and must NOT count as a leak. A real leak is a still-REGISTERED git worktree under
+    # .claude/worktrees/, so ask git (ground truth) rather than scanning for any leftover dir.
     local worktree_leaked=no
-    if [ -e "$gitroot/.claude/worktrees/api" ]; then
+    if git -C "$gitroot" worktree list --porcelain 2>/dev/null \
+         | grep -E '^worktree .*/\.claude/worktrees/' | grep -q .; then
         worktree_leaked=yes
     fi
     if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" ]]; then
@@ -565,19 +578,16 @@ assert_spawn_brood_child_leaf_task_escape_blocked() {
     # (real subdir) so the inputs read-guard passes — the leaf guard is the only blocker.
     local inputs="$gitroot/brood-inputs.json"
     jq -n \
-        --arg brood_id "2026-05-31T17:31:00Z" \
         --arg base "evil" \
         --arg overlap_risk "low" \
         --arg overlap_details "child-leaf-escape-task regression test" \
         --arg strain_name "api" \
         --arg strain_desc "task leaf symlink escape test strain" \
-        --arg strain_branch "feature/api-slice" \
         '{
-            brood_id: $brood_id,
             base: $base,
             overlap_risk: $overlap_risk,
             overlap_details: $overlap_details,
-            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+            strains: [ { name: $strain_name, description: $strain_desc } ]
         }' \
         > "$inputs"
 
@@ -603,8 +613,14 @@ assert_spawn_brood_child_leaf_task_escape_blocked() {
         leaf_guard_rejected=yes
     fi
     # The offending worktree must be removed (not left dangling).
+    # v4 namespacing: the worktree path is .claude/worktrees/<brood-id>/<short> with an
+    # internally-generated brood-id. The guard removes the worktree LEAF (git worktree remove +
+    # rm -rf "$wt") but leaves the now-empty <brood-id>/ PARENT dir behind — that empty parent is
+    # benign and must NOT count as a leak. A real leak is a still-REGISTERED git worktree under
+    # .claude/worktrees/, so ask git (ground truth) rather than scanning for any leftover dir.
     local worktree_leaked=no
-    if [ -e "$gitroot/.claude/worktrees/api" ]; then
+    if git -C "$gitroot" worktree list --porcelain 2>/dev/null \
+         | grep -E '^worktree .*/\.claude/worktrees/' | grep -q .; then
         worktree_leaked=yes
     fi
     if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$leaf_guard_rejected" == "yes" ]]; then
@@ -680,19 +696,16 @@ assert_spawn_brood_child_leaf_settings_escape_blocked() {
 
     local inputs="$gitroot/brood-inputs.json"
     jq -n \
-        --arg brood_id "2026-05-31T17:32:00Z" \
         --arg base "evil2" \
         --arg overlap_risk "low" \
         --arg overlap_details "child-leaf-escape-settings regression test" \
         --arg strain_name "api" \
         --arg strain_desc "settings leaf symlink escape test strain" \
-        --arg strain_branch "feature/api-slice" \
         '{
-            brood_id: $brood_id,
             base: $base,
             overlap_risk: $overlap_risk,
             overlap_details: $overlap_details,
-            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+            strains: [ { name: $strain_name, description: $strain_desc } ]
         }' \
         > "$inputs"
 
@@ -719,8 +732,14 @@ assert_spawn_brood_child_leaf_settings_escape_blocked() {
     if grep -qE 'symlinked \.claude/settings\.local\.json leaf' "$stderr_out" 2>/dev/null; then
         leaf_guard_rejected=yes
     fi
+    # v4 namespacing: the worktree path is .claude/worktrees/<brood-id>/<short> with an
+    # internally-generated brood-id. The guard removes the worktree LEAF (git worktree remove +
+    # rm -rf "$wt") but leaves the now-empty <brood-id>/ PARENT dir behind — that empty parent is
+    # benign and must NOT count as a leak. A real leak is a still-REGISTERED git worktree under
+    # .claude/worktrees/, so ask git (ground truth) rather than scanning for any leftover dir.
     local worktree_leaked=no
-    if [ -e "$gitroot/.claude/worktrees/api" ]; then
+    if git -C "$gitroot" worktree list --porcelain 2>/dev/null \
+         | grep -E '^worktree .*/\.claude/worktrees/' | grep -q .; then
         worktree_leaked=yes
     fi
     if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$leaf_guard_rejected" == "yes" ]]; then
@@ -794,19 +813,16 @@ assert_spawn_brood_child_leaf_regular_ok() {
 
     local inputs="$gitroot/brood-inputs.json"
     jq -n \
-        --arg brood_id "2026-05-31T17:33:00Z" \
         --arg base "safe" \
         --arg overlap_risk "low" \
         --arg overlap_details "child-leaf-regular-ok positive test" \
         --arg strain_name "api" \
         --arg strain_desc "regular file leaf positive test strain" \
-        --arg strain_branch "feature/api-slice" \
         '{
-            brood_id: $brood_id,
             base: $base,
             overlap_risk: $overlap_risk,
             overlap_details: $overlap_details,
-            strains: [ { name: $strain_name, description: $strain_desc, branch: $strain_branch } ]
+            strains: [ { name: $strain_name, description: $strain_desc } ]
         }' \
         > "$inputs"
 
@@ -874,6 +890,13 @@ ensure_proj_workdir() {
     if [ -z "$PROJ_WORKDIR" ]; then
         PROJ_WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-proj.XXXXXX")"
         git -C "$PROJ_WORKDIR" init -q
+        # A seed commit is REQUIRED: the #168 ground-truth worktree discovery cases register real
+        # git worktrees (`git worktree add -b <branch> <path> HEAD`) so the engine can resolve each
+        # strain's worktree from `git worktree list --porcelain`; worktree-add needs a commit to
+        # branch from. Configure identity locally so the commit succeeds on a bare CI checkout.
+        git -C "$PROJ_WORKDIR" config user.email test@example.com
+        git -C "$PROJ_WORKDIR" config user.name test
+        git -C "$PROJ_WORKDIR" commit -q --allow-empty -m "proj-seed"
         # Fold into WORKDIR so the existing cleanup() reaps it when no spawn case set it;
         # otherwise reap PROJ_WORKDIR explicitly in cleanup (handled below).
         if [ -z "$WORKDIR" ]; then
@@ -890,26 +913,34 @@ run_project() {
     ( cd "$PROJ_WORKDIR" && bash "$PROJECT_SCRIPT" "$1" 2>/dev/null )
 }
 
-# write_manifest_v2: author a brood manifest (manifest_version 3, with run block) at $1
-# for ONE strain. Args: $1=path $2=strain_name $3=worktree_path $4=branch
-# $5=tmux_session $6=status $7=suggested_ledger. Mirrors the JSON producer shape in
-# spawn-brood.sh exactly (jq-constructed object; manifest_version a number; pr:null,
-# merged:false, rebased_after:[] as JSON types; run block carrying the suggested_ledger).
-# Every untrusted value enters jq as a --arg binding (jq does the JSON-safe escaping), so
-# a metachar-bearing worktree_path/ledger is serialized as inert string content, never
-# manifest structure.
-write_manifest_v2() {
-    local out="$1" name="$2" wt="$3" branch="$4" sess="$5" status="$6" ledger="$7"
+# GT_BROOD_ID: the v4 top-level brood_id every projection manifest carries. It must match
+# ^brood-[0-9a-f-]+$ (the exact shape the engine validates and emits as STRAIN field 2). All
+# projection manifests share this single id; per-case branch uniqueness (below) keeps the
+# ground-truth worktree map unambiguous.
+GT_BROOD_ID="brood-1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+
+# write_manifest_v4: author a manifest_version 4 brood manifest at $1 for ONE strain.
+# Args: $1=path $2=strain_name $3=worktree_path(display-only) $4=branch $5=tmux_session
+#       $6=status $7=suggested_id.
+# v4 SHAPE: top-level brood_id (^brood-[0-9a-f-]+$) + created_at; per-strain run block carries
+# run.suggested_id (the read side DERIVES the ledger path from the git-discovered worktree +
+# suggested_id) — run.suggested_ledger is DROPPED. worktree_path is RETAINED but display-only:
+# the engine no longer anchors the ledger on it (ground-truth worktree discovery via git).
+# Every untrusted value enters jq as a --arg binding (jq does the JSON-safe escaping).
+write_manifest_v4() {
+    local out="$1" name="$2" wt="$3" branch="$4" sess="$5" status="$6" sid="$7"
     jq -n \
+        --arg brood_id "$GT_BROOD_ID" \
         --arg name "$name" \
         --arg wt "$wt" \
         --arg branch "$branch" \
         --arg sess "$sess" \
         --arg status "$status" \
-        --arg ledger "$ledger" \
+        --arg sid "$sid" \
         '{
-            manifest_version: 3,
-            brood_id: "2026-05-30T22-10-00Z",
+            manifest_version: 4,
+            brood_id: $brood_id,
+            created_at: "2026-05-30T22:10:00Z",
             base: "main",
             overlap_risk: "low",
             strains: [
@@ -924,14 +955,23 @@ write_manifest_v2() {
                     merged: false,
                     rebased_after: [],
                     run: {
-                        suggested_id: "run-id",
-                        suggested_ledger: $ledger,
+                        suggested_id: $sid,
                         workflow_hint: "standard-delivery"
                     }
                 }
             ],
             merge_order: []
         }' > "$out"
+}
+
+# gt_add_worktree: register a REAL git worktree on branch $2 at path $3 in the PROJ_WORKDIR
+# checkout, so `git worktree list --porcelain` (which the engine parses keyed by branch) reports
+# it as ground truth. The engine derives the ledger path UNDER this real worktree, so the worktree
+# must exist on disk and be checked out on exactly the strain's branch. Quiet; idempotent-ish (the
+# caller picks unique branch names per case to avoid cross-case duplicate-branch ambiguity).
+gt_add_worktree() {
+    local branch="$2" wtpath="$3"
+    git -C "$PROJ_WORKDIR" worktree add -q -b "$branch" "$wtpath" HEAD 2>/dev/null
 }
 
 # write_ledger: author a child run-ledger JSON at $1 with run.status=$2,
@@ -942,9 +982,10 @@ write_ledger() {
         '{run:{status:$rs}, state:{current:$sc}}' > "$out"
 }
 
-# strain_field: split the FIRST STRAIN line of $1 (entrypoint output) on TAB and echo
-# the field at 1-based index $2. Field order (1-based): 1=STRAIN 2=name 3=worktree_path
-# 4=branch 5=tmux_session 6=manifest_status 7=state_current 8=run_status.
+# strain_field: split the FIRST STRAIN line of $1 (entrypoint output) on TAB and echo the field at
+# 1-based index $2. NEW v4/#168 grammar (brood_id inserted as field 2 — every index after shifts
+# +1 vs the pre-#168 grammar): 1=STRAIN 2=brood_id 3=name 4=worktree_path 5=branch 6=tmux_session
+# 7=manifest_status 8=state_current 9=run_status.
 strain_field() {
     local output="$1" idx="$2"
     printf '%s\n' "$output" | awk -F'\t' -v i="$idx" '/^STRAIN\t/ { print $i; exit }'
@@ -955,62 +996,74 @@ count_strain_lines() {
     printf '%s\n' "$1" | grep -c '^STRAIN	' || true
 }
 
-# ── Projection 1: happy path — v2 manifest + valid confined ledger on disk ───────
-# Asserts exit 0, exactly one STRAIN line, and exact TAB-delimited field values
-# including state_current=implement_step run_status=running projected from the ledger.
+# ── GROUND-TRUTH WORKTREE DISCOVERY (#168, locked OQ3) ───────────────────────────
+# Under #168 the engine NO LONGER anchors the child ledger on the manifest's untrusted
+# worktree_path (now display-only). It discovers each strain's REAL worktree from
+# `git worktree list --porcelain` keyed by the strain's branch, then derives the ledger as
+# <git-worktree>/.hivemind/runs/<suggested_id>/state.json. So every projection case that wants a
+# ledger projected MUST register a real worktree on the strain's branch (gt_add_worktree) and place
+# the ledger under it. A manifest branch with NO live worktree fails CLOSED (ledger columns MISSING),
+# never falling back to the manifest worktree_path. Each case uses a UNIQUE branch so the shared
+# PROJ_WORKDIR worktree map stays unambiguous (a branch on two worktrees is a duplicate -> MALFORMED).
+
+# ── Projection 1: happy path — v4 manifest + ground-truth worktree + valid ledger ─
+# Registers a real worktree on the strain branch; the ledger lives under the GT worktree at
+# .hivemind/runs/<suggested_id>/state.json. Asserts exit 0, one STRAIN line, brood_id field, and
+# state_current=implement_step run_status=running projected from the GT-derived ledger.
 assert_proj_happy_path() {
-    local name="PROJ-HAPPY:v2-manifest-valid-ledger"
+    local name="PROJ-HAPPY:v4-manifest-ground-truth-worktree-valid-ledger"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/happy"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/happy" sid="$GT_BROOD_ID--happy"
     local wt="$wd/wt"
-    mkdir -p "$wt/.hivemind/runs/run-id"
-    write_ledger "$wt/.hivemind/runs/run-id/state.json" running implement_step
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
     local manifest="$wd/manifest.json"
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
-        "$wt/.hivemind/runs/run-id/state.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     local lines; lines="$(count_strain_lines "$out")"
     if [[ "$rc" -eq 0 \
           && "$lines" -eq 1 \
-          && "$(strain_field "$out" 2)" == "api" \
-          && "$(strain_field "$out" 3)" == "$wt" \
-          && "$(strain_field "$out" 4)" == "feature/api-slice" \
-          && "$(strain_field "$out" 5)" == "brood-api" \
-          && "$(strain_field "$out" 6)" == "running" \
-          && "$(strain_field "$out" 7)" == "implement_step" \
-          && "$(strain_field "$out" 8)" == "running" ]]; then
-        pass "$name" "exit 0; one STRAIN line; state_current=implement_step run_status=running"
+          && "$(strain_field "$out" 2)" == "$GT_BROOD_ID" \
+          && "$(strain_field "$out" 3)" == "api" \
+          && "$(strain_field "$out" 4)" == "$wt" \
+          && "$(strain_field "$out" 5)" == "$branch" \
+          && "$(strain_field "$out" 6)" == "brood-api" \
+          && "$(strain_field "$out" 7)" == "running" \
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; one STRAIN line; brood_id first; state_current=implement_step run_status=running from GT worktree"
     else
-        failed "$name" "rc=$rc lines=$lines fields=[$(strain_field "$out" 2)|$(strain_field "$out" 3)|$(strain_field "$out" 4)|$(strain_field "$out" 5)|$(strain_field "$out" 6)|$(strain_field "$out" 7)|$(strain_field "$out" 8)]"
+        failed "$name" "rc=$rc lines=$lines fields=[$(strain_field "$out" 2)|$(strain_field "$out" 3)|$(strain_field "$out" 4)|$(strain_field "$out" 5)|$(strain_field "$out" 6)|$(strain_field "$out" 7)|$(strain_field "$out" 8)|$(strain_field "$out" 9)]"
     fi
 }
 
-# ── Projection 2: v1 manifest (no run: block) → ledger scalars MISSING ───────────
-# A manifest with no run: block yields an empty suggested_ledger pointer; both ledger
-# scalars render MISSING (never read). Static manifest fields still project; exit 0.
+# ── Projection 2: v4 manifest with NO run block → ledger scalars MISSING ──────────
+# A strain with no run block has no suggested_id, so the engine cannot derive a ledger path even
+# though a live worktree exists: both ledger scalars render MISSING (never read). Static manifest
+# fields still project; exit 0. Proves the MISSING gate is suggested_id absence, not worktree absence.
 assert_proj_v1_no_run_block() {
-    local name="PROJ-V1:no-run-block-ledger-missing"
-    ensure_proj_workdir; local wd="$PROJ_WORKDIR/v1"
+    local name="PROJ-NORUN:no-run-block-ledger-missing"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/norun"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/norun"
     local wt="$wd/wt"
-    mkdir -p "$wt"
+    gt_add_worktree "" "$branch" "$wt"
     local manifest="$wd/manifest.json"
-    # A v1-shape manifest: NO run block, so the suggested_ledger pointer is absent and both
-    # ledger scalars must render MISSING (never read). manifest_version omitted intentionally.
-    jq -n --arg wt "$wt" \
+    # No run block at all -> suggested_id absent -> ledger MISSING despite the live worktree.
+    jq -n --arg brood_id "$GT_BROOD_ID" --arg wt "$wt" --arg branch "$branch" \
         '{
-            brood_id: "2026-05-30T22-10-00Z",
+            manifest_version: 4,
+            brood_id: $brood_id,
+            created_at: "2026-05-30T22:10:00Z",
             base: "main",
             overlap_risk: "low",
             strains: [
-                {
-                    name: "api",
-                    description: "test strain",
-                    worktree_path: $wt,
-                    branch: "feature/api-slice",
-                    tmux_session: "brood-api",
-                    status: "running"
-                }
+                { name: "api", description: "test strain", worktree_path: $wt,
+                  branch: $branch, tmux_session: "brood-api", status: "running" }
             ],
             merge_order: []
         }' > "$manifest"
@@ -1018,208 +1071,272 @@ assert_proj_v1_no_run_block() {
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 2)" == "api" \
-          && "$(strain_field "$out" 3)" == "$wt" \
-          && "$(strain_field "$out" 7)" == "MISSING" \
-          && "$(strain_field "$out" 8)" == "MISSING" ]]; then
-        pass "$name" "exit 0; static fields project; ledger scalars MISSING (no run: block)"
+          && "$(strain_field "$out" 3)" == "api" \
+          && "$(strain_field "$out" 4)" == "$wt" \
+          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 9)" == "MISSING" ]]; then
+        pass "$name" "exit 0; static fields project; ledger scalars MISSING (no run block -> no suggested_id)"
     else
-        failed "$name" "rc=$rc name=$(strain_field "$out" 2) wt=$(strain_field "$out" 3) state=$(strain_field "$out" 7) run=$(strain_field "$out" 8)"
+        failed "$name" "rc=$rc name=$(strain_field "$out" 3) wt=$(strain_field "$out" 4) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
     fi
 }
 
-# ── Projection 3: ledger pointer present but file absent → MISSING ───────────────
-# A well-formed pointer to a path that does not exist on disk → both scalars MISSING.
+# ── Projection 3: GT worktree + suggested_id present but ledger file absent → MISSING ─
+# A live worktree + a valid suggested_id, but the derived state.json does not exist on disk →
+# both scalars MISSING (genuine absence; child has not initialized its ledger yet).
 assert_proj_missing_ledger_file() {
-    local name="PROJ-MISSING:pointer-present-file-absent"
+    local name="PROJ-MISSING:gt-worktree-ledger-file-absent"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/missing"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/missing" sid="$GT_BROOD_ID--missing"
     local wt="$wd/wt"
-    mkdir -p "$wt/.hivemind/runs/run-id"   # dir exists, state.json does NOT
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"   # dir exists, state.json does NOT
     local manifest="$wd/manifest.json"
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
-        "$wt/.hivemind/runs/run-id/state.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 7)" == "MISSING" \
-          && "$(strain_field "$out" 8)" == "MISSING" ]]; then
-        pass "$name" "exit 0; absent ledger file → state_current/run_status MISSING"
+          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 9)" == "MISSING" ]]; then
+        pass "$name" "exit 0; absent ledger file under GT worktree -> state_current/run_status MISSING"
     else
-        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
     fi
 }
 
-# ── Projection 4: malformed run.status, valid state.current → per-scalar independence ──
-# run.status=frobnicate (out-of-enum) → run_status MALFORMED; a VALID state.current
-# still projects (the two scalars are independent).
+# ── Projection 3b: NO live worktree for the branch → fail-closed (MISSING) ────────
+# The manifest branch matches NO worktree git reports — even though the manifest carries a perfectly
+# valid worktree_path and suggested_id. The engine MUST fail closed: ledger columns MISSING, and it
+# must NEVER fall back to reading under the manifest's worktree_path. We prove the no-fallback by
+# planting a valid ledger UNDER the manifest worktree_path and asserting its sentinel never surfaces.
+assert_proj_no_live_worktree() {
+    local name="PROJ-NOWT:branch-without-live-worktree-fail-closed"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/nowt"
+    local wt="$wd/wt"
+    # wt is a PLAIN dir (NOT a registered git worktree) carrying a valid-looking ledger whose
+    # sentinel would surface IF the engine fell back to the manifest worktree_path. It must not.
+    mkdir -p "$wt/.hivemind/runs/$GT_BROOD_ID--ghost"
+    write_ledger "$wt/.hivemind/runs/$GT_BROOD_ID--ghost/state.json" running ghostsentinel
+    local manifest="$wd/manifest.json"
+    # Branch that no `git worktree add` ever registered.
+    write_manifest_v4 "$manifest" "api" "$wt" "strain/$GT_BROOD_ID/ghost" "brood-api" "running" \
+        "$GT_BROOD_ID--ghost"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 9)" == "MISSING" ]] \
+          && ! printf '%s' "$out" | grep -q 'ghostsentinel'; then
+        pass "$name" "exit 0; no live worktree -> ledger MISSING; manifest-worktree_path NOT used as fallback (sentinel absent)"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9); leaked=$(printf '%s' "$out" | grep -q ghostsentinel && echo yes || echo no)"
+    fi
+}
+
+# ── Projection 3c: branch on TWO worktrees (duplicate) → MALFORMED ───────────────
+# A branch git reports on more than one worktree is ambiguous ground truth. The engine records it as
+# a duplicate and renders the ledger columns MALFORMED for the matching strain (never an arbitrary
+# pick). We force a duplicate by adding the same branch to a second worktree path with --force.
+assert_proj_duplicate_branch() {
+    local name="PROJ-DUPBRANCH:branch-on-two-worktrees-malformed"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/dup"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/dup" sid="$GT_BROOD_ID--dup"
+    local wt_a="$wd/wt-a" wt_b="$wd/wt-b"
+    gt_add_worktree "" "$branch" "$wt_a"
+    # Force a SECOND worktree checked out on the SAME branch so `git worktree list` reports the
+    # branch twice. --force bypasses git's "already checked out" guard for exactly this duplicate.
+    git -C "$PROJ_WORKDIR" worktree add -q --force "$wt_b" "$branch" 2>/dev/null
+    mkdir -p "$wt_a/.hivemind/runs/$sid"
+    write_ledger "$wt_a/.hivemind/runs/$sid/state.json" running implement_step
+    local manifest="$wd/manifest.json"
+    write_manifest_v4 "$manifest" "api" "$wt_a" "$branch" "brood-api" "running" "$sid"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    # Only assert MALFORMED if the duplicate actually registered (git may decline on some versions).
+    local dupcount; dupcount="$(git -C "$PROJ_WORKDIR" worktree list --porcelain 2>/dev/null | grep -c "branch refs/heads/$branch")"
+    if [[ "$dupcount" -lt 2 ]]; then
+        skip "$name" "could not register a duplicate-branch worktree on this git ($dupcount checkout(s)); cannot exercise the dup guard"
+        return
+    fi
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 8)" == "MALFORMED" \
+          && "$(strain_field "$out" 9)" == "MALFORMED" ]]; then
+        pass "$name" "exit 0; duplicate branch on two worktrees -> ledger columns MALFORMED (no arbitrary pick)"
+    else
+        failed "$name" "rc=$rc dupcount=$dupcount state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+    fi
+}
+
+# ── Projection 4: malformed run.status, valid state.current → per-scalar independence ─
 assert_proj_malformed_run_status() {
     local name="PROJ-MALFORMED-RUN:bad-run-status-good-state-current"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/malrun"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/malrun" sid="$GT_BROOD_ID--malrun"
     local wt="$wd/wt"
-    mkdir -p "$wt/.hivemind/runs/run-id"
-    write_ledger "$wt/.hivemind/runs/run-id/state.json" frobnicate implement_step
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" frobnicate implement_step
     local manifest="$wd/manifest.json"
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
-        "$wt/.hivemind/runs/run-id/state.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 8)" == "MALFORMED" \
-          && "$(strain_field "$out" 7)" == "implement_step" ]]; then
+          && "$(strain_field "$out" 9)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "implement_step" ]]; then
         pass "$name" "exit 0; run_status=MALFORMED while state_current=implement_step (per-scalar independence)"
     else
-        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
     fi
 }
 
 # ── Projection 5: injection state.current → MALFORMED, no side-effect ─────────────
-# state.current carries a command-substitution payload `$(touch <marker>)`. The
-# projector validates against ^[a-z0-9_]+$ → MALFORMED. ASSERT the marker file was
-# NEVER created (no command execution).
 assert_proj_injection_state_current() {
     local name="PROJ-INJECT-STATE:state-current-command-sub-neutralized"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/injstate"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/injstate" sid="$GT_BROOD_ID--injstate"
     local wt="$wd/wt"
-    mkdir -p "$wt/.hivemind/runs/run-id"
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
     local marker="$wd/pwn_state_marker"
-    # state.current is a literal command-substitution string; it is DATA in the JSON.
-    write_ledger "$wt/.hivemind/runs/run-id/state.json" running "\$(touch $marker)"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running "\$(touch $marker)"
     local manifest="$wd/manifest.json"
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
-        "$wt/.hivemind/runs/run-id/state.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 7)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MALFORMED" \
           && ! -e "$marker" ]]; then
         pass "$name" "exit 0; state_current=MALFORMED; no command-sub side-effect ($marker absent)"
     else
-        failed "$name" "rc=$rc state=$(strain_field "$out" 7) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
     fi
 }
 
-# ── Projection 6: metachar worktree_path → ledger scalars MALFORMED, no side-effect ──
-# worktree_path carries `$(...)` metachars → fails the allowlist; the script cannot
-# confine a ledger under an unsafe worktree, so wt_out + both ledger scalars render
-# MALFORMED and NO path derivation/read occurs. ASSERT no command-execution side-effect.
+# ── Projection 6: metachar worktree_path (display-only) → field MALFORMED, no read ─
+# worktree_path is DISPLAY-ONLY now; a `$(...)` metachar value fails the path display gate -> the
+# worktree_path COLUMN renders MALFORMED. No live worktree is registered for this branch, so the
+# ledger fails closed to MISSING. ASSERT no command-execution side-effect from the metachar path.
 assert_proj_metachar_worktree() {
-    local name="PROJ-INJECT-WT:metachar-worktree-path-neutralized"
+    local name="PROJ-INJECT-WT:metachar-display-worktree-path-neutralized"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/metawt"
     mkdir -p "$wd"
     local marker="$wd/pwn_wt_marker"
     local manifest="$wd/manifest.json"
-    # worktree_path AND suggested_ledger both carry command-sub payloads. Pure DATA.
-    write_manifest_v2 "$manifest" "api" "/tmp/\$(touch $marker)/wt" "feature/api-slice" \
-        "brood-api" "running" "/tmp/\$(touch $marker)/wt/.hivemind/runs/run-id/state.json"
+    # worktree_path carries a command-sub payload; branch matches no live worktree (fail-closed).
+    write_manifest_v4 "$manifest" "api" "/tmp/\$(touch $marker)/wt" "strain/$GT_BROOD_ID/metawt" \
+        "brood-api" "running" "$GT_BROOD_ID--metawt"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 3)" == "MALFORMED" \
-          && "$(strain_field "$out" 7)" == "MALFORMED" \
-          && "$(strain_field "$out" 8)" == "MALFORMED" \
+          && "$(strain_field "$out" 4)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 9)" == "MISSING" \
           && ! -e "$marker" ]]; then
-        pass "$name" "exit 0; worktree_path+ledger MALFORMED; no command-sub side-effect ($marker absent)"
+        pass "$name" "exit 0; display worktree_path MALFORMED; ledger MISSING (no live worktree); no command-sub side-effect"
     else
-        failed "$name" "rc=$rc wt=$(strain_field "$out" 3) state=$(strain_field "$out" 7) run=$(strain_field "$out" 8) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
+        failed "$name" "rc=$rc wt=$(strain_field "$out" 4) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
     fi
 }
 
-# ── Projection 7: symlinked state.json leaf → MALFORMED, target NOT read ──────────
-# A REAL symlink at the confined leaf path points at an external file holding a VALID
-# ledger. The leaf guard (hivemind_assert_file_contained) rejects the non-regular leaf
-# → MALFORMED; the symlink target's content (a sentinel state.current) must NOT appear.
+# ── Projection 7: symlinked state.json leaf under GT worktree → MALFORMED, target NOT read ─
 assert_proj_symlink_leaf() {
     local name="PROJ-SYMLINK-LEAF:symlinked-state-json-rejected"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/symleaf"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/symleaf" sid="$GT_BROOD_ID--symleaf"
     local wt="$wd/wt"
-    mkdir -p "$wt/.hivemind/runs/run-id"
-    # External target holds a VALID-looking ledger whose state.current is a sentinel that
-    # would project cleanly IF the symlink were followed. It must NOT appear in output.
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
     local target="$wd/external_state.json"
     write_ledger "$target" running leakedsentinel
-    ln -s "$target" "$wt/.hivemind/runs/run-id/state.json"
+    ln -s "$target" "$wt/.hivemind/runs/$sid/state.json"
     local manifest="$wd/manifest.json"
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
-        "$wt/.hivemind/runs/run-id/state.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 7)" == "MALFORMED" \
-          && "$(strain_field "$out" 8)" == "MALFORMED" ]] \
+          && "$(strain_field "$out" 8)" == "MALFORMED" \
+          && "$(strain_field "$out" 9)" == "MALFORMED" ]] \
           && ! printf '%s' "$out" | grep -q 'leakedsentinel'; then
-        pass "$name" "exit 0; symlinked leaf rejected → MALFORMED; symlink target content not leaked"
+        pass "$name" "exit 0; symlinked leaf rejected -> MALFORMED; symlink target content not leaked"
     else
-        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8); leaked=$(printf '%s' "$out" | grep -q leakedsentinel && echo yes || echo no)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9); leaked=$(printf '%s' "$out" | grep -q leakedsentinel && echo yes || echo no)"
     fi
 }
 
 # ── Projection 7b: present-but-UNREADABLE confined ledger leaf → MALFORMED ────────
-# A REGULAR confined state.json that exists but is unreadable (mode 000). The leaf is
-# NOT a symlink and NOT absent, so the read site reaches `cat`, which FAILS; the post-
-# failure `[ -e ]` re-test confirms the file is present → both scalars MALFORMED (never
-# MISSING). This locks the iteration-6/7 read-failure contract: present-but-unreadable
-# must NOT be downgraded to the benign absent (MISSING) class. Absent-file control is
-# covered by PROJ-MISSING above.
 assert_proj_unreadable_ledger() {
     local name="PROJ-UNREADABLE-LEDGER:present-but-unreadable-leaf-malformed"
-    # chmod 000 does not restrict root; skip rather than spuriously fail under root.
     if [[ "$(id -u)" -eq 0 ]]; then
         skip "$name" "running as root: mode 000 does not block reads"
         return 0
     fi
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/unreadledger"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/unread" sid="$GT_BROOD_ID--unread"
     local wt="$wd/wt"
-    mkdir -p "$wt/.hivemind/runs/run-id"
-    local leaf="$wt/.hivemind/runs/run-id/state.json"
-    write_ledger "$leaf" running implement_step   # valid content...
-    chmod 000 "$leaf"                              # ...but unreadable
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    local leaf="$wt/.hivemind/runs/$sid/state.json"
+    write_ledger "$leaf" running implement_step
+    chmod 000 "$leaf"
     local manifest="$wd/manifest.json"
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
-        "$leaf"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
-    # Restore perms so workdir cleanup can remove the fixture.
     chmod 644 "$leaf" 2>/dev/null || true
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 7)" == "MALFORMED" \
-          && "$(strain_field "$out" 8)" == "MALFORMED" ]] \
+          && "$(strain_field "$out" 8)" == "MALFORMED" \
+          && "$(strain_field "$out" 9)" == "MALFORMED" ]] \
           && ! printf '%s' "$out" | grep -q 'implement_step'; then
-        pass "$name" "exit 0; present-but-unreadable ledger → MALFORMED (not MISSING); content not leaked"
+        pass "$name" "exit 0; present-but-unreadable ledger -> MALFORMED (not MISSING); content not leaked"
     else
-        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8); leaked=$(printf '%s' "$out" | grep -q implement_step && echo yes || echo no)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9); leaked=$(printf '%s' "$out" | grep -q implement_step && echo yes || echo no)"
     fi
 }
 
-# ── Projection 8: suggested_ledger escaping the worktree → MALFORMED, not read ────
-# An absolute pointer to /etc/passwd does not match the required
-# "<worktree>/.hivemind/runs/<id>/state.json" shape → MALFORMED, never read. ASSERT no
-# /etc/passwd bytes (the `root:` line) appear in output.
-assert_proj_ledger_escape() {
-    local name="PROJ-ESCAPE-LEDGER:pointer-escapes-worktree-rejected"
-    ensure_proj_workdir; local wd="$PROJ_WORKDIR/escledger"
+# ── Projection 8: suggested_id with '/' or '..' → MALFORMED, cannot escape runs/ ──
+# Only <suggested_id> is manifest-sourced in the derived ledger path
+# <git-worktree>/.hivemind/runs/<suggested_id>/state.json. It is gated as a STRICT single-component
+# identifier: a value containing '/' or '..' would let the derived path escape the worktree's runs/
+# dir, so it is rendered MALFORMED with NO path derivation/read. We plant a valid ledger at the
+# escape TARGET and assert its sentinel never surfaces.
+assert_proj_suggested_id_escape() {
+    local name="PROJ-ESCAPE-SID:suggested-id-path-escape-rejected"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/sidesc"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/sidesc"
     local wt="$wd/wt"
-    mkdir -p "$wt"
+    gt_add_worktree "" "$branch" "$wt"
+    # Plant a valid ledger at the path the escaping suggested_id `../escape` would resolve to,
+    # to prove the escape is blocked (sentinel must not surface).
+    mkdir -p "$wt/.hivemind/escape"
+    write_ledger "$wt/.hivemind/escape/state.json" running escapesentinel
     local manifest="$wd/manifest.json"
-    # Pointer is an absolute path well outside the worktree. allowlist-clean charset but
-    # wrong SHAPE → escape attempt → MALFORMED, no read.
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
-        "/etc/passwd"
+    # suggested_id contains '/' and '..' -> strict-identifier single-component gate rejects it.
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "../escape"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 7)" == "MALFORMED" \
-          && "$(strain_field "$out" 8)" == "MALFORMED" ]] \
-          && ! printf '%s' "$out" | grep -q 'root:'; then
-        pass "$name" "exit 0; escaping pointer → MALFORMED; no /etc/passwd bytes in output"
+          && "$(strain_field "$out" 8)" == "MALFORMED" \
+          && "$(strain_field "$out" 9)" == "MALFORMED" ]] \
+          && ! printf '%s' "$out" | grep -q 'escapesentinel'; then
+        pass "$name" "exit 0; suggested_id '../escape' -> MALFORMED; no escape read (sentinel absent)"
     else
-        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8); leaked=$(printf '%s' "$out" | grep -q 'root:' && echo yes || echo no)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9); leaked=$(printf '%s' "$out" | grep -q escapesentinel && echo yes || echo no)"
     fi
 }
 
@@ -1235,73 +1352,209 @@ assert_proj_missing_arg() {
     fi
 }
 
-# ── Projection 11: PRESENT but UNPARSEABLE manifest → MANIFEST_UNREADABLE sentinel + exit 2 ──
-# A manifest file that EXISTS but is torn / truncated / invalid JSON must NOT be silently
-# projected as zero strains (corruption indistinguishable from an empty brood, hiding live
-# children — Codex #172 P1 Finding 2). The entrypoint probes parseability after pre-flight and
-# emits exactly one MANIFEST_UNREADABLE<TAB><path> sentinel line to stdout, exiting nonzero (2),
-# with NO STRAIN lines. We capture stdout (run_project discards stderr).
+# ── Projection OUTENC: display field with '|' is output-encoded (no raw pipe) ─────
+# The engine output-encodes display cells: a worktree_path display value containing the Markdown
+# table-cell delimiter '|' must NOT be emitted as a RAW '|' (it is escaped, or the cell is MALFORMED).
+# We author a worktree_path carrying a literal '|' (path-class-clean inert quoted data) and a branch
+# with no live worktree (so the strain still projects, ledger MISSING). Assert no raw '|' in the cell.
+assert_proj_output_encoding() {
+    local name="PROJ-OUTENC:display-cell-pipe-encoded"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/outenc"
+    mkdir -p "$wd"
+    local manifest="$wd/manifest.json"
+    write_manifest_v4 "$manifest" "api" "/tmp/a|b/wt" "strain/$GT_BROOD_ID/outenc" \
+        "brood-api" "running" "$GT_BROOD_ID--outenc"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local wtcell; wtcell="$(strain_field "$out" 4)"
+    local raw_pipe=no
+    printf '%s' "$wtcell" | grep -qF '|' && raw_pipe=yes
+    # An escaped pipe '\|' contains the byte '|' too, so distinguish: raw == a '|' NOT preceded by a
+    # backslash. Strip escaped pipes first, then look for any surviving bare '|'.
+    local stripped; stripped="$(printf '%s' "$wtcell" | sed 's/\\|//g')"
+    local bare_pipe=no
+    printf '%s' "$stripped" | grep -qF '|' && bare_pipe=yes
+    if [[ "$rc" -eq 0 && "$(count_strain_lines "$out")" -eq 1 && "$bare_pipe" == "no" ]]; then
+        pass "$name" "exit 0; worktree_path display cell has no raw unescaped '|' (output-encoded): [$wtcell]"
+    else
+        failed "$name" "rc=$rc bare_pipe=$bare_pipe worktree_path cell: [$wtcell]"
+    fi
+}
+
+# ── Projection NOTMPDIR: read path needs no writable TMPDIR ──────────────────────
+assert_proj_no_tmpdir_needed() {
+    local name="PROJ-NOTMPDIR:read-path-needs-no-writable-tmpdir"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/notmpdir"
+    mkdir -p "$wd"
+    local br_a="strain/$GT_BROOD_ID/ntd-api" br_b="strain/$GT_BROOD_ID/ntd-web"
+    local sid_a="$GT_BROOD_ID--ntd-api" sid_b="$GT_BROOD_ID--ntd-web"
+    local wt_a="$wd/wt-api" wt_b="$wd/wt-web"
+    gt_add_worktree "" "$br_a" "$wt_a"
+    gt_add_worktree "" "$br_b" "$wt_b"
+    mkdir -p "$wt_a/.hivemind/runs/$sid_a" "$wt_b/.hivemind/runs/$sid_b"
+    write_ledger "$wt_a/.hivemind/runs/$sid_a/state.json" running implement_step
+    write_ledger "$wt_b/.hivemind/runs/$sid_b/state.json" complete review_step
+    local manifest="$wd/manifest.json"
+    jq -n \
+        --arg brood_id "$GT_BROOD_ID" \
+        --arg wt_a "$wt_a" --arg wt_b "$wt_b" \
+        --arg br_a "$br_a" --arg br_b "$br_b" \
+        --arg sid_a "$sid_a" --arg sid_b "$sid_b" \
+        '{
+            manifest_version: 4,
+            brood_id: $brood_id,
+            created_at: "2026-06-01T22:00:00Z",
+            base: "main",
+            overlap_risk: "low",
+            strains: [
+                { name: "api", description: "api strain", worktree_path: $wt_a, branch: $br_a,
+                  tmux_session: "brood-api", status: "running", pr: null, merged: false,
+                  rebased_after: [], run: { suggested_id: $sid_a, workflow_hint: "standard-delivery" } },
+                { name: "web", description: "web strain", worktree_path: $wt_b, branch: $br_b,
+                  tmux_session: "brood-web", status: "complete", pr: null, merged: false,
+                  rebased_after: [], run: { suggested_id: $sid_b, workflow_hint: "standard-delivery" } }
+            ],
+            merge_order: []
+        }' > "$manifest"
+
+    local bad_tmpdir="$wd/no_writable_tmpdir"
+    mkdir -p "$bad_tmpdir"; chmod 000 "$bad_tmpdir"
+    local out rc=0
+    out="$(TMPDIR="$bad_tmpdir" run_project "$manifest")" || rc=$?
+    chmod 0700 "$bad_tmpdir"
+    local lines; lines="$(count_strain_lines "$out")"
+    local api_name web_name
+    api_name="$(printf '%s\n' "$out" | awk -F'\t' '$3=="api"{print $3; exit}')"
+    web_name="$(printf '%s\n' "$out" | awk -F'\t' '$3=="web"{print $3; exit}')"
+    if [[ "$rc" -eq 0 && "$lines" -eq 2 && "$api_name" == "api" && "$web_name" == "web" ]]; then
+        pass "$name" "exit 0; 2 STRAIN lines (api, web) with non-writable TMPDIR — no writable-temp dependency"
+    else
+        failed "$name" "rc=$rc lines=$lines api_name=[$api_name] web_name=[$web_name]"
+    fi
+}
+
+# ── Projection SNAPSHOT: single-read consistency — both scalars from ONE snapshot ─
+assert_proj_single_snapshot_consistency() {
+    local name="PROJ-SNAPSHOT:single-read-both-scalars-consistent"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/snapshot"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/snap" sid="$GT_BROOD_ID--snap"
+    local wt="$wd/wt"
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" blocked review_step
+    local manifest="$wd/manifest.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local lines; lines="$(count_strain_lines "$out")"
+    if [[ "$rc" -eq 0 \
+          && "$lines" -eq 1 \
+          && "$(strain_field "$out" 8)" == "review_step" \
+          && "$(strain_field "$out" 9)" == "blocked" ]]; then
+        pass "$name" "exit 0; one STRAIN line; both scalars from single snapshot (state=review_step run=blocked)"
+    else
+        failed "$name" "rc=$rc lines=$lines state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+    fi
+}
+
+# ── Projection 10: multi-strain — one healthy + one malformed state, independent ──
+assert_proj_multi_strain() {
+    local name="PROJ-MULTI:two-strains-independent-projection"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/multi"
+    mkdir -p "$wd"
+    local br_a="strain/$GT_BROOD_ID/multi-api" br_b="strain/$GT_BROOD_ID/multi-web"
+    local sid_a="$GT_BROOD_ID--multi-api" sid_b="$GT_BROOD_ID--multi-web"
+    local wt_a="$wd/wt-api" wt_b="$wd/wt-web"
+    gt_add_worktree "" "$br_a" "$wt_a"
+    gt_add_worktree "" "$br_b" "$wt_b"
+    mkdir -p "$wt_a/.hivemind/runs/$sid_a" "$wt_b/.hivemind/runs/$sid_b"
+    write_ledger "$wt_a/.hivemind/runs/$sid_a/state.json" running implement_step
+    write_ledger "$wt_b/.hivemind/runs/$sid_b/state.json" running "State With Spaces"
+    local manifest="$wd/manifest.json"
+    jq -n \
+        --arg brood_id "$GT_BROOD_ID" \
+        --arg wt_a "$wt_a" --arg wt_b "$wt_b" \
+        --arg br_a "$br_a" --arg br_b "$br_b" \
+        --arg sid_a "$sid_a" --arg sid_b "$sid_b" \
+        '{
+            manifest_version: 4,
+            brood_id: $brood_id,
+            created_at: "2026-05-30T22:10:00Z",
+            base: "main",
+            overlap_risk: "low",
+            strains: [
+                { name: "api", description: "strain a", worktree_path: $wt_a, branch: $br_a,
+                  tmux_session: "brood-api", status: "running",
+                  run: { suggested_id: $sid_a, workflow_hint: "standard-delivery" } },
+                { name: "web", description: "strain b", worktree_path: $wt_b, branch: $br_b,
+                  tmux_session: "brood-web", status: "running",
+                  run: { suggested_id: $sid_b, workflow_hint: "standard-delivery" } }
+            ],
+            merge_order: []
+        }' > "$manifest"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local lines; lines="$(count_strain_lines "$out")"
+    local api_state web_state
+    api_state="$(printf '%s\n' "$out" | awk -F'\t' '$3=="api"{print $8; exit}')"
+    web_state="$(printf '%s\n' "$out" | awk -F'\t' '$3=="web"{print $8; exit}')"
+    if [[ "$rc" -eq 0 && "$lines" -eq 2 \
+          && "$api_state" == "implement_step" && "$web_state" == "MALFORMED" ]]; then
+        pass "$name" "exit 0; 2 STRAIN lines; api state=implement_step, web state=MALFORMED (independent)"
+    else
+        failed "$name" "rc=$rc lines=$lines api_state=$api_state web_state=$web_state"
+    fi
+}
+
+# ── Projection 11: PRESENT but UNPARSEABLE manifest → MANIFEST_UNREADABLE + exit 2 ─
 assert_proj_unreadable_manifest() {
     local name="PROJ-UNREADABLE:present-but-invalid-json-sentinel"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/unreadable"
     mkdir -p "$wd"
     local manifest="$wd/manifest.json"
-    # Torn / truncated JSON: a valid opening that jq cannot parse. Pure DATA written with LF.
-    printf '{"manifest_version":3,"strains":[{"name":"api",\n' > "$manifest"
+    printf '{"manifest_version":4,"strains":[{"name":"api",\n' > "$manifest"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     local strain_lines; strain_lines="$(count_strain_lines "$out")"
     local sentinel_path
     sentinel_path="$(printf '%s\n' "$out" | awk -F'\t' '/^MANIFEST_UNREADABLE\t/ { print $2; exit }')"
-    if [[ "$rc" -eq 2 \
-          && "$strain_lines" -eq 0 \
-          && "$sentinel_path" == "$manifest" ]]; then
+    if [[ "$rc" -eq 2 && "$strain_lines" -eq 0 && "$sentinel_path" == "$manifest" ]]; then
         pass "$name" "exit 2; MANIFEST_UNREADABLE sentinel emitted (path=$sentinel_path); no STRAIN lines"
     else
-        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path] expected exit 2 + sentinel + 0 strains"
+        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path]"
     fi
 }
 
 # ── Projection 12: VALID empty manifest → exit 0, no STRAIN lines, NO sentinel ───
-# A genuinely empty-but-VALID manifest (`{"strains":[]}`) is a legit empty brood: exit 0,
-# zero STRAIN lines, and NO MANIFEST_UNREADABLE sentinel. This proves the parseability probe
-# distinguishes "present but unparseable" (Projection 11) from "valid empty brood".
 assert_proj_valid_empty_manifest() {
     local name="PROJ-EMPTY-OK:valid-empty-manifest-exit0-no-sentinel"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/emptyok"
     mkdir -p "$wd"
     local manifest="$wd/manifest.json"
-    jq -n '{manifest_version:3, brood_id:"2026-05-30T22-10-00Z", base:"main", overlap_risk:"low", strains:[], merge_order:[]}' > "$manifest"
+    jq -n --arg brood_id "$GT_BROOD_ID" '{manifest_version:4, brood_id:$brood_id, created_at:"2026-05-30T22:10:00Z", base:"main", overlap_risk:"low", strains:[], merge_order:[]}' > "$manifest"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     local strain_lines; strain_lines="$(count_strain_lines "$out")"
     local sentinel_seen=no
     printf '%s\n' "$out" | grep -q '^MANIFEST_UNREADABLE	' && sentinel_seen=yes
-    if [[ "$rc" -eq 0 \
-          && "$strain_lines" -eq 0 \
-          && "$sentinel_seen" == "no" ]]; then
-        pass "$name" "exit 0; valid empty manifest → no STRAIN lines, no MANIFEST_UNREADABLE sentinel"
+    if [[ "$rc" -eq 0 && "$strain_lines" -eq 0 && "$sentinel_seen" == "no" ]]; then
+        pass "$name" "exit 0; valid empty manifest -> no STRAIN lines, no MANIFEST_UNREADABLE sentinel"
     else
-        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_seen=$sentinel_seen expected exit 0 + 0 strains + no sentinel"
+        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_seen=$sentinel_seen"
     fi
 }
 
-# ── Projection 13: VALID-JSON-but-WRONG-SHAPE manifest → MANIFEST_UNREADABLE + exit 2 ──
-# A manifest that is syntactically VALID JSON but structurally wrong-shape ({}, {"strains":null},
-# {"strains":"x"}, {"strains":[1]} — a non-object element) must NOT be silently projected as zero
-# strains. The old `jq empty` probe was syntax-only: all four passed it, then `.strains[]?.name`
-# yielded nothing → projected as a legitimate EMPTY brood, hiding live children. The single
-# shape-validating read now requires `.strains` to EXIST as an ARRAY with every element an
-# OBJECT; each of these fails it → MANIFEST_UNREADABLE sentinel + exit 2 (joining the wrong-shape
-# class to the syntactically-invalid class). Pure DATA written with LF.
+# ── Projection 13: VALID-JSON-but-WRONG-SHAPE manifest → MANIFEST_UNREADABLE + exit 2 ─
 assert_proj_wrong_shape_unreadable() {
     local name="PROJ-WRONGSHAPE:valid-json-wrong-shape-unreadable"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/wrongshape"
     mkdir -p "$wd"
-    # Each is valid JSON but structurally wrong: missing .strains, null .strains, non-array
-    # .strains, and an array whose element is not an object.
     local cases=( '{}' '{"strains":null}' '{"strains":"x"}' '{"strains":[1]}' )
     local all_ok=yes detail=""
     local i=0
@@ -1315,24 +1568,18 @@ assert_proj_wrong_shape_unreadable() {
         sentinel_path="$(printf '%s\n' "$out" | awk -F'\t' '/^MANIFEST_UNREADABLE\t/ { print $2; exit }')"
         if [[ "$rc" -ne 2 || "$strain_lines" -ne 0 || "$sentinel_path" != "$manifest" ]]; then
             all_ok=no
-            detail+=" [$body → rc=$rc lines=$strain_lines sentinel=$sentinel_path]"
+            detail+=" [$body -> rc=$rc lines=$strain_lines sentinel=$sentinel_path]"
         fi
         i=$((i + 1))
     done
     if [[ "$all_ok" == "yes" ]]; then
-        pass "$name" "all 4 wrong-shape manifests → exit 2 + MANIFEST_UNREADABLE + 0 STRAIN lines"
+        pass "$name" "all 4 wrong-shape manifests -> exit 2 + MANIFEST_UNREADABLE + 0 STRAIN lines"
     else
         failed "$name" "expected exit 2 + sentinel + 0 strains for each;$detail"
     fi
 }
 
-# ── Projection 14: object element missing `name` → projects (per-strain MALFORMED), NOT unreadable ──
-# A strain element that IS a JSON object but lacks `name` ({"strains":[{}]}) passes SHAPE
-# validation (it is an object) — per-strain field degradation is the existing contract, distinct
-# from a whole-manifest structural failure. The strain projects with a MALFORMED name token (the
-# presentation class rejects the empty name) and exit 0, NOT MANIFEST_UNREADABLE. This proves the
-# wrong-shape verdict (Projection 13) fires on non-object elements, not on object elements that
-# merely lack fields.
+# ── Projection 14: object element missing `name` → projects (per-strain MALFORMED) ─
 assert_proj_object_element_missing_name() {
     local name="PROJ-OBJNONAME:object-element-no-name-projects-malformed"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/objnoname"
@@ -1345,224 +1592,57 @@ assert_proj_object_element_missing_name() {
     local strain_lines; strain_lines="$(count_strain_lines "$out")"
     local sentinel_seen=no
     printf '%s\n' "$out" | grep -q '^MANIFEST_UNREADABLE	' && sentinel_seen=yes
-    if [[ "$rc" -eq 0 \
-          && "$strain_lines" -eq 1 \
-          && "$sentinel_seen" == "no" \
-          && "$(strain_field "$out" 2)" == "MALFORMED" ]]; then
-        pass "$name" "exit 0; one STRAIN line; name=MALFORMED; no MANIFEST_UNREADABLE sentinel (per-strain degradation, not structural failure)"
+    # name is now field 3 (brood_id field 2). brood_id is absent in this minimal manifest -> field 2
+    # renders MALFORMED; name (field 3) also MALFORMED (presentation rejects the empty name).
+    if [[ "$rc" -eq 0 && "$strain_lines" -eq 1 && "$sentinel_seen" == "no" \
+          && "$(strain_field "$out" 3)" == "MALFORMED" ]]; then
+        pass "$name" "exit 0; one STRAIN line; name=MALFORMED; no sentinel (per-strain degradation)"
     else
-        failed "$name" "rc=$rc lines=$strain_lines sentinel_seen=$sentinel_seen name=$(strain_field "$out" 2) expected exit 0 + 1 strain + name MALFORMED + no sentinel"
+        failed "$name" "rc=$rc lines=$strain_lines sentinel_seen=$sentinel_seen name=$(strain_field "$out" 3)"
     fi
 }
 
-# ── Projection NOTMPDIR: read path needs no writable TMPDIR ──────────────────────
-# brood-status-project.sh was converted from here-strings to `printf | jq` pipes so
-# the read path no longer requires a writable $TMPDIR (here-strings spill to a temp
-# file when the string is above the kernel's pipe-buffer threshold). This case locks
-# that property by running the entrypoint with TMPDIR pointed at a NON-WRITABLE path
-# and asserting that it STILL projects both strains (exit 0, two STRAIN lines).
-#
-# Mechanism: create a dir and chmod 000 it so no process can write into it, then
-# restore 0700 before teardown so rm -rf can remove it. Using a dir we own and
-# chmod ourselves is CI-safe (ubuntu-latest, non-root) — no /proc or system paths.
-assert_proj_no_tmpdir_needed() {
-    local name="PROJ-NOTMPDIR:read-path-needs-no-writable-tmpdir"
-    ensure_proj_workdir; local wd="$PROJ_WORKDIR/notmpdir"
-    local wt_a="$wd/wt-api" wt_b="$wd/wt-web"
-    mkdir -p "$wt_a/.hivemind/runs/run-id" "$wt_b/.hivemind/runs/run-id"
-    write_ledger "$wt_a/.hivemind/runs/run-id/state.json" running implement_step
-    write_ledger "$wt_b/.hivemind/runs/run-id/state.json" done review_step
-    local manifest="$wd/manifest.json"
-    jq -n \
-        --arg wt_a "$wt_a" \
-        --arg wt_b "$wt_b" \
-        --arg ledger_a "$wt_a/.hivemind/runs/run-id/state.json" \
-        --arg ledger_b "$wt_b/.hivemind/runs/run-id/state.json" \
-        '{
-            manifest_version: 3,
-            brood_id: "2026-06-01T22-00-00Z",
-            base: "main",
-            overlap_risk: "low",
-            strains: [
-                {
-                    name: "api",
-                    description: "api strain",
-                    worktree_path: $wt_a,
-                    branch: "feature/api-slice",
-                    tmux_session: "brood-api",
-                    status: "running",
-                    pr: null,
-                    merged: false,
-                    rebased_after: [],
-                    run: {
-                        suggested_id: "run-id",
-                        suggested_ledger: $ledger_a,
-                        workflow_hint: "standard-delivery"
-                    }
-                },
-                {
-                    name: "web",
-                    description: "web strain",
-                    worktree_path: $wt_b,
-                    branch: "feature/web-slice",
-                    tmux_session: "brood-web",
-                    status: "done",
-                    pr: null,
-                    merged: false,
-                    rebased_after: [],
-                    run: {
-                        suggested_id: "run-id",
-                        suggested_ledger: $ledger_b,
-                        workflow_hint: "standard-delivery"
-                    }
-                }
-            ],
-            merge_order: []
-        }' > "$manifest"
-
-    # Create a non-writable TMPDIR: chmod 000 prevents any process from creating files
-    # inside it. Restore 0700 before the function returns so cleanup()'s rm -rf can
-    # descend into and remove it (rm -rf on a 000 dir fails on non-root).
-    local bad_tmpdir="$wd/no_writable_tmpdir"
-    mkdir -p "$bad_tmpdir"
-    chmod 000 "$bad_tmpdir"
-
-    local out rc=0
-    out="$(TMPDIR="$bad_tmpdir" run_project "$manifest")" || rc=$?
-
-    # Restore perms immediately after the run so teardown can remove the dir.
-    chmod 0700 "$bad_tmpdir"
-
-    local lines; lines="$(count_strain_lines "$out")"
-    local api_name web_name
-    api_name="$(printf '%s\n' "$out" | awk -F'\t' '$2=="api"{print $2; exit}')"
-    web_name="$(printf '%s\n' "$out" | awk -F'\t' '$2=="web"{print $2; exit}')"
-    if [[ "$rc" -eq 0 \
-          && "$lines" -eq 2 \
-          && "$api_name" == "api" \
-          && "$web_name" == "web" ]]; then
-        pass "$name" "exit 0; 2 STRAIN lines (api, web) with non-writable TMPDIR — no writable-temp dependency"
-    else
-        failed "$name" "rc=$rc lines=$lines api_name=[$api_name] web_name=[$web_name] — read path requires writable TMPDIR"
-    fi
-}
-
-# ── Projection SNAPSHOT: single-read consistency — both scalars from ONE snapshot ─
-# STRUCTURAL regression for the single-snapshot read (symlink-swap TOCTOU hardening): the
-# entrypoint now reads each confined ledger EXACTLY ONCE into an in-memory snapshot and projects
-# BOTH scalars (run.status + state.current) from that one snapshot, instead of re-opening the
-# leaf per scalar via jq (which followed symlinks, widening the swap window). A live race is
-# non-deterministic, so we do NOT attempt a flaky swap test; instead we lock the OBSERVABLE
-# invariant: for a single VALID ledger, ONE entrypoint run yields BOTH scalars correctly and
-# consistently (run_status=blocked AND state_current=review_step from the same snapshot). If a
-# future change reintroduced a per-scalar reopen and skewed the two reads, this asserts the
-# coupled projection from one view.
-assert_proj_single_snapshot_consistency() {
-    local name="PROJ-SNAPSHOT:single-read-both-scalars-consistent"
-    ensure_proj_workdir; local wd="$PROJ_WORKDIR/snapshot"
+# ── Projection BROODID: top-level brood_id validated against ^brood-[0-9a-f-]+$ ──
+# brood_id is STRAIN field 2 (first data field, #168 grammar). A valid brood-<uuid> id surfaces
+# verbatim; a tampered id (wrong prefix / out-of-charset body) renders the fixed token MALFORMED.
+assert_proj_brood_id_field() {
+    local name="PROJ-BROODID:top-level-brood-id-validated"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/broodid"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/bid"
     local wt="$wd/wt"
-    mkdir -p "$wt/.hivemind/runs/run-id"
-    write_ledger "$wt/.hivemind/runs/run-id/state.json" blocked review_step
-    local manifest="$wd/manifest.json"
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
-        "$wt/.hivemind/runs/run-id/state.json"
-
+    gt_add_worktree "" "$branch" "$wt"
+    local m_ok="$wd/manifest-ok.json"
+    write_manifest_v4 "$m_ok" "api" "$wt" "$branch" "brood-api" "running" "$GT_BROOD_ID--bid"
     local out rc=0
-    out="$(run_project "$manifest")" || rc=$?
-    local lines; lines="$(count_strain_lines "$out")"
-    if [[ "$rc" -eq 0 \
-          && "$lines" -eq 1 \
-          && "$(strain_field "$out" 7)" == "review_step" \
-          && "$(strain_field "$out" 8)" == "blocked" ]]; then
-        pass "$name" "exit 0; one STRAIN line; both scalars project consistently from single snapshot (state=review_step run=blocked)"
+    out="$(run_project "$m_ok")" || rc=$?
+    local ok_field; ok_field="$(strain_field "$out" 2)"
+    # Tampered brood_id: not ^brood-[0-9a-f-]+$ (uppercase + colon in body) -> MALFORMED.
+    local m_bad="$wd/manifest-bad.json"
+    jq -n --arg wt "$wt" --arg branch "$branch" \
+        '{ manifest_version:4, brood_id:"brood-NOT_HEX:body", created_at:"2026-05-30T22:10:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api",description:"d",worktree_path:$wt,branch:$branch,
+                     tmux_session:"brood-api",status:"running",
+                     run:{suggested_id:"x",workflow_hint:"standard-delivery"}}],
+           merge_order:[] }' > "$m_bad"
+    local out2 rc2=0
+    out2="$(run_project "$m_bad")" || rc2=$?
+    local bad_field; bad_field="$(strain_field "$out2" 2)"
+    if [[ "$rc" -eq 0 && "$ok_field" == "$GT_BROOD_ID" \
+          && "$rc2" -eq 0 && "$bad_field" == "MALFORMED" ]]; then
+        pass "$name" "valid brood_id surfaces verbatim ($ok_field); tampered brood_id -> MALFORMED"
     else
-        failed "$name" "rc=$rc lines=$lines state=$(strain_field "$out" 7) run=$(strain_field "$out" 8)"
-    fi
-}
-
-# ── Projection 10: multi-strain — one healthy + one malformed, independent ───────
-# Two strains: a healthy one projects fully; a second whose state.current carries an
-# injection payload projects state_current=MALFORMED. One STRAIN line each, exit 0.
-assert_proj_multi_strain() {
-    local name="PROJ-MULTI:two-strains-independent-projection"
-    ensure_proj_workdir; local wd="$PROJ_WORKDIR/multi"
-    local wt_a="$wd/wt-api" wt_b="$wd/wt-web"
-    mkdir -p "$wt_a/.hivemind/runs/run-id" "$wt_b/.hivemind/runs/run-id"
-    write_ledger "$wt_a/.hivemind/runs/run-id/state.json" running implement_step
-    write_ledger "$wt_b/.hivemind/runs/run-id/state.json" running "State With Spaces"
-    local manifest="$wd/manifest.json"
-    jq -n \
-        --arg wt_a "$wt_a" \
-        --arg wt_b "$wt_b" \
-        --arg ledger_a "$wt_a/.hivemind/runs/run-id/state.json" \
-        --arg ledger_b "$wt_b/.hivemind/runs/run-id/state.json" \
-        '{
-            manifest_version: 3,
-            brood_id: "2026-05-30T22-10-00Z",
-            base: "main",
-            overlap_risk: "low",
-            strains: [
-                {
-                    name: "api",
-                    description: "strain a",
-                    worktree_path: $wt_a,
-                    branch: "feature/api-slice",
-                    tmux_session: "brood-api",
-                    status: "running",
-                    run: {
-                        suggested_id: "run-id",
-                        suggested_ledger: $ledger_a,
-                        workflow_hint: "standard-delivery"
-                    }
-                },
-                {
-                    name: "web",
-                    description: "strain b",
-                    worktree_path: $wt_b,
-                    branch: "feature/web-slice",
-                    tmux_session: "brood-web",
-                    status: "running",
-                    run: {
-                        suggested_id: "run-id",
-                        suggested_ledger: $ledger_b,
-                        workflow_hint: "standard-delivery"
-                    }
-                }
-            ],
-            merge_order: []
-        }' > "$manifest"
-
-    local out rc=0
-    out="$(run_project "$manifest")" || rc=$?
-    local lines; lines="$(count_strain_lines "$out")"
-    # Field 7 (state_current) of the api line and the web line, extracted by name.
-    local api_state web_state
-    api_state="$(printf '%s\n' "$out" | awk -F'\t' '$2=="api"{print $7; exit}')"
-    web_state="$(printf '%s\n' "$out" | awk -F'\t' '$2=="web"{print $7; exit}')"
-    if [[ "$rc" -eq 0 \
-          && "$lines" -eq 2 \
-          && "$api_state" == "implement_step" \
-          && "$web_state" == "MALFORMED" ]]; then
-        pass "$name" "exit 0; 2 STRAIN lines; api state_current=implement_step, web state_current=MALFORMED (independent)"
-    else
-        failed "$name" "rc=$rc lines=$lines api_state=$api_state web_state=$web_state"
+        failed "$name" "rc=$rc ok_field=$ok_field rc2=$rc2 bad_field=$bad_field"
     fi
 }
 
 # ── Projection NUL-MANIFEST: literal-NUL manifest → MANIFEST_UNREADABLE + exit 2 ──
-# A manifest whose on-disk bytes carry a LITERAL NUL (embedded via \000) would, after the
-# entrypoint's `$(cat ...)` read, have that NUL SILENTLY STRIPPED — turning e.g.
-# `{"strains":<NUL>[]}` into the valid-looking `{"strains":[]}` that passes shape validation and
-# projects as an empty brood (Codex #172 root cluster 1, Finding A). The file-level NUL guard must
-# reject it BEFORE the `$(...)` read: MANIFEST_UNREADABLE sentinel + exit 2, no STRAIN lines.
 assert_proj_literal_nul_manifest() {
     local name="PROJ-NUL-MANIFEST:literal-nul-manifest-unreadable"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/nulmanifest"
     mkdir -p "$wd"
     local manifest="$wd/manifest.json"
-    # Otherwise-valid empty-brood JSON with a literal NUL spliced in. If the NUL were stripped by
-    # $(...), the residue would parse as valid and project as empty (exit 0) — the bug. printf %b
-    # is NOT used; \000 in a single-quoted printf format embeds the literal byte.
     printf '{"strains":\000[]}' > "$manifest"
 
     local out rc=0
@@ -1571,63 +1651,50 @@ assert_proj_literal_nul_manifest() {
     local sentinel_path
     sentinel_path="$(printf '%s\n' "$out" | awk -F'\t' '/^MANIFEST_UNREADABLE\t/ { print $2; exit }')"
     if [[ "$rc" -eq 2 && "$strain_lines" -eq 0 && "$sentinel_path" == "$manifest" ]]; then
-        pass "$name" "exit 2; literal-NUL manifest → MANIFEST_UNREADABLE (path=$sentinel_path); not projected as empty brood"
+        pass "$name" "exit 2; literal-NUL manifest -> MANIFEST_UNREADABLE (path=$sentinel_path)"
     else
-        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path] expected exit 2 + sentinel + 0 strains"
+        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path]"
     fi
 }
 
-# ── Projection NUL-SCALAR: JSON ` ` ESCAPE in branch → branch field MALFORMED ─────
-# The manifest FILE has NO literal NUL (the escape is 6 ASCII bytes  ), so the file-level
-# guard misses it; `jq -r` DECODES it to a real NUL that `$(...)` would strip — turning
-# `feature/api -slice` into the trusted-looking `feature/api-slice` (Codex #172 root cluster 1,
-# Finding B). The in-jq control-byte gate must reject it so the branch projects MALFORMED, never
-# the stripped token. The strain still projects (exit 0); only the branch field is MALFORMED.
+# ── Projection NUL-SCALAR: JSON u0000 ESCAPE in branch → branch field MALFORMED ──
 assert_proj_nul_escape_branch() {
     local name="PROJ-NUL-SCALAR:json-nul-escape-branch-malformed"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/nulscalar"
-    local wt="$wd/wt"
-    mkdir -p "$wt"
+    mkdir -p "$wd"
+    local wt="$wd/wt"; mkdir -p "$wt"
     local manifest="$wd/manifest.json"
-    # Authored via python so the   escape is written as literal ASCII (jq decodes it to NUL
-    # at projection time). worktree_path is clean so only the branch field exercises the gate.
-    python3 - "$manifest" "$wt" <<'PY'
+    python3 - "$manifest" "$wt" "$GT_BROOD_ID" <<'PY'
 import sys
-manifest, wt = sys.argv[1], sys.argv[2]
-obj = '{"manifest_version":3,"brood_id":"2026-06-01T00-00-00Z","base":"main","overlap_risk":"low",' \
-      '"strains":[{"name":"api","description":"d","worktree_path":"%s","branch":"feature/api\\u0000slice",' \
-      '"tmux_session":"brood-api","status":"running"}],"merge_order":[]}' % wt
+manifest, wt, bid = sys.argv[1], sys.argv[2], sys.argv[3]
+obj = ('{"manifest_version":4,"brood_id":"%s","created_at":"2026-06-01T00:00:00Z","base":"main",'
+       '"overlap_risk":"low","strains":[{"name":"api","description":"d","worktree_path":"%s",'
+       '"branch":"feature/api\\u0000slice","tmux_session":"brood-api","status":"running"}],'
+       '"merge_order":[]}') % (bid, wt)
 open(manifest, "w").write(obj)
 PY
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     local lines; lines="$(count_strain_lines "$out")"
-    # branch is field 4. It MUST be MALFORMED, and the stripped `feature/api-slice` must NOT appear.
-    if [[ "$rc" -eq 0 && "$lines" -eq 1 && "$(strain_field "$out" 4)" == "MALFORMED" ]] \
-       && ! printf '%s' "$out" | grep -q 'feature/api-slice'; then
-        pass "$name" "exit 0; one STRAIN line; branch=MALFORMED; control-stripped 'feature/api-slice' NOT emitted"
+    # branch is now field 5. It MUST be MALFORMED, and the stripped `feature/apislice` must not appear.
+    if [[ "$rc" -eq 0 && "$lines" -eq 1 && "$(strain_field "$out" 5)" == "MALFORMED" ]] \
+       && ! printf '%s' "$out" | grep -q 'feature/apislice'; then
+        pass "$name" "exit 0; one STRAIN line; branch=MALFORMED; control-stripped branch NOT emitted"
     else
-        failed "$name" "rc=$rc lines=$lines branch=$(strain_field "$out" 4) stripped_leak=$(printf '%s' "$out" | grep -q 'feature/api-slice' && echo yes || echo no)"
+        failed "$name" "rc=$rc lines=$lines branch=$(strain_field "$out" 5)"
     fi
 }
 
-# ── Projection MULTIDOC: two concatenated valid manifest objects → MANIFEST_UNREADABLE ──
-# jq accepts a STREAM of documents; a file holding TWO valid manifest objects would pass a
-# non-slurped shape probe, the count would emit `1\n1`, the loop's integer test would break, and
-# the engine would exit 0 with no STRAIN lines — live children rendered as an empty brood (Codex
-# #172 root cluster 2). The single-document slurp predicate must reject it: MANIFEST_UNREADABLE +
-# exit 2, no STRAIN lines.
+# ── Projection MULTIDOC: two concatenated valid manifest objects → MANIFEST_UNREADABLE ─
 assert_proj_multidoc_manifest() {
     local name="PROJ-MULTIDOC:two-documents-unreadable"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/multidoc"
     mkdir -p "$wd"
     local manifest="$wd/manifest.json"
-    # Two syntactically-valid manifest objects concatenated (newline-separated). Each alone would
-    # pass shape; together they are a multi-document stream that must be rejected.
     printf '%s\n%s\n' \
-        '{"manifest_version":3,"strains":[{"name":"api","worktree_path":"/repo/wt","branch":"b","tmux_session":"t","status":"running"}]}' \
-        '{"manifest_version":3,"strains":[{"name":"web","worktree_path":"/repo/wt2","branch":"b2","tmux_session":"t2","status":"running"}]}' \
+        '{"manifest_version":4,"strains":[{"name":"api","worktree_path":"/repo/wt","branch":"b","tmux_session":"t","status":"running"}]}' \
+        '{"manifest_version":4,"strains":[{"name":"web","worktree_path":"/repo/wt2","branch":"b2","tmux_session":"t2","status":"running"}]}' \
         > "$manifest"
 
     local out rc=0
@@ -1636,39 +1703,38 @@ assert_proj_multidoc_manifest() {
     local sentinel_path
     sentinel_path="$(printf '%s\n' "$out" | awk -F'\t' '/^MANIFEST_UNREADABLE\t/ { print $2; exit }')"
     if [[ "$rc" -eq 2 && "$strain_lines" -eq 0 && "$sentinel_path" == "$manifest" ]]; then
-        pass "$name" "exit 2; multi-document manifest → MANIFEST_UNREADABLE (path=$sentinel_path); not projected as empty brood"
+        pass "$name" "exit 2; multi-document manifest -> MANIFEST_UNREADABLE (path=$sentinel_path)"
     else
-        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path] expected exit 2 + sentinel + 0 strains"
+        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path]"
     fi
 }
 
-# ── Projection NUL-LEDGER: literal-NUL child ledger → ledger scalars MALFORMED ────
-# A confined, regular state.json whose on-disk bytes carry a LITERAL NUL: the file-level NUL guard
-# at the ledger read site must reject it BEFORE the `$(cat ...)` read (which would strip the NUL),
-# so both scalars render MALFORMED (Codex #172 root cluster 1, ledger side). Static manifest fields
-# still project; exit 0.
+# ── Projection NUL-LEDGER: literal-NUL child ledger under GT worktree → MALFORMED ─
 assert_proj_literal_nul_ledger() {
     local name="PROJ-NUL-LEDGER:literal-nul-ledger-malformed"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/nulledger"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/nulledger" sid="$GT_BROOD_ID--nulledger"
     local wt="$wd/wt"
-    mkdir -p "$wt/.hivemind/runs/run-id"
-    local leaf="$wt/.hivemind/runs/run-id/state.json"
-    # Otherwise-valid ledger JSON with a literal NUL spliced in via \000.
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    local leaf="$wt/.hivemind/runs/$sid/state.json"
     printf '{"run":{"status":"running"},"state":{"current":"plan"}}\000' > "$leaf"
     local manifest="$wd/manifest.json"
-    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" "$leaf"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 7)" == "MALFORMED" \
-          && "$(strain_field "$out" 8)" == "MALFORMED" ]] \
+          && "$(strain_field "$out" 8)" == "MALFORMED" \
+          && "$(strain_field "$out" 9)" == "MALFORMED" ]] \
           && ! printf '%s' "$out" | grep -q 'plan'; then
-        pass "$name" "exit 0; literal-NUL ledger → both scalars MALFORMED; content not leaked"
+        pass "$name" "exit 0; literal-NUL ledger -> both scalars MALFORMED; content not leaked"
     else
-        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8) leaked=$(printf '%s' "$out" | grep -q 'plan' && echo yes || echo no)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
     fi
 }
+
 
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
@@ -1686,19 +1752,23 @@ echo '=== brood-status-project.sh read-side projection tests (#161) ==='
 assert_proj_happy_path
 assert_proj_v1_no_run_block
 assert_proj_missing_ledger_file
+assert_proj_no_live_worktree
+assert_proj_duplicate_branch
 assert_proj_malformed_run_status
 assert_proj_injection_state_current
 assert_proj_metachar_worktree
 assert_proj_symlink_leaf
 assert_proj_unreadable_ledger
-assert_proj_ledger_escape
+assert_proj_suggested_id_escape
 assert_proj_missing_arg
+assert_proj_output_encoding
 assert_proj_no_tmpdir_needed
 assert_proj_multi_strain
 assert_proj_unreadable_manifest
 assert_proj_valid_empty_manifest
 assert_proj_wrong_shape_unreadable
 assert_proj_object_element_missing_name
+assert_proj_brood_id_field
 assert_proj_single_snapshot_consistency
 assert_proj_literal_nul_manifest
 assert_proj_nul_escape_branch

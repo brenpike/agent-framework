@@ -1,6 +1,6 @@
 # Brood Ledger Model
 
-Read this file to understand how the brood manifest bridges to per-strain run ledgers: the JSON `manifest_version: 3` shape (top-level `hatchery` block + per-strain `run` pointers), the injected child-task metadata, hatchery read-only monitoring with status-derivation priority (live child-ledger projection per issue #161, informational-only), and the reconciliation concept.
+Read this file to understand how the brood manifest bridges to per-strain run ledgers: the per-brood JSON `manifest_version: 4` shape (top-level `brood_id` + `created_at` + `hatchery` block, per-strain `run` pointer with `suggested_id` only), the ledger-path derivation from git ground truth, the injected child-task metadata, hatchery read-only monitoring with status-derivation priority (live child-ledger projection per issue #161, informational-only, never overriding observable status), and the reconciliation concept.
 
 ## Format split: manifest JSON, child ledgers JSON
 
@@ -10,18 +10,23 @@ The child-task `task.md` preamble and the inter-agent contract embedded in it **
 
 The manifest is the registry and coordination artifact. It is NOT the source of truth for child workflow state — that lives in each child's run ledger.
 
-## Manifest extension (`manifest_version: 3`)
+## Per-brood layout (`.hivemind/broods/<brood-id>/`)
 
-The manifest is JSON (`manifest_version: 3`, integer). The shape carries a top-level `hatchery` block (the dispatching coordinator's run metadata) and a per-strain `run` block (suggested run id, suggested ledger path, and workflow hint). All values are emitted via `jq -nc`/`jq -s` with every untrusted value bound as a `--arg`, so attacker content is structurally confined to string values — it cannot become sibling keys or alter manifest topology.
+Each brood owns a DISJOINT directory `.hivemind/broods/<brood-id>/{manifest.json,inputs.json}` in the main checkout, where `<brood-id>` is the machine-generated `brood-<uuidv4>` (issue #168; full decision in ADR-0021). The singleton `.hivemind/brood/manifest.json` is gone. The hatchery enumerates active broods by globbing `.hivemind/broods/brood-*/manifest.json`. The brood-id also namespaces each strain's branch (`strain/<brood-id>/<short>`), worktree (`.claude/worktrees/<brood-id>/<short>`), and tmux session (`<brood-id>-<short>`), so concurrent same-checkout broods never collide. There is no liveness guard and no lock — per-brood isolation replaces both.
+
+## Manifest extension (`manifest_version: 4`)
+
+The manifest is JSON (`manifest_version: 4`, integer), written to a temp file under the per-brood state dir and `mv`'d into place atomically. The shape carries top-level `brood_id` (the generated GUID) and `created_at` (UTC ISO-8601), a `hatchery` block (the dispatching coordinator's run metadata), and a per-strain `run` block carrying ONLY `suggested_id` and `workflow_hint`. All values are emitted via `jq -nc`/`jq -s` with every untrusted value bound as a `--arg`, so attacker content is structurally confined to string values — it cannot become sibling keys or alter manifest topology.
 
 ```json
 {
-  "manifest_version": 3,
-  "brood_id": "2026-05-30T22-10-00Z",
+  "manifest_version": 4,
+  "brood_id": "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f",
+  "created_at": "2026-06-01T22:10:00Z",
   "base": "main",
   "hatchery": {
-    "run_id": "2026-05-30T22-10-00Z-hatchery",
-    "ledger": ".hivemind/runs/2026-05-30T22-10-00Z-hatchery/state.json",
+    "run_id": "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f-hatchery",
+    "ledger": ".hivemind/runs/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f-hatchery/state.json",
     "workflow": "hatchery-dispatch"
   },
   "overlap_risk": "low",
@@ -30,16 +35,15 @@ The manifest is JSON (`manifest_version: 3`, integer). The shape carries a top-l
     {
       "name": "api",
       "description": "Implement the API slice.",
-      "worktree_path": "/repo/.claude/worktrees/api",
-      "branch": "feature/api-slice",
-      "tmux_session": "brood-api",
+      "worktree_path": "/repo/.claude/worktrees/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f/api",
+      "branch": "strain/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f/api",
+      "tmux_session": "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f-api",
       "status": "running",
       "pr": null,
       "merged": false,
       "rebased_after": [],
       "run": {
-        "suggested_id": "2026-05-30T22-10-00Z--api",
-        "suggested_ledger": "/repo/.claude/worktrees/api/.hivemind/runs/2026-05-30T22-10-00Z--api/state.json",
+        "suggested_id": "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f--api",
         "workflow_hint": "standard-delivery"
       }
     }
@@ -48,18 +52,29 @@ The manifest is JSON (`manifest_version: 3`, integer). The shape carries a top-l
 }
 ```
 
-The two blocks are `hatchery` (the dispatching coordinator's run metadata) and the per-strain `run` block (suggested run id, suggested ledger path, and workflow hint). The `run.suggested_ledger` path ends in `state.json` — the child ledger is also JSON.
+What changed from `manifest_version: 3`: top-level `brood_id` is now the generated GUID (was a timestamp) and `created_at` is added; the per-strain `branch` is DERIVED (`strain/<brood-id>/<short>`); `worktree_path` is RETAINED but DISPLAY-ONLY (the read side no longer anchors on it); and `run.suggested_ledger` is DROPPED — the read side derives the ledger path from git ground truth, so recording it was redundant manifest-path trust. `run.suggested_id` is KEPT as the lineage reconciliation key.
 
 Field derivation (emitted by `spawn-brood.sh` via `jq -nc` per strain then `jq -s` to fold the array, all untrusted values bound as `--arg`):
 
+- `brood_id` — generated internally as `brood-<uuidv4>`; any caller-supplied value is ignored.
+- `created_at` — UTC ISO-8601 instant the manifest was written.
 - `hatchery.run_id` — overlord-supplied, or defaults to `<brood_id>-hatchery`.
 - `hatchery.ledger` — `.hivemind/runs/<hatchery.run_id>/state.json`, anchored to the coordinator checkout root.
 - `hatchery.workflow` — overlord-supplied, or defaults to `hatchery-dispatch`.
-- `run.suggested_id` — `<brood_id>--<short>`, where `<short>` is the strain name sanitized to `[a-z0-9-]`.
-- `run.suggested_ledger` — `<worktree_path>/.hivemind/runs/<suggested_id>/state.json` (inside the child worktree).
+- `run.suggested_id` — `<brood-id>--<short>`, where `<short>` is the strain name sanitized to `[a-z0-9-]`.
 - `run.workflow_hint` — an OPTIONAL, NON-BINDING suggestion (overlord-supplied per strain, default `standard-delivery`); the child's own `hivemind:route-workflow` makes the actual selection.
 
-None of these fields point at a ledger the hatchery creates — they are pointers only. The child creates its own ledger; the hatchery creates only its own.
+None of these fields point at a ledger the hatchery creates — they are pointers only. The child creates its own ledger; the hatchery creates only its own. The child still receives its suggested ledger PATH in the injected `task.md` (below) so it knows where to initialize its own ledger; that path is no longer recorded in the manifest.
+
+## Ledger-path derivation (read side, ground-truth-anchored)
+
+`brood-status` does NOT trust the manifest `worktree_path` to locate a child ledger. It parses `git worktree list --porcelain` into a branch→path map and selects each strain's REAL worktree using the manifest's per-strain `branch` ONLY as a lookup key — the branch never becomes a path. The ledger is then derived as:
+
+```text
+<git-worktree>/.hivemind/runs/<suggested_id>/state.json
+```
+
+where only `<suggested_id>` is manifest-sourced (gated as a strict single-component identifier — no slash). The full containment chain is `CHECKOUT_ROOT ⊇ git-worktree ⊇ ledger`: a git-reported worktree outside the checkout fails closed, and the ledger leaf must sit beneath that worktree. A branch that matches no live worktree selects nothing (fail-closed → `MISSING`); a branch git reports on two worktrees has no single ground-truth path and is rejected (`MALFORMED`). A tampered manifest path can no longer redirect the bounded reader, because no manifest path is consumed as an anchor (issue #168; ADR-0021, ADR-0019 #168 amendment).
 
 ## Injected child-task metadata
 
@@ -68,19 +83,19 @@ The task injected into each child strain carries the data-boundary preamble FIRS
 ```yaml
 parent:
   kind: brood
-  brood_id: "2026-05-30T22-10-00Z"
-  hatchery_run_id: "2026-05-30T22-10-00Z-hatchery"
-  hatchery_manifest: "/repo/.hivemind/brood/manifest.json"
+  brood_id: "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f"
+  hatchery_run_id: "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f-hatchery"
+  hatchery_manifest: "/repo/.hivemind/broods/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f/manifest.json"
 
 strain:
   id: "api"
   name: "api"
-  branch: "feature/api-slice"
-  worktree_path: "/repo/.claude/worktrees/api"
+  branch: "strain/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f/api"
+  worktree_path: "/repo/.claude/worktrees/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f/api"
 
 run:
-  suggested_id: "2026-05-30T22-10-00Z--api"
-  suggested_ledger: ".hivemind/runs/2026-05-30T22-10-00Z--api/state.json"
+  suggested_id: "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f--api"
+  suggested_ledger: ".hivemind/runs/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f--api/state.json"
   workflow_hint: "standard-delivery"
 
 instructions:
@@ -104,12 +119,13 @@ The child reads this, routes via `hivemind:route-workflow`, initializes its own 
 
 The hatchery monitors a brood by reading only. It never mutates child ledgers, and `brood-status` never writes discovered ledger paths back to the manifest.
 
-`brood-status` derives each strain's status from **external observables + the manifest's static fields + the child run ledger (informational)**. Reading child-ledger workflow-state is **LIVE** as of issue #161, implemented in `plugin/skills/brood-status/scripts/brood-status-project.sh`. The helper sources four single-responsibility libs: `_shared/allowlist.sh` (safe-token gate), `_shared/manifest-json.sh` (jq-based JSON field extraction), `_shared/ledger-project.sh` (jq scalar projection + validation), and `_shared/containment.sh` (path confinement). It projects exactly two scalars per strain: `run.status` (validated against the exact enum `running|complete|blocked|cancelled`) and `state.current` (validated against `^[a-z0-9_]+$`, length ≤ 64). Values that are absent yield the fixed token `MISSING`; values that are present but out-of-allowlist or unparseable yield `MALFORMED` — raw bytes are never emitted. The ledger path is confined beneath the strain's own `worktree_path` as `.hivemind/runs/<safe-id>/state.json`; a symlinked leaf or out-of-worktree pointer is rejected and never read. This projection is **informational only**: it populates the `Workflow State` / `run.status` display columns but never overrides the observable-derived `Status` (external observables remain ground truth — ADR-0007).
+`brood-status` derives each strain's status from **external observables + the manifest's static fields + the child run ledger (informational)**. Reading child-ledger workflow-state is **LIVE** as of issue #161, implemented in `${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh`. The helper sources four single-responsibility libs: `_shared/allowlist.sh` (floor-at-input value-class gate), `_shared/manifest-json.sh` (jq-based JSON field extraction), `_shared/ledger-project.sh` (jq scalar projection + validation), and `_shared/containment.sh` (path confinement). It projects exactly two scalars per strain: `run.status` (validated against the exact enum `running|complete|blocked|cancelled`) and `state.current` (validated against `^[a-z0-9_]+$`, length ≤ 64). Values that are absent yield the fixed token `MISSING`; values that are present but out-of-allowlist or unparseable yield `MALFORMED` — raw bytes are never emitted; every display cell is output-encoded at the emit boundary (escape `|`, strip C0/DEL). The ledger path is derived from **git ground truth** (issue #168): the strain's REAL worktree comes from `git worktree list --porcelain` keyed by the manifest `branch` (lookup key only, never a path), and the ledger is `<git-worktree>/.hivemind/runs/<suggested_id>/state.json` — confined by the `CHECKOUT_ROOT ⊇ git-worktree ⊇ ledger` chain. The manifest `worktree_path` is display-only and is NOT an anchor; a symlinked leaf or out-of-worktree pointer is rejected and never read. This projection is **informational only**: it populates the `Workflow State` / `run.status` display columns but never overrides the observable-derived `Status` (external observables remain ground truth — ADR-0007).
 
 The hatchery may read:
 
 ```text
-.hivemind/brood/manifest.json
+.hivemind/broods/brood-*/manifest.json   (one per active brood; discovered by glob)
+git worktree list --porcelain            (ground-truth worktree per strain branch)
 tmux session state
 git branch existence
 PR state
@@ -126,7 +142,7 @@ When deriving a strain's status, prefer sources in this order:
 3. child run ledger: run.status / state.current (informational — never overrides tier 1 or 2 Status)
 ```
 
-External observables win because they reflect ground truth. Manifest static fields are the fallback. The child run ledger (tier 3, live as of #161) populates the `Workflow State` and `run.status` display columns via `brood-status-project.sh`'s bounded projection, but it is strictly informational — a hostile child cannot hide a runaway session or alter the observable-derived `Status` through its ledger.
+External observables win because they reflect ground truth. Manifest static fields are the fallback. The child run ledger (tier 3, live as of #161) populates the `Workflow State` and `run.status` display columns via `brood-status-project.sh`'s bounded projection, but it is strictly informational — a hostile child cannot hide a runaway session or alter the observable-derived `Status` through its ledger. The leaf symlink-swap micro-TOCTOU on the child-ledger read is an ACCEPTED BOUNDED RESIDUAL (not structurally closed by #168 — per-brood namespacing isolates broods from each other, not the hatchery from its children): it is bounded by a post-read containment re-assert, never-echo-raw projection, and the informational-only contract (ADR-0021 §10; ADR-0019 #168 amendment).
 
 ## Reconciliation concept
 

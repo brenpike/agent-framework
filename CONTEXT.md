@@ -236,9 +236,13 @@ A set of parallel overlord sessions working on independent tasks in the same rep
 _Avoid_: fleet, cluster, swarm, pool
 
 **Hatchery**:
-The overlord execution mode entered when a brood-plan is dispatched; the overlord remains on trunk in the main checkout, owns the brood manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+The overlord execution mode entered when a brood-plan is dispatched; the overlord remains on trunk in the main checkout, owns the brood manifests, enumerates every active brood under `.hivemind/broods/`, and serves as the status dashboard and on-demand helper for the brood lifecycle.
 _Alias_: coordinator mode
 _Avoid_: manager mode, supervisor mode
+
+**Brood-Id**:
+The machine-generated `brood-<uuidv4>` identifier (charset `^brood-[0-9a-f-]+$`) that names one brood — the per-brood isolation key. Generated internally by spawn-brood, injective by construction, and propagated into the per-brood state dir (`.hivemind/broods/<brood-id>/`), each strain's branch (`strain/<brood-id>/<short>`), worktree (`.claude/worktrees/<brood-id>/<short>`), and tmux session (`<brood-id>-<short>`), so concurrent same-checkout broods never collide.
+_Avoid_: brood slug, brood key, brood name
 
 **Brood-Plan**:
 The cerebrate's output artifact when work decomposes into multiple independent strains. Contains strain-level descriptions and scope boundaries, not step-level detail. Each strain becomes a separate child overlord session with its own full pipeline.
@@ -249,7 +253,7 @@ One independent unit of work within a brood-plan, assigned to a single child ove
 _Avoid_: stream, task (too generic), work item, lane
 
 **Brood Manifest**:
-The JSON file at `.hivemind/brood/manifest.json` in the main checkout, tracking active brood sessions, their worktree paths, branches, tmux sessions, and status.
+The per-brood JSON file at `.hivemind/broods/<brood-id>/manifest.json` (schema `manifest_version: 4`) in the main checkout, tracking one brood's strains — their display worktree paths, derived branches, tmux sessions, and status. Each brood owns a disjoint manifest under its brood-id directory; the hatchery enumerates them by globbing `.hivemind/broods/brood-*/manifest.json`.
 _Avoid_: brood config, brood state, registry
 
 ### Pipeline & Artifacts

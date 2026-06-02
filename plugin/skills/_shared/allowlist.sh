@@ -9,10 +9,13 @@
 # fragment.
 #
 # SINGLE RESPONSIBILITY: gate ONE manifest/ledger-derived value against the value CLASS
-# its field belongs to. Three classes share ONE security floor; each widens the floor by a
-# disjoint, field-justified set of additional inert bytes. The brood-status read side gates
-# every value it emits through the class matching that field, so a value never reaches a
-# path derivation, a shell context, or the TAB-delimited output grammar un-vetted.
+# its field belongs to. This file implements the INPUT half of a FLOOR-AT-INPUT /
+# ENCODE-AT-OUTPUT model: every value is gated against the shared security floor at the
+# moment it enters the engine, and any context-specific safety (Markdown-cell escaping,
+# C0-control stripping) is the responsibility of OUTPUT-ENCODING at the render boundary —
+# NOT of these validators. The brood-status read side gates every value it emits through
+# the class matching that field, so a value never reaches a path derivation, a shell
+# context, or the TAB-delimited output grammar un-vetted.
 #
 # THE SHARED SECURITY FLOOR (the boundary — NEVER relaxed by any class):
 #   1. command-substitution bytes — `$` and backtick `` ` ``. These are EXPANDED by the
@@ -24,26 +27,26 @@
 #      into a TAB-delimited, newline-terminated per-strain output grammar; any of these
 #      would let a crafted value forge or split the framing the navigator parses.
 #   5. empty — never a valid value in any class.
-# Every validator below applies this floor FIRST, then its class-specific charset/byte set.
+# Every validator below applies this floor FIRST.
 #
-# THE THREE CLASSES (strictest → broadest), with the fields that map to each:
-#   hivemind_assert_identifier   charset ^[A-Za-z0-9._/-]+$ (strictest).
+# THE THREE CLASSES, with the fields that map to each:
+#   hivemind_assert_identifier   FLOOR + strict charset ^[A-Za-z0-9._/-]+$ (strictest).
 #       FIELDS: branch, tmux_session, manifest status, ledger id-segment. Values used as
-#       shell-probe tokens / command arguments — no space, no shell-metachar, ever.
-#   hivemind_assert_path         identifier charset PLUS space and the inert filesystem
-#       bytes `#` `=` `~` `!`.
-#       FIELDS: worktree_path, suggested_ledger. A real checkout root may legitimately
-#       contain spaces (`/home/me/hive review/wt`) and these inert bytes; the strict
-#       identifier rule would falsely render such a path MALFORMED and suppress all ledger
-#       projection. None of the widened bytes is shell-active in this class's only
-#       downstream contexts (quoted `cd "$dir"` canonicalization, quoted prefix `case`
-#       matching, the TAB-delimited output field).
-#   hivemind_assert_presentation POSITIVE ALLOWLIST closed by construction (broadest).
+#       shell-probe tokens / command arguments — no space, no shell-metachar, ever. This
+#       class is deliberately strict and is NOT loosened by the floor-at-input model.
+#   hivemind_assert_path         FLOOR-ONLY (no charset enumeration).
+#       FIELDS: worktree_path, suggested_ledger. Paths are used ONLY as quoted data
+#       (`cd "$dir"`, jq `--arg`, `pwd -P` canonicalization) and are never re-parsed, so the
+#       floor IS the full security boundary. Arbitrary filesystem-path bytes that pass the
+#       floor — including spaces, `+ @ , %`, etc. — are ACCEPTED as quoted data. A per-byte
+#       charset enumeration here was the source of a recurring false-reject treadmill
+#       (#177 whack-a-mole doctrine); do NOT re-add per-byte charset rules to this class.
+#   hivemind_assert_presentation FLOOR + positive display allowlist.
 #       FIELDS: strain `name` (display-only — emitted into the output field and used only as
-#       the quoted jq/awk `--arg`/`-v` lookup key, NEVER a shell-probe token). All three
-#       classes are now POSITIVE ALLOWLISTS over the shared floor — the floor is a
-#       defense-in-depth denylist of universally-dangerous bytes, but each class is closed
-#       by construction so an unlisted byte is rejected by default.
+#       the quoted jq/awk `--arg`/`-v` lookup key, NEVER a shell-probe token). Markdown-cell
+#       safety (escaping `|`, stripping C0 controls) has MOVED to output-encoding at the
+#       render boundary; this class no longer carries that responsibility and keeps only a
+#       positive allowlist over the floor for its remaining display-label role.
 
 # ── Shared security floor ────────────────────────────────────────────────────────
 # hivemind__assert_floor <value>
@@ -94,31 +97,22 @@ hivemind_assert_identifier() {
   return 0
 }
 
-# ── Class 2: path ─────────────────────────────────────────────────────────────────
+# ── Class 2: path (FLOOR-ONLY) ────────────────────────────────────────────────────
 # hivemind_assert_path <value>
-# Returns 0 iff <value> passes the shared floor AND every byte is in the identifier charset
-# [A-Za-z0-9._/-] OR is one of the widened inert filesystem bytes: SPACE, `#`, `=`, `~`, `!`.
-# FIELDS: worktree_path, suggested_ledger. A real checkout root may carry spaces and these
-# bytes; the strict identifier rule would falsely reject it and suppress ledger projection.
-# None of the widened bytes is shell-active in this class's only downstream contexts (quoted
-# `cd "$dir"` canonicalization, quoted prefix `case` matching, the TAB-delimited output
-# field): `#` is a comment introducer ONLY at an unquoted word start, `=` an assignment token
-# ONLY as a bare word, `~` tilde-expands ONLY unquoted at a word start, `!` is history
-# expansion (interactive-only). The floor still forbids `$`/backtick, so a path can never
-# smuggle command substitution even though it may carry spaces. Pure: no side effects, no exit.
+# Returns 0 iff <value> passes the shared security floor. THERE IS NO CHARSET ENUMERATION:
+# any byte that survives the floor is accepted as quoted path data, including spaces and
+# inert filesystem bytes such as `+ @ , %`.
+# FIELDS: worktree_path, suggested_ledger. Paths are used ONLY as quoted data — `cd "$dir"`,
+# jq `--arg`, `pwd -P` canonicalization — and are NEVER re-parsed into a command word, so the
+# floor (which already forbids `$`/backtick command substitution, `..` traversal, leading
+# `-`, TAB/LF/CR framing, and empty) IS the complete security boundary for this class.
+# A per-byte charset enumeration here was the source of a recurring false-reject treadmill
+# (#177 whack-a-mole doctrine): every legitimate path byte the enumeration omitted produced a
+# spurious MALFORMED that suppressed ledger projection. Do NOT re-add per-byte charset rules.
+# Pure: no side effects, no exit.
 hivemind_assert_path() {
   local value="$1"
   hivemind__assert_floor "$value" || return 1
-  # Reject any byte NOT in {identifier charset} ∪ {literal SPACE, #, =, ~, !}. The negated
-  # bracket expression lists the full permitted set; any byte outside it rejects the whole
-  # value. The whitespace widening is a LITERAL SPACE only — NOT `[:space:]`, which also admits
-  # VT (\v) and FF (\f); the shared floor only rejects TAB/LF/CR, so a `[:space:]` widening
-  # would let those C0 control bytes through and the engine would emit raw VT/FF into the
-  # navigator stream (Codex #172 P1). A single literal space is the only whitespace a real
-  # checkout root carries; admit exactly that.
-  case "$value" in
-    *[!A-Za-z0-9._/=~#!\ -]*) return 1 ;;
-  esac
   return 0
 }
 
@@ -146,12 +140,15 @@ hivemind_assert_path() {
 #     values ≥0x80 (Unicode bidi-override U+202E, homoglyphs, RTL marks) — because the
 #     bracket uses explicit ASCII ranges A-Za-z0-9 only, not locale-sensitive [:print:] or
 #     [:alnum:], so no locale widening can admit non-ASCII.
-#   | — Markdown table-cell delimiter; the brood-status navigator renders names into a
-#     Markdown table row; `|` would inject extra cells and visually falsify the dashboard.
-#     With a positive allowlist the explicit carve-out is unnecessary — `|` simply isn't
-#     in the set.
-#   ` ; & < > [ ] { } \ ^ " ' * ? — shell-structural / glob bytes not needed for display.
+#   ` ; & < > [ ] { } \ ^ " ' * ? | — shell-structural / glob bytes not needed for display.
 #   $ and backtick — already rejected by the shared floor (command-substitution guard).
+#
+# MARKDOWN SAFETY LIVES AT THE RENDER BOUNDARY, NOT HERE. Under the floor-at-input /
+# encode-at-output model, escaping the Markdown table-cell delimiter `|` and stripping any
+# residual control bytes is the job of OUTPUT-ENCODING when the navigator renders a name into
+# a Markdown table row. This validator no longer owns an ad-hoc `|` carve-out; with a positive
+# allowlist `|` simply isn't in the permitted set, but the authoritative Markdown-cell defense
+# is the render-boundary encoder.
 #
 # FIELD: strain `name` — display-only, emitted into the output field and used only as the
 # quoted jq/awk `--arg`/`-v` lookup key, NEVER a shell-probe token or command word.

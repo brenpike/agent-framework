@@ -93,15 +93,31 @@ for v in "/home/me/hive review/wt" "/repo/.claude/worktrees/api" "/home/me/hive#
     failed "path:accept" "rejected a path that should be safe: '$v'"
   fi
 done
-# path STILL enforces the shared floor: command-sub, '..', leading '-', framing bytes reject.
-# Plus VT (\v) and FF (\f): the path whitespace widening is a LITERAL space only — `[:space:]`
-# would have admitted these C0 control bytes (Codex #172 P1), so they must reject here.
+# path is FLOOR-ONLY (#177/#168 doctrine): the shared floor IS the complete boundary. It STILL
+# rejects exactly the floor bytes — command-sub ($/backtick), '..', leading '-', framing bytes
+# (TAB/LF/CR), and empty — because those are the only bytes that could break the quoted-data uses
+# (`cd "$dir"`, jq --arg, pwd -P). Nothing else is enumerated.
 tab=$'\t'; nl=$'\n'; cr=$'\r'; vt=$'\v'; ff=$'\f'
-for v in "" "-rf" "/a/../b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b" "a${vt}b" "a${ff}b" "a;b" 'a|b' 'a>b'; do
+for v in "" "-rf" "/a/../b" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b"; do
   if hivemind_assert_path "$v"; then
     failed "path:reject" "accepted a value the path floor must reject: '$v'"
   else
     pass "path:reject" "rejected unsafe path '$v'"
+  fi
+done
+# FLOOR-ONLY CONSEQUENCE (#177 doctrine, locked under #168): bytes that are NOT in the floor are
+# ACCEPTED as inert quoted path data — including shell-structural bytes like `; | > & ( )` and the
+# non-framing C0 controls VT (\v) / FF (\f). These can never break a command word because a path is
+# only ever used as quoted data, never re-parsed; enumerating them was the #177 false-reject
+# treadmill. This block LOCKS that they pass (a future re-add of a per-byte charset rule to the path
+# class would regress here). Markdown-cell safety for `|` is the render-boundary encoder's job, not
+# this class's. (Framing bytes TAB/LF/CR are still floor-rejected above — only the NON-framing
+# controls VT/FF pass.)
+for v in "a;b" 'a|b' 'a>b' 'a&b' '/a/(b)/wt' "a${vt}b" "a${ff}b"; do
+  if hivemind_assert_path "$v"; then
+    pass "path:floor-only-inert-accept" "floor-only path accepts inert non-floor byte: '$v'"
+  else
+    failed "path:floor-only-inert-accept" "floor-only path wrongly rejected inert non-floor byte '$v' (per-byte charset re-added?)"
   fi
 done
 
@@ -501,6 +517,136 @@ assert_eq "multidoc:single-count" "1" \
   "$(hivemind_manifest_strain_count_snapshot "$V3_CONTENT")" "slurp count over single document"
 assert_eq "multidoc:single-field" "feature/api-slice" \
   "$(hivemind_manifest_field_at "$V3_CONTENT" 0 "branch")" "slurp field_at over single document"
+
+# ── Section 5: #168 brood-namespacing + #178 hardening contract regressions ──────
+echo ''
+echo '=== #168/#178: floor-only path class + content projectors + field_at exit-code contract ==='
+
+# ── 5a. path class is FLOOR-ONLY (#177/#168): formerly-rejected inert bytes now PASS ──
+# allowlist.sh hivemind_assert_path is the FLOOR-ONLY class: any byte that survives the shared
+# security floor is accepted as quoted path data. The bytes `+ @ , %` were rejected by the OLD
+# per-byte charset enumeration (the #177 whack-a-mole treadmill); under floor-only they must now
+# PASS. This is the doctrine guard — a future re-add of per-byte charset rules to the path class
+# would fail these.
+for v in "/a/b+c/wt" "/a/b@c/wt" "/a/b,c/wt" "/a/b%c/wt" "/home/me/a+b@c,d%e/wt"; do
+  if hivemind_assert_path "$v"; then
+    pass "path:floor-only-accept" "floor-only path accepts formerly-rejected inert byte: '$v'"
+  else
+    failed "path:floor-only-accept" "floor-only path wrongly rejected inert-byte path '$v' (per-byte charset re-added?)"
+  fi
+done
+# The floor itself is NEVER relaxed by floor-only: command-sub ($/backtick), '..', leading '-',
+# framing bytes (TAB/LF/CR), and empty must STILL reject under the path class.
+ptab=$'\t'; pnl=$'\n'; pcr=$'\r'
+for v in "" "-x" "/a/../b" "a\$b" "a\`b" "a${ptab}b" "a${pnl}b" "a${pcr}b"; do
+  if hivemind_assert_path "$v"; then
+    failed "path:floor-still-rejects" "floor-only path accepted a value the floor must reject: '$v'"
+  else
+    pass "path:floor-still-rejects" "floor still rejects under path class: '$v'"
+  fi
+done
+# identifier remains STRICT: the same inert bytes the path class now accepts are STILL rejected by
+# the identifier class (no floor-only loosening of the strict class).
+for v in "a+b" "a@b" "a,b" "a%b"; do
+  if hivemind_assert_identifier "$v"; then
+    failed "id:still-strict" "identifier wrongly accepted an inert byte (must stay strict): '$v'"
+  else
+    pass "id:still-strict" "identifier stays strict; rejects inert byte: '$v'"
+  fi
+done
+# presentation STILL rejects the Markdown-cell delimiter `|` by construction (not in the
+# positive allowlist; render-boundary owns the escape).
+if hivemind_assert_presentation 'api|web'; then
+  failed "pres:pipe-rejected" "presentation wrongly accepted '|' (Markdown-cell injector)"
+else
+  pass "pres:pipe-rejected" "presentation rejects '|' by construction"
+fi
+
+# ── 5b. #178 F1: content projectors require EXACTLY ONE document ──────────────────
+# The _content projectors SLURP and require length==1. TWO concatenated valid ledger objects →
+# MALFORMED (both run.status + state.current), because the embedded newline of a two-document
+# emission would corrupt the one-line STRAIN frame. Single valid → value. Empty → MISSING.
+two_ledgers="$(printf '%s\n%s\n' \
+  '{"run":{"status":"running"},"state":{"current":"plan"}}' \
+  '{"run":{"status":"complete"},"state":{"current":"review"}}')"
+assert_eq "f1:multidoc-run-status" "MALFORMED" \
+  "$(hivemind_project_run_status_content "$two_ledgers")" "two concatenated ledger docs → run.status MALFORMED"
+assert_eq "f1:multidoc-state-current" "MALFORMED" \
+  "$(hivemind_project_state_current_content "$two_ledgers")" "two concatenated ledger docs → state.current MALFORMED"
+# A SINGLE valid document still projects its scalars (regression guard for the slurp predicate).
+one_ledger='{"run":{"status":"blocked"},"state":{"current":"implement_step"}}'
+assert_eq "f1:single-run-status" "blocked" \
+  "$(hivemind_project_run_status_content "$one_ledger")" "single ledger doc → run.status value"
+assert_eq "f1:single-state-current" "implement_step" \
+  "$(hivemind_project_state_current_content "$one_ledger")" "single ledger doc → state.current value"
+# Empty content → MISSING (nothing to report), for both scalars.
+assert_eq "f1:empty-run-status" "MISSING" \
+  "$(hivemind_project_run_status_content "")" "empty content → run.status MISSING"
+assert_eq "f1:empty-state-current" "MISSING" \
+  "$(hivemind_project_state_current_content "")" "empty content → state.current MISSING"
+
+# ── 5c. #178 F3: non-string manifest scalars → field_at exit 2 (MALFORMED), NOT coerced ──
+# Every supported manifest field is a STRING in a well-formed manifest. A present NON-STRING scalar
+# (branch:123, tmux_session:true, status:123) is a tamper indicator: hivemind_manifest_field_at must
+# exit 2 (the caller renders MALFORMED) and emit NOTHING — never coerce 123→"123" / true→"true".
+# We assert the EXIT CODE explicitly (the contract is out-of-band) AND that stdout is empty.
+nonstring_branch='{"strains":[{"name":"api","branch":123,"tmux_session":"brood-api","status":"running"}]}'
+out="$(hivemind_manifest_field_at "$nonstring_branch" 0 "branch")"; rc=$?
+assert_eq "f3:branch-number-rc" "2" "$rc" "branch:123 → field_at exit 2 (MALFORMED, not coerced)"
+assert_eq "f3:branch-number-empty" "" "$out" "branch:123 → field_at emits nothing (no coercion to \"123\")"
+nonstring_tmux='{"strains":[{"name":"api","branch":"strain/brood-x/api","tmux_session":true,"status":"running"}]}'
+out="$(hivemind_manifest_field_at "$nonstring_tmux" 0 "tmux_session")"; rc=$?
+assert_eq "f3:tmux-bool-rc" "2" "$rc" "tmux_session:true → field_at exit 2 (MALFORMED, not coerced)"
+assert_eq "f3:tmux-bool-empty" "" "$out" "tmux_session:true → field_at emits nothing (no coercion to \"true\")"
+nonstring_status='{"strains":[{"name":"api","branch":"strain/brood-x/api","tmux_session":"brood-api","status":123}]}'
+out="$(hivemind_manifest_field_at "$nonstring_status" 0 "status")"; rc=$?
+assert_eq "f3:status-number-rc" "2" "$rc" "status:123 → field_at exit 2 (MALFORMED, not coerced)"
+assert_eq "f3:status-number-empty" "" "$out" "status:123 → field_at emits nothing (no coercion)"
+
+# ── 5d. #178 F2: field_at exit-code contract — present/absent/rejected are DISTINCT ──
+# The exit-code contract: 0 = present+valid (value on stdout), 1 = ABSENT (→MISSING),
+# 2 = present-but-INVALID (→MALFORMED). A REJECTED value (control byte / multi-document) is exit 2
+# and must NEVER be collapsed into the absent exit 1. We assert the exit codes EXPLICITLY.
+# Present + valid → exit 0, value on stdout.
+valid_field='{"strains":[{"name":"api","branch":"strain/brood-x/api","tmux_session":"brood-api","status":"running"}]}'
+out="$(hivemind_manifest_field_at "$valid_field" 0 "branch")"; rc=$?
+assert_eq "f2:present-valid-rc" "0" "$rc" "present+valid branch → field_at exit 0"
+assert_eq "f2:present-valid-value" "strain/brood-x/api" "$out" "present+valid branch → value on stdout"
+# ABSENT field (key missing) → exit 1 (MISSING), nothing on stdout.
+absent_field='{"strains":[{"name":"api","tmux_session":"brood-api","status":"running"}]}'
+out="$(hivemind_manifest_field_at "$absent_field" 0 "branch")"; rc=$?
+assert_eq "f2:absent-rc" "1" "$rc" "absent branch key → field_at exit 1 (MISSING)"
+assert_eq "f2:absent-empty" "" "$out" "absent branch key → nothing on stdout"
+# Explicit JSON null → exit 1 (MISSING).
+null_field='{"strains":[{"name":"api","branch":null,"tmux_session":"brood-api","status":"running"}]}'
+out="$(hivemind_manifest_field_at "$null_field" 0 "branch")"; rc=$?
+assert_eq "f2:null-rc" "1" "$rc" "branch:null → field_at exit 1 (MISSING)"
+# Empty string → exit 1 (MISSING) per the contract (absent-or-empty).
+emptystr_field='{"strains":[{"name":"api","branch":"","tmux_session":"brood-api","status":"running"}]}'
+out="$(hivemind_manifest_field_at "$emptystr_field" 0 "branch")"; rc=$?
+assert_eq "f2:emptystr-rc" "1" "$rc" "branch:\"\" → field_at exit 1 (MISSING)"
+# REJECTED: a JSON control-byte ESCAPE (valid JSON; the FILE bytes hold the literal 6-char
+# ASCII escape \\u0000, no real NUL) -> exit 2. jq -r would decode \\u0000 to a real NUL that
+# $(...) would strip; the in-jq [[:cntrl:]] gate rejects it INSIDE jq while the bytes are intact.
+# This rejected value is exit 2 -- NEVER collapsed into the absent exit 1. printf %b is NOT used:
+# the \\u in the double-quoted format emits a literal backslash+u so jq receives the JSON escape
+# and decodes it at projection time.
+ctrl_field="$(printf '{"strains":[{"name":"api","branch":"strain/brood-x\\u0000api","tmux_session":"brood-api","status":"running"}]}')"
+out="$(hivemind_manifest_field_at "$ctrl_field" 0 "branch")"; rc=$?
+assert_eq "f2:control-escape-rc" "2" "$rc" "branch with u0000 control escape -> field_at exit 2 (REJECTED, not MISSING)"
+assert_eq "f2:control-escape-empty" "" "$out" "control-escape branch -> nothing on stdout (never the NUL-stripped token)"
+# REJECTED: a multi-document snapshot (length != 1) → exit 2 (not exit 1).
+multidoc_field="$(printf '%s\n%s\n' \
+  '{"strains":[{"name":"api","branch":"strain/brood-x/api","tmux_session":"brood-api","status":"running"}]}' \
+  '{"strains":[{"name":"web","branch":"strain/brood-x/web","tmux_session":"brood-web","status":"running"}]}')"
+out="$(hivemind_manifest_field_at "$multidoc_field" 0 "branch")"; rc=$?
+assert_eq "f2:multidoc-rc" "2" "$rc" "multi-document snapshot → field_at exit 2 (REJECTED, not MISSING)"
+# REGRESSION: rejected (exit 2) is distinct from absent (exit 1) — assert they differ on the same field.
+if [ "$rc" -ne 1 ]; then
+  pass "f2:rejected-not-collapsed" "a rejected value's exit code (2) is never the absent exit code (1)"
+else
+  failed "f2:rejected-not-collapsed" "a rejected value collapsed into the absent exit code (1)"
+fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
