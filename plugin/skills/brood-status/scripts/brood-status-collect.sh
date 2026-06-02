@@ -178,22 +178,37 @@ for manifest in "${manifests[@]}"; do
     continue
   fi
 
-  # Exit 0: parse STRAIN lines. Zero strains -> empty brood.
-  # BROOD-ID INTEGRITY: the projector emits the manifest TOP-LEVEL brood_id as f_brood on EVERY
-  # STRAIN line, validated ONCE against ^brood-[0-9a-f-]+$ (MALFORMED when absent/tampered). The
-  # discovered directory name (brood_id) is the OTHER ground-truth identity. If they disagree — a
-  # manifest copied into the wrong brood dir, or a tampered/absent top-level brood_id rendering
-  # MALFORMED — the brood is unattributable: we must NOT render it as a normal brood under the
-  # directory id (which would mask the projector's corruption signal). We detect the disagreement
-  # while parsing strains and, after the loop, downgrade the brood to a `blocker` entry.
+  # Exit 0: the projection succeeded (including the VALID-empty `{"strains":[]}` -> zero STRAIN
+  # lines case). Before any per-strain work, assert BROOD-ID INTEGRITY independently of the strain
+  # rows.
+  #
+  # BROOD-ID INTEGRITY (manifest-level, strain-count-independent): the discovered directory name
+  # (brood_id, a discover-validated brood-* segment) and the manifest's TOP-LEVEL brood_id are two
+  # ground-truth identities that MUST agree. If they disagree — a manifest copied into the wrong
+  # brood dir, or a tampered/absent/malformed top-level brood_id — the brood is unattributable and
+  # must NOT be rendered as a normal brood under the directory id (which would mask the corruption).
+  # We read the top-level brood_id DIRECTLY here (inert jq DATA read, never command source) rather
+  # than inferring it from STRAIN rows, because the projector emits ZERO STRAIN lines for a valid
+  # empty manifest — a strain-row-only check would let an empty manifest copied into the wrong dir,
+  # or carrying a missing/malformed top-level brood_id, slip through as a normal `empty` brood. The
+  # read mirrors the projector's own validation: a control-bearing value is rejected (-> empty ->
+  # mismatch), and the value must match the directory id exactly (which is already ^brood-[0-9a-f-]+$
+  # shaped by discovery), so absent/tampered/malformed all resolve to "!= brood_id" -> mismatch.
+  manifest_brood_id="$(jq -r '(.brood_id // "") | select((tostring | test("[[:cntrl:]]")) | not) // ""' "$manifest" 2>/dev/null || true)"
+  if [ "$manifest_brood_id" != "$brood_id" ]; then
+    brood_objects+=( "$(jq -n --arg id "$brood_id" --arg got "$manifest_brood_id" \
+      '{brood_id:$id, status:"blocker",
+        detail:("manifest brood_id mismatch: directory \($id) but manifest top-level brood_id is \(if $got=="" then "absent/malformed" else $got end)"),
+        strains:[], summary:{complete:0, running:0, blocked_failed:0, total:0}}')" )
+    global_records+=( "1:0:0" )
+    continue
+  fi
+
+  # Brood-id integrity holds. Parse STRAIN lines. Zero strains -> empty brood.
   strain_objects=()
   buckets=()
-  brood_id_mismatch=""   # set to the offending f_brood value on first mismatch/MALFORMED
   while IFS="$TAB" read -r sentinel f_brood f_name f_wt f_branch f_tmux f_status f_state f_run; do
     [ "$sentinel" = "STRAIN" ] || continue
-    if [ -z "$brood_id_mismatch" ] && [ "$f_brood" != "$brood_id" ]; then
-      brood_id_mismatch="$f_brood"
-    fi
     # Probe observables using the projector-validated tokens (inert "$var").
     session_alive="$(probe_session_alive "$f_tmux")"
     pr_pair="$(probe_pr "$f_branch")"
@@ -224,19 +239,6 @@ for manifest in "${manifests[@]}"; do
         pr:{number:$number, state:$state},
         workflow_state:$wstate, run_status:$run, derived_status:$derived}')" )
   done <<< "$proj_out"
-
-  # Brood-id disagreement (mismatch or MALFORMED top-level brood_id) -> unattributable brood.
-  # Render a `blocker` entry (no strain table) carrying the offending f_brood in detail, and count
-  # it as unreadable in the global aggregate. This preserves the projector's integrity signal that
-  # the directory-name collector would otherwise mask.
-  if [ -n "$brood_id_mismatch" ]; then
-    brood_objects+=( "$(jq -n --arg id "$brood_id" --arg got "$brood_id_mismatch" \
-      '{brood_id:$id, status:"blocker",
-        detail:("manifest brood_id mismatch: directory \($id) but manifest emitted \($got)"),
-        strains:[], summary:{complete:0, running:0, blocked_failed:0, total:0}}')" )
-    global_records+=( "1:0:0" )
-    continue
-  fi
 
   # Per-brood summary via the pure aggregator.
   read -r b_complete b_running b_blocked b_total \

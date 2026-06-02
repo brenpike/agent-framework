@@ -2285,6 +2285,61 @@ assert_collect_broodid_mismatch_blocker() {
     fi
 }
 
+# ── COLLECT-BROODID-MISMATCH-EMPTY: strains:[] with wrong/absent top-level brood_id → blocker ──
+# The integrity guard must NOT depend on STRAIN rows: the projector emits ZERO STRAIN lines for a
+# VALID empty manifest (`strains:[]` -> exit 0). An empty manifest copied into the wrong brood dir
+# (mismatched top-level brood_id) OR carrying an absent top-level brood_id must STILL be rendered as
+# a `blocker` (unattributable), counted unreadable — never as a normal `empty` brood under the
+# directory id. Covers both the mismatched and the absent/malformed zero-strain paths.
+assert_collect_broodid_mismatch_empty_blocker() {
+    local name="COLLECT-BROODID-MISMATCH-EMPTY:zero-strain-wrong-or-absent-brood_id-blocker"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    # Brood A: empty manifest, top-level brood_id DIFFERS from dir id.
+    local id_a="brood-5555eeee-5555-4eee-8eee-555555555555"
+    local mid_a="brood-6666ffff-6666-4fff-8fff-666666666666"
+    mkdir -p "$root/.hivemind/broods/$id_a"
+    jq -n --arg bid "$mid_a" \
+        '{ manifest_version:4, brood_id:$bid, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low", strains:[], merge_order:[] }' \
+        > "$root/.hivemind/broods/$id_a/manifest.json"
+    # Brood B: empty manifest, top-level brood_id ABSENT entirely.
+    local id_b="brood-7777aaaa-7777-4aaa-8aaa-777777777777"
+    mkdir -p "$root/.hivemind/broods/$id_b"
+    jq -n \
+        '{ manifest_version:4, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low", strains:[], merge_order:[] }' \
+        > "$root/.hivemind/broods/$id_b/manifest.json"
+
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    # Both broods (sorted: id_a < id_b) must be blocker, zero strains, counted unreadable. Brood A's
+    # detail names the wrong manifest id; brood B's detail says absent/malformed.
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg ida "$id_a" --arg mida "$mid_a" --arg idb "$id_b" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==2
+         and .broods[0].brood_id==$ida and .broods[0].status=="blocker"
+         and (.broods[0].strains|length)==0 and (.broods[0].detail|contains($mida))
+         and .broods[1].brood_id==$idb and .broods[1].status=="blocker"
+         and (.broods[1].strains|length)==0 and (.broods[1].detail|contains("absent/malformed"))
+         and .global.total_broods==2 and .global.unreadable==2 and .global.complete==0' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; zero-strain wrong/absent top-level brood_id -> blocker (not empty); both counted unreadable"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
 echo ''
 echo '=== brood-status-collect.sh collection-loop entrypoint tests (#186, ADR-0020) ==='
 assert_collect_empty
@@ -2292,6 +2347,7 @@ assert_collect_ok_one_strain
 assert_collect_unreadable_isolated
 assert_collect_missing_sentinel_not_probed
 assert_collect_broodid_mismatch_blocker
+assert_collect_broodid_mismatch_empty_blocker
 
 echo ''
 echo '=== Summary ==='
