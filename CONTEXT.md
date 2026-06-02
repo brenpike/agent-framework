@@ -236,7 +236,7 @@ A set of parallel overlord sessions working on independent tasks in the same rep
 _Avoid_: fleet, cluster, swarm, pool
 
 **Hatchery**:
-The overlord execution mode entered when a brood-plan is dispatched; the overlord remains on trunk in the main checkout, owns the brood manifests, enumerates every active brood under `.hivemind/broods/`, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+The overlord execution mode entered when a brood-plan is dispatched; the overlord remains on trunk in the main checkout, owns the brood manifests, enumerates every brood, with status, under `.hivemind/broods/`, and serves as the status dashboard and on-demand helper for the brood lifecycle.
 _Alias_: coordinator mode
 _Avoid_: manager mode, supervisor mode
 
