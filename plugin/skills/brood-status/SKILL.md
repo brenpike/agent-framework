@@ -1,6 +1,6 @@
 ---
 name: brood-status
-description: Check status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "check brood", "brood-status", "brood progress", "how's the brood", "fleet status".
+description: Check status of all broods, with per-strain status. Reports per-strain tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "check brood", "brood-status", "brood progress", "how's the brood", "fleet status".
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh *)
   - Bash(tmux *)
@@ -13,7 +13,7 @@ shell: bash
 
 # Brood Status
 
-Check the status of all active brood sessions. Reports per-strain tmux session state, branch existence, and PR status from external observables, plus the manifest's static fields.
+Check the status of all broods, with per-strain status. Reports per-strain tmux session state, branch existence, and PR status from external observables, plus the manifest's static fields.
 
 This is an **interactive skill** — it produces user-visible text output.
 
@@ -28,7 +28,7 @@ Workflow state (`state_current` / `run.status`) is projected via the committed h
       ```
       This always yields the **main checkout root** — the directory that owns `.hivemind/`. Use it for all manifest discovery below regardless of whether the current session is in a linked worktree.
 
-      **Recursive-brood / linked-worktree note:** if you are running inside a child worktree that itself launched a nested brood, that nested brood's manifests live under the child worktree, not the main checkout. Nested brood enumeration is out of scope for the global dashboard primitive; the procedure below enumerates only the main checkout's broods.
+      **Nested/recursive broods — UNSUPPORTED (intentional scope boundary, not a regression):** this dashboard resolves only the main checkout root and enumerates only the broods recorded there. If you are running inside a child worktree that itself launched a nested brood, that nested brood's manifests live under the child worktree — outside the main checkout — and are not discovered by this skill. Resolving only the main checkout root is a deliberate scope boundary: a global recursive-topology walk raises containment, trust, and cycle-detection questions that are not yet designed. The open topology question is tracked in issue #182; do not attempt to implement nested enumeration here.
 
    b. Enumerate per-brood manifest paths by globbing under the main checkout root:
       ```
@@ -38,11 +38,13 @@ Workflow state (`state_current` / `run.status`) is projected via the committed h
 
    c. If the glob matches **nothing** (no `manifest.json` files found), report:
       ```
-      No active broods found.
+      No broods found.
       ```
       and stop. This is distinct from a present-but-unreadable manifest.
 
-   d. **In-session filtering (note, not implemented here):** a hatchery overlord MAY filter display to its own brood-id when self-reporting. The dashboard primitive (this skill) is **global** — it shows all broods found by the glob. Do not add session filtering here.
+   d. **Discovery lifecycle note:** per-brood directories under `.hivemind/broods/` are **not pruned** by this read-only dashboard. Broods that have completed, been cancelled, or otherwise reached a terminal state remain on disk and are shown with their terminal Status (e.g. `complete`, `failed`). The Status column and per-brood summary counts reflect this. Cleanup and pruning of accumulated per-brood directories is a separate write-action and is tracked in issue #181; do not attempt to delete or archive directories from within this skill.
+
+   e. **In-session filtering (note, not implemented here):** a hatchery overlord MAY filter display to its own brood-id when self-reporting. The dashboard primitive (this skill) is **global** — it shows all broods found by the glob. Do not add session filtering here.
 
 2. **Probe each manifest.** For each manifest path from the sorted list in step 1b, call the helper ONCE and capture its output. Pass the main checkout root as the second argument so the read-guard confines the manifest beneath the checkout it belongs to:
    ```bash
