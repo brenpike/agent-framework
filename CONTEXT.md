@@ -249,7 +249,7 @@ One independent unit of work within a brood-plan, assigned to a single child ove
 _Avoid_: stream, task (too generic), work item, lane
 
 **Brood Manifest**:
-The YAML file at `.hivemind/brood/manifest.yaml` in the main checkout, tracking active brood sessions, their worktree paths, branches, tmux sessions, and status.
+The JSON file at `.hivemind/brood/manifest.json` in the main checkout, tracking active brood sessions, their worktree paths, branches, tmux sessions, and status.
 _Avoid_: brood config, brood state, registry
 
 ### Pipeline & Artifacts

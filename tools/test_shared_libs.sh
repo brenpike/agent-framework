@@ -423,6 +423,85 @@ for st in running complete blocked cancelled; do
     "$(hivemind_project_run_status "$enum_file")" "enum value $st"
 done
 
+# ── Section 4: NUL / control-byte rejection + single-document discipline (Codex #172) ──
+echo ''
+echo '=== NUL + control-byte + single-document (Codex #172 root cluster) ==='
+#
+# ROOT (documented at each fix site): bash command substitution `$(...)` SILENTLY STRIPS NUL
+# bytes, so a value validated AFTER a `$(...)` round-trip differs from what jq produced. Defended
+# at TWO layers: (1) FILE-LEVEL — reject any manifest/ledger file containing a LITERAL NUL byte
+# before it is read into a shell var (hivemind_path_has_nul); (2) SCALAR-LEVEL — every jq field
+# projection whose output bash consumes rejects a value containing ANY C0 control byte INSIDE jq
+# (so a JSON ` ` escape jq -r would decode to a real NUL is caught while the bytes are intact).
+# Plus: jq accepts a STREAM of documents, so shape validation now requires EXACTLY ONE document.
+
+# ── 4a. hivemind_path_has_nul: byte-accurate literal-NUL detection ──
+nul_file="$WORKDIR/has-nul.bin"
+printf '{"run":{"status":"running"}}\000\n' > "$nul_file"   # literal NUL embedded via \000
+clean_file="$WORKDIR/no-nul.json"
+printf '{"run":{"status":"running"}}\n' > "$clean_file"
+if hivemind_path_has_nul "$nul_file"; then
+  pass "nul:detect-present" "hivemind_path_has_nul detects a literal NUL byte"
+else
+  failed "nul:detect-present" "hivemind_path_has_nul missed a literal NUL byte"
+fi
+if hivemind_path_has_nul "$clean_file"; then
+  failed "nul:detect-absent" "hivemind_path_has_nul false-positived on a clean file"
+else
+  pass "nul:detect-absent" "hivemind_path_has_nul reports no NUL on a clean file"
+fi
+
+# ── 4b. Ledger wrapper: a ledger file with a LITERAL NUL → MALFORMED (both scalars) ──
+# The on-disk JSON is otherwise valid; the trailing literal NUL would be stripped by the `$(...)`
+# read, so the file-level guard must reject it as MALFORMED before any read.
+nul_ledger="$WORKDIR/nul-ledger.json"
+printf '{"run":{"status":"running"},"state":{"current":"plan"}}\000' > "$nul_ledger"
+assert_eq "ledger:literal-nul-status" "MALFORMED" \
+  "$(hivemind_project_run_status "$nul_ledger")" "literal-NUL ledger run.status → MALFORMED"
+assert_eq "ledger:literal-nul-state" "MALFORMED" \
+  "$(hivemind_project_state_current "$nul_ledger")" "literal-NUL ledger state.current → MALFORMED"
+
+# ── 4c. Scalar-level: a JSON ` ` ESCAPE (valid JSON) → field projects EMPTY, not stripped ──
+# The FILE has no literal NUL (the escape is 6 ASCII bytes \u0000), so the file-level check misses
+# it; the in-jq control-byte gate must reject it so bash never receives a NUL-stripped value. The
+# branch value `feature/api\u0000-slice` must NOT project as the trusted-looking `feature/api-slice`.
+nulesc_content="$(printf '%s' '{"strains":[{"name":"api","branch":"feature/api\u0000-slice","worktree_path":"/repo/wt","status":"running"}]}')"
+assert_eq "scalar:nul-escape-branch-empty" "" \
+  "$(hivemind_manifest_field_at "$nulesc_content" 0 "branch")" "JSON \\u0000 escape in branch → field_at empty (NOT control-stripped)"
+# A clean branch on the same shape still projects.
+clean_content="$(printf '%s' '{"strains":[{"name":"api","branch":"feature/api-slice","worktree_path":"/repo/wt","status":"running"}]}')"
+assert_eq "scalar:clean-branch-projects" "feature/api-slice" \
+  "$(hivemind_manifest_field_at "$clean_content" 0 "branch")" "clean branch still projects via field_at"
+# A mid-range control escape (TAB, \u0009) is also rejected — proves the whole C0 range, not just NUL.
+tabesc_content="$(printf '%s' '{"strains":[{"name":"api","branch":"feat\u0009x","worktree_path":"/repo/wt","status":"running"}]}')"
+assert_eq "scalar:tab-escape-branch-empty" "" \
+  "$(hivemind_manifest_field_at "$tabesc_content" 0 "branch")" "JSON \\u0009 (TAB) escape in branch → field_at empty"
+# A scalar NUL escape in a ledger state.current → MALFORMED (the in-jq charset gate sees it intact).
+nulesc_state="$(printf '%s' '{"run":{"status":"running"},"state":{"current":"impl\u0000ement"}}')"
+assert_eq "scalar:nul-escape-state-malformed" "MALFORMED" \
+  "$(hivemind_project_state_current_content "$nulesc_state")" "JSON \\u0000 escape in state.current → MALFORMED"
+
+# ── 4d. Single-document discipline: a multi-document file FAILS shape validation ──
+# jq accepts a STREAM of concatenated JSON documents; shape validation must require EXACTLY ONE.
+# Two valid manifest objects concatenated → length>1 → rejected (would otherwise project as empty).
+multidoc="$(printf '%s\n%s\n' '{"strains":[{"name":"api"}]}' '{"strains":[{"name":"web"}]}')"
+if hivemind_manifest_validate_shape "$multidoc"; then
+  failed "multidoc:reject" "two concatenated manifest documents wrongly passed shape validation"
+else
+  pass "multidoc:reject" "two concatenated manifest documents rejected by shape validation (single-document required)"
+fi
+# A single valid document still passes (regression guard for the slurp predicate).
+if hivemind_manifest_validate_shape "$V3_CONTENT"; then
+  pass "multidoc:single-ok" "single valid manifest document still passes shape validation after slurp"
+else
+  failed "multidoc:single-ok" "slurp predicate wrongly rejected a single valid manifest document"
+fi
+# count + field_at over the single document remain correct under the slurp (regression).
+assert_eq "multidoc:single-count" "1" \
+  "$(hivemind_manifest_strain_count_snapshot "$V3_CONTENT")" "slurp count over single document"
+assert_eq "multidoc:single-field" "feature/api-slice" \
+  "$(hivemind_manifest_field_at "$V3_CONTENT" 0 "branch")" "slurp field_at over single document"
+
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
 echo '=== Summary ==='

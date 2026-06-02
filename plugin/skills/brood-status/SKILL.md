@@ -45,9 +45,10 @@ Workflow state (`state_current` / `run.status`) is now projected via the committ
         worktree, not the outer main checkout.
       - **Fallback:** if the current checkout has no manifest (i.e. the caller
         is the outer coordinator or a non-hatchery worktree), resolve the main
-        checkout path:
+        checkout path from the porcelain output (space-safe; the first `worktree `
+        line carries the verbatim path regardless of spaces in the directory name):
         ```bash
-        git worktree list | head -1 | awk '{print $1}'
+        git worktree list --porcelain | grep -m1 '^worktree ' | sed 's/^worktree //'
         ```
         and read `<main_checkout>/.hivemind/brood/manifest.json`. **Record that
         this manifest came from the main-checkout fallback** — you MUST pass

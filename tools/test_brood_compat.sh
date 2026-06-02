@@ -1549,6 +1549,127 @@ assert_proj_multi_strain() {
     fi
 }
 
+# ── Projection NUL-MANIFEST: literal-NUL manifest → MANIFEST_UNREADABLE + exit 2 ──
+# A manifest whose on-disk bytes carry a LITERAL NUL (embedded via \000) would, after the
+# entrypoint's `$(cat ...)` read, have that NUL SILENTLY STRIPPED — turning e.g.
+# `{"strains":<NUL>[]}` into the valid-looking `{"strains":[]}` that passes shape validation and
+# projects as an empty brood (Codex #172 root cluster 1, Finding A). The file-level NUL guard must
+# reject it BEFORE the `$(...)` read: MANIFEST_UNREADABLE sentinel + exit 2, no STRAIN lines.
+assert_proj_literal_nul_manifest() {
+    local name="PROJ-NUL-MANIFEST:literal-nul-manifest-unreadable"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/nulmanifest"
+    mkdir -p "$wd"
+    local manifest="$wd/manifest.json"
+    # Otherwise-valid empty-brood JSON with a literal NUL spliced in. If the NUL were stripped by
+    # $(...), the residue would parse as valid and project as empty (exit 0) — the bug. printf %b
+    # is NOT used; \000 in a single-quoted printf format embeds the literal byte.
+    printf '{"strains":\000[]}' > "$manifest"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local strain_lines; strain_lines="$(count_strain_lines "$out")"
+    local sentinel_path
+    sentinel_path="$(printf '%s\n' "$out" | awk -F'\t' '/^MANIFEST_UNREADABLE\t/ { print $2; exit }')"
+    if [[ "$rc" -eq 2 && "$strain_lines" -eq 0 && "$sentinel_path" == "$manifest" ]]; then
+        pass "$name" "exit 2; literal-NUL manifest → MANIFEST_UNREADABLE (path=$sentinel_path); not projected as empty brood"
+    else
+        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path] expected exit 2 + sentinel + 0 strains"
+    fi
+}
+
+# ── Projection NUL-SCALAR: JSON ` ` ESCAPE in branch → branch field MALFORMED ─────
+# The manifest FILE has NO literal NUL (the escape is 6 ASCII bytes  ), so the file-level
+# guard misses it; `jq -r` DECODES it to a real NUL that `$(...)` would strip — turning
+# `feature/api -slice` into the trusted-looking `feature/api-slice` (Codex #172 root cluster 1,
+# Finding B). The in-jq control-byte gate must reject it so the branch projects MALFORMED, never
+# the stripped token. The strain still projects (exit 0); only the branch field is MALFORMED.
+assert_proj_nul_escape_branch() {
+    local name="PROJ-NUL-SCALAR:json-nul-escape-branch-malformed"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/nulscalar"
+    local wt="$wd/wt"
+    mkdir -p "$wt"
+    local manifest="$wd/manifest.json"
+    # Authored via python so the   escape is written as literal ASCII (jq decodes it to NUL
+    # at projection time). worktree_path is clean so only the branch field exercises the gate.
+    python3 - "$manifest" "$wt" <<'PY'
+import sys
+manifest, wt = sys.argv[1], sys.argv[2]
+obj = '{"manifest_version":3,"brood_id":"2026-06-01T00-00-00Z","base":"main","overlap_risk":"low",' \
+      '"strains":[{"name":"api","description":"d","worktree_path":"%s","branch":"feature/api\\u0000slice",' \
+      '"tmux_session":"brood-api","status":"running"}],"merge_order":[]}' % wt
+open(manifest, "w").write(obj)
+PY
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local lines; lines="$(count_strain_lines "$out")"
+    # branch is field 4. It MUST be MALFORMED, and the stripped `feature/api-slice` must NOT appear.
+    if [[ "$rc" -eq 0 && "$lines" -eq 1 && "$(strain_field "$out" 4)" == "MALFORMED" ]] \
+       && ! printf '%s' "$out" | grep -q 'feature/api-slice'; then
+        pass "$name" "exit 0; one STRAIN line; branch=MALFORMED; control-stripped 'feature/api-slice' NOT emitted"
+    else
+        failed "$name" "rc=$rc lines=$lines branch=$(strain_field "$out" 4) stripped_leak=$(printf '%s' "$out" | grep -q 'feature/api-slice' && echo yes || echo no)"
+    fi
+}
+
+# ── Projection MULTIDOC: two concatenated valid manifest objects → MANIFEST_UNREADABLE ──
+# jq accepts a STREAM of documents; a file holding TWO valid manifest objects would pass a
+# non-slurped shape probe, the count would emit `1\n1`, the loop's integer test would break, and
+# the engine would exit 0 with no STRAIN lines — live children rendered as an empty brood (Codex
+# #172 root cluster 2). The single-document slurp predicate must reject it: MANIFEST_UNREADABLE +
+# exit 2, no STRAIN lines.
+assert_proj_multidoc_manifest() {
+    local name="PROJ-MULTIDOC:two-documents-unreadable"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/multidoc"
+    mkdir -p "$wd"
+    local manifest="$wd/manifest.json"
+    # Two syntactically-valid manifest objects concatenated (newline-separated). Each alone would
+    # pass shape; together they are a multi-document stream that must be rejected.
+    printf '%s\n%s\n' \
+        '{"manifest_version":3,"strains":[{"name":"api","worktree_path":"/repo/wt","branch":"b","tmux_session":"t","status":"running"}]}' \
+        '{"manifest_version":3,"strains":[{"name":"web","worktree_path":"/repo/wt2","branch":"b2","tmux_session":"t2","status":"running"}]}' \
+        > "$manifest"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local strain_lines; strain_lines="$(count_strain_lines "$out")"
+    local sentinel_path
+    sentinel_path="$(printf '%s\n' "$out" | awk -F'\t' '/^MANIFEST_UNREADABLE\t/ { print $2; exit }')"
+    if [[ "$rc" -eq 2 && "$strain_lines" -eq 0 && "$sentinel_path" == "$manifest" ]]; then
+        pass "$name" "exit 2; multi-document manifest → MANIFEST_UNREADABLE (path=$sentinel_path); not projected as empty brood"
+    else
+        failed "$name" "rc=$rc strain_lines=$strain_lines sentinel_path=[$sentinel_path] expected exit 2 + sentinel + 0 strains"
+    fi
+}
+
+# ── Projection NUL-LEDGER: literal-NUL child ledger → ledger scalars MALFORMED ────
+# A confined, regular state.json whose on-disk bytes carry a LITERAL NUL: the file-level NUL guard
+# at the ledger read site must reject it BEFORE the `$(cat ...)` read (which would strip the NUL),
+# so both scalars render MALFORMED (Codex #172 root cluster 1, ledger side). Static manifest fields
+# still project; exit 0.
+assert_proj_literal_nul_ledger() {
+    local name="PROJ-NUL-LEDGER:literal-nul-ledger-malformed"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/nulledger"
+    local wt="$wd/wt"
+    mkdir -p "$wt/.hivemind/runs/run-id"
+    local leaf="$wt/.hivemind/runs/run-id/state.json"
+    # Otherwise-valid ledger JSON with a literal NUL spliced in via \000.
+    printf '{"run":{"status":"running"},"state":{"current":"plan"}}\000' > "$leaf"
+    local manifest="$wd/manifest.json"
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" "$leaf"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 7)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MALFORMED" ]] \
+          && ! printf '%s' "$out" | grep -q 'plan'; then
+        pass "$name" "exit 0; literal-NUL ledger → both scalars MALFORMED; content not leaked"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8) leaked=$(printf '%s' "$out" | grep -q 'plan' && echo yes || echo no)"
+    fi
+}
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
@@ -1579,6 +1700,10 @@ assert_proj_valid_empty_manifest
 assert_proj_wrong_shape_unreadable
 assert_proj_object_element_missing_name
 assert_proj_single_snapshot_consistency
+assert_proj_literal_nul_manifest
+assert_proj_nul_escape_branch
+assert_proj_multidoc_manifest
+assert_proj_literal_nul_ledger
 
 echo ''
 echo '=== Summary ==='

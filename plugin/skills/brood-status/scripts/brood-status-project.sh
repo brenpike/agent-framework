@@ -162,6 +162,20 @@ hivemind_assert_inputs_contained "$CHECKOUT_ROOT" "$MANIFEST" >/dev/null \
 # only; the WRITE-side liveness guard in spawn-brood.sh deliberately keeps its
 # fail-open-on-malformed behavior (a corrupt manifest must not wedge spawning).
 # The manifest is UNTRUSTED bytes; held only in a shell var passed to jq stdin, never eval'd.
+#
+# FILE-LEVEL NUL REJECTION (root, Codex #172): bash `$(...)` SILENTLY STRIPS NUL bytes, so a
+# manifest whose on-disk bytes are e.g. `{"strains":<NUL>[]}` would, after the `$(...)` read below,
+# become the valid-looking `{"strains":[]}` — it would pass shape validation and project as an empty
+# brood, emitting no MANIFEST_UNREADABLE and exiting 0 (live children hidden). JSON never legitimately
+# contains a literal NUL, so we reject a NUL-bearing manifest at the FILE level (bytes still intact)
+# BEFORE the `$(...)` read can erase it: MANIFEST_UNREADABLE + exit 2, same integrity verdict as a
+# torn/wrong-shape manifest. (A control byte that arrives via a JSON ` ` ESCAPE — not a literal NUL
+# in the file — is a separate vector handled INSIDE jq during per-field projection; this file-level
+# check only catches a literal NUL the `$(...)` capture would silently drop.)
+if hivemind_path_has_nul "$MANIFEST"; then
+  printf 'MANIFEST_UNREADABLE\t%s\n' "$MANIFEST"
+  exit 2
+fi
 manifest_content="$(cat -- "$MANIFEST")"
 if ! hivemind_manifest_validate_shape "$manifest_content"; then
   printf 'MANIFEST_UNREADABLE\t%s\n' "$MANIFEST"
@@ -197,7 +211,12 @@ idx=0
 while [ "$idx" -lt "$strain_count" ]; do
   # 1. Extract the strain NAME + static fields + the suggested_ledger pointer out-of-band, all
   #    selected by INDEX against the single in-memory snapshot.
-  strain_name="$(printf '%s' "$manifest_content" | jq -r --argjson i "$idx" '.strains[$i].name // empty' 2>/dev/null)"
+  # The name is resolved with the SAME in-jq C0-control-byte rejection as hivemind_manifest_field_at
+  # (root, Codex #172): bash $(...) strips NUL, so a JSON \u00NN control escape that jq -r would decode
+  # to a real control byte must be rejected INSIDE jq (bytes intact), else the post-cmd-subst
+  # presentation gate would validate a control-stripped name. A control-bearing name resolves to empty
+  # here -> name_out MALFORMED. The regex char class spans \u0000 (NUL) .. \u001f (last C0 control).
+  strain_name="$(printf '%s' "$manifest_content" | jq -r -s --argjson i "$idx" '(.[0].strains[$i].name // empty) | select((tostring | test("[\u0000-\u001f]")) | not)' 2>/dev/null)"
   worktree_path="$(hivemind_manifest_field_at "$manifest_content" "$idx" "worktree_path")"
   branch="$(hivemind_manifest_field_at "$manifest_content" "$idx" "branch")"
   tmux_session="$(hivemind_manifest_field_at "$manifest_content" "$idx" "tmux_session")"
@@ -347,6 +366,19 @@ while [ "$idx" -lt "$strain_count" ]; do
             # leaf is not a symlink as close to the read as possible to narrow (not fully close)
             # the window.
             if [ -L "$canon_ledger" ]; then
+              state_out="MALFORMED"
+              run_out="MALFORMED"
+            elif hivemind_path_has_nul "$canon_ledger"; then
+              # FILE-LEVEL NUL REJECTION (root, Codex #172): the `cat` read below uses `$(...)`,
+              # which SILENTLY STRIPS NUL bytes — so a ledger whose on-disk bytes carry a literal
+              # NUL (e.g. NUL-padding around otherwise-valid JSON) would, after capture, parse as a
+              # different document than what is on disk. JSON never legitimately contains a literal
+              # NUL, so a NUL-bearing ledger is "present but invalid" → MALFORMED, never read into a
+              # snapshot. (A control byte arriving via a JSON ` ` ESCAPE is caught separately by the
+              # in-jq enum/charset gates in ledger-project.sh, which see the decoded bytes intact.)
+              # This adds one stat to the documented micro-TOCTOU window; the residual remains
+              # bounded (only validated enum/charset tokens ever surface, projection is
+              # informational-only), and rejecting a NUL-bearing leaf is strictly fail-closed.
               state_out="MALFORMED"
               run_out="MALFORMED"
             elif ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"; then

@@ -119,10 +119,23 @@ hivemind_manifest_field() {
 # that IS an object but lacks `name` still passes shape validation — per-strain field degradation
 # (MALFORMED/MISSING tokens) is the existing per-strain contract, not a whole-manifest verdict.
 # Emits nothing; pure (no side effects, no exit).
+# SINGLE-DOCUMENT REQUIREMENT (root, Codex #172): jq accepts a STREAM of concatenated JSON
+# documents, so a non-slurped `jq -e '(.strains|type=="array") ...'` runs the predicate ONCE PER
+# document and a file holding TWO valid manifest objects would pass shape validation. The downstream
+# count would then emit one length per document (`1\n1`), the loop's `[ "$idx" -lt "$count" ]`
+# integer test would error on the multiline value, and the engine would exit 0 with no STRAIN lines
+# — live children rendered as an empty brood. We SLURP with `jq -s` and require the slurped array
+# length == 1 (exactly one top-level document) AND that the single element is an object with
+# `.strains` an array of objects. A multi-document file → length>1 → fails → caller treats it as
+# UNREADABLE. The count/field projectors below slurp the same way and index `.[0]`, so the whole
+# read operates on one consistent single document.
 hivemind_manifest_validate_shape() {
   local content="$1"
   printf '%s' "$content" \
-    | jq -e '(.strains | type == "array") and (all(.strains[]; type == "object"))' \
+    | jq -e -s 'length == 1
+        and (.[0] | type == "object")
+        and (.[0].strains | type == "array")
+        and (all(.[0].strains[]; type == "object"))' \
       >/dev/null 2>&1
 }
 
@@ -135,7 +148,11 @@ hivemind_manifest_validate_shape() {
 # an extra iteration before validation. Pure (no side effects, no exit).
 hivemind_manifest_strain_count_snapshot() {
   local content="$1"
-  printf '%s' "$content" | jq -r '.strains | length' 2>/dev/null || printf '0'
+  # SLURP + index .[0] (root, Codex #172): match hivemind_manifest_validate_shape's single-document
+  # discipline so this can never emit one length per document for a multi-document file (which would
+  # break the engine's integer loop test). validate_shape has already required exactly one document
+  # before this is reached; slurping here keeps the count projection on that same single document.
+  printf '%s' "$content" | jq -r -s '.[0].strains | length' 2>/dev/null || printf '0'
 }
 
 # hivemind_manifest_field_at <content> <index> <field>
@@ -164,7 +181,22 @@ hivemind_manifest_field_at() {
       return 0 ;;
   esac
 
+  # CONTROL-BYTE REJECTION INSIDE jq (root, Codex #172): the extracted value is consumed by the
+  # caller via `$(...)` command substitution, which SILENTLY STRIPS NUL bytes — so a value the
+  # caller validates AFTER the `$(...)` round-trip differs from what jq produced. A JSON ` `
+  # escape is VALID JSON; `jq -r` decodes it to a real NUL that `$(...)` would erase, turning a
+  # value like `feature/api -slice` into the trusted-looking `feature/api-slice` before the
+  # allowlist ever sees it. We make jq the integrity point: jq sees the decoded bytes intact, so
+  # if the resolved value contains ANY C0 control byte ( - ) we emit NOTHING (empty), exactly
+  # as for an absent field. The caller never receives a control-bearing value to strip, and an
+  # empty value is rendered MALFORMED by its value-class gate. (` ` is `\u0000`; `` is the
+  # last C0 control byte. jq's regex engine matches the decoded codepoints, not the escapes.)
+  # SLURP + index .[0] (root, Codex #172): same single-document discipline as
+  # hivemind_manifest_validate_shape / _strain_count_snapshot — select the strain at $index from the
+  # ONE top-level document, never from a concatenated stream.
   printf '%s' "$content" \
-    | jq -r --argjson i "$index" ".strains[\$i] | $jq_path // empty" 2>/dev/null
+    | jq -r -s --argjson i "$index" \
+        ".[0].strains[\$i] | ($jq_path // empty) | select((tostring | test(\"[\\u0000-\\u001f]\")) | not)" \
+        2>/dev/null
   return 0
 }
