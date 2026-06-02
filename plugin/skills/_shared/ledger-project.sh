@@ -30,17 +30,30 @@
 #               state.current that violates the identifier shape / length cap). "Present but
 #               invalid" — never echoed raw.
 
-# hivemind_project_run_status <ledger_path>
-# Emit the validated run.status, or MISSING (absent file / absent-or-empty field) or MALFORMED
-# (unparseable JSON / value outside the fixed enum running|complete|blocked|cancelled).
-hivemind_project_run_status() {
-  local ledger_path="$1"
-  if [ ! -f "$ledger_path" ]; then
+# SINGLE-SNAPSHOT READ (read-side projection path): the projection engine
+# (brood-status-project.sh) reads the ledger file EXACTLY ONCE into an in-memory shell variable
+# and projects BOTH scalars from THAT snapshot via jq stdin (`printf '%s' "$content" | jq ...`),
+# never re-opening the file. This mirrors the manifest single-snapshot pattern (manifest-json.sh)
+# and collapses the prior per-scalar reopen window: the OLD path-based projectors each independently
+# re-stat + re-open the leaf via jq (which FOLLOWS symlinks), so a hostile child could swap the
+# regular-file leaf to a symlink in the post-check window and the per-scalar reopens would follow it.
+# The content-snapshot projectors below (suffix `_content`) take the CONTENT, not the path; the
+# legacy path-based pair (hivemind_project_run_status / hivemind_project_state_current) is retained
+# as a thin read-once wrapper for the unit-test callers that pass a fixture path directly.
+
+# hivemind_project_run_status_content <content>
+# Emit the validated run.status from an in-memory ledger CONTENT snapshot, or MISSING
+# (empty content / absent-or-empty field) or MALFORMED (unparseable JSON / value outside the
+# fixed enum running|complete|blocked|cancelled). The content is UNTRUSTED bytes; it enters jq
+# ONLY via stdin pipe, never spliced into the program, never eval'd.
+hivemind_project_run_status_content() {
+  local content="$1"
+  if [ -z "$content" ]; then
     printf 'MISSING\n'
     return 0
   fi
   local value
-  if ! value="$(jq -r '.run.status // empty' "$ledger_path" 2>/dev/null)"; then
+  if ! value="$(printf '%s' "$content" | jq -r '.run.status // empty' 2>/dev/null)"; then
     # jq failed: unparseable / torn JSON.
     printf 'MALFORMED\n'
     return 0
@@ -56,12 +69,13 @@ hivemind_project_run_status() {
   return 0
 }
 
-# hivemind_project_state_current <ledger_path>
-# Emit the validated state.current, or MISSING (absent file / absent-or-empty field) or
-# MALFORMED (unparseable JSON / value failing ^[a-z0-9_]+$ / value longer than 64 chars).
-hivemind_project_state_current() {
-  local ledger_path="$1"
-  if [ ! -f "$ledger_path" ]; then
+# hivemind_project_state_current_content <content>
+# Emit the validated state.current from an in-memory ledger CONTENT snapshot, or MISSING (empty
+# content / absent-or-empty field) or MALFORMED (unparseable JSON / value failing ^[a-z0-9_]+$ /
+# value longer than 64 chars). The content enters jq ONLY via stdin pipe, never spliced/eval'd.
+hivemind_project_state_current_content() {
+  local content="$1"
+  if [ -z "$content" ]; then
     printf 'MISSING\n'
     return 0
   fi
@@ -73,7 +87,7 @@ hivemind_project_state_current() {
   # length/charset contract below. An ABSENT field (jq type "null" for a missing key or an
   # explicit JSON null) is the intended "nothing to report" case and is reported MISSING.
   local jtype
-  if ! jtype="$(jq -r '.state.current | type' "$ledger_path" 2>/dev/null)"; then
+  if ! jtype="$(printf '%s' "$content" | jq -r '.state.current | type' 2>/dev/null)"; then
     printf 'MALFORMED\n'
     return 0
   fi
@@ -83,7 +97,7 @@ hivemind_project_state_current() {
     *) printf 'MALFORMED\n'; return 0 ;;
   esac
   local value
-  if ! value="$(jq -r '.state.current // empty' "$ledger_path" 2>/dev/null)"; then
+  if ! value="$(printf '%s' "$content" | jq -r '.state.current // empty' 2>/dev/null)"; then
     printf 'MALFORMED\n'
     return 0
   fi
@@ -100,5 +114,39 @@ hivemind_project_state_current() {
     *[!a-z0-9_]*) printf 'MALFORMED\n' ;;
     *) printf '%s\n' "$value" ;;
   esac
+  return 0
+}
+
+# hivemind_project_run_status <ledger_path>
+# Legacy path-based wrapper retained for unit-test callers that pass a fixture path. Reads the
+# ledger ONCE and delegates to hivemind_project_run_status_content. Emit the validated run.status,
+# or MISSING (absent file / absent-or-empty field) or MALFORMED (unparseable JSON / value outside
+# the fixed enum). An absent file is MISSING (the wrapper short-circuits before any read).
+hivemind_project_run_status() {
+  local ledger_path="$1"
+  if [ ! -f "$ledger_path" ]; then
+    printf 'MISSING\n'
+    return 0
+  fi
+  local content
+  content="$(cat -- "$ledger_path" 2>/dev/null)"
+  hivemind_project_run_status_content "$content"
+  return 0
+}
+
+# hivemind_project_state_current <ledger_path>
+# Legacy path-based wrapper retained for unit-test callers that pass a fixture path. Reads the
+# ledger ONCE and delegates to hivemind_project_state_current_content. Emit the validated
+# state.current, or MISSING (absent file / absent-or-empty field) or MALFORMED (unparseable JSON /
+# value failing ^[a-z0-9_]+$ / value longer than 64 chars).
+hivemind_project_state_current() {
+  local ledger_path="$1"
+  if [ ! -f "$ledger_path" ]; then
+    printf 'MISSING\n'
+    return 0
+  fi
+  local content
+  content="$(cat -- "$ledger_path" 2>/dev/null)"
+  hivemind_project_state_current_content "$content"
   return 0
 }

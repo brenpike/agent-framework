@@ -110,6 +110,11 @@ done
 # The permitted set is: A-Za-z0-9 space . _ - / ( ) : , + @ # = ~ !
 # `|` is NOT in the permitted set (Markdown table-cell injector — excluded by construction,
 # no explicit carve-out required). `;` is also not permitted (shell-structural, not needed).
+#
+# PRODUCER CONTRACT: these ACCEPT cases are ALSO the spawn-brood.sh strain-name launch gate.
+# spawn-brood.sh calls hivemind_assert_presentation at the name-validation point and hard-
+# blocks (exit 1, no child launched) on any name outside this class. Producer and consumer
+# share this single validator — the tests below document both roles simultaneously.
 for v in "api worker" "api" "api-slice" "api/v2" "feature (2)" "a.b_c" "a#b" "a (worker)" "a/b-c.d_e"; do
   if hivemind_assert_presentation "$v"; then
     pass "pres:accept" "accepted presentation value '$v'"
@@ -117,6 +122,9 @@ for v in "api worker" "api" "api-slice" "api/v2" "feature (2)" "a.b_c" "a#b" "a 
     failed "pres:accept" "rejected a presentation value that should render: '$v'"
   fi
 done
+# PRODUCER CONTRACT: these REJECT cases are ALSO names that spawn-brood.sh must never launch.
+# Each entry proves a class of invalid strain name is hard-blocked at the producer before any
+# child session is created — `api & web`, `a;b`, `a|b`, and non-ASCII names all fall here.
 # presentation enforces the shared floor (command-sub, '..', leading '-', framing) AND rejects
 # bytes not in the positive allowlist — each entry below proves a treadmill byte is closed BY
 # CONSTRUCTION (the byte is simply absent from the allowlist), not by a specific carve-out.
@@ -127,7 +135,7 @@ for v in \
   "a${tab}b" "a${nl}b" "a${cr}b" \
   "a${esc}b" "a${vt}b" "a${ff}b" "a${del}b" \
   "a${bidi}b" \
-  'a|b' 'a<b' 'a>b' 'a;b' 'a&b'; do
+  'a|b' 'a<b' 'a>b' 'a;b' 'a&b' "api & web"; do
   if hivemind_assert_presentation "$v"; then
     failed "pres:reject" "accepted a value the presentation allowlist must reject: '$v'"
   else

@@ -112,6 +112,11 @@ jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 . "$plugin_root/skills/_shared/containment.sh"
+# Source the shared allowlist so the producer strain-name contract (presentation value-class)
+# is single-sourced from the SAME validator the reader's dashboard uses. The producer MUST
+# enforce the reader's contract at launch time so no child ever starts with a name the
+# dashboard cannot faithfully render.
+. "$plugin_root/skills/_shared/allowlist.sh"
 
 # ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
 # Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
@@ -239,16 +244,15 @@ for idx in $(seq 0 $((strain_count - 1))); do
   desc="$(jq -r ".strains[$idx].description // \"\"" "$INPUTS_FILE")"
   branch="$(jq -r ".strains[$idx].branch // \"\"" "$INPUTS_FILE")"
 
-  [ -n "$name" ]   || { printf 'blocker: strain %d is missing name\n' "$idx" >&2; exit 1; }
-  # Reject an embedded newline in the strain name. The manifest is JSON; jq emits each field as
-  # a discrete value, so there is no block-scalar / body-skip risk. The name must still be a
-  # single line — a newline in a strain name is invalid input and we fail closed at the producer.
-  # (Codex #172 P1.)
-  newline='
-'
-  case "$name" in
-    *"$newline"*) printf 'blocker: strain %d name contains an embedded newline; strain names must be a single line\n' "$idx" >&2; exit 1 ;;
-  esac
+  # PRODUCER NAME CONTRACT: the strain name must satisfy the reader's presentation value-class
+  # (hivemind_assert_presentation in _shared/allowlist.sh). This is the SINGLE SOURCE OF TRUTH
+  # for the name contract — producer and consumer share the same validator, so a name that
+  # passes here is guaranteed to render faithfully on the dashboard. The presentation class
+  # subsumes the prior non-empty + no-newline guards (both are rejected by the floor), so those
+  # checks are intentionally removed rather than kept as redundant fast-guards.
+  # Fail closed BEFORE launching any child: a name outside the contract → hard blocker.
+  hivemind_assert_presentation "$name" \
+    || { printf 'blocker: strain %d name %s is outside the presentation value-class (must match [A-Za-z0-9 ._/=~#!():,+@-]+, no leading dash, no command-sub bytes, no framing bytes)\n' "$idx" "$name" >&2; exit 1; }
   [ -n "$desc" ]   || { printf 'blocker: strain %s is missing description\n' "$name" >&2; exit 1; }
   [ -n "$branch" ] || { printf 'blocker: strain %s is missing branch\n' "$name" >&2; exit 1; }
 

@@ -1409,6 +1409,39 @@ assert_proj_no_tmpdir_needed() {
     fi
 }
 
+# ── Projection SNAPSHOT: single-read consistency — both scalars from ONE snapshot ─
+# STRUCTURAL regression for the single-snapshot read (symlink-swap TOCTOU hardening): the
+# entrypoint now reads each confined ledger EXACTLY ONCE into an in-memory snapshot and projects
+# BOTH scalars (run.status + state.current) from that one snapshot, instead of re-opening the
+# leaf per scalar via jq (which followed symlinks, widening the swap window). A live race is
+# non-deterministic, so we do NOT attempt a flaky swap test; instead we lock the OBSERVABLE
+# invariant: for a single VALID ledger, ONE entrypoint run yields BOTH scalars correctly and
+# consistently (run_status=blocked AND state_current=review_step from the same snapshot). If a
+# future change reintroduced a per-scalar reopen and skewed the two reads, this asserts the
+# coupled projection from one view.
+assert_proj_single_snapshot_consistency() {
+    local name="PROJ-SNAPSHOT:single-read-both-scalars-consistent"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/snapshot"
+    local wt="$wd/wt"
+    mkdir -p "$wt/.hivemind/runs/run-id"
+    write_ledger "$wt/.hivemind/runs/run-id/state.json" blocked review_step
+    local manifest="$wd/manifest.json"
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
+        "$wt/.hivemind/runs/run-id/state.json"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    local lines; lines="$(count_strain_lines "$out")"
+    if [[ "$rc" -eq 0 \
+          && "$lines" -eq 1 \
+          && "$(strain_field "$out" 7)" == "review_step" \
+          && "$(strain_field "$out" 8)" == "blocked" ]]; then
+        pass "$name" "exit 0; one STRAIN line; both scalars project consistently from single snapshot (state=review_step run=blocked)"
+    else
+        failed "$name" "rc=$rc lines=$lines state=$(strain_field "$out" 7) run=$(strain_field "$out" 8)"
+    fi
+}
+
 # ── Projection 10: multi-strain — one healthy + one malformed, independent ───────
 # Two strains: a healthy one projects fully; a second whose state.current carries an
 # injection payload projects state_current=MALFORMED. One STRAIN line each, exit 0.
@@ -1506,6 +1539,7 @@ assert_proj_unreadable_manifest
 assert_proj_valid_empty_manifest
 assert_proj_wrong_shape_unreadable
 assert_proj_object_element_missing_name
+assert_proj_single_snapshot_consistency
 
 echo ''
 echo '=== Summary ==='

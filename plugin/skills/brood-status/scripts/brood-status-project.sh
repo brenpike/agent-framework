@@ -329,10 +329,31 @@ while [ "$idx" -lt "$strain_count" ]; do
         canon_ledger="$canon_wt/$rel_chain"
         case "$canon_ledger/" in
           "$canon_wt/"*)
-            # Confined. Project both scalars independently (MISSING if file absent — e.g. the
-            # child has not initialized its ledger yet).
-            run_out="$(hivemind_project_run_status "$canon_ledger")"
-            state_out="$(hivemind_project_state_current "$canon_ledger")"
+            # Confined. Read the ledger EXACTLY ONCE into an in-memory snapshot, then project
+            # BOTH scalars from that one snapshot (mirrors the manifest single-snapshot pattern).
+            # The OLD code called the path-based projectors here, each of which independently
+            # re-stat'd + re-opened the leaf via jq (which FOLLOWS symlinks); a hostile child
+            # could swap the regular-file leaf to a symlink in the post-check window and the
+            # per-scalar reopens would follow it. One read collapses that multi-reopen window to
+            # a single open. (MISSING if file absent / empty — e.g. child has not initialized its
+            # ledger yet.)
+            #
+            # RESIDUAL (bounded, REQUIRED): bash has no portable O_NOFOLLOW, so an irreducible
+            # micro-TOCTOU remains between the [ -L ] re-check immediately below and the single
+            # `cat`. It is BOUNDED to near-zero impact: only the validated run.status enum +
+            # state.current charset ever surface — never raw bytes; projection is informational-
+            # only and never overrides observable status. The STRUCTURAL closure (no cross-worktree
+            # reads of hostile-child files) is per-brood isolation tracked in #168. Re-assert the
+            # leaf is not a symlink as close to the read as possible to narrow (not fully close)
+            # the window.
+            if [ -L "$canon_ledger" ]; then
+              state_out="MALFORMED"
+              run_out="MALFORMED"
+            else
+              ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"
+              run_out="$(hivemind_project_run_status_content "$ledger_content")"
+              state_out="$(hivemind_project_state_current_content "$ledger_content")"
+            fi
             ;;
           *)
             state_out="MALFORMED"
