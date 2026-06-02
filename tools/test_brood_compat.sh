@@ -53,8 +53,9 @@ SPAWN_SCRIPT="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
 INIT_SCRIPT="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
 PROJECT_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-status-project.sh"
 DISCOVER_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-discover.sh"
+COLLECT_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-status-collect.sh"
 
-for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT" "$PROJECT_SCRIPT" "$DISCOVER_SCRIPT"; do
+for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT" "$PROJECT_SCRIPT" "$DISCOVER_SCRIPT" "$COLLECT_SCRIPT"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required fixture missing: $required" >&2; exit 2; }
 done
@@ -1968,6 +1969,172 @@ assert_discover_hostile_name_skipped() {
 }
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# brood-status-collect.sh (collection loop + status derivation entrypoint, #186, ADR-0020)
+# ════════════════════════════════════════════════════════════════════════════════
+# The thin entrypoint owns discovery + per-strain observable probing + projection + status
+# derivation + aggregation, emitting ONE JSON document (schema brood-status-collect/1). It is the
+# IMPURE layer: jq + git are hard deps; tmux/gh degrade per-probe (a host without them yields
+# dead sessions and none/unknown PRs). The PURE derivation rule table is covered exhaustively in
+# tools/test_shared_libs.sh (brood-status-derive.sh); these cases prove the entrypoint produces a
+# WELL-FORMED document and wires discovery->projection->aggregation correctly.
+#
+# CI-SAFE (#169 real-deps-or-skip): the meaningful assertions below need only git + jq — they use
+# git-only observables (no live tmux session -> dead; a branch with no PR -> none/unknown), so they
+# run UNCONDITIONALLY and pass in CI. No tmux/gh MOCKS are built (out of scope per #169). If git or
+# jq is somehow absent, the cases SKIP cleanly. Each builds a throwaway git checkout via mktemp and
+# reaps it locally, independent of WORKDIR/PROJ_WORKDIR.
+
+COLLECT_BROOD_ID="brood-8a8a8a8a-8b8b-4c8c-8d8d-8e8e8e8e8e8e"
+
+# collect_seed_repo: a throwaway git checkout root (real toplevel for the entrypoint's
+# git rev-parse --show-toplevel anchor).
+collect_seed_repo() {
+    local root="$1"
+    git -C "$root" init -q
+    git -C "$root" config user.email test@example.com
+    git -C "$root" config user.name test
+    git -C "$root" commit -q --allow-empty -m "collect-seed"
+}
+
+# ── COLLECT-EMPTY: no broods → well-formed doc with empty broods + zeroed global ──
+assert_collect_empty() {
+    local name="COLLECT-EMPTY:no-broods-wellformed-empty-doc"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    # Well-formed JSON, schema correct, broods empty, global zeroed.
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        '.schema=="brood-status-collect/1" and (.broods|length)==0
+         and .global.total_broods==0 and .global.unreadable==0
+         and .global.complete==0 and .global.total_strains==0' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; well-formed empty doc (broods:[], global all 0)"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
+# ── COLLECT-OK: one brood, one strain, git-only observables (dead session) ───────
+# A real brood manifest under .hivemind/broods/<id>/manifest.json with one strain whose branch has
+# a registered git worktree (so the projector derives a ledger) carrying a valid ledger. No tmux
+# session is created (session -> dead) and the branch has no PR (none, or unknown if gh fails).
+# Asserts: well-formed doc, one brood status=ok, one strain, session=dead, workflow_state/run_status
+# projected from the ledger, derived_status present, and per-brood + global aggregates coherent.
+assert_collect_ok_one_strain() {
+    local name="COLLECT-OK:one-brood-one-strain-git-only-observables"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    local branch="strain/$COLLECT_BROOD_ID/api" sid="$COLLECT_BROOD_ID--api"
+    # A real git worktree on the strain branch so the projector resolves it as ground truth.
+    local wt="$root/wt-api"
+    git -C "$root" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    jq -n '{run:{status:"running"}, state:{current:"implement_step"}}' > "$wt/.hivemind/runs/$sid/state.json"
+    # A no-tmux session name (dead) and a branch with no PR (none/unknown).
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" --arg wt "$wt" --arg branch "$branch" --arg sid "$sid" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", worktree_path:$wt, branch:$branch,
+                     tmux_session:"\($brood_id)-api", status:"running",
+                     run:{suggested_id:$sid, workflow_hint:"standard-delivery"}}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    # Structural assertions only (PR/derived_status depend on tmux/gh presence): schema, one ok
+    # brood with the right id, one strain with session=dead, projected ledger scalars, a non-empty
+    # derived_status, and coherent aggregates (total_broods=1, total_strains=1).
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg id "$COLLECT_BROOD_ID" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==1
+         and .broods[0].brood_id==$id
+         and .broods[0].status=="ok"
+         and (.broods[0].strains|length)==1
+         and .broods[0].strains[0].name=="api"
+         and .broods[0].strains[0].session=="dead"
+         and .broods[0].strains[0].workflow_state=="implement_step"
+         and .broods[0].strains[0].run_status=="running"
+         and (.broods[0].strains[0].derived_status|length)>0
+         and .broods[0].summary.total==1
+         and .global.total_broods==1
+         and .global.total_strains==1
+         and .global.unreadable==0' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    git -C "$root" worktree remove --force "$wt" 2>/dev/null || true
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; one ok brood, one strain (session=dead), ledger projected, aggregates coherent"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
+# ── COLLECT-UNREADABLE: torn manifest → brood status=unreadable, isolated, counted ─
+# A torn (invalid-JSON) manifest must become an `unreadable` brood entry with detail=path, NOT abort
+# the run. Pair it with a valid empty brood to prove per-brood failure isolation + global counting.
+assert_collect_unreadable_isolated() {
+    local name="COLLECT-UNREADABLE:torn-manifest-isolated-unreadable-brood"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    # Two broods (sorted by id). First: a VALID empty manifest. Second: a TORN manifest.
+    local id_a="brood-1111aaaa-1111-4aaa-8aaa-111111111111"
+    local id_b="brood-2222bbbb-2222-4bbb-8bbb-222222222222"
+    mkdir -p "$root/.hivemind/broods/$id_a" "$root/.hivemind/broods/$id_b"
+    jq -n --arg id "$id_a" '{manifest_version:4, brood_id:$id, created_at:"2026-06-01T00:00:00Z", base:"main", overlap_risk:"low", strains:[], merge_order:[]}' \
+        > "$root/.hivemind/broods/$id_a/manifest.json"
+    printf '{"manifest_version":4,"strains":[{"name":"api",\n' > "$root/.hivemind/broods/$id_b/manifest.json"
+
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    # Brood a is empty (status empty, 0 strains); brood b is unreadable (detail=path); both counted;
+    # the run did NOT abort. global.total_broods=2, unreadable=1.
+    local manifest_b="$root/.hivemind/broods/$id_b/manifest.json"
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg ida "$id_a" --arg idb "$id_b" --arg pathb "$manifest_b" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==2
+         and .broods[0].brood_id==$ida and .broods[0].status=="empty"
+         and .broods[1].brood_id==$idb and .broods[1].status=="unreadable"
+         and .broods[1].detail==$pathb
+         and .global.total_broods==2 and .global.unreadable==1' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; empty brood + torn manifest isolated as unreadable (detail=path); both counted (total=2, unreadable=1)"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
@@ -2015,6 +2182,172 @@ assert_discover_sort_order
 assert_discover_nested_worktree
 assert_discover_dir_without_manifest_skipped
 assert_discover_hostile_name_skipped
+
+# ── COLLECT-MISSING-SENTINEL: absent tmux_session/branch → probes SKIP MISSING token ─
+# A manifest strain with NO tmux_session and NO branch field. The projector emits the fixed token
+# MISSING for both (absent fields). The collector MUST treat MISSING (like MALFORMED) as a
+# non-probeable sentinel — it must NOT run `tmux has-session -t MISSING` or `gh pr list --head
+# MISSING`, where an unrelated real session/branch/PR literally named `MISSING` would masquerade as
+# this strain's observable. Assert session=dead (MISSING never probed alive) and pr.state=none
+# (MISSING never probed to open/merged), regardless of any host session/branch named MISSING.
+assert_collect_missing_sentinel_not_probed() {
+    local name="COLLECT-MISSING-SENTINEL:absent-tmux-branch-not-probed-as-real-names"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    # A strain with NO branch and NO tmux_session field -> projector emits MISSING for both.
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", status:"running"}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+    # If this host happens to have a tmux server, create a real session literally named MISSING to
+    # prove the collector does NOT pick it up (probe is skipped, not run against the sentinel).
+    local made_session=no
+    if command -v tmux >/dev/null 2>&1 && tmux new-session -d -s MISSING 2>/dev/null; then
+        made_session=yes
+    fi
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg id "$COLLECT_BROOD_ID" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==1
+         and .broods[0].brood_id==$id
+         and (.broods[0].strains|length)==1
+         and .broods[0].strains[0].session=="dead"
+         and .broods[0].strains[0].pr.state=="none"
+         and .broods[0].strains[0].pr.number==null' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    [[ "$made_session" == "yes" ]] && tmux kill-session -t MISSING 2>/dev/null || true
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; MISSING tmux_session/branch sentinels NOT probed (session=dead, pr none/null) despite a real session named MISSING"
+    else
+        failed "$name" "rc=$rc ok=$ok made_session=$made_session out=[$out]"
+    fi
+}
+
+# ── COLLECT-BROODID-MISMATCH: manifest top-level brood_id != directory id → blocker ──
+# A manifest whose top-level brood_id does NOT match its containing brood directory (e.g. copied
+# into the wrong dir). The projector emits that top-level brood_id as f_brood on each STRAIN line;
+# the collector MUST detect the disagreement vs the directory id and render the brood as a
+# `blocker` (unattributable), counted as unreadable — NOT as a normal brood under the directory id.
+assert_collect_broodid_mismatch_blocker() {
+    local name="COLLECT-BROODID-MISMATCH:manifest-brood_id-ne-dir-id-blocker"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local dir_id="brood-3333cccc-3333-4ccc-8ccc-333333333333"
+    local manifest_id="brood-4444dddd-4444-4ddd-8ddd-444444444444"
+    local brood_dir="$root/.hivemind/broods/$dir_id"
+    mkdir -p "$brood_dir"
+    # Manifest carries a VALID-shape top-level brood_id that DIFFERS from the directory id.
+    jq -n --arg bid "$manifest_id" \
+        '{ manifest_version:4, brood_id:$bid, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", status:"running"}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg id "$dir_id" --arg got "$manifest_id" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==1
+         and .broods[0].brood_id==$id
+         and .broods[0].status=="blocker"
+         and (.broods[0].strains|length)==0
+         and (.broods[0].detail|contains($got))
+         and .global.total_broods==1
+         and .global.unreadable==1' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; manifest brood_id != dir id -> blocker (unattributable), counted unreadable; projector integrity signal preserved"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
+# ── COLLECT-BROODID-MISMATCH-EMPTY: strains:[] with wrong/absent top-level brood_id → blocker ──
+# The integrity guard must NOT depend on STRAIN rows: the projector emits ZERO STRAIN lines for a
+# VALID empty manifest (`strains:[]` -> exit 0). An empty manifest copied into the wrong brood dir
+# (mismatched top-level brood_id) OR carrying an absent top-level brood_id must STILL be rendered as
+# a `blocker` (unattributable), counted unreadable — never as a normal `empty` brood under the
+# directory id. Covers both the mismatched and the absent/malformed zero-strain paths.
+assert_collect_broodid_mismatch_empty_blocker() {
+    local name="COLLECT-BROODID-MISMATCH-EMPTY:zero-strain-wrong-or-absent-brood_id-blocker"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    # Brood A: empty manifest, top-level brood_id DIFFERS from dir id.
+    local id_a="brood-5555eeee-5555-4eee-8eee-555555555555"
+    local mid_a="brood-6666ffff-6666-4fff-8fff-666666666666"
+    mkdir -p "$root/.hivemind/broods/$id_a"
+    jq -n --arg bid "$mid_a" \
+        '{ manifest_version:4, brood_id:$bid, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low", strains:[], merge_order:[] }' \
+        > "$root/.hivemind/broods/$id_a/manifest.json"
+    # Brood B: empty manifest, top-level brood_id ABSENT entirely.
+    local id_b="brood-7777aaaa-7777-4aaa-8aaa-777777777777"
+    mkdir -p "$root/.hivemind/broods/$id_b"
+    jq -n \
+        '{ manifest_version:4, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low", strains:[], merge_order:[] }' \
+        > "$root/.hivemind/broods/$id_b/manifest.json"
+
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    # Both broods (sorted: id_a < id_b) must be blocker, zero strains, counted unreadable. Brood A's
+    # detail names the wrong manifest id; brood B's detail says absent/malformed.
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg ida "$id_a" --arg mida "$mid_a" --arg idb "$id_b" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==2
+         and .broods[0].brood_id==$ida and .broods[0].status=="blocker"
+         and (.broods[0].strains|length)==0 and (.broods[0].detail|contains($mida))
+         and .broods[1].brood_id==$idb and .broods[1].status=="blocker"
+         and (.broods[1].strains|length)==0 and (.broods[1].detail|contains("absent/malformed"))
+         and .global.total_broods==2 and .global.unreadable==2 and .global.complete==0' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; zero-strain wrong/absent top-level brood_id -> blocker (not empty); both counted unreadable"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
+echo ''
+echo '=== brood-status-collect.sh collection-loop entrypoint tests (#186, ADR-0020) ==='
+assert_collect_empty
+assert_collect_ok_one_strain
+assert_collect_unreadable_isolated
+assert_collect_missing_sentinel_not_probed
+assert_collect_broodid_mismatch_blocker
+assert_collect_broodid_mismatch_empty_blocker
 
 echo ''
 echo '=== Summary ==='
