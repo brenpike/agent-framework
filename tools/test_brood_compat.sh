@@ -52,8 +52,9 @@ MANIFEST_V2="$FIX_DIR/manifest-v2-new.json"
 SPAWN_SCRIPT="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
 INIT_SCRIPT="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
 PROJECT_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-status-project.sh"
+DISCOVER_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-discover.sh"
 
-for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT" "$PROJECT_SCRIPT"; do
+for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT" "$PROJECT_SCRIPT" "$DISCOVER_SCRIPT"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required fixture missing: $required" >&2; exit 2; }
 done
@@ -1792,6 +1793,128 @@ assert_proj_nested_worktree_anchor() {
 }
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# brood-discover.sh (deterministic discovery/enumeration, #185, ADR-0020)
+# ════════════════════════════════════════════════════════════════════════════════
+# These cases drive the committed discovery entrypoint
+#   bash "$DISCOVER_SCRIPT" [checkout_root]
+# and assert the CONTRACT: it emits absolute manifest paths, one per line, lexicographically
+# sorted; zero matches → zero lines, exit 0. They are PURE git + bash (no claude/tmux/gh dep),
+# so they run UNCONDITIONALLY and pass in CI. Each builds its own throwaway git repo via mktemp
+# and reaps it in a local trap, independent of WORKDIR/PROJ_WORKDIR so the discover suite is
+# self-contained. The manifest BODY is irrelevant (discover never parses contents) — a non-empty
+# stub file at the path suffices.
+
+# discover_mkrepo: create a throwaway git checkout under a fresh mktemp dir, echo its root.
+# Caller is responsible for reaping the returned dir's PARENT (captured separately).
+discover_seed_repo() {
+    local root="$1"
+    git -C "$root" init -q
+    git -C "$root" config user.email test@example.com
+    git -C "$root" config user.name test
+    git -C "$root" commit -q --allow-empty -m "discover-seed"
+}
+
+# discover_stub_manifest: write a minimal non-empty manifest stub at $1 (creating parents).
+# discover never parses contents, so a stub suffices.
+discover_stub_manifest() {
+    mkdir -p "$(dirname "$1")"
+    printf '{}\n' > "$1"
+}
+
+# ── DISCOVER-EMPTY: no .hivemind/broods → zero lines, exit 0 ─────────────────────
+assert_discover_empty() {
+    local name="DISCOVER-EMPTY:no-broods-zero-lines-exit-0"
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-discover.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    discover_seed_repo "$root"
+    local out rc=0
+    out="$( cd "$root" && bash "$DISCOVER_SCRIPT" 2>/dev/null )" || rc=$?
+    local lines=0; [ -n "$out" ] && lines="$(printf '%s\n' "$out" | grep -c .)"
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$lines" -eq 0 ]]; then
+        pass "$name" "empty checkout → zero lines, exit 0 (navigator renders 'No broods found.')"
+    else
+        failed "$name" "expected exit 0 + zero lines; rc=$rc lines=$lines out=[$out]"
+    fi
+}
+
+# ── DISCOVER-SORT: brood-c/brood-a/brood-b created → emitted a,b,c absolute ──────
+assert_discover_sort_order() {
+    local name="DISCOVER-SORT:multi-brood-lexicographic-absolute-paths"
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-discover.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    discover_seed_repo "$root"
+    # Create out of lexicographic order to prove the script (not creation order) sorts.
+    discover_stub_manifest "$root/.hivemind/broods/brood-c/manifest.json"
+    discover_stub_manifest "$root/.hivemind/broods/brood-a/manifest.json"
+    discover_stub_manifest "$root/.hivemind/broods/brood-b/manifest.json"
+    local out rc=0
+    out="$( cd "$root" && bash "$DISCOVER_SCRIPT" 2>/dev/null )" || rc=$?
+    local expected
+    expected="$(printf '%s\n%s\n%s\n' \
+        "$root/.hivemind/broods/brood-a/manifest.json" \
+        "$root/.hivemind/broods/brood-b/manifest.json" \
+        "$root/.hivemind/broods/brood-c/manifest.json")"
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$out" == "$expected" ]]; then
+        pass "$name" "three broods emitted as absolute paths in lexicographic (brood-a,b,c) order"
+    else
+        failed "$name" "rc=$rc; expected:[$expected] got:[$out]"
+    fi
+}
+
+# ── DISCOVER-NESTED: linked worktree, NO \$1 arg → discovers nested brood via ──────
+#    the script's default `git rev-parse --show-toplevel` anchor (proves #182 is now
+#    script-pinned: running from inside a child worktree finds that worktree's broods).
+assert_discover_nested_worktree() {
+    local name="DISCOVER-NESTED:linked-worktree-default-anchor-discovers-nested-brood"
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-discover.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    discover_seed_repo "$root"
+    # A REAL linked worktree off the main checkout — stands in for a child orchestrator's own
+    # worktree (a nested hatchery). Its show-toplevel resolves to the linked worktree root.
+    local child_wt="$tmp/nested-child-wt"
+    git -C "$root" worktree add -q -b nested-child-hatchery "$child_wt" HEAD 2>/dev/null
+    # The sub-brood the child spawned lives under the CHILD worktree's .hivemind/broods/.
+    local nested_manifest="$child_wt/.hivemind/broods/brood-x/manifest.json"
+    discover_stub_manifest "$nested_manifest"
+    # Run from INSIDE the linked worktree with NO \$1 override, exercising the show-toplevel default.
+    local out rc=0
+    out="$( cd "$child_wt" && bash "$DISCOVER_SCRIPT" 2>/dev/null )" || rc=$?
+    local lines=0; [ -n "$out" ] && lines="$(printf '%s\n' "$out" | grep -c .)"
+    git -C "$root" worktree remove --force "$child_wt" 2>/dev/null || true
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$lines" -eq 1 && "$out" == "$nested_manifest" ]]; then
+        pass "$name" "nested brood under linked worktree discovered via default show-toplevel anchor (#182 script-pinned)"
+    else
+        failed "$name" "rc=$rc lines=$lines; expected:[$nested_manifest] got:[$out]"
+    fi
+}
+
+# ── DISCOVER-NOMANIFEST: brood dir without manifest.json is skipped ──────────────
+#    (the glob matches `brood-*/manifest.json`; a manifest-less brood dir yields no match —
+#    correct, not an error). Only the valid brood's manifest path is emitted.
+assert_discover_dir_without_manifest_skipped() {
+    local name="DISCOVER-NOMANIFEST:brood-dir-without-manifest-skipped"
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-discover.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    discover_seed_repo "$root"
+    # One valid brood (has manifest.json) and one brood dir with NO manifest.json inside.
+    discover_stub_manifest "$root/.hivemind/broods/brood-valid/manifest.json"
+    mkdir -p "$root/.hivemind/broods/brood-nomanifest"
+    local out rc=0
+    out="$( cd "$root" && bash "$DISCOVER_SCRIPT" 2>/dev/null )" || rc=$?
+    local expected="$root/.hivemind/broods/brood-valid/manifest.json"
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$out" == "$expected" ]]; then
+        pass "$name" "manifest-less brood dir skipped by glob; only the valid brood's manifest emitted"
+    else
+        failed "$name" "rc=$rc; expected only:[$expected] got:[$out]"
+    fi
+}
+
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
@@ -1831,6 +1954,13 @@ assert_proj_nul_escape_branch
 assert_proj_multidoc_manifest
 assert_proj_literal_nul_ledger
 assert_proj_nested_worktree_anchor
+
+echo ''
+echo '=== brood-discover.sh deterministic discovery tests (#185, ADR-0020) ==='
+assert_discover_empty
+assert_discover_sort_order
+assert_discover_nested_worktree
+assert_discover_dir_without_manifest_skipped
 
 echo ''
 echo '=== Summary ==='

@@ -2,6 +2,7 @@
 name: brood-status
 description: Check status of all broods, with per-strain status. Reports per-strain tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "check brood", "brood-status", "brood progress", "how's the brood", "fleet status".
 allowed-tools:
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-discover.sh *)
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh *)
   - Bash(tmux *)
   - Bash(git worktree *)
@@ -17,36 +18,31 @@ Check the status of all broods, with per-strain status. Reports per-strain tmux 
 
 This is an **interactive skill** — it produces user-visible text output.
 
-Workflow state (`state_current` / `run.status`) is projected via the committed helper `${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh` under read-side trust discipline (ADR-0018, ADR-0019 Boundary 3; issue #161 closed). The helper is a **single-manifest projector**: it takes one manifest path and emits STRAIN lines for that manifest only. Multi-brood enumeration is the navigator's responsibility (step 1).
+Workflow state (`state_current` / `run.status`) is projected via the committed helper `${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh` under read-side trust discipline (ADR-0018, ADR-0019 Boundary 3; issue #161 closed). The helper is a **single-manifest projector**: it takes one manifest path and emits STRAIN lines for that manifest only. Multi-brood enumeration is performed by the committed `${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-discover.sh` script (step 1), not inline navigator prose (ADR-0020).
 
 ## Procedure
 
-1. **Discover all brood manifests.**
-   a. Resolve the **current checkout root** (the worktree this session is running in) via:
-      ```bash
-      git rev-parse --show-toplevel
-      ```
-      This is space-safe (it returns a single path) and is the SAME anchor `spawn-brood.sh` uses when it writes brood state, so the read side and the write side agree by construction. From the **main checkout** `show-toplevel` equals the main checkout root, so top-level behavior is unchanged; from a **linked worktree** it correctly yields THAT worktree's root. Use it for all manifest discovery below.
+1. **Discover all brood manifests.** Run the committed discovery script and capture its stdout as the sorted manifest-path list:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-discover.sh
+   ```
+   It emits absolute manifest paths, **one per line, already sorted** lexicographically (= brood-id order). The discovery glob (resolve current checkout root → glob `.hivemind/broods/brood-*/manifest.json` → lexicographic sort) lives in this committed, testable script rather than inline navigator prose (ADR-0020). Handle its output:
+   - **Zero lines** → report:
+     ```
+     No broods found.
+     ```
+     and stop. The script exits 0 on zero matches — an empty glob is success, distinct from a present-but-unreadable manifest.
+   - **One or more lines** → each line is one manifest path; feed the list, in the order emitted, to step 2.
 
-      **Nested/recursive broods — SUPPORTED BY CONSTRUCTION (#182):** because discovery anchors to the current checkout root, each orchestrator-acting-as-hatchery sees the broods it spawned — they live under its own checkout's `.hivemind/broods/`. A child orchestrator that spawned a sub-brood writes that sub-brood under its own worktree (`spawn-brood.sh` likewise anchors on `git rev-parse --show-toplevel`), so running brood-status from inside that child worktree discovers the sub-brood. This is the recursive application of the same read discipline: each hatchery level sees its direct children, with no tree-walk and no cross-worktree enumeration. The issue #161 read discipline (ground-truth path derivation, confinement chain, bounded projection, MISSING/MALFORMED tokens, informational-only) holds unchanged at every level. Issue #182 is the origin of this clarification.
+   a. **Checkout-root anchoring (why the script resolves `git rev-parse --show-toplevel`).** The script defaults its checkout root to `git rev-parse --show-toplevel` — the SAME anchor `spawn-brood.sh` uses when it writes brood state, so the read side and the write side agree by construction. From the **main checkout** `show-toplevel` equals the main checkout root, so top-level behavior is unchanged; from a **linked worktree** it correctly yields THAT worktree's root.
 
-   b. Enumerate per-brood manifest paths by globbing under the current checkout root (`git rev-parse --show-toplevel`):
-      ```
-      <checkout_root>/.hivemind/broods/brood-*/manifest.json
-      ```
-      Use the `git rev-parse --show-toplevel` output from step 1a as the checkout root; do not use `$PWD` or a relative path. The glob pattern is literal — `brood-*` matches any brood-id directory. Collect the resulting paths as a list; maintain **deterministic order** by sorting the paths lexicographically (which is equivalent to sorting by brood-id, since all ids share the `brood-` prefix).
+      **Nested/recursive broods — SUPPORTED BY CONSTRUCTION (#182):** because the script anchors discovery to the current checkout root, each orchestrator-acting-as-hatchery sees the broods it spawned — they live under its own checkout's `.hivemind/broods/`. A child orchestrator that spawned a sub-brood writes that sub-brood under its own worktree (`spawn-brood.sh` likewise anchors on `git rev-parse --show-toplevel`), so running brood-status (and thus the discovery script) from inside that child worktree discovers the sub-brood. This is the recursive application of the same read discipline: each hatchery level sees its direct children, with no tree-walk and no cross-worktree enumeration. The issue #161 read discipline (ground-truth path derivation, confinement chain, bounded projection, MISSING/MALFORMED tokens, informational-only) holds unchanged at every level. Issue #182 is the origin of this clarification.
 
-   c. If the glob matches **nothing** (no `manifest.json` files found), report:
-      ```
-      No broods found.
-      ```
-      and stop. This is distinct from a present-but-unreadable manifest.
+   b. **Discovery lifecycle note:** per-brood directories under `.hivemind/broods/` are **not pruned** by this read-only dashboard. Broods that have completed, been cancelled, or otherwise reached a terminal state remain on disk and are shown with their terminal Status (e.g. `complete`, `failed`). The Status column and per-brood summary counts reflect this. Cleanup and pruning of accumulated per-brood directories is a separate write-action and is tracked in issue #181; do not attempt to delete or archive directories from within this skill.
 
-   d. **Discovery lifecycle note:** per-brood directories under `.hivemind/broods/` are **not pruned** by this read-only dashboard. Broods that have completed, been cancelled, or otherwise reached a terminal state remain on disk and are shown with their terminal Status (e.g. `complete`, `failed`). The Status column and per-brood summary counts reflect this. Cleanup and pruning of accumulated per-brood directories is a separate write-action and is tracked in issue #181; do not attempt to delete or archive directories from within this skill.
+   c. **In-session filtering (note, not implemented here):** a hatchery overlord MAY filter display to its own brood-id when self-reporting. The dashboard primitive (this skill) is **global** — it shows all broods found by the glob. Do not add session filtering here.
 
-   e. **In-session filtering (note, not implemented here):** a hatchery overlord MAY filter display to its own brood-id when self-reporting. The dashboard primitive (this skill) is **global** — it shows all broods found by the glob. Do not add session filtering here.
-
-2. **Probe each manifest.** For each manifest path from the sorted list in step 1b, call the helper ONCE and capture its output. Pass the current checkout root (`git rev-parse --show-toplevel`) as the second argument so the read-guard confines the manifest beneath the checkout it belongs to:
+2. **Probe each manifest.** For each manifest path from the discovery list in step 1, call the helper ONCE and capture its output. Pass the current checkout root (`git rev-parse --show-toplevel`) as the second argument so the read-guard confines the manifest beneath the checkout it belongs to:
    ```bash
    bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-project.sh "<manifest_path>" "<checkout_root>"
    ```
@@ -99,7 +95,7 @@ Workflow state (`state_current` / `run.status`) is projected via the committed h
 
       `Status` is derived from observables alone. `Workflow State` and `run.status` come from the helper projection and are informational.
 
-3. **Present the status table.** Group STRAIN lines by `brood_id` (field 2 of each STRAIN line). Render one section per brood, in the same sorted order as step 1b. Within each brood section, order strains as emitted by the helper (preserving manifest strain order).
+3. **Present the status table.** Group STRAIN lines by `brood_id` (field 2 of each STRAIN line). Render one section per brood, in the same sorted order as the step 1 discovery list. Within each brood section, order strains as emitted by the helper (preserving manifest strain order).
 
    For each brood, emit a section header followed by its strain table:
    ```
