@@ -115,7 +115,10 @@ probe_pr() {
     return 0
   fi
   if ! command -v gh >/dev/null 2>&1; then
-    printf 'none\t'
+    # gh absent => the PR probe was never performed: report the state as UNOBSERVABLE
+    # (unknown), NOT a confirmed absence (none). Matches the gh-failure path below, so a real
+    # open/merged PR is never masked as `PR: —` on a host without the GitHub CLI.
+    printf 'unknown\t'
     return 0
   fi
   local pr_json
