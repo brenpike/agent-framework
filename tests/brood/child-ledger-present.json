@@ -14,7 +14,7 @@
     "run_id": "2026-05-30T22-10-00Z-hatchery",
     "brood_id": "2026-05-30T22-10-00Z",
     "strain_id": "api",
-    "manifest": "/repo/.hivemind/brood/manifest.yaml"
+    "manifest": "/repo/.hivemind/brood/manifest.json"
   },
   "request": {
     "raw": "Implement the API slice.",

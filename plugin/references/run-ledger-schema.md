@@ -166,7 +166,7 @@ A spawned strain. Populated from the injected child-task metadata; lives inside 
     "run_id": "2026-05-30T22-10-00Z-hatchery",
     "brood_id": "2026-05-30T22:10:00Z",
     "strain_id": "api",
-    "manifest": "/repo/.hivemind/brood/manifest.yaml"
+    "manifest": "/repo/.hivemind/brood/manifest.json"
   }
 }
 ```
@@ -187,7 +187,7 @@ The hatchery is itself a normal root run, so its `parent.kind` is `none`. Its re
   "artifacts": {
     "brood": {
       "id": "2026-05-30T22:10:00Z",
-      "manifest": ".hivemind/brood/manifest.yaml"
+      "manifest": ".hivemind/brood/manifest.json"
     }
   }
 }

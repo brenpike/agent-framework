@@ -671,7 +671,7 @@ assert_brood_child_canonical_id() {
         --arg brood_id "$canonical" \
         --arg strain_id "$short" \
         --arg run_id "$safe-hatchery" \
-        --arg manifest "$gitroot/.hivemind/brood/manifest.yaml" \
+        --arg manifest "$gitroot/.hivemind/brood/manifest.json" \
         '{
             workflow: $workflow,
             workflow_version: $workflow_version,

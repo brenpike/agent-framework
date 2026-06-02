@@ -36,5 +36,8 @@ jobs:
       - name: Run test_engine.sh
         run: bash ./tools/test_engine.sh
 
+      - name: Run test_shared_libs.sh
+        run: bash ./tools/test_shared_libs.sh
+
       - name: Run test_brood_compat.sh
         run: bash ./tools/test_brood_compat.sh

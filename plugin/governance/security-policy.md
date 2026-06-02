@@ -50,7 +50,7 @@ The three boundaries this discipline governs:
 
 1. **overlord / navigator → engine.** `record-state-result.sh` takes a `run_id` (SAFE_ID_RE-validated, `.`/`..` rejected), DERIVES the ledger from the git checkout root, coherence-checks `ledger.run.id == run_id`, and DERIVES the workflow definition from the ledger's own `run.workflow` against the script's self-located packaged `workflows/` dir. No caller path is accepted. (Fixed: dissolves the forged-ledger-path arbitrary-overwrite P0 and the forged-definition transition-gate + plan-write-auth-bypass P0.)
 2. **init → packaged definition (#162).** `init-run-ledger.sh` validates the supplied workflow id against its self-located packaged definition (exists + `.version` + `.start`) BEFORE creating the run dir, failing early on mismatch.
-3. **hostile `--dangerously-skip-permissions` child → coordinator (#161, STAGED).** The coordinator's read of hostile child-ledger content is to be brought under this same discipline; tracked in #161.
+3. **hostile `--dangerously-skip-permissions` child → coordinator (#161, CLOSED).** The coordinator's read of untrusted cross-worktree child-ledger content is now under this discipline via `brood-status-project.sh`: manifest-path identifier input, out-of-band path derivation, confine-beneath-worktree via `_shared/containment.sh`, two-scalar bounded jq projection (run.status enum + state.current charset/length ≤64), MISSING/MALFORMED tokens, informational-only (never overrides observable status).
 
 ## Destructive Fix Confirmation Gate
 
