@@ -26,7 +26,7 @@ Workflow state (`state_current` / `run.status`) is projected via the committed h
    ```bash
    bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-discover.sh
    ```
-   It emits absolute manifest paths, **one per line, already sorted** lexicographically (= brood-id order). The discovery glob (resolve current checkout root → glob `.hivemind/broods/brood-*/manifest.json` → lexicographic sort) lives in this committed, testable script rather than inline navigator prose (ADR-0020). Handle its output:
+   It emits absolute manifest paths, **one per line, already sorted** lexicographically (= brood-id order). The discovery glob (resolve current checkout root → glob `.hivemind/broods/brood-*/manifest.json` → lexicographic sort) lives in this committed, testable script rather than inline navigator prose (ADR-0020). Each emitted path carries a **brood-id segment positively validated** by the script against `^brood-[0-9a-fA-F-]+$` (the `brood-<uuidv4>` shape `spawn-brood.sh` creates); non-conforming dirs are skipped, so an emitted path is **injection-safe** — its variable segment can contain no shell metacharacter — and may be spliced into the step-2 helper invocation (floor-at-input, ADR-0019; issue #185). Handle its output:
    - **Zero lines** → report:
      ```
      No broods found.

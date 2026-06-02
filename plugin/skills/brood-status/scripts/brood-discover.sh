@@ -59,6 +59,34 @@ if [ "${#manifests[@]}" -eq 0 ]; then
     exit 0
 fi
 
+# Positively validate the brood-id directory segment of each matched manifest before emitting it
+# (issue #185, ADR-0019 floor-at-input). The navigator splices each emitted path into an
+# LLM-authored Bash command (`bash brood-status-project.sh "<manifest_path>" …`); per repo doctrine
+# (security-policy.md, ADR-0019) double-quoting does NOT neutralize `$(...)`, backticks, or `${}`
+# when untrusted bytes sit in command SOURCE. A directory literally named
+# `.hivemind/broods/brood-$(payload)/manifest.json` would otherwise let `$(payload)` execute in the
+# coordinator session. spawn-brood.sh only ever creates `brood-<uuidv4>` dirs, so the brood-id
+# segment is REQUIRED to match `^brood-[0-9a-fA-F-]+$` — the literal `brood-` prefix followed by hex
+# digits and dashes only (the shape of `brood-<uuidv4>`). This admits every legitimate spawn-created
+# dir and structurally excludes ALL shell metacharacters (`$ ( ) \` { } / ; & | > < space`), so an
+# emitted path can carry no injection payload in its variable segment. Non-conforming dirs are
+# illegitimate (never created by spawn-brood) and are SKIPPED silently. The segment is extracted as
+# the basename of the dirname of the manifest path (the `brood-*` component immediately above
+# `manifest.json`), not by fragile string-splitting that could mishandle a hostile name.
+validated=()
+for manifest in "${manifests[@]}"; do
+    seg="$(basename "$(dirname "$manifest")")"
+    if [[ "$seg" =~ ^brood-[0-9a-fA-F-]+$ ]]; then
+        validated+=( "$manifest" )
+    fi
+done
+
+# All matched dirs may be illegitimate → zero validated paths → zero lines, exit 0 (same empty-is-
+# success contract as a zero-match glob).
+if [ "${#validated[@]}" -eq 0 ]; then
+    exit 0
+fi
+
 # Deterministic lexicographic order (= brood-id order). LC_ALL=C pins byte-order sorting
 # independent of the caller's locale.
-printf '%s\n' "${manifests[@]}" | LC_ALL=C sort
+printf '%s\n' "${validated[@]}" | LC_ALL=C sort

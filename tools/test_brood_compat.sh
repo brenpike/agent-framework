@@ -1845,20 +1845,25 @@ assert_discover_sort_order() {
     local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-discover.XXXXXX")"
     local root="$tmp/repo"; mkdir -p "$root"
     discover_seed_repo "$root"
-    # Create out of lexicographic order to prove the script (not creation order) sorts.
-    discover_stub_manifest "$root/.hivemind/broods/brood-c/manifest.json"
-    discover_stub_manifest "$root/.hivemind/broods/brood-a/manifest.json"
-    discover_stub_manifest "$root/.hivemind/broods/brood-b/manifest.json"
+    # Create out of lexicographic order to prove the script (not creation order) sorts. The ids are
+    # conforming hex-uuid-shaped brood-ids (^brood-[0-9a-fA-F-]+$) so the #185 brood-id-segment
+    # allowlist admits them — exercising sort order with REAL-shaped ids, not synthetic short names.
+    local id_a="brood-1111aaaa-1111-4aaa-8aaa-111111111111"
+    local id_b="brood-2222bbbb-2222-4bbb-8bbb-222222222222"
+    local id_c="brood-3333cccc-3333-4ccc-8ccc-333333333333"
+    discover_stub_manifest "$root/.hivemind/broods/$id_c/manifest.json"
+    discover_stub_manifest "$root/.hivemind/broods/$id_a/manifest.json"
+    discover_stub_manifest "$root/.hivemind/broods/$id_b/manifest.json"
     local out rc=0
     out="$( cd "$root" && bash "$DISCOVER_SCRIPT" 2>/dev/null )" || rc=$?
     local expected
     expected="$(printf '%s\n%s\n%s\n' \
-        "$root/.hivemind/broods/brood-a/manifest.json" \
-        "$root/.hivemind/broods/brood-b/manifest.json" \
-        "$root/.hivemind/broods/brood-c/manifest.json")"
+        "$root/.hivemind/broods/$id_a/manifest.json" \
+        "$root/.hivemind/broods/$id_b/manifest.json" \
+        "$root/.hivemind/broods/$id_c/manifest.json")"
     rm -rf "$tmp"
     if [[ "$rc" -eq 0 && "$out" == "$expected" ]]; then
-        pass "$name" "three broods emitted as absolute paths in lexicographic (brood-a,b,c) order"
+        pass "$name" "three hex-uuid-shaped broods emitted as absolute paths in lexicographic order"
     else
         failed "$name" "rc=$rc; expected:[$expected] got:[$out]"
     fi
@@ -1876,8 +1881,9 @@ assert_discover_nested_worktree() {
     # worktree (a nested hatchery). Its show-toplevel resolves to the linked worktree root.
     local child_wt="$tmp/nested-child-wt"
     git -C "$root" worktree add -q -b nested-child-hatchery "$child_wt" HEAD 2>/dev/null
-    # The sub-brood the child spawned lives under the CHILD worktree's .hivemind/broods/.
-    local nested_manifest="$child_wt/.hivemind/broods/brood-x/manifest.json"
+    # The sub-brood the child spawned lives under the CHILD worktree's .hivemind/broods/. Its id is
+    # hex-uuid-shaped (^brood-[0-9a-fA-F-]+$) so the #185 brood-id-segment allowlist admits it.
+    local nested_manifest="$child_wt/.hivemind/broods/brood-4444dddd-4444-4ddd-8ddd-444444444444/manifest.json"
     discover_stub_manifest "$nested_manifest"
     # Run from INSIDE the linked worktree with NO \$1 override, exercising the show-toplevel default.
     local out rc=0
@@ -1900,17 +1906,64 @@ assert_discover_dir_without_manifest_skipped() {
     local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-discover.XXXXXX")"
     local root="$tmp/repo"; mkdir -p "$root"
     discover_seed_repo "$root"
-    # One valid brood (has manifest.json) and one brood dir with NO manifest.json inside.
-    discover_stub_manifest "$root/.hivemind/broods/brood-valid/manifest.json"
-    mkdir -p "$root/.hivemind/broods/brood-nomanifest"
+    # One valid brood (has manifest.json, hex-uuid-shaped id so the #185 allowlist admits it) and one
+    # brood dir with NO manifest.json inside (skipped by the glob — no match — regardless of name).
+    local valid_id="brood-5555eeee-5555-4eee-8eee-555555555555"
+    discover_stub_manifest "$root/.hivemind/broods/$valid_id/manifest.json"
+    mkdir -p "$root/.hivemind/broods/brood-6666ffff-6666-4fff-8fff-666666666666"
     local out rc=0
     out="$( cd "$root" && bash "$DISCOVER_SCRIPT" 2>/dev/null )" || rc=$?
-    local expected="$root/.hivemind/broods/brood-valid/manifest.json"
+    local expected="$root/.hivemind/broods/$valid_id/manifest.json"
     rm -rf "$tmp"
     if [[ "$rc" -eq 0 && "$out" == "$expected" ]]; then
         pass "$name" "manifest-less brood dir skipped by glob; only the valid brood's manifest emitted"
     else
         failed "$name" "rc=$rc; expected only:[$expected] got:[$out]"
+    fi
+}
+
+# ── DISCOVER-HOSTILE-NAME: brood-id segment with shell metacharacters is skipped ──
+#    (issue #185, ADR-0019 floor-at-input). brood-discover positively validates the brood-id
+#    directory segment against `^brood-[0-9a-fA-F-]+$`. A directory literally named
+#    `brood-$(touch evilmarker)` carries a command-substitution payload in its variable segment; if
+#    its manifest path were emitted verbatim and the navigator spliced it into the LLM-authored
+#    `bash brood-status-project.sh "<path>" …` command, `$(touch evilmarker)` would EXECUTE in the
+#    coordinator session (double-quoting does not neutralize command-substitution in command SOURCE).
+#    This case creates such a hostile dir WITHOUT shell expansion (single-quoted literal mkdir), plus
+#    backtick and `;`-bearing variants, alongside one valid hex-uuid-shaped brood. It asserts:
+#      (a) ONLY the valid brood's manifest path is emitted (hostile dirs absent from output);
+#      (b) the `evilmarker` file was NOT created — proving nothing in any segment ever executed.
+assert_discover_hostile_name_skipped() {
+    local name="DISCOVER-HOSTILE-NAME:metachar-brood-id-segment-skipped-no-exec"
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-discover.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    discover_seed_repo "$root"
+    # One legitimate brood (hex-uuid-shaped id — admitted by the allowlist).
+    local valid_id="brood-7777aaaa-7777-4aaa-8aaa-777777777777"
+    discover_stub_manifest "$root/.hivemind/broods/$valid_id/manifest.json"
+    # Hostile dirs created as LITERAL names (single-quoted — no shell expansion at creation time).
+    # Each carries a manifest.json so the glob WOULD match it; the allowlist must drop it.
+    local broods="$root/.hivemind/broods"
+    mkdir -p "$broods/brood-\$(touch evilmarker)"
+    discover_stub_manifest "$broods/brood-\$(touch evilmarker)/manifest.json"
+    mkdir -p "$broods/brood-\`touch evilmarker\`"
+    discover_stub_manifest "$broods/brood-\`touch evilmarker\`/manifest.json"
+    mkdir -p "$broods/brood-x;touch evilmarker"
+    discover_stub_manifest "$broods/brood-x;touch evilmarker/manifest.json"
+    local out rc=0
+    out="$( cd "$root" && bash "$DISCOVER_SCRIPT" 2>/dev/null )" || rc=$?
+    local expected="$root/.hivemind/broods/$valid_id/manifest.json"
+    # No-side-effect proof: the evilmarker file must NOT exist anywhere — neither the cwd nor the
+    # broods dir — because nothing in any hostile segment was ever expanded/executed.
+    local marker_created=no
+    if [ -e "$root/evilmarker" ] || [ -e "$broods/evilmarker" ] || [ -e "$tmp/evilmarker" ] || [ -e ./evilmarker ]; then
+        marker_created=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$out" == "$expected" && "$marker_created" == "no" ]]; then
+        pass "$name" "hostile metachar brood-id segments dropped by allowlist; only valid brood emitted; no payload executed"
+    else
+        failed "$name" "rc=$rc marker_created=$marker_created; expected only:[$expected] got:[$out]"
     fi
 }
 
@@ -1961,6 +2014,7 @@ assert_discover_empty
 assert_discover_sort_order
 assert_discover_nested_worktree
 assert_discover_dir_without_manifest_skipped
+assert_discover_hostile_name_skipped
 
 echo ''
 echo '=== Summary ==='
