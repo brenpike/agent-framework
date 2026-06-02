@@ -384,6 +384,21 @@ assert_eq "ledger:absent-file-status" "MISSING" \
 assert_eq "ledger:absent-file-state" "MISSING" \
   "$(hivemind_project_state_current "$WORKDIR/does-not-exist.json")" "absent file state.current"
 
+# Present-but-UNREADABLE file → MALFORMED for both scalars (distinct from the absent-file
+# MISSING case above). The wrapper passes its leading [ -f ] guard, then `cat` FAILS; the
+# post-failure [ -e ] re-test confirms presence → MALFORMED, never MISSING. mode 000 does
+# not restrict root, so guard the assertions.
+if [ "$(id -u)" -ne 0 ]; then
+  unreadable="$WORKDIR/unreadable.json"
+  printf '{"run":{"status":"running"},"state":{"current":"plan"}}\n' > "$unreadable"
+  chmod 000 "$unreadable"
+  assert_eq "ledger:unreadable-status" "MALFORMED" \
+    "$(hivemind_project_run_status "$unreadable")" "present-but-unreadable run.status → MALFORMED"
+  assert_eq "ledger:unreadable-state" "MALFORMED" \
+    "$(hivemind_project_state_current "$unreadable")" "present-but-unreadable state.current → MALFORMED"
+  chmod 644 "$unreadable" 2>/dev/null || true
+fi
+
 # Field present in a parseable file but empty/absent → MISSING (distinct from MALFORMED).
 empty_fields="$WORKDIR/empty-fields.json"
 printf '{"run":{},"state":{}}\n' > "$empty_fields"

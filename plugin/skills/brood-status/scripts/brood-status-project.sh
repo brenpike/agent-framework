@@ -349,28 +349,34 @@ while [ "$idx" -lt "$strain_count" ]; do
             if [ -L "$canon_ledger" ]; then
               state_out="MALFORMED"
               run_out="MALFORMED"
-            elif ! [ -e "$canon_ledger" ]; then
-              # ABSENT leaf (the containment guard intentionally PASSES a non-existent leaf —
-              # the child may not have initialized its ledger yet). "Nothing to report" →
-              # MISSING, per the documented TOKEN SEMANTICS. Distinct from present-but-unreadable
-              # below; conflating the two would report an uninitialized brood as corrupted.
-              state_out="MISSING"
-              run_out="MISSING"
-            elif ! ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"; then
-              # READ FAILURE on a PRESENT, confined, non-symlink leaf (unreadable perms, I/O
-              # error) is "present but cannot be read" → MALFORMED, never MISSING. `cat` returns
-              # the empty string AND a non-zero status on failure; the `2>/dev/null` only silences
-              # stderr, it does not mask the exit status the `if !` tests. Collapsing this to
-              # MISSING (the empty-content path below) would make a corrupted / attacker-influenced
-              # unreadable ledger indistinguishable from an uninitialized one. This restores the
-              # pre-single-snapshot jq-open-failure semantics (which reported MALFORMED on a
-              # present-but-unopenable file). The [ -e ] guard above first separates genuine
-              # absence (MISSING) from read failure (MALFORMED).
+            elif ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"; then
+              # READ SUCCEEDED. Attempt the read IMMEDIATELY after the [ -L ] re-check — NO
+              # intervening filesystem stat — to keep the irreducible single-open micro-TOCTOU
+              # window (documented above, #168-homed) as NARROW as possible. An earlier draft
+              # inserted a `[ -e ]` existence probe BETWEEN the [ -L ] check and the read, which
+              # added an extra syscall to that window; ordering the `cat` first removes it and
+              # mirrors the safe ordering already used by the path-based wrappers in
+              # ledger-project.sh.
+              run_out="$(hivemind_project_run_status_content "$ledger_content")"
+              state_out="$(hivemind_project_state_current_content "$ledger_content")"
+            elif [ -e "$canon_ledger" ]; then
+              # READ FAILED on a leaf that STILL EXISTS → present-but-unreadable (unreadable
+              # perms, I/O error). "Present but cannot be read" → MALFORMED, never MISSING.
+              # `cat` returns the empty string AND a non-zero status on failure (the `2>/dev/null`
+              # silences only stderr, not the exit status the `if` tests). Collapsing this to
+              # MISSING would make a corrupted / attacker-influenced unreadable ledger
+              # indistinguishable from an uninitialized one; this restores the pre-single-snapshot
+              # jq-open-failure semantics. The existence re-test runs ONLY on the failure path,
+              # so it never enlarges the success-path read window above.
               state_out="MALFORMED"
               run_out="MALFORMED"
             else
-              run_out="$(hivemind_project_run_status_content "$ledger_content")"
-              state_out="$(hivemind_project_state_current_content "$ledger_content")"
+              # READ FAILED and the leaf is ABSENT → genuine absence (the containment guard
+              # intentionally PASSES a non-existent leaf; the child may not have initialized its
+              # ledger yet, or it vanished). "Nothing to report" → MISSING, per the documented
+              # TOKEN SEMANTICS — distinct from the present-but-unreadable case above.
+              state_out="MISSING"
+              run_out="MISSING"
             fi
             ;;
           *)

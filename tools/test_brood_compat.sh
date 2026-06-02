@@ -1158,6 +1158,44 @@ assert_proj_symlink_leaf() {
     fi
 }
 
+# ── Projection 7b: present-but-UNREADABLE confined ledger leaf → MALFORMED ────────
+# A REGULAR confined state.json that exists but is unreadable (mode 000). The leaf is
+# NOT a symlink and NOT absent, so the read site reaches `cat`, which FAILS; the post-
+# failure `[ -e ]` re-test confirms the file is present → both scalars MALFORMED (never
+# MISSING). This locks the iteration-6/7 read-failure contract: present-but-unreadable
+# must NOT be downgraded to the benign absent (MISSING) class. Absent-file control is
+# covered by PROJ-MISSING above.
+assert_proj_unreadable_ledger() {
+    local name="PROJ-UNREADABLE-LEDGER:present-but-unreadable-leaf-malformed"
+    # chmod 000 does not restrict root; skip rather than spuriously fail under root.
+    if [[ "$(id -u)" -eq 0 ]]; then
+        skip "$name" "running as root: mode 000 does not block reads"
+        return 0
+    fi
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/unreadledger"
+    local wt="$wd/wt"
+    mkdir -p "$wt/.hivemind/runs/run-id"
+    local leaf="$wt/.hivemind/runs/run-id/state.json"
+    write_ledger "$leaf" running implement_step   # valid content...
+    chmod 000 "$leaf"                              # ...but unreadable
+    local manifest="$wd/manifest.json"
+    write_manifest_v2 "$manifest" "api" "$wt" "feature/api-slice" "brood-api" "running" \
+        "$leaf"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    # Restore perms so workdir cleanup can remove the fixture.
+    chmod 644 "$leaf" 2>/dev/null || true
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 7)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MALFORMED" ]] \
+          && ! printf '%s' "$out" | grep -q 'implement_step'; then
+        pass "$name" "exit 0; present-but-unreadable ledger → MALFORMED (not MISSING); content not leaked"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 7) run=$(strain_field "$out" 8); leaked=$(printf '%s' "$out" | grep -q implement_step && echo yes || echo no)"
+    fi
+}
+
 # ── Projection 8: suggested_ledger escaping the worktree → MALFORMED, not read ────
 # An absolute pointer to /etc/passwd does not match the required
 # "<worktree>/.hivemind/runs/<id>/state.json" shape → MALFORMED, never read. ASSERT no
@@ -1531,6 +1569,7 @@ assert_proj_malformed_run_status
 assert_proj_injection_state_current
 assert_proj_metachar_worktree
 assert_proj_symlink_leaf
+assert_proj_unreadable_ledger
 assert_proj_ledger_escape
 assert_proj_missing_arg
 assert_proj_no_tmpdir_needed
