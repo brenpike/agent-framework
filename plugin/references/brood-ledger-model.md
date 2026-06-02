@@ -12,7 +12,7 @@ The manifest is the registry and coordination artifact. It is NOT the source of 
 
 ## Per-brood layout (`.hivemind/broods/<brood-id>/`)
 
-Each brood owns a DISJOINT directory `.hivemind/broods/<brood-id>/{manifest.json,inputs.json}` in the main checkout, where `<brood-id>` is the machine-generated `brood-<uuidv4>` (issue #168; full decision in ADR-0021). The singleton `.hivemind/brood/manifest.json` is gone. The hatchery enumerates every discovered brood — running and terminal alike — by globbing `.hivemind/broods/brood-*/manifest.json`, and each is shown with its status. The brood-id also namespaces each strain's branch (`strain/<brood-id>/<short>`), worktree (`.claude/worktrees/<brood-id>/<short>`), and tmux session (`<brood-id>-<short>`), so concurrent same-checkout broods never collide. There is no liveness guard and no lock — per-brood isolation replaces both.
+Each brood owns a DISJOINT directory `.hivemind/broods/<brood-id>/{manifest.json,inputs.json}` under the SPAWNING checkout root (`git rev-parse --show-toplevel`) — for the top-level hatchery that IS the main checkout; for a nested hatchery it is that child's worktree, where `<brood-id>` is the machine-generated `brood-<uuidv4>` (issue #168; full decision in ADR-0021). The singleton `.hivemind/brood/manifest.json` is gone. The hatchery enumerates every discovered brood — running and terminal alike — by globbing `.hivemind/broods/brood-*/manifest.json` anchored to the current checkout root (`git rev-parse --show-toplevel`), and each is shown with its status. Because discovery anchors to the current checkout (the same anchor spawn-brood writes against), nested broods are visible at each hatchery level: each level sees its direct children, no tree-walk (issue #182). The brood-id also namespaces each strain's branch (`strain/<brood-id>/<short>`), worktree (`.claude/worktrees/<brood-id>/<short>`), and tmux session (`<brood-id>-<short>`), so concurrent same-checkout broods never collide. There is no liveness guard and no lock — per-brood isolation replaces both.
 
 ## Manifest extension (`manifest_version: 4`)
 
@@ -124,7 +124,7 @@ The hatchery monitors a brood by reading only. It never mutates child ledgers, a
 The hatchery may read:
 
 ```text
-.hivemind/broods/brood-*/manifest.json   (one per discovered brood, running or terminal; discovered by glob)
+.hivemind/broods/brood-*/manifest.json   (one per discovered brood, running or terminal; glob anchored to git rev-parse --show-toplevel — nested broods visible per level, #182)
 git worktree list --porcelain            (ground-truth worktree per strain branch)
 tmux session state
 git branch existence

@@ -53,7 +53,7 @@ _Avoid_: fleet
 
 ## Hatchery
 
-The overlord execution mode entered when a brood-plan is dispatched; the overlord remains on trunk in the main checkout, owns the brood manifest, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+The overlord execution mode entered when a brood-plan is dispatched. The top-level hatchery remains on trunk in the main checkout; but ANY orchestrator may act as a hatchery for its OWN brood, in its own checkout or worktree, owning the brood manifests under that checkout's `.hivemind/broods/` (anchored via `git rev-parse --show-toplevel`). A hatchery serves as the status dashboard and on-demand helper for the brood lifecycle.
 _Alias_: coordinator mode
 
 ## Brood-Plan
