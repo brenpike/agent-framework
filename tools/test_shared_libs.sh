@@ -25,7 +25,8 @@ FIX_DIR="$REPO_ROOT/tests/brood"
 LEDGER_PRESENT="$FIX_DIR/child-ledger-present.json"
 
 for required in "$LEDGER_PRESENT" \
-                "$SHARED_DIR/allowlist.sh" "$SHARED_DIR/manifest-json.sh" "$SHARED_DIR/ledger-project.sh"; do
+                "$SHARED_DIR/allowlist.sh" "$SHARED_DIR/manifest-json.sh" "$SHARED_DIR/ledger-project.sh" \
+                "$SHARED_DIR/brood-status-derive.sh"; do
   [ -f "$required" ] || { echo "FAIL: required fixture/lib missing: $required" >&2; exit 2; }
 done
 
@@ -38,6 +39,8 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 . "$SHARED_DIR/manifest-json.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/ledger-project.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/brood-status-derive.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -647,6 +650,89 @@ if [ "$rc" -ne 1 ]; then
 else
   failed "f2:rejected-not-collapsed" "a rejected value collapsed into the absent exit code (1)"
 fi
+
+# ── Section 6: brood-status-derive.sh — pure status derivation + aggregation (#186) ─
+echo ''
+echo '=== brood-status-derive.sh: status derivation, bucket classification, aggregation (#186) ==='
+#
+# PURE determinism coverage for the collection loop's derivation. This is the PRIMARY test of the
+# rule table ported out of SKILL.md steps 2..5 — it runs with no tmux/gh/git, exercising every
+# row of the failed-precedence + tmux x PR table, the bucket classifier, and both aggregators.
+
+# ── 6a. hivemind_derive_strain_status — the FULL rule table ──
+# failed-precedence (manifest_status=failed beats tmux): alive vs dead.
+assert_eq "derive:failed-alive" "failed (injection failed; session alive for debug)" \
+  "$(hivemind_derive_strain_status failed 1 none "")" "failed + alive -> injection-failed debug"
+assert_eq "derive:failed-dead" "failed (session ended, no PR)" \
+  "$(hivemind_derive_strain_status failed 0 none "")" "failed + dead -> session ended"
+# failed-precedence holds even when a PR is open (manifest failed wins over the table).
+assert_eq "derive:failed-alive-pr-open" "failed (injection failed; session alive for debug)" \
+  "$(hivemind_derive_strain_status failed 1 open 7)" "failed + alive ignores PR state"
+
+# tmux x PR observable table (manifest_status NOT failed; use the literal status spawn-brood writes).
+assert_eq "derive:alive-none" "running" \
+  "$(hivemind_derive_strain_status running 1 none "")" "alive + none -> running"
+assert_eq "derive:alive-open" "running (PR #42 open)" \
+  "$(hivemind_derive_strain_status running 1 open 42)" "alive + open -> running (PR #N open)"
+assert_eq "derive:dead-merged" "complete" \
+  "$(hivemind_derive_strain_status running 0 merged 13)" "dead + merged -> complete"
+assert_eq "derive:dead-open" "blocked (session ended, PR #99 still open)" \
+  "$(hivemind_derive_strain_status running 0 open 99)" "dead + open -> blocked"
+assert_eq "derive:dead-none" "failed (session ended, no PR)" \
+  "$(hivemind_derive_strain_status running 0 none "")" "dead + none -> failed"
+
+# unknown-PR handling: gh failed. Treated like none for derivation (the cell shows unknown via the
+# renderer; status derives from tmux + best-known PR). alive+unknown -> running; dead+unknown -> failed.
+assert_eq "derive:alive-unknown" "running" \
+  "$(hivemind_derive_strain_status running 1 unknown "")" "alive + unknown PR -> running (unknown ~ none)"
+assert_eq "derive:dead-unknown" "failed (session ended, no PR)" \
+  "$(hivemind_derive_strain_status running 0 unknown "")" "dead + unknown PR -> failed (unknown ~ none)"
+
+# ── 6b. hivemind_classify_status_bucket — every derived status maps to a bucket ──
+assert_eq "bucket:complete" "complete" \
+  "$(hivemind_classify_status_bucket "complete")" "complete -> complete bucket"
+assert_eq "bucket:running" "running" \
+  "$(hivemind_classify_status_bucket "running")" "running -> running bucket"
+assert_eq "bucket:running-pr" "running" \
+  "$(hivemind_classify_status_bucket "running (PR #42 open)")" "running (PR #N open) -> running bucket"
+assert_eq "bucket:blocked" "blocked_failed" \
+  "$(hivemind_classify_status_bucket "blocked (session ended, PR #99 still open)")" "blocked -> blocked_failed"
+assert_eq "bucket:failed" "blocked_failed" \
+  "$(hivemind_classify_status_bucket "failed (session ended, no PR)")" "failed -> blocked_failed"
+assert_eq "bucket:failed-debug" "blocked_failed" \
+  "$(hivemind_classify_status_bucket "failed (injection failed; session alive for debug)")" "failed-debug -> blocked_failed"
+# Conservative default: an unexpected string counts against completion, never silently dropped.
+assert_eq "bucket:unexpected" "blocked_failed" \
+  "$(hivemind_classify_status_bucket "weird")" "unexpected status -> blocked_failed (conservative)"
+
+# ── 6c. hivemind_aggregate_brood_summary — per-brood {complete,running,blocked_failed,total} ──
+# Zero strains (empty brood) -> all zero.
+assert_eq "brood-agg:empty" "0 0 0 0" \
+  "$(hivemind_aggregate_brood_summary)" "no buckets -> 0 0 0 0"
+# Mixed: 2 complete, 1 running, 2 blocked_failed -> total 5.
+assert_eq "brood-agg:mixed" "2 1 2 5" \
+  "$(hivemind_aggregate_brood_summary complete running complete blocked_failed blocked_failed)" "mixed buckets"
+# All complete.
+assert_eq "brood-agg:all-complete" "3 0 0 3" \
+  "$(hivemind_aggregate_brood_summary complete complete complete)" "all complete"
+# An unrecognized bucket token counts into blocked_failed (never dropped from total).
+assert_eq "brood-agg:unknown-bucket" "1 0 1 2" \
+  "$(hivemind_aggregate_brood_summary complete bogus)" "unknown bucket -> blocked_failed, still counted"
+
+# ── 6d. hivemind_aggregate_global — {total_broods,unreadable,complete,total_strains} ──
+# Records are "<is_unreadable>:<complete>:<total>".
+# Zero broods (No broods found) -> all zero.
+assert_eq "global-agg:empty" "0 0 0 0" \
+  "$(hivemind_aggregate_global)" "no records -> 0 0 0 0"
+# Single ok brood: 2 of 3 complete.
+assert_eq "global-agg:single" "1 0 2 3" \
+  "$(hivemind_aggregate_global "0:2:3")" "single brood 2/3 complete"
+# Multiple broods + one unreadable: 3 broods, 1 unreadable, complete 2+1, strains 3+2 (unreadable=0/0).
+assert_eq "global-agg:multi-with-unreadable" "3 1 3 5" \
+  "$(hivemind_aggregate_global "0:2:3" "0:1:2" "1:0:0")" "3 broods (1 unreadable); 3 of 5 complete"
+# All unreadable -> total_broods counts them, unreadable counts them, zero strains/complete.
+assert_eq "global-agg:all-unreadable" "2 2 0 0" \
+  "$(hivemind_aggregate_global "1:0:0" "1:0:0")" "two unreadable broods -> 2 broods, 2 unreadable, 0/0"
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''

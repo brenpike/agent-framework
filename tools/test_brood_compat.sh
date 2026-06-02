@@ -53,8 +53,9 @@ SPAWN_SCRIPT="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
 INIT_SCRIPT="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
 PROJECT_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-status-project.sh"
 DISCOVER_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-discover.sh"
+COLLECT_SCRIPT="$REPO_ROOT/plugin/skills/brood-status/scripts/brood-status-collect.sh"
 
-for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT" "$PROJECT_SCRIPT" "$DISCOVER_SCRIPT"; do
+for required in "$MANIFEST_V1" "$MANIFEST_V2" "$SPAWN_SCRIPT" "$INIT_SCRIPT" "$PROJECT_SCRIPT" "$DISCOVER_SCRIPT" "$COLLECT_SCRIPT"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required fixture missing: $required" >&2; exit 2; }
 done
@@ -1968,6 +1969,172 @@ assert_discover_hostile_name_skipped() {
 }
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# brood-status-collect.sh (collection loop + status derivation entrypoint, #186, ADR-0020)
+# ════════════════════════════════════════════════════════════════════════════════
+# The thin entrypoint owns discovery + per-strain observable probing + projection + status
+# derivation + aggregation, emitting ONE JSON document (schema brood-status-collect/1). It is the
+# IMPURE layer: jq + git are hard deps; tmux/gh degrade per-probe (a host without them yields
+# dead sessions and none/unknown PRs). The PURE derivation rule table is covered exhaustively in
+# tools/test_shared_libs.sh (brood-status-derive.sh); these cases prove the entrypoint produces a
+# WELL-FORMED document and wires discovery->projection->aggregation correctly.
+#
+# CI-SAFE (#169 real-deps-or-skip): the meaningful assertions below need only git + jq — they use
+# git-only observables (no live tmux session -> dead; a branch with no PR -> none/unknown), so they
+# run UNCONDITIONALLY and pass in CI. No tmux/gh MOCKS are built (out of scope per #169). If git or
+# jq is somehow absent, the cases SKIP cleanly. Each builds a throwaway git checkout via mktemp and
+# reaps it locally, independent of WORKDIR/PROJ_WORKDIR.
+
+COLLECT_BROOD_ID="brood-8a8a8a8a-8b8b-4c8c-8d8d-8e8e8e8e8e8e"
+
+# collect_seed_repo: a throwaway git checkout root (real toplevel for the entrypoint's
+# git rev-parse --show-toplevel anchor).
+collect_seed_repo() {
+    local root="$1"
+    git -C "$root" init -q
+    git -C "$root" config user.email test@example.com
+    git -C "$root" config user.name test
+    git -C "$root" commit -q --allow-empty -m "collect-seed"
+}
+
+# ── COLLECT-EMPTY: no broods → well-formed doc with empty broods + zeroed global ──
+assert_collect_empty() {
+    local name="COLLECT-EMPTY:no-broods-wellformed-empty-doc"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    # Well-formed JSON, schema correct, broods empty, global zeroed.
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        '.schema=="brood-status-collect/1" and (.broods|length)==0
+         and .global.total_broods==0 and .global.unreadable==0
+         and .global.complete==0 and .global.total_strains==0' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; well-formed empty doc (broods:[], global all 0)"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
+# ── COLLECT-OK: one brood, one strain, git-only observables (dead session) ───────
+# A real brood manifest under .hivemind/broods/<id>/manifest.json with one strain whose branch has
+# a registered git worktree (so the projector derives a ledger) carrying a valid ledger. No tmux
+# session is created (session -> dead) and the branch has no PR (none, or unknown if gh fails).
+# Asserts: well-formed doc, one brood status=ok, one strain, session=dead, workflow_state/run_status
+# projected from the ledger, derived_status present, and per-brood + global aggregates coherent.
+assert_collect_ok_one_strain() {
+    local name="COLLECT-OK:one-brood-one-strain-git-only-observables"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    local branch="strain/$COLLECT_BROOD_ID/api" sid="$COLLECT_BROOD_ID--api"
+    # A real git worktree on the strain branch so the projector resolves it as ground truth.
+    local wt="$root/wt-api"
+    git -C "$root" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    jq -n '{run:{status:"running"}, state:{current:"implement_step"}}' > "$wt/.hivemind/runs/$sid/state.json"
+    # A no-tmux session name (dead) and a branch with no PR (none/unknown).
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" --arg wt "$wt" --arg branch "$branch" --arg sid "$sid" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", worktree_path:$wt, branch:$branch,
+                     tmux_session:"\($brood_id)-api", status:"running",
+                     run:{suggested_id:$sid, workflow_hint:"standard-delivery"}}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    # Structural assertions only (PR/derived_status depend on tmux/gh presence): schema, one ok
+    # brood with the right id, one strain with session=dead, projected ledger scalars, a non-empty
+    # derived_status, and coherent aggregates (total_broods=1, total_strains=1).
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg id "$COLLECT_BROOD_ID" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==1
+         and .broods[0].brood_id==$id
+         and .broods[0].status=="ok"
+         and (.broods[0].strains|length)==1
+         and .broods[0].strains[0].name=="api"
+         and .broods[0].strains[0].session=="dead"
+         and .broods[0].strains[0].workflow_state=="implement_step"
+         and .broods[0].strains[0].run_status=="running"
+         and (.broods[0].strains[0].derived_status|length)>0
+         and .broods[0].summary.total==1
+         and .global.total_broods==1
+         and .global.total_strains==1
+         and .global.unreadable==0' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    git -C "$root" worktree remove --force "$wt" 2>/dev/null || true
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; one ok brood, one strain (session=dead), ledger projected, aggregates coherent"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
+# ── COLLECT-UNREADABLE: torn manifest → brood status=unreadable, isolated, counted ─
+# A torn (invalid-JSON) manifest must become an `unreadable` brood entry with detail=path, NOT abort
+# the run. Pair it with a valid empty brood to prove per-brood failure isolation + global counting.
+assert_collect_unreadable_isolated() {
+    local name="COLLECT-UNREADABLE:torn-manifest-isolated-unreadable-brood"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    # Two broods (sorted by id). First: a VALID empty manifest. Second: a TORN manifest.
+    local id_a="brood-1111aaaa-1111-4aaa-8aaa-111111111111"
+    local id_b="brood-2222bbbb-2222-4bbb-8bbb-222222222222"
+    mkdir -p "$root/.hivemind/broods/$id_a" "$root/.hivemind/broods/$id_b"
+    jq -n --arg id "$id_a" '{manifest_version:4, brood_id:$id, created_at:"2026-06-01T00:00:00Z", base:"main", overlap_risk:"low", strains:[], merge_order:[]}' \
+        > "$root/.hivemind/broods/$id_a/manifest.json"
+    printf '{"manifest_version":4,"strains":[{"name":"api",\n' > "$root/.hivemind/broods/$id_b/manifest.json"
+
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    # Brood a is empty (status empty, 0 strains); brood b is unreadable (detail=path); both counted;
+    # the run did NOT abort. global.total_broods=2, unreadable=1.
+    local manifest_b="$root/.hivemind/broods/$id_b/manifest.json"
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg ida "$id_a" --arg idb "$id_b" --arg pathb "$manifest_b" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==2
+         and .broods[0].brood_id==$ida and .broods[0].status=="empty"
+         and .broods[1].brood_id==$idb and .broods[1].status=="unreadable"
+         and .broods[1].detail==$pathb
+         and .global.total_broods==2 and .global.unreadable==1' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; empty brood + torn manifest isolated as unreadable (detail=path); both counted (total=2, unreadable=1)"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
 assert_v2_new
@@ -2015,6 +2182,12 @@ assert_discover_sort_order
 assert_discover_nested_worktree
 assert_discover_dir_without_manifest_skipped
 assert_discover_hostile_name_skipped
+
+echo ''
+echo '=== brood-status-collect.sh collection-loop entrypoint tests (#186, ADR-0020) ==='
+assert_collect_empty
+assert_collect_ok_one_strain
+assert_collect_unreadable_isolated
 
 echo ''
 echo '=== Summary ==='

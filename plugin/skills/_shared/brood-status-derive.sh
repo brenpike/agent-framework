@@ -1,0 +1,153 @@
+# shellcheck shell=bash
+#
+# brood-status-derive.sh — PURE status-derivation + aggregation library for the brood-status
+# collection loop (issue #186, ADR-0020).
+#
+# THIS FILE IS SOURCED, NOT EXECUTED. No shebang: each caller sources it by absolute path
+# derived from its OWN script_dir (`. "$plugin_root/skills/_shared/brood-status-derive.sh"`).
+# It defines functions only; it runs no top-level statements and changes no caller state beyond
+# defining the functions below. `bash -n` validates it as a sourced fragment.
+#
+# SINGLE RESPONSIBILITY: turn already-collected per-strain observables (tmux liveness, PR state,
+# manifest status) into (a) the rendered Status string, (b) a coarse counting bucket, and
+# (c) per-brood / global aggregate counts. EVERYTHING here is PURE arithmetic / string mapping:
+# inputs in, string out. There is NO tmux/gh/git/file I/O in this file — the IMPURE probing lives
+# in the thin entrypoint (`brood-status-collect.sh`). Keeping derivation pure makes it the primary
+# determinism coverage in `tools/test_shared_libs.sh` without standing up tmux/gh/git.
+#
+# set -u: every parameter is read explicitly; an unset variable is a programming error here. We do
+# NOT use `set -e` and there is NO EXIT trap — sourced libraries install neither (ADR-0020).
+
+set -u
+
+# ── hivemind_derive_strain_status ─────────────────────────────────────────────────
+# hivemind_derive_strain_status <manifest_status> <session_alive:0|1> <pr_state> <pr_number>
+#   -> prints the derived Status string to stdout.
+#
+# Ports the SKILL.md rule table EXACTLY. Priority (highest first):
+#   1. manifest_status == failed (failed-precedence): a strain recorded failed in the manifest is
+#      reported failed regardless of tmux liveness (spawn-brood deliberately leaves the session
+#      alive on injection failure for debugging):
+#        alive -> "failed (injection failed; session alive for debug)"
+#        dead  -> "failed (session ended, no PR)"
+#   2. otherwise the tmux x PR observable table:
+#        | tmux  | PR     | Status                                            |
+#        | alive | none   | running                                           |
+#        | alive | open   | running (PR #N open)                              |
+#        | dead  | merged | complete                                          |
+#        | dead  | open   | blocked (session ended, PR #N still open)         |
+#        | dead  | none   | failed (session ended, no PR)                     |
+#
+# <pr_state> is one of: open | merged | none | unknown. `unknown` means the gh probe failed (not
+# authenticated / rate-limited). PRESERVE current behavior: an unknown PR is treated like `none`
+# for liveness/status derivation (the PR CELL itself is shown as unknown by the renderer; the
+# Status derives from tmux + best-known PR). Any unrecognized tmux/PR combination falls through to
+# the dead+none "failed" terminal, the conservative default.
+hivemind_derive_strain_status() {
+  local manifest_status="$1" session_alive="$2" pr_state="$3" pr_number="$4"
+
+  # 1. failed-precedence (manifest static field beats the alive-session inference).
+  if [ "$manifest_status" = "failed" ]; then
+    if [ "$session_alive" -eq 1 ]; then
+      printf '%s' "failed (injection failed; session alive for debug)"
+    else
+      printf '%s' "failed (session ended, no PR)"
+    fi
+    return 0
+  fi
+
+  # 2. tmux x PR observable table. `unknown` PR collapses to `none` for derivation.
+  local pr_for_derive="$pr_state"
+  [ "$pr_for_derive" = "unknown" ] && pr_for_derive="none"
+
+  if [ "$session_alive" -eq 1 ]; then
+    case "$pr_for_derive" in
+      open) printf 'running (PR #%s open)' "$pr_number" ;;
+      *)    printf 'running' ;;
+    esac
+  else
+    case "$pr_for_derive" in
+      merged) printf 'complete' ;;
+      open)   printf 'blocked (session ended, PR #%s still open)' "$pr_number" ;;
+      *)      printf 'failed (session ended, no PR)' ;;
+    esac
+  fi
+  return 0
+}
+
+# ── hivemind_classify_status_bucket ───────────────────────────────────────────────
+# hivemind_classify_status_bucket <derived_status> -> prints one of:
+#   complete | running | blocked_failed
+#
+# Maps the rendered Status string onto the coarse counting bucket the per-brood summary line uses
+# ("N of M strains complete. X running. Y blocked/failed."). Classification is by the Status
+# string's leading word, which the derivation above fixes to a small closed set:
+#   complete                                          -> complete
+#   running, running (PR #N open)                     -> running
+#   blocked (...), failed (...)                       -> blocked_failed
+# Any unexpected string falls to blocked_failed (conservative — a strain we cannot classify as
+# running or complete is counted against completion, never silently dropped).
+hivemind_classify_status_bucket() {
+  local status="$1"
+  case "$status" in
+    complete)   printf 'complete' ;;
+    running|running\ *) printf 'running' ;;
+    *)          printf 'blocked_failed' ;;
+  esac
+  return 0
+}
+
+# ── hivemind_aggregate_brood_summary ──────────────────────────────────────────────
+# hivemind_aggregate_brood_summary <bucket-list...>
+#   -> prints "complete running blocked_failed total" (4 space-separated integers) for ONE brood.
+#
+# Each argument is one strain's bucket (the output of hivemind_classify_status_bucket). Pure
+# arithmetic; zero arguments yields "0 0 0 0" (an empty brood contributes nothing). An unrecognized
+# bucket token is counted into blocked_failed (never dropped from total), matching the conservative
+# classifier default.
+hivemind_aggregate_brood_summary() {
+  local complete=0 running=0 blocked_failed=0 total=0 bucket
+  for bucket in "$@"; do
+    total=$((total + 1))
+    case "$bucket" in
+      complete)       complete=$((complete + 1)) ;;
+      running)        running=$((running + 1)) ;;
+      *)              blocked_failed=$((blocked_failed + 1)) ;;
+    esac
+  done
+  printf '%d %d %d %d' "$complete" "$running" "$blocked_failed" "$total"
+  return 0
+}
+
+# ── hivemind_aggregate_global ─────────────────────────────────────────────────────
+# hivemind_aggregate_global <brood-record...>
+#   -> prints "total_broods unreadable complete total_strains" (4 space-separated integers).
+#
+# Each argument is ONE brood's record, a colon-delimited triple:
+#   "<is_unreadable:0|1>:<complete_count>:<strain_total>"
+# where:
+#   is_unreadable  — 1 if the brood is an unreadable/blocker entry (no strain table), else 0.
+#   complete_count — the brood's `complete` bucket count (0 for unreadable/empty broods).
+#   strain_total   — the brood's strain count (0 for unreadable/empty broods).
+#
+# The global line is "Broods: T total. U unreadable. N of M strains complete across all broods."
+#   total_broods = number of records (every discovered brood counts, terminal or not, #179).
+#   unreadable   = count of records with is_unreadable == 1.
+#   complete     = sum of complete_count across all records.
+#   total_strains= sum of strain_total across all records.
+# Pure arithmetic; zero arguments yields "0 0 0 0" (no broods found).
+hivemind_aggregate_global() {
+  local total_broods=0 unreadable=0 complete=0 total_strains=0 record
+  local is_unreadable rec_complete rec_total
+  for record in "$@"; do
+    total_broods=$((total_broods + 1))
+    is_unreadable="${record%%:*}"
+    rec_complete="${record#*:}"; rec_complete="${rec_complete%%:*}"
+    rec_total="${record##*:}"
+    [ "$is_unreadable" = "1" ] && unreadable=$((unreadable + 1))
+    complete=$((complete + rec_complete))
+    total_strains=$((total_strains + rec_total))
+  done
+  printf '%d %d %d %d' "$total_broods" "$unreadable" "$complete" "$total_strains"
+  return 0
+}
