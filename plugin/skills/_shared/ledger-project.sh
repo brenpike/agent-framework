@@ -129,7 +129,20 @@ hivemind_project_run_status() {
     return 0
   fi
   local content
-  content="$(cat -- "$ledger_path" 2>/dev/null)"
+  # READ FAILURE on a PRESENT file (unreadable perms, I/O error) is "present but cannot be
+  # read" → MALFORMED, never MISSING. `cat` returns empty AND non-zero on failure; the
+  # `2>/dev/null` silences stderr only, not the exit status the `if !` tests. Mirrors the
+  # pre-single-snapshot jq-open-failure semantics and the content-snapshot read site. The
+  # re-test `[ -e ]` keeps a file that VANISHED after the `[ -f ]` guard above as MISSING
+  # (genuine absence), reporting MALFORMED only for a present-but-unreadable file.
+  if ! content="$(cat -- "$ledger_path" 2>/dev/null)"; then
+    if [ -e "$ledger_path" ]; then
+      printf 'MALFORMED\n'
+    else
+      printf 'MISSING\n'
+    fi
+    return 0
+  fi
   hivemind_project_run_status_content "$content"
   return 0
 }
@@ -146,7 +159,20 @@ hivemind_project_state_current() {
     return 0
   fi
   local content
-  content="$(cat -- "$ledger_path" 2>/dev/null)"
+  # READ FAILURE on a PRESENT file (unreadable perms, I/O error) is "present but cannot be
+  # read" → MALFORMED, never MISSING. `cat` returns empty AND non-zero on failure; the
+  # `2>/dev/null` silences stderr only, not the exit status the `if !` tests. Mirrors the
+  # pre-single-snapshot jq-open-failure semantics and the content-snapshot read site. The
+  # re-test `[ -e ]` keeps a file that VANISHED after the `[ -f ]` guard above as MISSING
+  # (genuine absence), reporting MALFORMED only for a present-but-unreadable file.
+  if ! content="$(cat -- "$ledger_path" 2>/dev/null)"; then
+    if [ -e "$ledger_path" ]; then
+      printf 'MALFORMED\n'
+    else
+      printf 'MISSING\n'
+    fi
+    return 0
+  fi
   hivemind_project_state_current_content "$content"
   return 0
 }
