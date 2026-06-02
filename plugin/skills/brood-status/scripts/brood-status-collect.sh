@@ -78,15 +78,23 @@ if discover_out="$(bash "$DISCOVER_SCRIPT" "$root" 2>/dev/null)"; then
 fi
 
 # ── Per-strain observable probes (IMPURE) ─────────────────────────────────────────
-# Each probe consumes a projector-VALIDATED token. Skip a probe ONLY when its required token is
-# the fixed `MALFORMED` sentinel (the existing per-probe trust contract): tmux_session gates the
-# tmux probe; branch gates the PR probe. A MALFORMED ledger scalar NEVER suppresses an observable
-# probe (informational-only). These tokens are inert "$var" args, never command source.
+# Each probe consumes a projector-VALIDATED token. Skip a probe when its required token is EITHER
+# of the projector's two fixed sentinels — `MISSING` (absent field) or `MALFORMED` (rejected
+# field): tmux_session gates the tmux probe; branch gates the PR probe. Both sentinels are FIXED
+# tokens the projector emits in lieu of a real identifier (see brood-status-project.sh field
+# emission), NOT probeable observables — probing `tmux has-session -t MISSING` or
+# `gh pr list --head MISSING` would let an unrelated real session/branch/PR literally named
+# `MISSING`/`MALFORMED` masquerade as this strain's observable, fabricating alive/open/merged/
+# running status and hiding the very manifest corruption the sentinel signals. A MALFORMED/MISSING
+# *ledger* scalar still NEVER suppresses an observable probe (informational-only); only the probe's
+# OWN gating token (tmux_session / branch) is checked here. These tokens are inert "$var" args,
+# never command source.
+SENTINEL_RE='^(MISSING|MALFORMED)$'
 
 # probe_session_alive <tmux_session> -> echoes 1 (alive) or 0 (dead/skip).
 probe_session_alive() {
   local sess="$1"
-  [ "$sess" = "MALFORMED" ] && { printf '0'; return 0; }
+  [[ "$sess" =~ $SENTINEL_RE ]] && { printf '0'; return 0; }
   if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$sess" 2>/dev/null; then
     printf '1'
   else
@@ -96,11 +104,13 @@ probe_session_alive() {
 }
 
 # probe_pr <branch> -> echoes "<state>\t<number>" where state is open|merged|none|unknown and
-# number is the PR number or empty. A MALFORMED branch skips the probe (state=unknown is reserved
-# for a real gh failure; a malformed branch yields none with no number). gh failure -> unknown.
+# number is the PR number or empty. A MISSING/MALFORMED branch skips the probe — both are fixed
+# projector sentinels, not real branch names (state=unknown is reserved for a real gh failure; a
+# sentinel branch yields none with no number, never a probe against a branch literally named
+# `MISSING`/`MALFORMED`). gh failure -> unknown.
 probe_pr() {
   local branch="$1"
-  if [ "$branch" = "MALFORMED" ]; then
+  if [[ "$branch" =~ $SENTINEL_RE ]]; then
     printf 'none\t'
     return 0
   fi
@@ -169,10 +179,21 @@ for manifest in "${manifests[@]}"; do
   fi
 
   # Exit 0: parse STRAIN lines. Zero strains -> empty brood.
+  # BROOD-ID INTEGRITY: the projector emits the manifest TOP-LEVEL brood_id as f_brood on EVERY
+  # STRAIN line, validated ONCE against ^brood-[0-9a-f-]+$ (MALFORMED when absent/tampered). The
+  # discovered directory name (brood_id) is the OTHER ground-truth identity. If they disagree — a
+  # manifest copied into the wrong brood dir, or a tampered/absent top-level brood_id rendering
+  # MALFORMED — the brood is unattributable: we must NOT render it as a normal brood under the
+  # directory id (which would mask the projector's corruption signal). We detect the disagreement
+  # while parsing strains and, after the loop, downgrade the brood to a `blocker` entry.
   strain_objects=()
   buckets=()
+  brood_id_mismatch=""   # set to the offending f_brood value on first mismatch/MALFORMED
   while IFS="$TAB" read -r sentinel f_brood f_name f_wt f_branch f_tmux f_status f_state f_run; do
     [ "$sentinel" = "STRAIN" ] || continue
+    if [ -z "$brood_id_mismatch" ] && [ "$f_brood" != "$brood_id" ]; then
+      brood_id_mismatch="$f_brood"
+    fi
     # Probe observables using the projector-validated tokens (inert "$var").
     session_alive="$(probe_session_alive "$f_tmux")"
     pr_pair="$(probe_pr "$f_branch")"
@@ -203,6 +224,19 @@ for manifest in "${manifests[@]}"; do
         pr:{number:$number, state:$state},
         workflow_state:$wstate, run_status:$run, derived_status:$derived}')" )
   done <<< "$proj_out"
+
+  # Brood-id disagreement (mismatch or MALFORMED top-level brood_id) -> unattributable brood.
+  # Render a `blocker` entry (no strain table) carrying the offending f_brood in detail, and count
+  # it as unreadable in the global aggregate. This preserves the projector's integrity signal that
+  # the directory-name collector would otherwise mask.
+  if [ -n "$brood_id_mismatch" ]; then
+    brood_objects+=( "$(jq -n --arg id "$brood_id" --arg got "$brood_id_mismatch" \
+      '{brood_id:$id, status:"blocker",
+        detail:("manifest brood_id mismatch: directory \($id) but manifest emitted \($got)"),
+        strains:[], summary:{complete:0, running:0, blocked_failed:0, total:0}}')" )
+    global_records+=( "1:0:0" )
+    continue
+  fi
 
   # Per-brood summary via the pure aggregator.
   read -r b_complete b_running b_blocked b_total \

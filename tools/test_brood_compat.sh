@@ -2183,11 +2183,115 @@ assert_discover_nested_worktree
 assert_discover_dir_without_manifest_skipped
 assert_discover_hostile_name_skipped
 
+# ── COLLECT-MISSING-SENTINEL: absent tmux_session/branch → probes SKIP MISSING token ─
+# A manifest strain with NO tmux_session and NO branch field. The projector emits the fixed token
+# MISSING for both (absent fields). The collector MUST treat MISSING (like MALFORMED) as a
+# non-probeable sentinel — it must NOT run `tmux has-session -t MISSING` or `gh pr list --head
+# MISSING`, where an unrelated real session/branch/PR literally named `MISSING` would masquerade as
+# this strain's observable. Assert session=dead (MISSING never probed alive) and pr.state=none
+# (MISSING never probed to open/merged), regardless of any host session/branch named MISSING.
+assert_collect_missing_sentinel_not_probed() {
+    local name="COLLECT-MISSING-SENTINEL:absent-tmux-branch-not-probed-as-real-names"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    # A strain with NO branch and NO tmux_session field -> projector emits MISSING for both.
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", status:"running"}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+    # If this host happens to have a tmux server, create a real session literally named MISSING to
+    # prove the collector does NOT pick it up (probe is skipped, not run against the sentinel).
+    local made_session=no
+    if command -v tmux >/dev/null 2>&1 && tmux new-session -d -s MISSING 2>/dev/null; then
+        made_session=yes
+    fi
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg id "$COLLECT_BROOD_ID" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==1
+         and .broods[0].brood_id==$id
+         and (.broods[0].strains|length)==1
+         and .broods[0].strains[0].session=="dead"
+         and .broods[0].strains[0].pr.state=="none"
+         and .broods[0].strains[0].pr.number==null' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    [[ "$made_session" == "yes" ]] && tmux kill-session -t MISSING 2>/dev/null || true
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; MISSING tmux_session/branch sentinels NOT probed (session=dead, pr none/null) despite a real session named MISSING"
+    else
+        failed "$name" "rc=$rc ok=$ok made_session=$made_session out=[$out]"
+    fi
+}
+
+# ── COLLECT-BROODID-MISMATCH: manifest top-level brood_id != directory id → blocker ──
+# A manifest whose top-level brood_id does NOT match its containing brood directory (e.g. copied
+# into the wrong dir). The projector emits that top-level brood_id as f_brood on each STRAIN line;
+# the collector MUST detect the disagreement vs the directory id and render the brood as a
+# `blocker` (unattributable), counted as unreadable — NOT as a normal brood under the directory id.
+assert_collect_broodid_mismatch_blocker() {
+    local name="COLLECT-BROODID-MISMATCH:manifest-brood_id-ne-dir-id-blocker"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local dir_id="brood-3333cccc-3333-4ccc-8ccc-333333333333"
+    local manifest_id="brood-4444dddd-4444-4ddd-8ddd-444444444444"
+    local brood_dir="$root/.hivemind/broods/$dir_id"
+    mkdir -p "$brood_dir"
+    # Manifest carries a VALID-shape top-level brood_id that DIFFERS from the directory id.
+    jq -n --arg bid "$manifest_id" \
+        '{ manifest_version:4, brood_id:$bid, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", status:"running"}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg id "$dir_id" --arg got "$manifest_id" \
+        '.schema=="brood-status-collect/1"
+         and (.broods|length)==1
+         and .broods[0].brood_id==$id
+         and .broods[0].status=="blocker"
+         and (.broods[0].strains|length)==0
+         and (.broods[0].detail|contains($got))
+         and .global.total_broods==1
+         and .global.unreadable==1' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    rm -rf "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; manifest brood_id != dir id -> blocker (unattributable), counted unreadable; projector integrity signal preserved"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
 echo ''
 echo '=== brood-status-collect.sh collection-loop entrypoint tests (#186, ADR-0020) ==='
 assert_collect_empty
 assert_collect_ok_one_strain
 assert_collect_unreadable_isolated
+assert_collect_missing_sentinel_not_probed
+assert_collect_broodid_mismatch_blocker
 
 echo ''
 echo '=== Summary ==='
