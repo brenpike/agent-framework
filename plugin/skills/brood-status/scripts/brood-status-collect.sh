@@ -69,11 +69,14 @@ fi
 
 # ── Discover manifests (validated brood-id segments; treat as DATA) ────────────────
 # brood-discover.sh emits sorted absolute manifest paths, one per line. Capture into an array
-# safely with mapfile so a path is never re-parsed as shell. Zero lines -> empty broods array.
+# with a Bash-3.2-portable read loop (mapfile/readarray are Bash-4-only and absent on macOS system
+# bash 3.2) so a path is never re-parsed as shell. Zero lines -> empty broods array.
 manifests=()
 if discover_out="$(bash "$DISCOVER_SCRIPT" "$root" 2>/dev/null)"; then
   if [ -n "$discover_out" ]; then
-    mapfile -t manifests <<< "$discover_out"
+    while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
+      manifests+=("$manifest_line")
+    done <<< "$discover_out"
   fi
 fi
 
