@@ -7,39 +7,55 @@
 # per-brood manifest. This script OWNS every deterministic shell step; the skill
 # body is a navigator that authors the inputs file and calls this script once.
 #
-# STATE LAYOUT (singleton): a checkout hosts at most ONE brood at a time. Brood state
-# lives in a single, non-namespaced directory — .hivemind/brood/{inputs.json,
-# manifest.json} — anchored to the checkout root. There is no per-brood_id slug and no
-# disjoint per-brood path. The ONLY overlap protection is a liveness guard (below):
-# before overwriting the singleton manifest, this script probes the tmux session(s)
-# the existing manifest records and refuses to proceed if any are still live.
+# STATE LAYOUT (per-brood namespacing, #168): each spawn generates its OWN brood-id
+# INTERNALLY (brood-<uuidv4>) and writes its state to a DISJOINT, per-brood directory —
+# .hivemind/broods/<brood-id>/{inputs.json,manifest.json} — anchored to the checkout root.
+# Worktrees and branches are likewise namespaced by brood-id (see below), so two concurrent
+# same-checkout spawns get DISJOINT worktrees+branches+manifests and cannot collide. This
+# isolation REPLACES the old singleton manifest + tmux-liveness guard: there is no shared
+# manifest to overwrite, hence no overlap protection is needed (and none exists).
 #
-# INPUT (single positional argument):
-#   $1  Absolute or repo-relative path to a JSON inputs file authored by the agent
-#       via the Write tool. The agent writes structured data; this script parses it
-#       with jq into shell VARIABLES. Untrusted bytes in the JSON are read into
-#       variables and referenced only as "$var" — bash does not re-evaluate command
-#       substitution from variable contents, so the command-substitution injection
-#       class is structurally absent (the values never enter generated command
-#       SOURCE). Rationale: docs/adr/0017-brood-spawn-mechanism.md.
+# NAMESPACE GRAMMAR (brood-id carries through every derived name):
+#   - state dir:    .hivemind/broods/<brood-id>/
+#   - branch:       strain/<brood-id>/<strain-slug>
+#   - worktree:     .claude/worktrees/<brood-id>/<strain-slug>
+#   - tmux session: <brood-id>-<strain-slug>   (brood-prefixed → satisfies brood-status F3)
 #
-#   Inputs JSON shape (authoritative schema in SKILL.md § Required Inputs):
+# INPUT (single positional argument — OQ4 staging-inputs transport):
+#   $1  Path to a JSON inputs file the navigator (SKILL.md) authored via the Write tool to a
+#       PER-INVOCATION mktemp-unique STAGING path UNDER .hivemind/ (e.g.
+#       .hivemind/spawn-inputs.<rand>.json). The navigator passes that staging path here. This
+#       script VALIDATES it (must exist, be valid JSON, and resolve INSIDE the checkout via the
+#       shared read-guard), jq-reads it into inert shell VARIABLES, generates the brood-id,
+#       creates .hivemind/broods/<brood-id>/, then atomically `mv`s the staging file into
+#       "<state>/inputs.json" for the record. Per-invocation mktemp staging preserves
+#       disjointness (no singleton inputs file to clobber). Untrusted bytes in the JSON are read
+#       into variables and referenced only as "$var" — bash does not re-evaluate command
+#       substitution from variable contents, so the command-substitution injection class is
+#       structurally absent (the values never enter generated command SOURCE). Rationale:
+#       docs/adr/0017-brood-spawn-mechanism.md.
+#
+#   Inputs JSON shape (authoritative schema in SKILL.md § Required Inputs). NOTE: any
+#   caller-supplied brood_id is IGNORED — the brood-id is generated internally.
 #     {
-#       "brood_id":        "<ISO-8601 timestamp>",
 #       "base":            "<base ref>",
 #       "overlap_risk":    "low|medium|high",
 #       "overlap_details": "<free text>",
 #       "strains": [
-#         { "name": "<strain name>", "description": "<task text>", "branch": "<branch>" },
+#         { "name": "<strain name>", "description": "<task text>" },
 #         ...
 #       ]
 #     }
+#   The per-strain branch is NO LONGER caller-supplied — it is DERIVED as
+#   strain/<brood-id>/<strain-slug>, so two concurrent same-checkout broods reusing a strain
+#   name get disjoint branches (closes PR #154 F2-deep). Any caller-supplied `branch` is ignored.
 #
 # OUTPUT:
 #   - Writes per-strain task.md files under each worktree's gitignored .hivemind/.
-#   - Writes the brood manifest to .hivemind/brood/manifest.json (JSON,
-#     manifest_version: 3) in the coordinator checkout (anchored to the checkout root).
-#   - On full success: prints `manifest: <abs path>` to stdout, exits 0.
+#   - Writes the brood manifest to .hivemind/broods/<brood-id>/manifest.json (JSON,
+#     manifest_version: 4) in the coordinator checkout (anchored to the checkout root).
+#   - On full success: prints `brood_id: <brood-id>` and `manifest: <abs path>` to stdout,
+#     exits 0. The brood_id line lets the overlord capture the generated id for monitoring.
 #   - On any per-strain failure: writes the manifest with failed strains marked
 #     "status": "failed", prints `blocker: <n> of <m> strains failed to spawn` and
 #     `manifest: <abs path>` to stderr, exits 1.
@@ -107,8 +123,9 @@ jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
 # ── Script self-location + shared containment helper (sourced early) ────────────
 # Self-locate from THIS script (layout plugin/skills/spawn-brood/scripts/ => 3 dirs up is the
 # plugin root; cd && pwd -P is portable, no readlink -f). Source the shared containment helper
-# ONCE here so BOTH the inputs READ-guard (immediately below) and the later write-chain guard
-# (hivemind_assert_contained over .hivemind/brood and .claude/worktrees) share one load point.
+# ONCE here so BOTH the inputs READ-guard (immediately below) and the later write-chain guards
+# (hivemind_assert_contained over .hivemind/broods/<brood-id> and .claude/worktrees/<brood-id>)
+# share one load point.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 . "$plugin_root/skills/_shared/containment.sh"
@@ -127,22 +144,62 @@ plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
   || { printf 'blocker: refusing to read the inputs file: %s resolves outside the checkout (symlinked ancestor)\n' "$INPUTS_FILE" >&2; exit 1; }
 
-# Parse top-level scalars into inert variables.
-brood_id="$(jq -r '.brood_id // ""' "$INPUTS_FILE")"
+# ── Brood-id generation (internal, OQ locked) ────────────────────────────────────
+# Generate the brood-id INTERNALLY as brood-<uuidv4>. Any caller-supplied brood_id in the
+# inputs is IGNORED — the script owns the id. Portable generation chain: uuidgen, else the
+# kernel uuid file, else /dev/urandom hex formatted as a uuid. LOWERCASE the result (some
+# uuidgen builds emit uppercase). The id is then ASSERTED to match ^brood-[0-9a-f-]+$ — a
+# single safe path component (no '/', no '..', no separator/framing bytes) — and FAILS CLOSED
+# otherwise, so it can be interpolated into the state dir / branch / worktree / session names
+# below without further sanitization.
+generate_brood_uuid() {
+  local raw=""
+  if command -v uuidgen >/dev/null 2>&1; then
+    raw="$(uuidgen 2>/dev/null)"
+  fi
+  if [ -z "$raw" ] && [ -r /proc/sys/kernel/random/uuid ]; then
+    raw="$(cat /proc/sys/kernel/random/uuid 2>/dev/null)"
+  fi
+  if [ -z "$raw" ]; then
+    # /dev/urandom fallback: 16 random bytes → 32 hex chars → 8-4-4-4-12 uuid grouping.
+    local hex
+    hex="$(LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 32)"
+    [ "${#hex}" -eq 32 ] || return 1
+    raw="${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
+  fi
+  [ -n "$raw" ] || return 1
+  printf '%s' "$raw"
+  return 0
+}
+
+brood_uuid="$(generate_brood_uuid | tr '[:upper:]' '[:lower:]')"
+[ -n "$brood_uuid" ] || blocker "failed to generate a brood-id (no uuidgen, kernel uuid, or /dev/urandom available)"
+brood_id="brood-$brood_uuid"
+case "$brood_id" in
+  brood-[0-9a-f]*) : ;;
+  *) blocker "generated brood-id is malformed (must match ^brood-[0-9a-f-]+\$): $brood_id" ;;
+esac
+case "$brood_id" in
+  *[!a-z0-9-]*) blocker "generated brood-id contains a byte outside [a-z0-9-]: $brood_id" ;;
+esac
+
+# Parse top-level scalars into inert variables. Any inputs `brood_id` is intentionally NOT
+# read — the brood-id is generated above, not caller-supplied.
 base="$(jq -r '.base // ""' "$INPUTS_FILE")"
 overlap_risk="$(jq -r '.overlap_risk // ""' "$INPUTS_FILE")"
 overlap_details="$(jq -r '.overlap_details // ""' "$INPUTS_FILE")"
 
 # ── manifest hatchery bridge fields (ADDITIVE; ledger-bridge) ────────────────────
-# manifest_version: 3 marks the JSON manifest format. Version 3 has NO backwards-compat
-# with the pre-JSON (YAML, version 2) manifest: a brood spawned before this change is not
-# supported (a stale YAML manifest is treated as no-live-session by the JSON liveness guard
-# below, which fails OPEN to overwrite). The hatchery run metadata POINTS at the coordinator's
-# own run ledger (which the hatchery overlord owns and writes in its OWN worktree — this
-# script never creates it; it only records suggested pointers). All three values are either
-# overlord-supplied scalars or derived from the already-validated brood_id, so no new
-# untrusted bytes enter here. They enter the manifest jq construction below as --arg bindings.
-manifest_version='3'
+# manifest_version: 4 marks the per-brood-namespaced JSON manifest format (#168): top-level
+# brood_id (the generated GUID) and created_at, brood-id-carrying per-strain branch/worktree,
+# and per-strain run.suggested_ledger DROPPED (the read side derives it now). No backwards-
+# compat with prior versions (single-user, unreleased): drain any running brood before upgrade.
+# The hatchery run metadata POINTS at the coordinator's own run ledger (which the hatchery
+# overlord owns and writes in its OWN worktree — this script never creates it; it only records
+# suggested pointers). All values are either overlord-supplied scalars or derived from the
+# generated brood_id, so no new untrusted bytes enter here. They enter the manifest jq
+# construction below as --arg bindings.
+manifest_version='4'
 hatchery_run_id="$(jq -r '.hatchery.run_id // ""' "$INPUTS_FILE")"
 [ -n "$hatchery_run_id" ] || hatchery_run_id="$brood_id-hatchery"
 hatchery_workflow="$(jq -r '.hatchery.workflow // ""' "$INPUTS_FILE")"
@@ -151,7 +208,6 @@ hatchery_workflow="$(jq -r '.hatchery.workflow // ""' "$INPUTS_FILE")"
 # format-follows-consumer (ADR-0018 §A): both are machine-consumed by jq (the ledger by the
 # child/engine, the manifest by brood-status). Anchored to the coordinator checkout root.
 
-[ -n "$brood_id" ]     || { printf 'blocker: inputs file is missing brood_id\n' >&2; exit 1; }
 [ -n "$base" ]         || { printf 'blocker: inputs file is missing base\n' >&2; exit 1; }
 [ -n "$overlap_risk" ] || { printf 'blocker: inputs file is missing overlap_risk\n' >&2; exit 1; }
 # overlap_details is a required input per the contract; reject empty/whitespace-only
@@ -161,29 +217,19 @@ case "$overlap_details" in
   *) blocker "overlap_details is required and must be non-empty" ;;
 esac
 
-# Shape-validate the two overlord-generated scalars that are emitted into the
-# manifest. Although overlord-authored, a malformed value could corrupt YAML — reject
+# Shape-validate the overlord-generated overlap_risk scalar that is emitted into the
+# manifest. Although overlord-authored, a malformed value could corrupt the manifest — reject
 # at pre-flight rather than risk an unparseable manifest brood-status consumes.
 case "$overlap_risk" in
   low|medium|high) : ;;
   *) blocker "overlap_risk must be low|medium|high, got: $overlap_risk" ;;
 esac
-# brood_id MUST be the EXACT canonical ISO-8601 UTC instant form spawn-brood documents
-# and emits (YYYY-MM-DDTHH:MM:SSZ). A prefix-only check would let a malformed suffix
-# (e.g. "2026-05-31../../escape") survive into run.suggested_id / run.suggested_ledger as
-# a path-traversal payload — reject anything not matching the full anchored form here,
-# BEFORE any path derivation reads brood_id.
-case "$brood_id" in
-  [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-6][0-9]Z) : ;;
-  *) blocker "brood_id must be an ISO-8601 UTC instant (YYYY-MM-DDTHH:MM:SSZ): $brood_id" ;;
-esac
-# brood_id is an ISO-8601 timestamp (e.g. 2026-05-31T17:30:00Z) whose ':' separators fall
-# outside init-run-ledger's [A-Za-z0-9._-] parent-id charset. Derive a filesystem-safe form
-# ONCE (brood_id is loop-invariant) for the child run id and the child's --parent-brood-id.
-brood_id_safe="$(printf '%s' "$brood_id" | tr ':' '-')"
-# Defense-in-depth: the strict ISO regex above already precludes path separators and "..",
-# but re-verify the DERIVED filesystem-safe form carries neither before it feeds path
-# derivation (run_id / run_ledger). A traversal-bearing brood_id_safe must never reach a path.
+# brood_id is generated internally as brood-<uuidv4>, already asserted to match
+# ^brood-[0-9a-f-]+$ at generation — it carries NO colons (so the old `tr ':' '-'`
+# colon-mapping is gone) and no path separators. Use it directly as the filesystem-safe
+# run-id stem. KEEP a defense-in-depth re-check that the value carries no '..' or path
+# separator before it feeds any path/run-id derivation below.
+brood_id_safe="$brood_id"
 case "$brood_id_safe" in
   *..*)   blocker "brood_id derives an unsafe id containing '..': $brood_id_safe" ;;
   */*|*\\*) blocker "brood_id derives an unsafe id containing a path separator: $brood_id_safe" ;;
@@ -213,36 +259,36 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" \
 [ -n "$repo_root" ] || { printf 'blocker: not inside a git repository\n' >&2; exit 1; }
 
 # ── Depth-complete canonical-containment guard (shared helper; refines ADR-0019) ──
-# spawn-brood is the THIRD writer derived from repo_root: it mkdir's
-# "$repo_root/.hivemind/brood" (STATE) and adds worktrees under
-# "$repo_root/.claude/worktrees/<short>". Both are derived TEXTUALLY, so a SYMLINKED
-# .hivemind, .claude, or .claude/worktrees pointing outside the checkout would make those
-# writes land EXTERNALLY. Use the SAME shared helper the other two writers use to reject any
-# existing symlink component at ANY depth of BOTH write chains, BEFORE the per-strain loop
-# and BEFORE any worktree-add / tmux / mkdir. The dependency checks (tmux/claude/jq) ran
-# above; this guard sits right after repo_root resolution and before the per-strain
-# derivation loop, so it fires before any filesystem/worktree mutation. plugin_root is
-# self-located from THIS script (layout plugin/skills/spawn-brood/scripts/ => 3 dirs up is
-# the plugin root); the helper is portable (cd && pwd -P + [ -L ]) and set -u-safe. We adopt
-# the helper's canonical root for ALL derived paths (STATE, worktree paths) thereafter.
+# spawn-brood is the THIRD writer derived from repo_root. Under per-brood namespacing (#168) it
+# mkdir's "$repo_root/.hivemind/broods/<brood-id>" (STATE) and adds worktrees under
+# "$repo_root/.claude/worktrees/<brood-id>/<short>". Both are derived TEXTUALLY, so a SYMLINKED
+# .hivemind, .hivemind/broods, .claude, or .claude/worktrees pointing outside the checkout would
+# make those writes land EXTERNALLY. <brood-id> is a single safe component (asserted
+# ^brood-[0-9a-f-]+$ at generation), so it is interpolated into BOTH chains here. Use the SAME
+# shared helper the other two writers use to reject any existing symlink component at ANY depth of
+# BOTH write chains, BEFORE the per-strain loop and BEFORE any worktree-add / tmux / mkdir. The
+# dependency checks (tmux/claude/jq) ran above; this guard sits right after repo_root resolution
+# and before the per-strain derivation loop, so it fires before any filesystem/worktree mutation.
+# plugin_root is self-located from THIS script; the helper is portable (cd && pwd -P + [ -L ]) and
+# set -u-safe. We adopt the helper's canonical root for ALL derived paths (STATE, worktrees).
 # Recursive brood is preserved: a brood-child worktree has REAL .hivemind/.claude dirs (not
 # symlinks), so the helper passes.
 # (script_dir/plugin_root self-location + containment.sh source happen once early, just after
 # the inputs-file validity checks, so both the early READ-guard and these write-chain guards
 # share one load point.)
-canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/brood")" \
-  || blocker "refusing to spawn: ${canon_repo_root:-$repo_root}/.hivemind/brood resolves outside the checkout (symlinked ancestor); no worktree or session created"
+canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/broods/$brood_id")" \
+  || blocker "refusing to spawn: ${canon_repo_root:-$repo_root}/.hivemind/broods/$brood_id resolves outside the checkout (symlinked ancestor); no worktree or session created"
 [ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root"
-# Also verify the worktree-parent chain: .claude and .claude/worktrees must not be symlinks.
-hivemind_assert_contained "$repo_root" ".claude/worktrees" >/dev/null \
-  || blocker "refusing to spawn: $canon_repo_root/.claude/worktrees resolves outside the checkout (symlinked ancestor); no worktree or session created"
+# Also verify the worktree-parent chain: .claude, .claude/worktrees, and the per-brood worktree
+# parent .claude/worktrees/<brood-id> must not be symlinks.
+hivemind_assert_contained "$repo_root" ".claude/worktrees/$brood_id" >/dev/null \
+  || blocker "refusing to spawn: $canon_repo_root/.claude/worktrees/$brood_id resolves outside the checkout (symlinked ancestor); no worktree or session created"
 # Adopt the verified-contained canonical root for every derived path below (STATE, worktrees).
 repo_root="$canon_repo_root"
 
 for idx in $(seq 0 $((strain_count - 1))); do
   name="$(jq -r ".strains[$idx].name // \"\"" "$INPUTS_FILE")"
   desc="$(jq -r ".strains[$idx].description // \"\"" "$INPUTS_FILE")"
-  branch="$(jq -r ".strains[$idx].branch // \"\"" "$INPUTS_FILE")"
 
   # PRODUCER NAME CONTRACT: the strain name must satisfy the reader's presentation value-class
   # (hivemind_assert_presentation in _shared/allowlist.sh). This is the SINGLE SOURCE OF TRUTH
@@ -254,25 +300,32 @@ for idx in $(seq 0 $((strain_count - 1))); do
   hivemind_assert_presentation "$name" \
     || { printf 'blocker: strain %d name %s is outside the presentation value-class (must match [A-Za-z0-9 ._/=~#!():,+@-]+, no leading dash, no command-sub bytes, no framing bytes)\n' "$idx" "$name" >&2; exit 1; }
   [ -n "$desc" ]   || { printf 'blocker: strain %s is missing description\n' "$name" >&2; exit 1; }
-  [ -n "$branch" ] || { printf 'blocker: strain %s is missing branch\n' "$name" >&2; exit 1; }
 
   # short = name sanitized to [a-z0-9-]: lowercase, every other byte mapped to '-'.
   short="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
   [ -n "$short" ] || { printf 'blocker: strain name %s sanitizes to an empty short id\n' "$name" >&2; exit 1; }
 
-  # worktree path derived from repo_root (filesystem-controlled dir name); only the
-  # sanitized short is interpolated. Referenced only as "$wt" thereafter.
-  wt="$repo_root/.claude/worktrees/$short"
-  tmux_session="brood-$short"
+  # ── brood-id-namespaced names (#168 locked grammar) ───────────────────────────
+  # branch / worktree / tmux session ALL carry the brood-id so two concurrent same-checkout
+  # broods reusing a strain name get DISJOINT resources (closes PR #154 F2-deep). The branch is
+  # DERIVED here (no longer caller-supplied). brood_id is asserted ^brood-[0-9a-f-]+$ and short
+  # is sanitized to [a-z0-9-], so the joins introduce no '..', '.lock', or doubled slash; each
+  # branch is additionally git check-ref-format-validated by validate_ref below.
+  #   branch:       strain/<brood-id>/<short>
+  #   worktree:     .claude/worktrees/<brood-id>/<short>
+  #   tmux session: <brood-id>-<short>   (brood-prefixed → satisfies brood-status F3 grammar)
+  branch="strain/$brood_id/$short"
+  wt="$repo_root/.claude/worktrees/$brood_id/$short"
+  tmux_session="$brood_id-$short"
 
   # ledger-bridge (STEP-007): derive the per-strain suggested run metadata. suggested_id
-  # combines the validated brood_id with the sanitized short; suggested_ledger is the
-  # JSON ledger path INSIDE the child worktree (.../state.json — child ledgers are JSON
-  # even though this manifest is YAML, per ADR-0018 §A). workflow_hint is an OPTIONAL
-  # overlord-supplied hint (a non-binding suggestion; the child's own router decides),
-  # defaulting to standard-delivery. Values derive only from already-validated brood_id /
-  # short / wt, so no new untrusted bytes; emitted later via emit_block, never inline.
-  # brood_id_safe (filesystem-safe, colons mapped to dashes) is derived brood-level above.
+  # combines the brood_id with the sanitized short; suggested_ledger is the JSON ledger path
+  # INSIDE the child worktree (.../state.json — child ledgers are JSON, ADR-0018 §A). The
+  # suggested_ledger is NO LONGER recorded in the manifest (manifest v4 drops it — the read
+  # side derives it), but it is still emitted into the child task.md so the child knows where
+  # to initialize its own ledger. workflow_hint is an OPTIONAL overlord-supplied hint (a
+  # non-binding suggestion; the child's own router decides), defaulting to standard-delivery.
+  # Values derive only from the generated brood_id / short / wt, so no new untrusted bytes.
   run_id="$brood_id_safe--$short"
   run_ledger="$wt/.hivemind/runs/$run_id/state.json"
   run_hint="$(jq -r ".strains[$idx].workflow_hint // \"\"" "$INPUTS_FILE")"
@@ -403,53 +456,27 @@ fi
 git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
   || { printf 'blocker: base ref %s does not resolve to a commit\n' "$base" >&2; exit 1; }
 
-# ── Singleton brood state directory + liveness guard ────────────────────────────
-# A checkout hosts at most ONE brood at a time, so brood state lives in a single,
-# non-namespaced directory: .hivemind/brood/{inputs.json,manifest.json}. Anchor STATE
-# to the CHECKOUT ROOT (repo_root, resolved above), NOT $(pwd): when the skill is
-# invoked from a repo subdirectory, a pwd-relative manifest would land under that
-# subdir, but hivemind:brood-status resolves the checkout root — a pwd-anchored
-# manifest would make the live brood invisible to monitoring.
-STATE="$repo_root/.hivemind/brood"
+# ── Per-brood state directory (#168 namespacing; NO liveness guard) ──────────────
+# Brood state lives in a DISJOINT per-brood directory: .hivemind/broods/<brood-id>/{inputs.json,
+# manifest.json}. <brood-id> is the internally-generated GUID (unique per invocation), so two
+# concurrent same-checkout spawns NEVER share a state dir — there is no singleton manifest to
+# overwrite, hence NO tmux-liveness guard and NO per-checkout lock: per-brood ISOLATION replaces
+# the lock entirely (closes the spawn-liveness TOCTOU + singleton-inputs clobber by construction).
+# Anchor STATE to the CHECKOUT ROOT (repo_root, resolved+canonicalized above), NOT $(pwd): when
+# the skill is invoked from a repo subdirectory, a pwd-relative path would land under that subdir,
+# but hivemind:brood-status resolves the checkout root — a pwd-anchored manifest would make the
+# brood invisible to monitoring.
+STATE="$repo_root/.hivemind/broods/$brood_id"
 mkdir -p "$STATE"
 
-# LIVENESS GUARD (the only overlap protection). Before overwriting the singleton
-# manifest, probe the tmux session(s) the existing manifest records. If ANY is still
-# live, a brood is already active in this checkout — refuse to overwrite it.
-#
-# KNOWN v1 TOCTOU LIMITATION: this liveness probe is a check-then-act read with a
-# TOCTOU window — it is NOT a reservation. Under the v1 SINGLETON manifest, two
-# concurrent same-checkout spawns can both pass this check before either writes a
-# manifest and both launch --dangerously-skip-permissions children; the later manifest
-# write then hides the earlier child from monitoring. Single-brood-per-checkout is
-# therefore only softly enforced here. The structural fix is per-<brood-id> namespacing
-# (issue #168), which removes the shared singleton and dissolves both races. A
-# per-checkout lock was deliberately NOT added here — it would be throwaway once
-# namespacing lands.
-#
-# Fail OPEN to overwrite when the manifest is absent, when it records no live session
-# (stale/completed brood), or when no tmux_session value is extractable (absent file,
-# unparseable JSON, or a stale pre-JSON manifest) — a stale or malformed manifest must not
-# wedge the checkout. Extract tmux_session the SAME way hivemind:brood-status parses it
-# (jq over the JSON manifest), so both consumers parse identically. A jq parse failure on a
-# stale/torn manifest yields no sessions (2>/dev/null swallows the error), preserving the
-# fail-OPEN-to-overwrite behavior the prior sed path had on an absent/malformed manifest.
-# ACCEPTED RESIDUAL (Codex #172 Finding 1, document-only — no behavior change): this guard
-# probes ONLY manifest.json. A live PRE-UPGRADE brood whose only manifest is the legacy YAML
-# (manifest.yaml) would NOT be detected here, so its checkout could be overwritten. The JSON-only
-# probe is INTENTIONAL: do NOT add YAML parsing or a YAML→JSON migration path — that would reopen
-# the deleted sed/awk YAML hand-parse injection class this PR removed by construction. There is no
-# backwards-compat obligation (single-user, unreleased) and the operator policy is "drain any
-# running brood before upgrade," so a stale legacy-YAML brood is out of scope. Full resolution is
-# per-<brood-id> namespacing (#168), which dissolves the singleton manifest entirely.
-if [ -f "$STATE/manifest.json" ]; then
-  while IFS= read -r recorded_session; do
-    [ -n "$recorded_session" ] || continue
-    if tmux has-session -t "$recorded_session" 2>/dev/null; then
-      blocker "a brood is already active in this checkout (live session $recorded_session); refusing to overwrite"
-    fi
-  done < <(jq -r '.strains[].tmux_session // empty' "$STATE/manifest.json" 2>/dev/null)
-fi
+# OQ4 staging-inputs transport: atomically RELOCATE the navigator-authored staging inputs file
+# into the per-brood state dir as inputs.json, for the record. The staging file was already
+# validated (exists, valid JSON, contained under the checkout) at the top of the script. `mv`
+# within the same checkout filesystem is atomic; a copy-then-leave would risk a stale staging
+# file lingering under .hivemind/. After this point INPUTS_FILE is no longer read (all values
+# were parsed into inert variables above).
+mv "$INPUTS_FILE" "$STATE/inputs.json" \
+  || blocker "failed to relocate staging inputs file $INPUTS_FILE into $STATE/inputs.json"
 
 # ── Per-strain failure helpers ──────────────────────────────────────────────────
 # HARD failure: worktree add / new-session failed BEFORE launch. Clean up ONLY
@@ -618,14 +645,13 @@ for idx in $(seq 0 $((strain_count - 1))); do
   brood_meta="$( {
     printf 'parent:\n'
     printf '  kind: brood\n'
-    # parent.brood_id is a LINEAGE identity, not a path: emit the CANONICAL $brood_id
-    # (the same value the coordinator manifest emits at the manifest emitter below) so
-    # lineage reconciliation matches child<->manifest. brood_id_safe (colons->dashes) is
-    # reserved for filesystem-derived run ids/paths only; using it here would record a
-    # different identifier in the child than the manifest carries (lineage mismatch).
+    # parent.brood_id is the generated GUID (brood-<uuidv4>): emit the SAME $brood_id the
+    # coordinator manifest emits at the manifest emitter below so lineage reconciliation
+    # matches child<->manifest. The GUID is already filesystem-safe (no colons), so it doubles
+    # as the run-id stem (brood_id_safe == brood_id); there is no separate sanitized form.
     printf '  brood_id: |-\n';          printf '%s\n' "$brood_id"            | sed 's/^/    /'
     printf '  hatchery_run_id: |-\n';   printf '%s\n' "$hatchery_run_id"     | sed 's/^/    /'
-    printf '  hatchery_manifest: |-\n'; printf '%s\n' "$repo_root/.hivemind/brood/manifest.json" | sed 's/^/    /'
+    printf '  hatchery_manifest: |-\n'; printf '%s\n' "$STATE/manifest.json" | sed 's/^/    /'
     printf 'strain:\n'
     printf '  id: |-\n';            printf '%s\n' "$short"          | sed 's/^/    /'
     printf '  name: |-\n';          printf '%s\n' "$name_meta"      | sed 's/^/    /'
@@ -641,8 +667,8 @@ for idx in $(seq 0 $((strain_count - 1))); do
     printf '  - Initialize your OWN run ledger in this worktree (suggested path under run.suggested_ledger).\n'
     printf '  - init-run-ledger takes a single positional JSON inputs file you author via Write; set its parent block, not CLI flags.\n'
     printf '  - Set parent.kind = brood in the init inputs JSON.\n'
-    printf '  - Set parent.brood_id to the CANONICAL parent.brood_id verbatim; init-run-ledger persists it verbatim into .parent.brood_id (so child ledger reconciles with the manifest) and sanitizes it internally (colons->dashes) only to derive the filesystem-safe run id.\n'
-    printf '  - Set parent.strain_id to strain.id; your run id will be <sanitized-brood-id>--<strain.id>, matching run.suggested_id.\n'
+    printf '  - Set parent.brood_id to parent.brood_id verbatim; init-run-ledger persists it verbatim into .parent.brood_id (so child ledger reconciles with the manifest). The brood_id is a GUID (brood-<uuidv4>), already filesystem-safe.\n'
+    printf '  - Set parent.strain_id to strain.id; your run id will be <brood-id>--<strain.id>, matching run.suggested_id.\n'
     printf '  - Set parent.run_id to parent.hatchery_run_id.\n'
     printf '  - Set parent.manifest to parent.hatchery_manifest.\n'
     printf '  - Do NOT write the hatchery manifest.\n'
@@ -802,6 +828,10 @@ trap - INT TERM
 
 manifest_path="$STATE/manifest.json"
 hatchery_session="${TMUX:-}"   # current tmux session identifier, if any; inert literal
+# created_at: the UTC ISO-8601 instant (…Z) this brood's manifest was written. Manifest v4
+# top-level field. `date -u +%Y-%m-%dT%H:%M:%SZ` is portable (GNU + BSD date); the value is a
+# fixed-format machine string, not untrusted input.
+created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # hatchery_ledger is derived here (repo_root in scope) and anchored to the coordinator
 # checkout root; it POINTS at the coordinator overlord's own JSON run ledger (this script
 # never creates it).
@@ -813,6 +843,11 @@ hatchery_ledger=".hivemind/runs/$hatchery_run_id/state.json"
 # merged:false, rebased_after:[]). The compact one-line objects are accumulated newline-
 # separated, then folded into a JSON array with `jq -s` below. No untrusted byte is ever
 # placed in a jq program string.
+# MANIFEST v4: per-strain run.suggested_ledger is DROPPED — the read side (brood-status) derives
+# the child ledger path from ground-truth worktree discovery, so recording it here was redundant
+# manifest-path trust. run.suggested_id is KEPT (the lineage reconciliation key). worktree_path is
+# RETAINED as a display-only field. The child task.md still carries the suggested_ledger so the
+# child knows where to initialize its own ledger.
 strains_objects=""
 for idx in $(seq 0 $((strain_count - 1))); do
   strain_obj="$(jq -nc \
@@ -823,7 +858,6 @@ for idx in $(seq 0 $((strain_count - 1))); do
     --arg tmux_session "${S_TMUX[$idx]}" \
     --arg status "${S_STATUS[$idx]}" \
     --arg suggested_id "${S_RUN_ID[$idx]}" \
-    --arg suggested_ledger "${S_RUN_LEDGER[$idx]}" \
     --arg workflow_hint "${S_RUN_HINT[$idx]}" \
     '{
       name: $name,
@@ -837,7 +871,6 @@ for idx in $(seq 0 $((strain_count - 1))); do
       rebased_after: [],
       run: {
         suggested_id: $suggested_id,
-        suggested_ledger: $suggested_ledger,
         workflow_hint: $workflow_hint
       }
     }')" || {
@@ -855,6 +888,7 @@ manifest_json="$(printf '%s' "$strains_objects" | jq -s '.' \
   | jq \
     --argjson manifest_version "$manifest_version" \
     --arg brood_id "$brood_id" \
+    --arg created_at "$created_at" \
     --arg hatchery_session "$hatchery_session" \
     --arg base "$base" \
     --arg hatchery_run_id "$hatchery_run_id" \
@@ -865,6 +899,7 @@ manifest_json="$(printf '%s' "$strains_objects" | jq -s '.' \
     '{
       manifest_version: $manifest_version,
       brood_id: $brood_id,
+      created_at: $created_at,
       hatchery_session: $hatchery_session,
       base: $base,
       hatchery: {
@@ -881,20 +916,20 @@ manifest_json="$(printf '%s' "$strains_objects" | jq -s '.' \
   blocker "failed to construct brood manifest JSON; refusing to report success with no current manifest"
 }
 
-# NON-ATOMIC WRITE — concurrent-spawn read-skew race DEFERRED to #168 (do NOT add atomic-write
-# machinery here). This is a truncating redirect: it is NOT atomic (no temp-file + rename). A
-# concurrent same-checkout spawn truncating this singleton manifest mid-read can skew a reader
-# (brood-status), which could observe a partially-written manifest. This is the WRITE side of the
-# v1 SINGLETON shared-manifest race (the same root the liveness-guard TOCTOU note above
-# describes). The READ side already mitigates by reading the manifest in ONE snapshot (cat into a
-# shell var, all jq projections against that snapshot — brood-status-project.sh). The STRUCTURAL
-# fix is per-<brood-id> namespacing (#168), which gives each brood its own disjoint manifest and
-# dissolves the shared-singleton race entirely. Do NOT add interim atomic-write (temp+mv) on the
-# doomed singleton — it would be throwaway once namespacing lands.
-printf '%s\n' "$manifest_json" > "$manifest_path" || {
+# ATOMIC WRITE (#168): write the manifest to a temp file IN $STATE then `mv` it into place. The
+# `mv` within the same filesystem (both under $STATE) is atomic, so a concurrent reader
+# (brood-status) observes either the OLD or the COMPLETE NEW manifest — never a truncated/partial
+# file. Per-brood namespacing already gives each brood its own disjoint manifest (no cross-brood
+# truncation), and this temp+mv additionally closes any same-brood re-write read-skew. The temp
+# file is created under $STATE (already mkdir'd + containment-verified above), not $TMPDIR, so it
+# shares the target filesystem (mv stays a rename, never a cross-device copy).
+manifest_tmp="$STATE/.manifest.json.tmp.$$"
+if ! printf '%s\n' "$manifest_json" > "$manifest_tmp" 2>/dev/null \
+   || ! mv "$manifest_tmp" "$manifest_path" 2>/dev/null; then
+  rm -f "$manifest_tmp" >/dev/null 2>&1 || true
   printf 'recovery: manifest write failed; these live sessions are untracked and must be cleaned manually: %s\n' "$launched_sessions" >&2
   blocker "failed to write brood manifest to $manifest_path (target unwritable, e.g. a stale directory at that path); refusing to report success with no current manifest"
-}
+fi
 
 # ── Final contract ──────────────────────────────────────────────────────────────
 failed_count=0
@@ -903,10 +938,14 @@ for idx in $(seq 0 $((strain_count - 1))); do
 done
 
 if [ "$failed_count" -eq 0 ]; then
+  # Print the generated brood-id (stdout) so the overlord can capture it for monitoring,
+  # followed by the manifest path.
+  printf 'brood_id: %s\n' "$brood_id"
   printf 'manifest: %s\n' "$manifest_path"
   exit 0
 fi
 
+printf 'brood_id: %s\n' "$brood_id"
 printf 'blocker: %d of %d strains failed to spawn\nmanifest: %s\n' \
   "$failed_count" "$strain_count" "$manifest_path" >&2
 exit 1

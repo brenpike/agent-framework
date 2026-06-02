@@ -82,6 +82,13 @@ hivemind_path_has_nul() {
 #      `false` as absent (`//` is alternative-on-falsy), projecting a tamper value as MISSING.
 #      The explicit `type` gate reports a PRESENT non-string as MALFORMED; only an absent/null
 #      field or an explicit empty string is MISSING.
+#
+# SINGLE-DOCUMENT DISCIPLINE (#178 F1): jq accepts a STREAM of concatenated JSON documents, so a
+# non-slurped `jq -r` runs the program ONCE PER document and a child state.json holding TWO valid
+# objects would emit TWO output lines — the embedded newline corrupts the one-line STRAIN frame the
+# caller builds. We SLURP with `-s` and require `length==1` (exactly one top-level document); 0 or
+# >1 documents → MALFORMED. The scalar is projected from `.[0]` of the slurped array. This mirrors
+# the single-document discipline in manifest-json.sh (hivemind_manifest_validate_shape et al).
 hivemind_project_run_status_content() {
   local content="$1"
   if [ -z "$content" ]; then
@@ -89,11 +96,13 @@ hivemind_project_run_status_content() {
     return 0
   fi
   local verdict
-  if ! verdict="$(printf '%s' "$content" | jq -r '
-      if (has("run")|not) or (.run|type)!="object" or (.run.status==null) then "MISSING"
-      elif (.run.status|type)!="string" then "MALFORMED"
-      elif (.run.status=="") then "MISSING"
-      elif (.run.status|IN("running","complete","blocked","cancelled")) then .run.status
+  if ! verdict="$(printf '%s' "$content" | jq -r -s '
+      if (length != 1) then "MALFORMED"
+      elif (.[0]|type)!="object" then "MALFORMED"
+      elif (.[0]|has("run")|not) or (.[0].run|type)!="object" or (.[0].run.status==null) then "MISSING"
+      elif (.[0].run.status|type)!="string" then "MALFORMED"
+      elif (.[0].run.status=="") then "MISSING"
+      elif (.[0].run.status|IN("running","complete","blocked","cancelled")) then .[0].run.status
       else "MALFORMED" end' 2>/dev/null)"; then
     # jq failed: unparseable / torn JSON.
     printf 'MALFORMED\n'
@@ -119,6 +128,11 @@ hivemind_project_run_status_content() {
 #   2. Non-string scalars (the pre-existing type gate): jq -r stringifies a JSON true to "true"
 #      etc.; a PRESENT non-string is a tamper indicator → MALFORMED. An ABSENT/null field or an
 #      explicit empty string is the intended "nothing to report" case → MISSING.
+#
+# SINGLE-DOCUMENT DISCIPLINE (#178 F1): same rationale as hivemind_project_run_status_content — a
+# non-slurped `jq -r` over a child state.json holding TWO concatenated valid objects would emit TWO
+# lines, and the embedded newline corrupts the one-line STRAIN frame. We SLURP with `-s` and require
+# `length==1`; 0 or >1 documents → MALFORMED. The scalar is projected from `.[0]`.
 hivemind_project_state_current_content() {
   local content="$1"
   if [ -z "$content" ]; then
@@ -126,12 +140,14 @@ hivemind_project_state_current_content() {
     return 0
   fi
   local verdict
-  if ! verdict="$(printf '%s' "$content" | jq -r '
-      if (has("state")|not) or (.state|type)!="object" or (.state.current==null) then "MISSING"
-      elif (.state.current|type)!="string" then "MALFORMED"
-      elif (.state.current=="") then "MISSING"
-      elif (.state.current|length>64) then "MALFORMED"
-      elif (.state.current|test("^[a-z0-9_]+$")) then .state.current
+  if ! verdict="$(printf '%s' "$content" | jq -r -s '
+      if (length != 1) then "MALFORMED"
+      elif (.[0]|type)!="object" then "MALFORMED"
+      elif (.[0]|has("state")|not) or (.[0].state|type)!="object" or (.[0].state.current==null) then "MISSING"
+      elif (.[0].state.current|type)!="string" then "MALFORMED"
+      elif (.[0].state.current=="") then "MISSING"
+      elif (.[0].state.current|length>64) then "MALFORMED"
+      elif (.[0].state.current|test("^[a-z0-9_]+$")) then .[0].state.current
       else "MALFORMED" end' 2>/dev/null)"; then
     # jq failed: unparseable / torn JSON.
     printf 'MALFORMED\n'

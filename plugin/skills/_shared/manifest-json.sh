@@ -156,12 +156,54 @@ hivemind_manifest_strain_count_snapshot() {
 }
 
 # hivemind_manifest_field_at <content> <index> <field>
-# Emit the scalar value of <field> for the strain at array position <index> (0-based) in the
-# in-memory snapshot. Same supported fields and the same fixed-jq-path closed-case mapping as
-# hivemind_manifest_field; the strain is selected by INDEX (--argjson i), never by a name that
-# could collide or carry a delimiter. `// empty` drops a null/absent field. The field selector is
-# a fixed literal from the closed case below — never attacker content. An unrecognized field
-# selects nothing. Pure (no side effects, no exit).
+# Emit the validated scalar value of <field> for the strain at array position <index> (0-based)
+# in the in-memory snapshot, and signal presence-vs-rejection OUT-OF-BAND via EXIT CODE. Same
+# supported fields and the same fixed-jq-path closed-case mapping as hivemind_manifest_field; the
+# strain is selected by INDEX (--argjson i), never by a name that could collide or carry a
+# delimiter. The field selector is a fixed literal from the closed case below — never attacker
+# content.
+#
+# EXIT-CODE CONTRACT (#178 F2, locked OQ1 resolution — consumed by brood-status-project.sh, STEP-004):
+# This helper distinguishes ABSENT from REJECTED via the EXIT CODE, NOT via an in-band sentinel
+# string (an in-band sentinel could collide with a legit field value). The caller MUST branch on
+# the exit code, not on stdout emptiness alone:
+#   exit 0 -> field is PRESENT and VALID. The validated value is emitted on stdout (the caller may
+#            still apply its value-class allowlist floor, but the value is string-typed and free of
+#            C0 control bytes). Stdout MAY legitimately be a value; it is never empty on exit 0.
+#   exit 1 -> field is ABSENT (key missing, JSON null, or empty string). Nothing on stdout. The
+#            caller renders MISSING. This is the "nothing to report" case, not an attack.
+#   exit 2 -> field is PRESENT but INVALID — wrong JSON type (non-string scalar such as branch:123,
+#            tmux_session:true, status:123), a value carrying a C0 control byte, or a multi-document
+#            snapshot (length != 1). Nothing trustworthy on stdout. The caller renders MALFORMED.
+#            REJECTED is NEVER collapsed into MISSING (exit 1).
+# An UNRECOGNIZED field selector exits 1 (treated as absent — it is a fixed caller-supplied literal,
+# never attacker content, so a typo degrades to MISSING rather than MALFORMED).
+#
+# TYPE==STRING GATE (#178 F3): every supported field is a STRING in a well-formed manifest. The
+# value MUST be type=="string" BEFORE any extraction/coercion. Without this, jq -r would coerce a
+# non-string scalar (branch:123 -> "123", tmux_session:true -> "true") into a trusted-LOOKING token
+# that flows past the caller as if it were a real string field. A PRESENT non-string is a tamper
+# indicator -> exit 2 (MALFORMED), never coerced and never emitted.
+#
+# CONTROL-BYTE REJECTION INSIDE jq (root, Codex #172): the caller consumes stdout via $(...) command
+# substitution, which SILENTLY STRIPS NUL bytes — so a value validated AFTER the $(...) round-trip
+# differs from what jq produced. A JSON   escape is VALID JSON; jq -r decodes it to a real NUL
+# that $(...) would erase. jq is the integrity point: it sees the decoded bytes intact, so a value
+# matching jq/Oniguruma [[:cntrl:]] (any C0/C1/DEL control byte, NUL included) is rejected -> exit 2
+# (MALFORMED), never emitted. NOTE the regex MUST be [[:cntrl:]]: a [\\u0000-\\u001f] range does NOT
+# work in jq — jq's JSON string parser decodes \\u to a single backslash+u that Oniguruma treats as
+# the printable letter u, so that range silently matches printable text and never a control byte.
+# (next line retains the original illustrative bytes; the active gate uses [[:cntrl:]] below.)
+# carrying ANY C0 control byte ( -) is rejected -> exit 2 (MALFORMED), never emitted.
+#
+# SLURP + index .[0] (root, Codex #172): same single-document discipline as
+# hivemind_manifest_validate_shape / _strain_count_snapshot — select the strain at $index from the
+# ONE top-level document, never from a concatenated stream; a multi-document snapshot exits 2.
+#
+# IMPLEMENTATION: jq classifies INSIDE the program (while bytes are intact) and emits a fixed
+# one-char CLASS tag as the FIRST char of its output: "0"+value (present+valid), "1" (absent),
+# "2" (rejected). Bash slices the leading class char and maps it to the exit code; only an exit-0
+# value reaches stdout. The class is computed in jq so no untrusted byte ever drives a bash branch.
 hivemind_manifest_field_at() {
   local content="$1"
   local index="$2"
@@ -178,7 +220,7 @@ hivemind_manifest_field_at() {
     run.workflow_hint|workflow_hint)
       jq_path=".run.workflow_hint" ;;
     *)
-      return 0 ;;
+      return 1 ;;
   esac
 
   # CONTROL-BYTE REJECTION INSIDE jq (root, Codex #172): the extracted value is consumed by the
@@ -194,9 +236,32 @@ hivemind_manifest_field_at() {
   # SLURP + index .[0] (root, Codex #172): same single-document discipline as
   # hivemind_manifest_validate_shape / _strain_count_snapshot — select the strain at $index from the
   # ONE top-level document, never from a concatenated stream.
-  printf '%s' "$content" \
-    | jq -r -s --argjson i "$index" \
-        ".[0].strains[\$i] | ($jq_path // empty) | select((tostring | test(\"[\\u0000-\\u001f]\")) | not)" \
-        2>/dev/null
-  return 0
+  # jq emits a class-tagged value: "0"+raw (present+valid), "1" (absent: null/empty string),
+  # "2" (rejected: multi-document, non-string scalar, or C0 control byte). The leading class char
+  # is sliced off in bash and mapped to the exit code; only an exit-0 value reaches stdout.
+  local tagged
+  tagged="$(printf '%s' "$content" \
+    | jq -r -s --argjson i "$index" "
+        if (length != 1) then \"2\"
+        else
+          (.[0].strains[\$i] | $jq_path) as \$raw
+          | if (\$raw == null) then \"1\"
+            elif (\$raw|type) != \"string\" then \"2\"
+            elif (\$raw == \"\") then \"1\"
+            elif (\$raw | test(\"[[:cntrl:]]\")) then \"2\"
+            else \"0\" + \$raw end
+        end" 2>/dev/null)" || return 2
+
+  case "$tagged" in
+    0*)
+      printf '%s\n' "${tagged#0}"
+      return 0 ;;
+    2*)
+      return 2 ;;
+    1*)
+      return 1 ;;
+    *)
+      # jq produced no tag at all (torn/empty) → present-but-invalid, never a silent MISSING.
+      return 2 ;;
+  esac
 }
