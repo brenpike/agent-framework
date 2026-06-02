@@ -236,7 +236,7 @@ A set of parallel overlord sessions working on independent tasks in the same rep
 _Avoid_: fleet, cluster, swarm, pool
 
 **Hatchery**:
-The overlord execution mode entered when a brood-plan is dispatched; the overlord remains on trunk in the main checkout, owns the brood manifests, enumerates every brood, with status, under `.hivemind/broods/`, and serves as the status dashboard and on-demand helper for the brood lifecycle.
+The overlord execution mode entered when a brood-plan is dispatched. The top-level hatchery remains on trunk in the main checkout; but ANY orchestrator may act as a hatchery for its OWN brood, in its own checkout or worktree. A hatchery owns the brood manifests under its own checkout's `.hivemind/broods/` (anchored via `git rev-parse --show-toplevel`), enumerates every brood, with status, and serves as the status dashboard and on-demand helper for the brood lifecycle.
 _Alias_: coordinator mode
 _Avoid_: manager mode, supervisor mode
 
@@ -253,7 +253,7 @@ One independent unit of work within a brood-plan, assigned to a single child ove
 _Avoid_: stream, task (too generic), work item, lane
 
 **Brood Manifest**:
-The per-brood JSON file at `.hivemind/broods/<brood-id>/manifest.json` (schema `manifest_version: 4`) in the main checkout, tracking one brood's strains — their display worktree paths, derived branches, tmux sessions, and status. Each brood owns a disjoint manifest under its brood-id directory; the hatchery enumerates them by globbing `.hivemind/broods/brood-*/manifest.json`.
+The per-brood JSON file at `.hivemind/broods/<brood-id>/manifest.json` (schema `manifest_version: 4`) in the spawning checkout (the current worktree; the main checkout for the top-level hatchery), tracking one brood's strains — their display worktree paths, derived branches, tmux sessions, and status. Each brood owns a disjoint manifest under its brood-id directory; the hatchery enumerates them by globbing `.hivemind/broods/brood-*/manifest.json`.
 _Avoid_: brood config, brood state, registry
 
 ### Pipeline & Artifacts

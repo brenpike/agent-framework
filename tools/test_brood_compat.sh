@@ -1735,6 +1735,62 @@ assert_proj_literal_nul_ledger() {
     fi
 }
 
+# ── Projection NESTED-WORKTREE-ANCHOR (#182): current-worktree discovery anchoring ─
+# PROVES nested-brood visibility through the READ path. Under #182 the navigator anchors
+# discovery on `git rev-parse --show-toplevel` (the CURRENT checkout) instead of the main
+# checkout root, and brood-status-project.sh's $2 already DEFAULTS to that same anchor when
+# the navigator omits it. So a child orchestrator that spawned a sub-brood under its OWN
+# linked worktree is discovered when brood-status runs from inside that worktree.
+#
+# This case registers a REAL git linked worktree off the PROJ_WORKDIR checkout, authors a
+# valid v4 manifest under <worktree>/.hivemind/broods/<brood-id>/manifest.json, then runs
+# the entrypoint from WITHIN that linked worktree WITHOUT supplying $2 (so the default
+# `git rev-parse --show-toplevel` resolves to the LINKED worktree root, not the main checkout).
+# Asserts exit 0 (manifest PRESENT and accepted) and that the projection confines to the
+# linked worktree (the strain's GT worktree + ledger live under it and project cleanly).
+# PURE git + jq — no claude/tmux/gh dependency, so it runs UNCONDITIONALLY in CI.
+assert_proj_nested_worktree_anchor() {
+    local name="PROJ-NESTED-ANCHOR:current-worktree-discovers-nested-brood"
+    ensure_proj_workdir
+    # A REAL git linked worktree off the PROJ_WORKDIR checkout — this stands in for a child
+    # orchestrator's own worktree (a nested hatchery). Its `git rev-parse --show-toplevel`
+    # resolves to the linked worktree root, NOT the main PROJ_WORKDIR checkout.
+    local child_wt="$PROJ_WORKDIR/nested-child-wt"
+    git -C "$PROJ_WORKDIR" worktree add -q -b nested-child-hatchery "$child_wt" HEAD 2>/dev/null
+    # The sub-brood the child spawned: manifest lives under the CHILD worktree's .hivemind/broods/,
+    # exactly where spawn-brood.sh (anchored on show-toplevel) would write it.
+    local brood_dir="$child_wt/.hivemind/broods/$GT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    local branch="strain/$GT_BROOD_ID/nested" sid="$GT_BROOD_ID--nested"
+    # The strain's REAL worktree, registered as ground truth so the engine derives + reads its
+    # ledger; placed UNDER the child worktree so the whole projection confines beneath show-toplevel.
+    local strain_wt="$child_wt/strain-wt"
+    git -C "$PROJ_WORKDIR" worktree add -q -b "$branch" "$strain_wt" HEAD 2>/dev/null
+    mkdir -p "$strain_wt/.hivemind/runs/$sid"
+    write_ledger "$strain_wt/.hivemind/runs/$sid/state.json" running implement_step
+    local manifest="$brood_dir/manifest.json"
+    write_manifest_v4 "$manifest" "api" "$strain_wt" "$branch" "brood-api" "running" "$sid"
+
+    # Run the entrypoint with cwd INSIDE the linked worktree and NO $2 override — so the helper's
+    # default `git rev-parse --show-toplevel` resolves to $child_wt and the read-guard confines the
+    # manifest beneath the CHILD worktree (current-worktree anchoring). If the helper still anchored
+    # on the main checkout, the manifest under the linked worktree would resolve outside that root
+    # and be rejected.
+    local out rc=0
+    out="$( cd "$child_wt" && bash "$PROJECT_SCRIPT" "$manifest" 2>/dev/null )" || rc=$?
+    local lines; lines="$(count_strain_lines "$out")"
+    if [[ "$rc" -eq 0 \
+          && "$lines" -eq 1 \
+          && "$(strain_field "$out" 2)" == "$GT_BROOD_ID" \
+          && "$(strain_field "$out" 5)" == "$branch" \
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; nested-brood manifest under linked worktree accepted via default show-toplevel anchor; projection confined to worktree"
+    else
+        failed "$name" "rc=$rc lines=$lines fields=[$(strain_field "$out" 2)|$(strain_field "$out" 5)|$(strain_field "$out" 8)|$(strain_field "$out" 9)]"
+    fi
+}
+
 
 echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (new) manifests ==='
 assert_v1_old
@@ -1774,6 +1830,7 @@ assert_proj_literal_nul_manifest
 assert_proj_nul_escape_branch
 assert_proj_multidoc_manifest
 assert_proj_literal_nul_ledger
+assert_proj_nested_worktree_anchor
 
 echo ''
 echo '=== Summary ==='

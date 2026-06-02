@@ -88,7 +88,7 @@ RUN-OWNERSHIP-01: a run ledger is owned and mutated only by the overlord instanc
 - `hivemind:zoom-out` — architecture analysis
 - `hivemind:improving-architecture` — read-only architecture analysis; ranked deepening blueprint; edits no code
 - `hivemind:spawn-brood` — dispatch parallel orchestrator sessions as a brood
-- `hivemind:brood-status` — global dashboard: shows every discovered brood with its status, including terminal ones (read-only, user-invoked)
+- `hivemind:brood-status` — dashboard for broods under the CURRENT coordinator's checkout (anchored to `git rev-parse --show-toplevel`): shows every discovered brood with its status, including terminal ones; a nested hatchery sees its own sub-broods (read-only, user-invoked)
 
 ## Model Routing
 
