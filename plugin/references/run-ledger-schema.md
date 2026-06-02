@@ -73,7 +73,7 @@ Ledger schema version. Distinct from `run.workflow_version`, which tracks the wo
 
 ### `parent.*`
 
-Identifies the run's relationship to a brood. The `kind` field selects the variant; see [Parent-block variants](#parent-block-variants). For a `brood` child, `brood_id` holds the CANONICAL brood id — the manifest's colon-bearing ISO-8601 timestamp — persisted verbatim so the child ledger reconciles 1:1 with the coordinator manifest's `brood_id`. The `parent.brood_id` field of the INIT inputs JSON object accepts this canonical form and the init engine sanitizes it internally (colons -> dashes) only to derive the filesystem-safe run id (`<sanitized-brood-id>--<strain-id>`); the run path is sanitized, `.parent.brood_id` is canonical.
+Identifies the run's relationship to a brood. The `kind` field selects the variant; see [Parent-block variants](#parent-block-variants). For a `brood` child, `brood_id` holds the brood id — now the machine-generated GUID `brood-<uuidv4>` (issue #168), persisted verbatim so the child ledger reconciles 1:1 with the coordinator manifest's `brood_id`. The `parent.brood_id` field of the INIT inputs JSON object accepts this value and the init engine derives the filesystem-safe run id as `<brood-id>--<strain-id>`. The GUID carries NO colons (the prior brood-id was a colon-bearing ISO-8601 timestamp), so the colon-to-dash sanitization the init engine previously applied to derive a filesystem-safe stem is now INERT/no-op — a uuidv4 is already a safe path component, and `.parent.brood_id` and the run-path stem are identical.
 
 ### `request.*`
 
@@ -163,10 +163,10 @@ A spawned strain. Populated from the injected child-task metadata; lives inside 
 {
   "parent": {
     "kind": "brood",
-    "run_id": "2026-05-30T22-10-00Z-hatchery",
-    "brood_id": "2026-05-30T22:10:00Z",
+    "run_id": "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f-hatchery",
+    "brood_id": "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f",
     "strain_id": "api",
-    "manifest": "/repo/.hivemind/brood/manifest.json"
+    "manifest": "/repo/.hivemind/broods/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f/manifest.json"
   }
 }
 ```
@@ -186,8 +186,8 @@ The hatchery is itself a normal root run, so its `parent.kind` is `none`. Its re
   },
   "artifacts": {
     "brood": {
-      "id": "2026-05-30T22:10:00Z",
-      "manifest": ".hivemind/brood/manifest.json"
+      "id": "brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f",
+      "manifest": ".hivemind/broods/brood-7f3c9a2e-1b4d-4c8a-9e6f-2a1b3c4d5e6f/manifest.json"
     }
   }
 }
