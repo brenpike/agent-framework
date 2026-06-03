@@ -520,6 +520,131 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+# ── CHECK 9: Containment guard precedes guarded read in engine scripts ──────
+#
+# STRUCTURAL PREVENTION for issue #163: the "containment-guard-before-read"
+# defect (a guarded path token READ at a line BEFORE its containment guard)
+# recurred because safe ordering was convention, not enforced. This check makes
+# the class non-regressable.
+#
+# Scope: every committed engine script matching plugin/skills/*/scripts/*.sh
+# that SOURCES _shared/containment.sh. Scripts that do not source it (e.g.
+# brood-discover.sh) are excluded — they have no guard to order against.
+#
+# For each (script, guarded-token) pair we locate:
+#   * the GUARD line (the containment helper invocation for that token), and
+#   * the FIRST DANGEROUS READ line (the first jq/cat that actually opens the
+#     file, or — for $ledger — the first existence/validity probe on the
+#     post-derivation path).
+# We FIRE when a token is read but (a) has NO guard at all, or (b) its first
+# dangerous read occurs at a line number BEFORE the guard.
+#
+# Deliberate exclusions to avoid false positives:
+#   * the GUARD line itself names the token as an argument — never counted as a read.
+#   * `[ -f "$INPUTS_FILE" ]` / `[ -n "$INPUTS_FILE" ]` are pure existence/arg
+#     presence probes that legitimately precede the inputs guard; only the first
+#     `jq` open of $INPUTS_FILE is the read the guard must gate (the jq validity
+#     probe is the canonical read-oracle, per the engine reference script).
+#   * `[ -L "$MANIFEST" ]` / `[ -f "$MANIFEST" ]` are leaf/existence probes that
+#     precede the manifest guard by design; only `cat`/`jq` opens are reads.
+#   * for $ledger the path is DERIVED after the runs-dir guard, so its first
+#     `[ -f "$ledger" ]` existence probe IS a real read of the derived path and
+#     the guard must precede it.
+
+echo ''
+echo '=== CHECK 9: Containment guard precedes guarded read in engine scripts ==='
+
+# first_match_line PATTERN FILE [EXCLUDE_PATTERN]
+# Echoes the line number of the first line matching PATTERN. When EXCLUDE_PATTERN
+# is supplied, lines also matching it are skipped. Echoes empty when no match.
+first_match_line() {
+    local pattern="$1"
+    local file="$2"
+    local exclude="${3:-}"
+    local matched
+    while IFS= read -r matched; do
+        [[ -z "$matched" ]] && continue
+        local lineno="${matched%%:*}"
+        local body="${matched#*:}"
+        if [[ -n "$exclude" ]] && echo "$body" | grep -qE "$exclude"; then
+            continue
+        fi
+        echo "$lineno"
+        return
+    done < <(grep -nE "$pattern" "$file" 2>/dev/null || true)
+    echo ""
+}
+
+check9_found=false
+check9_script_count=0
+
+while IFS= read -r -d '' engine_script; do
+    # Only engine scripts that source the containment helper participate.
+    if ! grep -qE '(^|[[:space:]])(\.|source)[[:space:]][^#]*containment\.sh' "$engine_script"; then
+        continue
+    fi
+    check9_script_count=$((check9_script_count + 1))
+
+    # Token table: TOKEN | GUARD_PATTERN | READ_PATTERN | READ_EXCLUDE
+    # READ_EXCLUDE removes existence/arg-presence/symlink probes that legitimately
+    # precede the guard so they are not mistaken for the gated open.
+    declare -a token_labels=('$INPUTS_FILE' '$MANIFEST' '$ledger')
+    declare -a token_guards=(
+        'hivemind_assert_inputs_contained[^#]*"\$INPUTS_FILE"'
+        '(hivemind_assert_inputs_contained|\[ -L )[^#]*"\$MANIFEST"'
+        'hivemind_assert_contained'
+    )
+    declare -a token_reads=(
+        '(jq |cat )[^#]*"\$INPUTS_FILE"'
+        '(jq |cat )[^#]*"\$MANIFEST"'
+        '(jq |cat |\[ -f )[^#]*"\$ledger"'
+    )
+    declare -a token_read_excludes=(
+        'hivemind_assert_inputs_contained|\[ -[fnL] '
+        'hivemind_assert_inputs_contained|\[ -[fnL] '
+        'hivemind_assert_contained'
+    )
+
+    ti=0
+    while [[ $ti -lt ${#token_labels[@]} ]]; do
+        token_label="${token_labels[$ti]}"
+        read_line="$(first_match_line "${token_reads[$ti]}" "$engine_script" "${token_read_excludes[$ti]}")"
+        ti_next=$((ti + 1))
+
+        # Token not read in this script — nothing to order.
+        if [[ -z "$read_line" ]]; then
+            ti=$ti_next
+            continue
+        fi
+
+        guard_line="$(first_match_line "${token_guards[$ti]}" "$engine_script")"
+
+        if [[ -z "$guard_line" ]]; then
+            check9_found=true
+            add_finding 'CHECK9' "$engine_script" "$read_line" \
+                "Containment guard missing: ${token_label} is read here but no containment guard for it exists in this engine script"
+            ti=$ti_next
+            continue
+        fi
+
+        if [[ "$read_line" -lt "$guard_line" ]]; then
+            check9_found=true
+            add_finding 'CHECK9' "$engine_script" "$read_line" \
+                "Containment guard ordering: ${token_label} is read at line $read_line BEFORE its guard at line $guard_line — guard must precede the read"
+        fi
+        ti=$ti_next
+    done
+
+    unset token_labels token_guards token_reads token_read_excludes
+done < <(find "$PLUGIN_ROOT/skills" -path '*/scripts/*.sh' -type f -print0)
+
+if [[ "$check9_found" == false ]]; then
+    echo "[PASS] Check 9: All $check9_script_count containment-sourcing engine scripts guard each token before its first read"
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''
