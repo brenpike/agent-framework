@@ -157,6 +157,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 ENGINE="$REPO_ROOT/plugin/skills/record-state-result/scripts/record-state-result.sh"
 INIT_ENGINE="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
 INTENT_FALLBACK_ENGINE="$REPO_ROOT/plugin/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
+SPAWN_BROOD_ENGINE="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
 FIXTURES_DIR="$REPO_ROOT/tests/engine"
 WORKFLOW_DEF="$FIXTURES_DIR/workflow-engine-fixture.json"
 LEDGER_AT_PLAN="$FIXTURES_DIR/ledger-at-plan.json"
@@ -172,7 +173,7 @@ for dep in jq sha256sum git; do
         || { echo "FAIL: required dependency '$dep' is not installed" >&2; exit 2; }
 done
 
-for required in "$ENGINE" "$INIT_ENGINE" "$INTENT_FALLBACK_ENGINE" "$WORKFLOW_DEF" \
+for required in "$ENGINE" "$INIT_ENGINE" "$INTENT_FALLBACK_ENGINE" "$SPAWN_BROOD_ENGINE" "$WORKFLOW_DEF" \
     "$LEDGER_AT_PLAN" "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION" \
     "$LEDGER_AT_REMEDIATION_PLAN"; do
     [[ -f "$required" ]] \
@@ -194,9 +195,11 @@ FAKEPLUGIN="$WORKDIR/fakeplugin"
 FAKE_ENGINE="$FAKEPLUGIN/skills/record-state-result/scripts/record-state-result.sh"
 FAKE_INIT_ENGINE="$FAKEPLUGIN/skills/init-run-ledger/scripts/init-run-ledger.sh"
 FAKE_INTENT_FALLBACK_ENGINE="$FAKEPLUGIN/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
+FAKE_SPAWN_BROOD_ENGINE="$FAKEPLUGIN/skills/spawn-brood/scripts/spawn-brood.sh"
 FAKE_WORKFLOW_DEF="$FAKEPLUGIN/workflows/engine-fixture.json"
 mkdir -p "$(dirname "$FAKE_ENGINE")" "$(dirname "$FAKE_INIT_ENGINE")" \
-    "$(dirname "$FAKE_INTENT_FALLBACK_ENGINE")" "$FAKEPLUGIN/workflows"
+    "$(dirname "$FAKE_INTENT_FALLBACK_ENGINE")" "$(dirname "$FAKE_SPAWN_BROOD_ENGINE")" \
+    "$FAKEPLUGIN/workflows"
 cp "$ENGINE" "$FAKE_ENGINE"
 cp "$INIT_ENGINE" "$FAKE_INIT_ENGINE"
 # mark-intent-fallback.sh self-locates plugin_root=<fakeplugin> (3 dirs up from its scripts/
@@ -217,6 +220,16 @@ SHARED_CONTAINMENT="$REPO_ROOT/plugin/skills/_shared/containment.sh"
     || { echo "FAIL: required input missing: $SHARED_CONTAINMENT" >&2; exit 2; }
 mkdir -p "$FAKEPLUGIN/skills/_shared"
 cp "$SHARED_CONTAINMENT" "$FAKEPLUGIN/skills/_shared/containment.sh"
+# spawn-brood.sh self-locates plugin_root=<fakeplugin> (3 dirs up from its scripts/ dir) like the
+# other engines and sources BOTH the shared containment helper AND the shared allowlist helper
+# (skills/_shared/allowlist.sh) BEFORE its inputs READ-guard. Stage the engine COPY and the
+# allowlist helper so the sourced paths resolve. A COPY, never a symlink: pwd -P would resolve a
+# symlink back to the real tree and defeat the isolation.
+cp "$SPAWN_BROOD_ENGINE" "$FAKE_SPAWN_BROOD_ENGINE"
+SHARED_ALLOWLIST="$REPO_ROOT/plugin/skills/_shared/allowlist.sh"
+[[ -f "$SHARED_ALLOWLIST" ]] \
+    || { echo "FAIL: required input missing: $SHARED_ALLOWLIST" >&2; exit 2; }
+cp "$SHARED_ALLOWLIST" "$FAKEPLUGIN/skills/_shared/allowlist.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1847,6 +1860,219 @@ assert_intent_fallback_close_nonrunning_rejected() {
     fi
 }
 
+# ── HH. init inputs-file symlinked LEAF rejected by the read-guard ───────────
+
+assert_init_inputs_symlink_leaf_rejected() {
+    local name="HH:init-inputs-symlink-leaf-rejected"
+    # LEAF vector (STEP-001 regression): unlike case X (symlinked ANCESTOR), here the inputs PATH
+    # passed to the engine is ITSELF a symlink (the leaf) whose target is a VALID init inputs file
+    # at an EXTERNAL path outside the checkout. The hardened shared read-guard
+    # (hivemind_assert_inputs_contained) rejects a symlinked inputs LEAF ([ -L ]) BEFORE the inputs
+    # `jq -e` validity probe — so a valid-JSON external target cannot be opened as a read oracle.
+    #
+    # NON-VACUOUS: the external target is VALID JSON, so the ONLY thing that can reject is the
+    # leaf read-guard — not a JSON-parse error. Reverting STEP-001's `[ -L ]` leaf reject would
+    # let the engine canonicalize THROUGH the symlink and read the external payload, flipping this
+    # assertion to a FAIL (rc=0 / ledger written / different blocker). Assert: non-zero exit; the
+    # read-guard containment blocker fired; the external target byte-unchanged; no ledger written.
+    local gitroot external target leaf rc=0
+    local in_before in_after stderr is_readguard_blocker
+    gitroot="$(new_gitroot hh-git)"
+    external="$WORKDIR/hh-external"
+    mkdir -p "$external"
+    # VALID init inputs at the EXTERNAL target (the symlink's destination, outside the checkout).
+    target="$external/hh-init-inputs.json"
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init symlink-leaf inputs" \
+        --arg normalized "engine test init symlink-leaf inputs" \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized}' \
+        > "$target"
+    # The inputs LEAF is a symlink INSIDE the checkout (under the real runs tree) -> external target.
+    mkdir -p "$gitroot/.hivemind/runs"
+    leaf="$gitroot/.hivemind/runs/hh-init-inputs.json"
+    ln -s "$target" "$leaf"
+
+    in_before="$(sha256sum "$target" | awk '{print $1}')"
+    stderr="$gitroot/hh-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    in_after="$(sha256sum "$target" | awk '{print $1}')"
+
+    # No state.json may have been written under the external target NOR the real runs tree.
+    local wrote=no
+    if find "$external" -name state.json -print 2>/dev/null | grep -q .; then wrote=yes; fi
+    if find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then wrote=yes; fi
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$wrote" == "no" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "symlinked inputs LEAF rejected by read-guard (exit $rc, containment blocker); external target byte-unchanged, no ledger written"
+    else
+        failed "$name" "expected non-zero exit + containment blocker + unchanged target + no ledger; rc=$rc readguard=$is_readguard_blocker target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
+    fi
+}
+
+# ── II. record inputs-file symlinked LEAF rejected by the read-guard ─────────
+
+assert_record_inputs_symlink_leaf_rejected() {
+    local name="II:record-inputs-symlink-leaf-rejected"
+    # LEAF vector (STEP-001 regression) for record-state-result.sh. Stage a VALID ledger at
+    # runs/<id>/state.json FIRST so the ONLY thing that can block is the read-guard, not a missing
+    # ledger. The inputs PATH passed to the engine is ITSELF a symlink whose target is a VALID
+    # record inputs file at an EXTERNAL path. The hardened read-guard rejects the symlinked leaf
+    # ([ -L ]) BEFORE the inputs `jq -e` validity probe.
+    #
+    # NON-VACUOUS: the external target is VALID JSON AND the staged ledger is valid+coherent, so
+    # the ONLY thing that can reject is the leaf read-guard — not a JSON-parse error and not a
+    # missing/incoherent ledger. Reverting STEP-001's `[ -L ]` leaf reject would let the engine
+    # read THROUGH the symlink and record the transition (rc=0 / ledger mutated), flipping this to
+    # a FAIL. Assert: non-zero exit; read-guard containment blocker fired; staged ledger AND
+    # external target byte-unchanged.
+    local gitroot external run_id ledger target leaf rc=0
+    local before after in_before in_after stderr is_readguard_blocker
+    gitroot="$(new_gitroot ii-git)"
+    run_id="engine-case-ii"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    external="$WORKDIR/ii-external"
+    mkdir -p "$external"
+    # VALID record inputs (plan ready -> build) at the EXTERNAL target.
+    target="$external/ii-record-inputs.json"
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test record symlink-leaf inputs" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$target"
+    # The inputs LEAF is a symlink INSIDE the checkout -> external target.
+    leaf="$gitroot/.hivemind/runs/$run_id/ii-record-inputs.json"
+    ln -s "$target" "$leaf"
+
+    in_before="$(sha256sum "$target" | awk '{print $1}')"
+    stderr="$gitroot/ii-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    in_after="$(sha256sum "$target" | awk '{print $1}')"
+
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "symlinked inputs LEAF rejected by read-guard (exit $rc, containment blocker); staged ledger + external target byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + containment blocker + unchanged ledger/target; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── JJ. spawn-brood inputs-file symlinked LEAF rejected by the read-guard ────
+
+assert_spawn_brood_inputs_symlink_leaf_rejected() {
+    local name="JJ:spawn-brood-inputs-symlink-leaf-rejected"
+    # LEAF vector (STEP-001 regression) for spawn-brood.sh, which sources the SAME shared
+    # containment helper and runs hivemind_assert_inputs_contained BEFORE its `jq -e` validity
+    # probe and BEFORE any strain/base field parse. The inputs PATH passed to the engine is ITSELF
+    # a symlink whose target is a VALID spawn-brood inputs file at an EXTERNAL path.
+    #
+    # NON-VACUOUS: the external target is VALID JSON, so the ONLY thing that can reject is the leaf
+    # read-guard — not a JSON-parse error and not a missing-field blocker (those parse AFTER the
+    # guard). Reverting STEP-001's `[ -L ]` leaf reject would let spawn-brood canonicalize THROUGH
+    # the symlink and read the external payload, flipping this to a FAIL. Assert: non-zero exit;
+    # read-guard containment blocker fired; external target byte-unchanged; no brood state dir
+    # written under the external target.
+    local gitroot external target leaf rc=0
+    local in_before in_after stderr is_readguard_blocker
+    gitroot="$(new_gitroot jj-git)"
+    external="$WORKDIR/jj-external"
+    mkdir -p "$external"
+    # VALID spawn-brood inputs at the EXTERNAL target. The fields are well-formed so only the leaf
+    # read-guard — which fires before any of them is parsed — can be the rejecting gate.
+    target="$external/jj-spawn-inputs.json"
+    jq -n \
+        --arg base main \
+        --arg overlap_risk low \
+        --argjson strains '[{"strain_id":"jj-strain","prompt":"engine test spawn-brood symlink-leaf"}]' \
+        '{base: $base, overlap_risk: $overlap_risk, strains: $strains}' \
+        > "$target"
+    # The inputs LEAF is a symlink INSIDE the checkout (under the real .hivemind tree) -> external.
+    mkdir -p "$gitroot/.hivemind"
+    leaf="$gitroot/.hivemind/jj-spawn-inputs.json"
+    ln -s "$target" "$leaf"
+
+    in_before="$(sha256sum "$target" | awk '{print $1}')"
+    stderr="$gitroot/jj-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_SPAWN_BROOD_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    in_after="$(sha256sum "$target" | awk '{print $1}')"
+
+    # No brood state (a manifest.json / inputs.json under broods/) may have been written under the
+    # external target — a successful escape would relocate/author state there through the symlink.
+    local wrote=no
+    if find "$external" \( -name manifest.json -o -name inputs.json \) -print 2>/dev/null | grep -q .; then
+        wrote=yes
+    fi
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$wrote" == "no" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "symlinked inputs LEAF rejected by read-guard (exit $rc, containment blocker); external target byte-unchanged, no brood state written"
+    else
+        failed "$name" "expected non-zero exit + containment blocker + unchanged target + no brood state; rc=$rc readguard=$is_readguard_blocker target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
+    fi
+}
+
+# ── KK. intent-fallback inputs-file symlinked LEAF rejected by the read-guard ─
+
+assert_intent_fallback_inputs_symlink_leaf_rejected() {
+    local name="KK:intent-fallback-inputs-symlink-leaf-rejected"
+    # LEAF vector (STEP-001 regression) for mark-intent-fallback.sh, which reuses the shared
+    # containment helper and runs the inputs read-guard BEFORE its `jq -e` validity probe and field
+    # parse. Stage a VALID skew ledger at runs/<id>/state.json FIRST so the ONLY thing that can
+    # block is the read-guard, not a missing ledger. The inputs PATH passed to the engine is ITSELF
+    # a symlink whose target is a VALID intent-fallback inputs file at an EXTERNAL path.
+    #
+    # NON-VACUOUS: the external target is VALID JSON AND the staged ledger is valid+coherent, so the
+    # ONLY thing that can reject is the leaf read-guard. Reverting STEP-001's `[ -L ]` leaf reject
+    # would let the op read THROUGH the symlink and mutate the ledger (rc=0), flipping this to a
+    # FAIL. Assert: non-zero exit; read-guard containment blocker fired; staged ledger AND external
+    # target byte-unchanged.
+    local gitroot external run_id ledger target leaf rc=0
+    local before after in_before in_after stderr is_readguard_blocker
+    gitroot="$(new_gitroot kk-git)"
+    run_id="engine-case-kk"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    external="$WORKDIR/kk-external"
+    mkdir -p "$external"
+    # VALID intent-fallback inputs at the EXTERNAL target.
+    target="$external/kk-intent-inputs.json"
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent-fallback symlink-leaf inputs" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$target"
+    # The inputs LEAF is a symlink INSIDE the checkout -> external target.
+    leaf="$gitroot/.hivemind/runs/$run_id/kk-intent-inputs.json"
+    ln -s "$target" "$leaf"
+
+    in_before="$(sha256sum "$target" | awk '{print $1}')"
+    stderr="$gitroot/kk-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    in_after="$(sha256sum "$target" | awk '{print $1}')"
+
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "symlinked inputs LEAF rejected by read-guard (exit $rc, containment blocker); staged ledger + external target byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + containment blocker + unchanged ledger/target; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no)"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1883,6 +2109,10 @@ assert_intent_fallback_illegal_close_unchanged
 assert_intent_fallback_injection_safe
 assert_intent_fallback_symlink_escape_rejected
 assert_intent_fallback_close_nonrunning_rejected
+assert_init_inputs_symlink_leaf_rejected
+assert_record_inputs_symlink_leaf_rejected
+assert_spawn_brood_inputs_symlink_leaf_rejected
+assert_intent_fallback_inputs_symlink_leaf_rejected
 
 echo ''
 echo '=== Summary ==='
