@@ -140,6 +140,22 @@ case "$PR_NUMBER" in ''|*[!0-9]*) prefilter_fail "invalid-pr-number" ;; esac
 # would re-emerge.
 [ -n "$SELF_LOGIN" ] || prefilter_fail "missing-self-login"
 
+# Timeout wrapper for gh API calls (issue #159).
+# Normal gh graphql completes in 1-5s; 45s is generous against transient
+# slowness yet bounds a true hang far below Monitor's max_watch_duration.
+GH_CALL_TIMEOUT_SECONDS=45
+# Prefer coreutils `timeout`; fall back to macOS Homebrew `gtimeout`; degrade
+# gracefully to no wrapper when neither exists (preserves current unguarded
+# behavior on a bare macOS). Using a bash array means an empty prefix expands
+# to zero words — clean prefix of the gh invocation with no extra quoting
+# gymnastics. (issue #159)
+GH_TIMEOUT=()
+if command -v timeout >/dev/null 2>&1; then
+  GH_TIMEOUT=(timeout "$GH_CALL_TIMEOUT_SECONDS")
+elif command -v gtimeout >/dev/null 2>&1; then
+  GH_TIMEOUT=(gtimeout "$GH_CALL_TIMEOUT_SECONDS")
+fi
+
 # Single non-paginated GraphQL call: each unresolved review thread's last 20
 # comments (per-thread; threads with >20 comments overflow to DISPATCH), bounded
 # to the first 50 threads; plus the last 50 top-level PR comments and last 50
@@ -162,7 +178,7 @@ case "$PR_NUMBER" in ''|*[!0-9]*) prefilter_fail "invalid-pr-number" ;; esac
 # self-induced loop that fires when the reviewer's OWN address/fix reply
 # bumps the corresponding totalCount and wakes the poll.
 result=$( ( set -o pipefail; \
-  gh api graphql \
+  "${GH_TIMEOUT[@]}" gh api graphql \
     -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
     -f query='
 query($owner: String!, $repo: String!, $pr: Int!) {
