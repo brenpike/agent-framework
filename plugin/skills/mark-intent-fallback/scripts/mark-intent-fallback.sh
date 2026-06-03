@@ -112,16 +112,20 @@ INPUTS_FILE="${1:-}"
   || blocker "missing required argument: path to mark-intent-fallback inputs JSON file (\$1)"
 [ -f "$INPUTS_FILE" ] \
   || blocker "mark-intent-fallback inputs file $INPUTS_FILE does not exist"
-jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
-  || blocker "mark-intent-fallback inputs file $INPUTS_FILE is not valid JSON"
 
 # ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
 # Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
 # symlinked ancestor) — converting a silent external-read into a hard blocker BEFORE the
-# first jq field read below. The helper never exits; map non-zero to our blocker. The
-# authoritative not-in-a-repo gate remains the repo_root check further below.
+# first jq read below (the JSON-validity probe AND every field read). Running this BEFORE the
+# `jq -e` validity probe is REQUIRED: `jq -e` opening an attacker-supplied external path is
+# itself an external-file JSON-validity read oracle, so the containment guard must gate it.
+# The helper never exits; map non-zero to our blocker. The authoritative not-in-a-repo gate
+# remains the repo_root check further below.
 hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
   || blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)"
+
+jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
+  || blocker "mark-intent-fallback inputs file $INPUTS_FILE is not valid JSON"
 
 # ── Parse fields into inert variables ─────────────────────────────────────────
 # Required strings via `jq -r '.field // ""'`. The presence bools derive from KEY-PRESENCE on
