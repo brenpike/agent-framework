@@ -214,9 +214,13 @@ map_path() {
   fi
 
   # test_brood_compat: spawn-brood / brood-status scripts + init engine + brood fixtures.
+  # Also containment.sh: the shared containment guard's regressions are exercised ONLY by
+  # test_brood_compat (via spawn-brood.sh / brood-status guards), not test_shared_libs — so a
+  # containment.sh change must trigger this suite or its only relevant coverage is skipped.
   if [[ "$p" == plugin/skills/spawn-brood/* \
      || "$p" == plugin/skills/brood-status/* \
      || "$p" == plugin/skills/init-run-ledger/scripts/* \
+     || "$p" == plugin/skills/_shared/containment.sh \
      || "$p" == tests/brood/* ]]; then
     add_selected "$SUITE_TEST_BROOD" "$p (brood script/fixture)"
     matched=1
