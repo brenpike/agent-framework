@@ -550,6 +550,19 @@ fi
 #   * for $ledger the path is DERIVED after the runs-dir guard, so its first
 #     `[ -f "$ledger" ]` existence probe IS a real read of the derived path and
 #     the guard must precede it.
+#
+# Two distinct guards are enforced for the ledger, as SEPARATE token rows:
+#   * $ledger      — the ANCESTOR/runs-dir ordering guard (hivemind_assert_contained)
+#                    must precede the first ledger read.
+#   * $ledger-leaf — the LEAF symlink guard (hivemind_assert_ledger_contained) must
+#                    ALSO precede the first ledger read. This makes the leaf guard
+#                    TERMINAL: a containment-sourcing engine that reads "$ledger"
+#                    without first calling hivemind_assert_ledger_contained fires a
+#                    missing-guard or ordering finding, so a reverted leaf guard or a
+#                    new unguarded ledger reader cannot regress silently. The
+#                    $ledger-leaf row anchors its read/guard patterns at line start
+#                    (^[[:space:]]*) so prose in comments naming the symbols is not
+#                    miscounted as a guard or a read.
 
 echo ''
 echo '=== CHECK 9: Containment guard precedes guarded read in engine scripts ==='
@@ -588,21 +601,24 @@ while IFS= read -r -d '' engine_script; do
     # Token table: TOKEN | GUARD_PATTERN | READ_PATTERN | READ_EXCLUDE
     # READ_EXCLUDE removes existence/arg-presence/symlink probes that legitimately
     # precede the guard so they are not mistaken for the gated open.
-    declare -a token_labels=('$INPUTS_FILE' '$MANIFEST' '$ledger')
+    declare -a token_labels=('$INPUTS_FILE' '$MANIFEST' '$ledger' '$ledger-leaf')
     declare -a token_guards=(
         'hivemind_assert_inputs_contained[^#]*"\$INPUTS_FILE"'
         '(hivemind_assert_inputs_contained|\[ -L )[^#]*"\$MANIFEST"'
         'hivemind_assert_contained'
+        '^[[:space:]]*hivemind_assert_ledger_contained'
     )
     declare -a token_reads=(
         '(jq |cat )[^#]*"\$INPUTS_FILE"'
         '(jq |cat )[^#]*"\$MANIFEST"'
         '(jq |cat |\[ -f )[^#]*"\$ledger"'
+        '^[[:space:]]*(jq |cat |\[ -f )[^#]*"\$ledger"'
     )
     declare -a token_read_excludes=(
         'hivemind_assert_inputs_contained|\[ -[fnL] '
         'hivemind_assert_inputs_contained|\[ -[fnL] '
         'hivemind_assert_contained'
+        'hivemind_assert(_contained|_ledger_contained)'
     )
 
     ti=0
