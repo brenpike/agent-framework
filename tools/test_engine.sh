@@ -156,6 +156,7 @@ SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 ENGINE="$REPO_ROOT/plugin/skills/record-state-result/scripts/record-state-result.sh"
 INIT_ENGINE="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
+INTENT_FALLBACK_ENGINE="$REPO_ROOT/plugin/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
 FIXTURES_DIR="$REPO_ROOT/tests/engine"
 WORKFLOW_DEF="$FIXTURES_DIR/workflow-engine-fixture.json"
 LEDGER_AT_PLAN="$FIXTURES_DIR/ledger-at-plan.json"
@@ -171,8 +172,8 @@ for dep in jq sha256sum git; do
         || { echo "FAIL: required dependency '$dep' is not installed" >&2; exit 2; }
 done
 
-for required in "$ENGINE" "$INIT_ENGINE" "$WORKFLOW_DEF" "$LEDGER_AT_PLAN" \
-    "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION" \
+for required in "$ENGINE" "$INIT_ENGINE" "$INTENT_FALLBACK_ENGINE" "$WORKFLOW_DEF" \
+    "$LEDGER_AT_PLAN" "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION" \
     "$LEDGER_AT_REMEDIATION_PLAN"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required input missing: $required" >&2; exit 2; }
@@ -192,10 +193,18 @@ trap cleanup EXIT
 FAKEPLUGIN="$WORKDIR/fakeplugin"
 FAKE_ENGINE="$FAKEPLUGIN/skills/record-state-result/scripts/record-state-result.sh"
 FAKE_INIT_ENGINE="$FAKEPLUGIN/skills/init-run-ledger/scripts/init-run-ledger.sh"
+FAKE_INTENT_FALLBACK_ENGINE="$FAKEPLUGIN/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
 FAKE_WORKFLOW_DEF="$FAKEPLUGIN/workflows/engine-fixture.json"
-mkdir -p "$(dirname "$FAKE_ENGINE")" "$(dirname "$FAKE_INIT_ENGINE")" "$FAKEPLUGIN/workflows"
+mkdir -p "$(dirname "$FAKE_ENGINE")" "$(dirname "$FAKE_INIT_ENGINE")" \
+    "$(dirname "$FAKE_INTENT_FALLBACK_ENGINE")" "$FAKEPLUGIN/workflows"
 cp "$ENGINE" "$FAKE_ENGINE"
 cp "$INIT_ENGINE" "$FAKE_INIT_ENGINE"
+# mark-intent-fallback.sh self-locates plugin_root=<fakeplugin> (3 dirs up from its scripts/
+# dir) like the other engines. It reads NO workflow definition (the whole point — version
+# skew), so the fakeplugin def copy below is irrelevant to it; it sources only the shared
+# containment helper staged into <fakeplugin>/skills/_shared. A COPY, never a symlink: pwd -P
+# would resolve a symlink back to the real tree and defeat the isolation.
+cp "$INTENT_FALLBACK_ENGINE" "$FAKE_INTENT_FALLBACK_ENGINE"
 # The fixture def id=engine-fixture / version 1 / start plan; the filename stem MUST equal the
 # id so `ledger.run.workflow=engine-fixture` resolves to <fakeplugin>/workflows/engine-fixture.json.
 cp "$WORKFLOW_DEF" "$FAKE_WORKFLOW_DEF"
@@ -1505,6 +1514,230 @@ assert_init_trap_preserves_committed_ledger() {
     pass "$name" "trap predicate: (a) PRESERVES committed ledger (FALSE when state.json present), (b) CLEANS orphan (TRUE when state.json absent); anti-drift grep passed"
 }
 
+# ── BB. intent-fallback over version skew, NO close_status -> run stays running ─
+
+assert_intent_fallback_skew_no_close() {
+    local name="BB:intent-fallback-skew-no-close"
+    # The mark-intent-fallback engine is the sanctioned version-skew resume write-path that
+    # record-state-result.sh DELIBERATELY refuses (its case H rejects ledger.run.workflow_version
+    # != def.version). This proves the op does NOT enforce that binding guard: a SKEW ledger
+    # (run.workflow_version=2 vs the fakeplugin def.version=1) with NO close_status is ACCEPTED.
+    # ledger-wrong-version.json carries version 2, state.current=plan, run.status=running — ideal.
+    # Assert: exit 0; run.mode=="intent_fallback"; EXACTLY one event appended; run.status STILL
+    # "running" (no close); atomicity (ledger remains valid JSON).
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot bb-git)"
+    run_id="engine-case-bb"
+    # stage_record_ledger forces .run.id=run_id (coherence) and .run.workflow=engine-fixture but
+    # KEEPS the fixture's run.workflow_version=2 (no version arg) — that is the skew that
+    # record-state-result rejects and this op must tolerate.
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    inputs="$gitroot/bb-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback skew no close" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "intent-fallback engine exited $rc on a skew ledger (expected 0 — no binding guard)"
+        return
+    fi
+    if ! jq -e . "$ledger" >/dev/null 2>&1; then
+        failed "$name" "ledger is no longer valid JSON after intent-fallback write (atomicity broken)"
+        return
+    fi
+
+    local mode events_len run_status
+    mode="$(jq -r '.run.mode' "$ledger")"
+    events_len="$(jq -r '.events | length' "$ledger")"
+    run_status="$(jq -r '.run.status' "$ledger")"
+    if [[ "$mode" == "intent_fallback" && "$events_len" -eq 1 && "$run_status" == "running" ]]; then
+        pass "$name" "skew accepted without binding guard: run.mode=intent_fallback, 1 event, run.status still running"
+    else
+        failed "$name" "expected mode=intent_fallback/events=1/status=running, got mode=$mode/events=$events_len/status=$run_status"
+    fi
+}
+
+# ── CC. intent-fallback over version skew, close_status=cancelled -> closed ──
+
+assert_intent_fallback_skew_close_cancelled() {
+    local name="CC:intent-fallback-skew-close-cancelled"
+    # Same skew ledger as BB, but with close_status=cancelled. The op closes the run WITHOUT the
+    # binding guard: exit 0; run.mode=="intent_fallback"; run.status=="cancelled"; state.status==
+    # "cancelled".
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot cc-git)"
+    run_id="engine-case-cc"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    inputs="$gitroot/cc-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback skew close cancelled" \
+        --arg close_status cancelled \
+        '{run_id: $run_id, state: $state, summary: $summary, close_status: $close_status}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "intent-fallback engine exited $rc closing a skew ledger as cancelled (expected 0)"
+        return
+    fi
+
+    local mode run_status state_status
+    mode="$(jq -r '.run.mode' "$ledger")"
+    run_status="$(jq -r '.run.status' "$ledger")"
+    state_status="$(jq -r '.state.status' "$ledger")"
+    if [[ "$mode" == "intent_fallback" && "$run_status" == "cancelled" && "$state_status" == "cancelled" ]]; then
+        pass "$name" "skew closed as cancelled: run.mode=intent_fallback, run.status=cancelled, state.status=cancelled"
+    else
+        failed "$name" "expected mode=intent_fallback/run.status=cancelled/state.status=cancelled, got mode=$mode/run.status=$run_status/state.status=$state_status"
+    fi
+}
+
+# ── DD. illegal close_status (abandoned) -> non-zero, ledger byte-unchanged ──
+
+assert_intent_fallback_illegal_close_unchanged() {
+    local name="DD:intent-fallback-illegal-close-unchanged"
+    # close_status is OPTIONAL but when present MUST be exactly "cancelled" or "complete". The
+    # op EXPLICITLY rejects "abandoned" (and anything else). All validation runs BEFORE the temp
+    # file is created, so the on-disk ledger is byte-unchanged on rejection. Capture sha256
+    # before+after to prove it.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot dd-git)"
+    run_id="engine-case-dd"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    inputs="$gitroot/dd-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback illegal close" \
+        --arg close_status abandoned \
+        '{run_id: $run_id, state: $state, summary: $summary, close_status: $close_status}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "illegal close_status 'abandoned' rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── EE. intent-fallback injection safety: payload inert in summary + outputs ──
+
+assert_intent_fallback_injection_safe() {
+    local name="EE:intent-fallback-injection-safe"
+    # The untrusted summary / outputs fields are serialized ONLY via jq --arg / --argjson and
+    # never enter the jq program or any shell command source. A command-substitution + backtick
+    # payload in BOTH summary AND outputs must round-trip VERBATIM into the appended event and
+    # NEVER execute (no PWNED5 file anywhere).
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot ee-git)"
+    run_id="engine-case-ee"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    inputs="$gitroot/ee-inputs.json"
+
+    # The payload is DATA, authored SAFELY via jq --arg (jq JSON-escapes the literal). The
+    # single-quoted bash literal is never evaluated by bash — it is a string handed to jq.
+    local payload='inject $(touch PWNED5) and `touch PWNED5b` and ; rm end'
+    local outputs
+    outputs="$(jq -n --arg p "$payload" '{note: $p}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "$payload" \
+        --argjson outputs "$outputs" \
+        '{run_id: $run_id, state: $state, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "intent-fallback engine exited $rc on an injection payload (expected 0)"
+        return
+    fi
+    if ! assert_no_pwned_file PWNED5 || ! assert_no_pwned_file PWNED5b; then
+        failed "$name" "injection payload EXECUTED: a PWNED5 file was created"
+        return
+    fi
+
+    local got_summary got_output
+    got_summary="$(jq -r '.events[-1].summary' "$ledger")"
+    got_output="$(jq -r '.events[-1].outputs.note' "$ledger")"
+    if [[ "$got_summary" == "$payload" && "$got_output" == "$payload" ]]; then
+        pass "$name" "payload inert: no PWNED5 file, summary + outputs round-trip verbatim, exit 0"
+    else
+        failed "$name" "expected verbatim round-trip; got summary=$got_summary output=$got_output"
+    fi
+}
+
+# ── FF. symlink-escape rejected: external ledger reachable but unmutated ─────
+
+assert_intent_fallback_symlink_escape_rejected() {
+    local name="FF:intent-fallback-symlink-escape-rejected"
+    # mark-intent-fallback.sh reuses record-state-result.sh's identity derivation and the shared
+    # depth-complete containment guard. It requires the ledger to EXIST, so the escape vector
+    # PRE-STAGES the external target with a valid skew ledger, then symlinks the gitroot's
+    # .hivemind -> external so `[ -f ]` passes THROUGH the symlink (the ledger is REACHABLE). The
+    # containment guard canonicalizes the existing ledger, sees it resolves OUTSIDE the checkout,
+    # and rejects. CRITICAL: rejection is by CONTAINMENT (file reachable but unmutated), not
+    # file-absence. Mirrors record-state-result's case U precisely. Assert: non-zero exit, the
+    # external ledger BYTE-UNCHANGED (sha256 before==after), and NO temp file leaked under it.
+    local gitroot external run_id ext_ledger inputs before after rc=0
+    gitroot="$(new_gitroot ff-git)"
+    run_id="engine-case-ff"
+    external="$WORKDIR/ff-external"
+    # Pre-stage a VALID skew ledger at the external target's runs/<run-id>/state.json: .run.id ==
+    # run_id (coherence passes) and .run.workflow == engine-fixture. Authored from the skew
+    # fixture via jq so it is a real, well-formed ledger the op would mutate absent the guard.
+    mkdir -p "$external/runs/$run_id"
+    ext_ledger="$external/runs/$run_id/state.json"
+    jq --arg id "$run_id" --arg wf "engine-fixture" \
+        '.run.id = $id | .run.workflow = $wf' \
+        "$LEDGER_WRONG_VERSION" > "$ext_ledger"
+    # Symlink the gitroot's .hivemind -> external so the derived
+    # <gitroot>/.hivemind/runs/<run-id>/state.json resolves THROUGH the symlink to the pre-staged
+    # external ledger (so `[ -f ]` passes and the containment guard — not a missing file — blocks).
+    ln -s "$external" "$gitroot/.hivemind"
+    before="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    inputs="$gitroot/ff-inputs.json"
+
+    # A write the op WOULD record absent the containment guard.
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback symlink escape" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    # No engine temp file (.state.json.XXXXXX) may have leaked under the external runs dir.
+    local leaked=no
+    if find "$external" -name '.state.json.*' -print 2>/dev/null | grep -q .; then
+        leaked=yes
+    fi
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" ]]; then
+        pass "$name" "external ledger reachable but rejected by containment (exit $rc): byte-unchanged, no temp leaked"
+    else
+        failed "$name" "expected non-zero exit + external ledger byte-unchanged + no temp; rc=$rc changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1535,6 +1768,11 @@ assert_init_inputs_external_rejected
 assert_record_inputs_external_rejected
 assert_init_pre_ledger_failure_rolls_back_then_retry_succeeds
 assert_init_trap_preserves_committed_ledger
+assert_intent_fallback_skew_no_close
+assert_intent_fallback_skew_close_cancelled
+assert_intent_fallback_illegal_close_unchanged
+assert_intent_fallback_injection_safe
+assert_intent_fallback_symlink_escape_rejected
 
 echo ''
 echo '=== Summary ==='
