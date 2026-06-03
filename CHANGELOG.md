@@ -8,11 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`tmux attach` convenience for running brood children.** `hivemind:spawn-brood` now prints `attach: tmux attach -t <session>` per running strain on its output; `hivemind:brood-status` emits a `tmux_session` field per strain and renders a `tmux attach -t <session>` command for each alive strain, so operators can attach to a running brood child by copy-paste.
+
 ### Changed
 
 ### Fixed
 
 ### Security
+
+- **Permission-posture switch for brood children REJECTED — base-trust remains the boundary (#170, closed).** Switching brood children from `--dangerously-skip-permissions` to `--permission-mode auto` and provisioning trusted-coordinator config were evaluated and rejected under #170 (see ADR-0017, 2026-06-02 amendment): `auto` mode gates tool actions but does not bound SessionStart hook / MCP startup execution at child launch, introduces a reliability and throughput dependency across N concurrent strains, and yields no Bash at all when the safety-classifier is unavailable. Trusted-coordinator config provisioning was rejected because the base's committed `.claude/settings.json` carries the load-bearing `enabledPlugins`/`defaultAgent` entries required to boot the child as an overlord — stripping them breaks every strain. Broods must be spawned only against trusted bases.
 
 ## [2.20.0] - 2026-06-01
 
