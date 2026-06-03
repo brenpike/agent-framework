@@ -176,6 +176,36 @@ esac
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -n "$repo_root" ] || blocker "not inside a git repository"
 ledger="$repo_root/.hivemind/runs/$run_id/state.json"
+
+# ── Depth-complete canonical-containment guard (shared helper) — BEFORE any ledger read ──
+# Derive-from-ground-truth (repo_root) must be PAIRED with canonicalize-and-verify-
+# containment, and that pairing MUST gate every ledger READ as well as the later write. The
+# ledger path is derived TEXTUALLY as "$repo_root/.hivemind/runs/<run_id>/state.json"; that
+# text does NOT confine access when ANY component of the chain is a SYMLINK pointing outside
+# the checkout. Run this guard immediately after deriving repo_root/run_id and BEFORE the
+# `[ -f "$ledger" ]` existence check, the `jq -e` JSON-validity probe, and the coherence read
+# — otherwise an externally-resolved state.json would be opened by jq (a JSON-validity read
+# oracle) and its `.run.id` could be echoed in the coherence blocker before rejection. The
+# shared helper walks EVERY component of the FULL chain (INCLUDING the <run_id> leaf) and
+# rejects any existing symlink component at ANY depth, then verifies the deepest existing
+# prefix stays inside the checkout — BEFORE any read, mktemp, or mv.
+canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id")" \
+  || blocker "refusing: ${canon_repo_root:-$repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged"
+[ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root; ledger unchanged"
+
+# Canonicalize the contained runs dir, then require the ledger live at
+# "$canon_runs/<run_id>/state.json". Trailing-slash-guarded prefix so a sibling like
+# .hivemind/runs-evil cannot prefix-match. basename asserts confirm the leaf component is
+# exactly <run_id> and the file is exactly state.json. The ledger's own dir is canonicalized
+# only after its existence is confirmed below (cd into a not-yet-existing dir would fail), but
+# the runs-dir containment proof above already gates the read path against a symlinked ancestor.
+canon_runs="$(cd "$canon_repo_root/.hivemind/runs" && pwd -P)"
+[ -n "$canon_runs" ] || blocker "failed to canonicalize $canon_repo_root/.hivemind/runs; ledger unchanged"
+case "$canon_runs/$run_id/state.json/" in
+  "$canon_runs/"*) : ;;
+  *) blocker "ledger resolves outside the checkout runs dir; ledger unchanged" ;;
+esac
+
 [ -f "$ledger" ] || blocker "ledger file does not exist: $ledger"
 jq -e . "$ledger" >/dev/null 2>&1 || blocker "ledger file is not valid JSON: $ledger"
 
@@ -184,25 +214,10 @@ ledger_run_id="$(jq -r '.run.id // ""' "$ledger")"
 [ "$ledger_run_id" = "$run_id" ] \
   || blocker "ledger run.id '$ledger_run_id' does not match run_id '$run_id'; ledger unchanged"
 
-# ── Depth-complete canonical-containment guard (shared helper) ─────────────────
-# Derive-from-ground-truth (repo_root) must be PAIRED with canonicalize-and-verify-
-# containment. The ledger path is derived TEXTUALLY as
-# "$repo_root/.hivemind/runs/<run_id>/state.json"; that text does NOT confine the write when
-# ANY component of the chain is a SYMLINK pointing outside the checkout, so the mktemp/mv
-# below would temp-write and rename EXTERNALLY. The shared helper walks EVERY component of
-# the FULL chain (INCLUDING the <run_id> leaf) and rejects any existing symlink component at
-# ANY depth, then verifies the deepest existing prefix stays inside the checkout — BEFORE any
-# mktemp/mv, so a rejection never creates a temp file and the on-disk ledger is byte-unchanged.
-canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id")" \
-  || blocker "refusing: ${canon_repo_root:-$repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged"
-[ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root; ledger unchanged"
-
-# Canonicalize the contained runs dir and the existing ledger's own dir, then require the
-# ledger live at "$canon_runs/<run_id>/state.json". Trailing-slash-guarded prefix so a
-# sibling like .hivemind/runs-evil cannot prefix-match. basename asserts confirm the leaf
-# component is exactly <run_id> and the file is exactly state.json.
-canon_runs="$(cd "$canon_repo_root/.hivemind/runs" && pwd -P)"
-[ -n "$canon_runs" ] || blocker "failed to canonicalize $canon_repo_root/.hivemind/runs; ledger unchanged"
+# ── Post-existence canonical ledger-dir confirmation ───────────────────────────
+# Now that the ledger file is confirmed to exist, canonicalize its own dir and re-verify the
+# leaf/dir basenames against the contained runs dir. This pairs the containment proof above
+# (which gated the read) with a final byte-exact path identity before the mktemp/mv write.
 canon_ledger_dir="$(cd "$(dirname "$ledger")" && pwd -P)"
 [ -n "$canon_ledger_dir" ] || blocker "failed to canonicalize the ledger directory; ledger unchanged"
 canon_ledger="$canon_ledger_dir/state.json"
