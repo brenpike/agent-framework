@@ -143,6 +143,8 @@ if command -v timeout >/dev/null 2>&1; then
   GH_TIMEOUT=(timeout "$GH_CALL_TIMEOUT_SECONDS")
 elif command -v gtimeout >/dev/null 2>&1; then
   GH_TIMEOUT=(gtimeout "$GH_CALL_TIMEOUT_SECONDS")
+else
+  echo "github-review-loop: WARNING neither 'timeout' nor 'gtimeout' found on PATH; gh API calls in the change-detection poll are running UNGUARDED and a hung call can stall this poll until max_watch_duration (issue #159). Install GNU coreutils (provides 'timeout'; 'gtimeout' on Homebrew) to restore the timeout guard." >&2
 fi
 
 deadline=$(($(date +%s) + MAX_WATCH_SECONDS))
