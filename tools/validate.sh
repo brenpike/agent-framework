@@ -312,8 +312,13 @@ resolve_base() {
 changed_files() {
   local base="$1"
   {
-    git diff --name-only "$base...HEAD" 2>/dev/null || true
-    git diff --name-only HEAD 2>/dev/null || true
+    # --no-renames: when Git detects a rename, --name-only reports ONLY the destination, so a
+    # PR that moves a runtime file (e.g. plugin/governance/foo.md -> docs/foo.md) would be
+    # classified docs-only and skip every suite even though the plugin payload lost a runtime
+    # file. Disabling rename detection emits the original (deleted) path AND the new path as
+    # separate entries, so the source code-tree path still triggers the fail-closed/policy leg.
+    git diff --no-renames --name-only "$base...HEAD" 2>/dev/null || true
+    git diff --no-renames --name-only HEAD 2>/dev/null || true
     # Porcelain: strip the 2-char XY status + space; handle "old -> new" renames (both paths).
     git status --porcelain 2>/dev/null | while IFS= read -r line; do
       local rest="${line:3}"
