@@ -982,6 +982,39 @@ else
   failed "c7c:sibling-no-prefix-match" "inputs: sibling-named dir prefix-matched checkout root (trailing-slash guard broken)"
 fi
 
+# 7c-5: inputs-file LEAF is a symlink to an external target → reject (leaf read oracle closed).
+# The leaf itself is a symlink ([ -L ] fires), even though every dir component is contained.
+c7c5="$WORKDIR/c7c5/checkout"
+c7c5_ext="$WORKDIR/c7c5/external"
+mkdir -p "$c7c5/.hivemind" "$c7c5_ext"
+: > "$c7c5_ext/secret.json"
+c7c5_inputs="$c7c5/.hivemind/spawn-inputs.json"
+ln -s "$c7c5_ext/secret.json" "$c7c5_inputs"
+c7c5_out="$(hivemind_assert_inputs_contained "$c7c5" "$c7c5_inputs" 2>/dev/null)"
+c7c5_rc=$?
+if [ "$c7c5_rc" -ne 0 ]; then
+  pass "c7c:symlinked-leaf-reject" "inputs: symlinked leaf → non-zero return"
+else
+  failed "c7c:symlinked-leaf-reject" "inputs: symlinked leaf must reject; got return 0"
+fi
+assert_eq "c7c:symlinked-leaf-empty-stdout" "" "$c7c5_out" "inputs: symlinked leaf → empty stdout"
+
+# 7c-6: inputs-file LEAF is a DANGLING symlink (target does not exist) → still reject.
+# Proves [ -L ] fires regardless of target existence.
+c7c6="$WORKDIR/c7c6/checkout"
+c7c6_ext="$WORKDIR/c7c6/external"
+mkdir -p "$c7c6/.hivemind" "$c7c6_ext"
+c7c6_inputs="$c7c6/.hivemind/spawn-inputs.json"
+ln -s "$c7c6_ext/missing.json" "$c7c6_inputs"
+c7c6_out="$(hivemind_assert_inputs_contained "$c7c6" "$c7c6_inputs" 2>/dev/null)"
+c7c6_rc=$?
+if [ "$c7c6_rc" -ne 0 ]; then
+  pass "c7c:dangling-symlinked-leaf-reject" "inputs: dangling symlinked leaf → non-zero return"
+else
+  failed "c7c:dangling-symlinked-leaf-reject" "inputs: dangling symlinked leaf must reject; got return 0"
+fi
+assert_eq "c7c:dangling-symlinked-leaf-empty-stdout" "" "$c7c6_out" "inputs: dangling symlinked leaf → empty stdout"
+
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
 echo '=== Summary ==='
