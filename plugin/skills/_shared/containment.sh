@@ -237,6 +237,15 @@ hivemind_assert_file_contained() {
 # PRECONDITION: the caller must verify the file exists ([ -f "$inputs_file" ]) before
 # calling this function. Behavior on a missing file is unspecified.
 #
+# LEAF REJECT: in addition to rejecting a symlinked ANCESTOR (caught by the dirname
+# cd && pwd -P canonicalization + prefix case below), this guard rejects a symlinked LEAF
+# (the inputs file itself) via [ -L ] on the RAW passed path — fires even when the symlink
+# target is dangling/non-existent. Without this, a symlinked leaf whose parent dir is
+# in-checkout passes the ancestor check, then the caller's `jq -e . "$INPUTS_FILE"` follows
+# the symlink to an external target — a content/validity read oracle. [ -f ]/[ -e ] do NOT
+# help (they follow symlinks). This MIRRORS hivemind_assert_file_contained's write-guard
+# [ -L ] leaf reject; the two guards are now symmetric on leaf-symlink handling.
+#
 # On success: echoes the canonical repo root and returns 0.
 # On reject:  prints a concise reason to stderr and returns non-zero. Never exits.
 hivemind_assert_inputs_contained() {
@@ -247,6 +256,14 @@ hivemind_assert_inputs_contained() {
   canon_root="$(hivemind_canon_root "$raw_root")"
   if [ -z "$canon_root" ]; then
     printf 'failed to canonicalize repo root %s\n' "$raw_root" >&2
+    return 1
+  fi
+
+  # Reject a symlinked LEAF before any path resolution. Tests the RAW passed path so it fires
+  # even for a dangling symlink target. Mirrors hivemind_assert_file_contained's [ -L ] leaf
+  # reject. A regular-file leaf is [ -L ]-false and proceeds to the ancestor check below.
+  if [ -L "$inputs_file_path" ]; then
+    printf 'refusing symlinked inputs file leaf %s under %s\n' "$inputs_file_path" "$canon_root" >&2
     return 1
   fi
 
