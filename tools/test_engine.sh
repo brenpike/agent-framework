@@ -1115,7 +1115,19 @@ assert_record_symlink_escape_rejected() {
     # guard canonicalizes the existing ledger, sees it resolves OUTSIDE the checkout, and rejects.
     # CRITICAL: the rejection is by CONTAINMENT (file reachable but unmutated), not file-absence —
     # the pre-staged file proves the guard, not a missing file, blocked the write.
+    #
+    # ORACLE-CLOSED (STEP-001 reorder regression): the ledger containment guard
+    # (hivemind_assert_contained) MUST fire BEFORE the `[ -f ]` existence check, the ledger
+    # `jq -e` JSON-validity probe, AND the coherence `jq -r '.run.id'` read — otherwise an
+    # externally-resolved state.json would be opened by jq (a validity read oracle) and its
+    # `.run.id` could be echoed in the coherence blocker before rejection. The pre-staged
+    # external ledger is a VALID, coherent ledger (run.id == run_id, run.workflow resolves), so
+    # if the guard were ordered AFTER those reads the run would either succeed-then-write or fail
+    # with the coherence/validity blocker. We therefore assert the failing blocker is the
+    # CONTAINMENT blocker ("resolves outside the checkout") — proving the guard preceded the
+    # existence/validity/coherence reads — in ADDITION to byte-unchanged + no-temp-leaked.
     local gitroot external run_id ext_ledger inputs before after rc=0
+    local stderr is_containment_blocker
     gitroot="$(new_gitroot u-git)"
     run_id="engine-case-u"
     external="$WORKDIR/u-external"
@@ -1144,7 +1156,8 @@ assert_record_symlink_escape_rejected() {
         '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
         > "$inputs"
 
-    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    stderr="$gitroot/u-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
 
     after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
     # No engine temp file (.state.json.XXXXXX) may have leaked under the external runs dir.
@@ -1152,10 +1165,16 @@ assert_record_symlink_escape_rejected() {
     if find "$external" -name '.state.json.*' -print 2>/dev/null | grep -q .; then
         leaked=yes
     fi
-    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" ]]; then
-        pass "$name" "external ledger reachable but rejected by containment (exit $rc): byte-unchanged, no temp leaked"
+    # The blocker MUST be the CONTAINMENT blocker — proving the guard fired BEFORE the ledger
+    # existence/validity/coherence reads (a valid+coherent external ledger would otherwise pass
+    # those and surface a different message or none).
+    is_containment_blocker=no
+    grep -q 'resolves outside the checkout' "$stderr" && is_containment_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" \
+          && "$is_containment_blocker" == "yes" ]]; then
+        pass "$name" "containment guard fired BEFORE existence/validity/coherence reads (exit $rc, containment blocker): external ledger byte-unchanged, no temp leaked"
     else
-        failed "$name" "expected non-zero exit + external ledger byte-unchanged + no temp; rc=$rc changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
+        failed "$name" "expected non-zero exit + containment blocker + external ledger byte-unchanged + no temp; rc=$rc containment=$is_containment_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
     fi
 }
 
@@ -1273,7 +1292,17 @@ assert_init_inputs_external_rejected() {
     # VALID init inputs file at $gitroot/link/init-inputs.json where `link` is a symlink to an
     # EXTERNAL dir, so the file's canonical path is under $external. init must exit non-zero on
     # the read-guard AND write no ledger/state.json anywhere (inside or under $external).
+    #
+    # ORACLE-CLOSED (STEP-002 reorder regression): the inputs read-guard
+    # (hivemind_assert_inputs_contained) MUST fire BEFORE the inputs `jq -e` JSON-validity probe
+    # and BEFORE any field parse — otherwise `jq -e` opening the attacker-supplied external path
+    # is itself an external-file read oracle. The inputs payload here is VALID JSON, so if the
+    # guard were ordered AFTER the probe the probe would PASS and the run would fail later with a
+    # DIFFERENT blocker (or write a ledger). We therefore assert the failing blocker is the
+    # read-guard's containment blocker ("refusing to read the inputs file") — proving the guard
+    # preceded the validity probe — AND that the external inputs file is byte-unchanged.
     local gitroot external inputs rc=0
+    local in_before in_after stderr is_readguard_blocker
     gitroot="$(new_gitroot x-git)"
     external="$WORKDIR/x-external"
     mkdir -p "$external"
@@ -1293,7 +1322,12 @@ assert_init_inputs_external_rejected() {
         '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized}' \
         > "$inputs"
 
-    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    # sha256 of the external inputs file BEFORE the run: it must be byte-unchanged (the guard
+    # rejects before any read/parse that could touch it).
+    in_before="$(sha256sum "$inputs" | awk '{print $1}')"
+    stderr="$gitroot/x-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
+    in_after="$(sha256sum "$inputs" | awk '{print $1}')"
 
     # No state.json may have been written under the external target NOR under the gitroot's
     # real runs tree (the read-guard rejects before any path derivation).
@@ -1302,10 +1336,16 @@ assert_init_inputs_external_rejected() {
     if [[ -d "$gitroot/.hivemind/runs" ]] && find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then
         wrote=yes
     fi
-    if [[ "$rc" -ne 0 && "$wrote" == "no" ]]; then
-        pass "$name" "externally-resolving inputs refused by read-guard (exit $rc); no ledger written"
+    # The blocker MUST be the inputs read-guard containment blocker — proving the guard fired
+    # BEFORE the `jq -e` validity probe (the inputs payload is valid JSON, so any later gate
+    # would emit a different message or write a ledger).
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$wrote" == "no" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "read-guard fired BEFORE the inputs validity probe (exit $rc, containment blocker); external inputs byte-unchanged, no ledger written"
     else
-        failed "$name" "expected non-zero exit + no ledger; rc=$rc wrote=$wrote"
+        failed "$name" "expected non-zero exit + containment blocker + unchanged inputs + no ledger; rc=$rc readguard=$is_readguard_blocker inputs_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
     fi
 }
 
@@ -1318,7 +1358,18 @@ assert_record_inputs_external_rejected() {
     # shared read-guard, not a missing ledger. Author a valid record inputs file at an
     # externally-resolving path (via a symlinked ancestor). record must exit non-zero on the
     # read-guard AND leave the staged ledger byte-unchanged.
+    #
+    # ORACLE-CLOSED (STEP-001 reorder regression): the inputs read-guard
+    # (hivemind_assert_inputs_contained) MUST fire BEFORE the inputs `jq -e` JSON-validity probe
+    # and BEFORE any field parse — otherwise `jq -e` opening the attacker-supplied external path
+    # is itself an external-file read oracle. The inputs payload here is VALID JSON, so if the
+    # guard were ordered AFTER the probe the probe would PASS and the run would fail later with a
+    # DIFFERENT blocker (or not at all). We therefore assert the failing blocker is the
+    # read-guard's containment blocker ("refusing to read the inputs file") — proving the guard
+    # preceded the validity probe — AND that the external inputs file is byte-unchanged with no
+    # read side effect (no temp leaked beside it).
     local gitroot external run_id ledger inputs before after rc=0
+    local in_before in_after stderr
     gitroot="$(new_gitroot y-git)"
     run_id="engine-case-y"
     # Stage a real, well-formed ledger the engine WOULD accept absent the read-guard.
@@ -1341,13 +1392,30 @@ assert_record_inputs_external_rejected() {
         '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
         > "$inputs"
 
-    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    # sha256 of the external inputs file BEFORE the run: it must be byte-unchanged (the guard
+    # rejects before any read/parse that could touch it).
+    in_before="$(sha256sum "$inputs" | awk '{print $1}')"
+    stderr="$gitroot/y-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
 
     after="$(sha256sum "$ledger" | awk '{print $1}')"
-    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
-        pass "$name" "externally-resolving inputs refused by read-guard (exit $rc); staged ledger byte-unchanged"
+    in_after="$(sha256sum "$inputs" | awk '{print $1}')"
+    # No engine temp file may have leaked beside the external inputs file (a read-then-write
+    # leak signal under the external target).
+    local leaked=no
+    if find "$external" -name '.state.json.*' -print 2>/dev/null | grep -q .; then
+        leaked=yes
+    fi
+    # The blocker MUST be the inputs read-guard containment blocker — proving the guard fired
+    # BEFORE the `jq -e` validity probe (the inputs payload is valid JSON, so any later gate
+    # would emit a different message or none).
+    local is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$in_before" == "$in_after" \
+          && "$leaked" == "no" && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "read-guard fired BEFORE the inputs validity probe (exit $rc, containment blocker): external inputs + staged ledger byte-unchanged, no temp leaked"
     else
-        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+        failed "$name" "expected non-zero exit + containment blocker + unchanged inputs/ledger + no temp; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) inputs_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) leaked=$leaked"
     fi
 }
 
