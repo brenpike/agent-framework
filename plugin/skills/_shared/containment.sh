@@ -2,7 +2,9 @@
 #
 # containment.sh — shared symlink-write-escape containment idiom for the three
 # committed hivemind run-ledger / brood writers (init-run-ledger, record-state-result,
-# spawn-brood).
+# spawn-brood); it also provides the ledger-read leaf guard (hivemind_assert_ledger_contained)
+# for the two ledger-reading engines (mark-intent-fallback, record-state-result), completing
+# leaf-symmetry across inputs-file / write-target / ledger-read leaves.
 #
 # THIS FILE IS SOURCED, NOT EXECUTED. No shebang: each caller sources it by absolute
 # path derived from its OWN script_dir (`. "$plugin_root/skills/_shared/containment.sh"`).

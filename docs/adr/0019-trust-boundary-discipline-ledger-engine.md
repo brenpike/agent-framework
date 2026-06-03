@@ -230,3 +230,18 @@ The third amendment (point 4, ~line 108 above) and the inputs-file navigator pro
 `hivemind_assert_inputs_contained` (in `plugin/skills/_shared/containment.sh`) now `[ -L ]`-rejects a symlinked inputs-file LEAF in addition to its existing symlinked-ancestor reject — the leaf reject fires even on a dangling target — mirroring the write-guard `hivemind_assert_file_contained`'s leaf reject. The read-guard's stated bound is corrected from "ancestor-only" to "ancestor OR leaf": it refuses to read an inputs file whose ancestor or leaf is a symlink resolving/pointing outside the checkout. The guard remains HONEST defense-in-depth — it does NOT prevent the external Write (the agent Write-tool transport has no engine-side guard ahead of it); it makes an external-resolving transport LOUD (refuse-to-read) rather than silent.
 
 This amendment is APPEND-ONLY. The original Decision, Consequences, and all prior amendments stand. Status remains accepted.
+
+## Amendment — 2026-06-03 (LEDGER-READ leaf now `[ -L ]`-rejected; leaf-symmetry across inputs/write/ledger-read complete, #160)
+
+The prior framing — recorded in the third amendment (point 4, ~"shared read-guard") and in the `hivemind_assert_inputs_contained` amendment — stated that the ledger leaf (`state.json`) was covered by the ancestor walk via `hivemind_assert_contained`. That framing is INCORRECT. `hivemind_assert_contained` walks the chain passed to it; both ledger-reading engines passed `.hivemind/runs/<run_id>` — the run-directory, NOT the `state.json` leaf below it. A real-directory run-dir with a symlinked `state.json` leaf passed every ancestor check; the subsequent `[ -f "$ledger" ]` and `jq` reads followed the symlink to an external target — a content/validity read oracle the guard never inspected.
+
+**The fix.** A new shared guard, `hivemind_assert_ledger_contained` (in `plugin/skills/_shared/containment.sh`), is called by both ledger-reading engines (`mark-intent-fallback.sh`, `record-state-result.sh`) BEFORE the first ledger read. It `[ -L ]`-rejects the `state.json` leaf on the RAW passed path (fires even for a dangling target, before any `[ -f ]`/`jq` read that follows symlinks), then canonicalizes the leaf's dirname and prefix-matches against the canonical checkout root — catching a symlinked ancestor as defense-in-depth. The guard mirrors `hivemind_assert_inputs_contained`'s read-guard structure.
+
+**Leaf-symmetry complete.** This closes the last open leaf class, completing symmetry across all three leaf classes:
+- Inputs-file leaf — `hivemind_assert_inputs_contained` (`[ -L ]` reject, closed earlier)
+- Write-target leaf — `hivemind_assert_file_contained` (`[ -L ]` reject, closed earlier)
+- Ledger-read leaf — `hivemind_assert_ledger_contained` (`[ -L ]` reject, THIS amendment)
+
+**CHECK9 extended.** `policy_check.sh` CHECK9 is extended to assert that every containment-sourcing engine that reads a ledger calls `hivemind_assert_ledger_contained` before its first ledger read — terminal lint failure on absence, preventing regression.
+
+This amendment is APPEND-ONLY. The original Decision, Consequences, and all prior amendments stand. Status remains accepted.
