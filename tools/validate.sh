@@ -137,7 +137,8 @@ run_suites() {
 #                                      -> policy_check
 #   plugin/.claude-plugin/plugin.json or .claude-plugin/marketplace.json -> json-manifests parse
 #   tools/**                           -> FULL suite (validator bootstrap)
-#   outside plugin|.claude-plugin|tools|tests (docs: README.md, docs/**) -> no code suites
+#   .github/**                         -> FULL suite (CI bootstrap — the gate harness itself)
+#   outside plugin|.claude-plugin|tools|tests|.github (docs: README.md, docs/**) -> no code suites
 #   anything matching no rule          -> FULL suite
 
 SELECTED=()      # lines of "suite<TAB>reason"
@@ -160,6 +161,16 @@ map_path() {
   # tools/** -> validator bootstrap: re-run everything (including this script's --self-test).
   if [[ "$p" == tools/* ]]; then
     force_full "tools change ($p) — validator bootstrap, full suite"
+    return 0
+  fi
+
+  # .github/** -> CI bootstrap: the workflow that runs this dispatcher is itself the gate
+  # harness. A change there (e.g. rewiring dispatch, dropping the --all branch) is the other
+  # half of the validator-bootstrap surface, so fail-closed to the FULL suite — same posture
+  # as tools/**. Never docs-only: an unguarded workflow edit could green a --changed run with
+  # zero suites executed.
+  if [[ "$p" == .github/* ]]; then
+    force_full "CI/workflow change ($p) — validator bootstrap, full suite"
     return 0
   fi
 
@@ -457,6 +468,17 @@ self_test() {
     echo "PASS: README.md -> no code suites"
   else
     echo "FAIL: README.md selected suites (${#SELECTED[@]}) or escalated (full=$FORCE_FULL)"
+    fails=$((fails + 1))
+  fi
+
+  # 7. The CI workflow that runs this dispatcher must FAIL-CLOSED to full suite, never
+  #    docs-only — otherwise a workflow-only edit could green a --changed run with no suites.
+  SELECTED=(); FORCE_FULL=0; FORCE_FULL_REASON=''
+  map_path ".github/workflows/policy-check.yml" >/dev/null
+  if [[ "$FORCE_FULL" -eq 1 ]]; then
+    echo "PASS: .github/workflows/** -> FULL suite"
+  else
+    echo "FAIL: .github/workflows/** did NOT FAIL-CLOSED (selected ${#SELECTED[@]} suites)"
     fails=$((fails + 1))
   fi
 
