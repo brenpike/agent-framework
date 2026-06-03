@@ -58,7 +58,12 @@ On session start, scan `<checkout-root>/.hivemind/runs/*/state.json` for `run.st
 
 ## Intent-Driven Fallback (Universal)
 
-Intent-driven execution is the universal fallback for the whole machine. Whenever the deterministic substrate is unavailable or invalidated — version skew, a torn or missing ledger, an unresolvable `state.current` — degrade to judgment rather than hard-failing: read the ledger for facts, invoke `hivemind:mark-intent-fallback` (run_id + the current state string + a summary, NO `close_status`) to atomically set `run.mode: intent_fallback` and append a fallback event, suspend transition gating, keep appending events as an append-only observability log, and finish by judgment. Determinism only ever ADDS safety and observability; it never strands a run. Worst case equals today's pure-intent behavior, never worse.
+Intent-driven execution is the universal fallback for the whole machine. Whenever the deterministic substrate is unavailable or invalidated, degrade to judgment rather than hard-failing. Two distinct cases, because the engine op only writes to a readable ledger:
+
+- **Version skew (ledger PRESENT, valid JSON, `workflow_version` mismatched):** the engine-writable case. Read the ledger for facts, invoke `hivemind:mark-intent-fallback` (run_id + the current state string + a summary, NO `close_status`) to atomically set `run.mode: intent_fallback` and append a fallback event, suspend transition gating, keep appending events as an append-only observability log, and finish by judgment.
+- **Torn / missing / unresolvable ledger (no readable ledger to write to — file absent, invalid JSON, or `state.current` unrecoverable):** start-fresh-by-judgment. `hivemind:mark-intent-fallback` HARD-BLOCKS here (the engine requires the ledger to exist and parse as JSON), so do NOT call it against a ledger that cannot be read. Degrade to pure judgment: reconstruct facts from git observables, and if appropriate start a fresh run. No engine write is attempted.
+
+Determinism only ever ADDS safety and observability; it never strands a run. Worst case equals today's pure-intent behavior, never worse.
 
 ## Brood Execution
 
