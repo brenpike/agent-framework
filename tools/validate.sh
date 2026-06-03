@@ -267,6 +267,17 @@ map_path() {
     matched=1
   fi
 
+  # policy_check: README.md. Although README.md lives outside every code tree (docs-only by
+  # location), policy_check's compatibility fixtures tests/plugin/readme-agent-names-match.json
+  # and tests/plugin/readme-skill-names-match.json READ README.md. A README-only PR would
+  # otherwise select no suite and merge with PR CI green, only for the push-to-main full suite
+  # to fail if an agent/skill name drifted. Route README.md through policy_check --strict so the
+  # README compatibility contract is exercised pre-PR.
+  if [[ "$p" == "README.md" ]]; then
+    add_selected "$SUITE_POLICY_CHECK" "$p (README compatibility fixtures in policy_check)"
+    matched=1
+  fi
+
   if [[ "$matched" -eq 1 ]]; then
     return 0
   fi
@@ -285,14 +296,25 @@ map_path() {
 
 # ── --changed plumbing ─────────────────────────────────────────────────────────────
 # resolve_base: echo a resolved base ref (a commit-ish usable in `git diff <base>...HEAD`),
-# or empty string if none resolves. Tries the explicit --base first, then origin/main, main,
-# HEAD~1; for each candidate it requires a successful merge-base with HEAD.
+# or empty string if none resolves. For each candidate it requires a successful merge-base
+# with HEAD.
+#
+# FAIL-CLOSED on explicit base: when the caller supplies an explicit --base (e.g. the PR
+# workflow's `--base origin/main`), that ref is the ONLY candidate. If it cannot be verified
+# (detached/shallow checkout where the explicit ref is missing), we return empty rather than
+# silently narrowing to origin/main/main/HEAD~1 — a narrower fallback would map only the last
+# commit and skip earlier runtime-file changes in a multi-commit PR, defeating the advertised
+# fail-closed posture. An empty return drives run_changed to escalate to the FULL suite. The
+# origin/main → main → HEAD~1 fallback chain applies ONLY when no explicit base was supplied.
 resolve_base() {
   local explicit="$1"
   local cand
   local -a candidates=()
-  [[ -n "$explicit" ]] && candidates+=("$explicit")
-  candidates+=(origin/main main HEAD~1)
+  if [[ -n "$explicit" ]]; then
+    candidates+=("$explicit")
+  else
+    candidates+=(origin/main main HEAD~1)
+  fi
 
   for cand in "${candidates[@]}"; do
     if git rev-parse --verify --quiet "$cand" >/dev/null 2>&1; then
@@ -501,13 +523,30 @@ self_test() {
     fails=$((fails + 1))
   fi
 
-  # 6. A docs-only sentinel must select NO code suite and NOT escalate.
+  # 6. A docs-only sentinel must select NO code suite and NOT escalate. README.md is NOT a
+  #    valid docs-only probe — it is routed through policy_check (its compatibility fixtures
+  #    read README.md), so use a docs/ path that no rule maps.
+  SELECTED=(); FORCE_FULL=0; FORCE_FULL_REASON=''
+  map_path "docs/some-doc.md" >/dev/null
+  if [[ ${#SELECTED[@]} -eq 0 && "$FORCE_FULL" -eq 0 ]]; then
+    echo "PASS: docs/some-doc.md -> no code suites"
+  else
+    echo "FAIL: docs/some-doc.md selected suites (${#SELECTED[@]}) or escalated (full=$FORCE_FULL)"
+    fails=$((fails + 1))
+  fi
+
+  # 6b. README.md must route through policy_check (its compatibility fixtures read README.md),
+  #     NOT classify as docs-only/no-suite.
   SELECTED=(); FORCE_FULL=0; FORCE_FULL_REASON=''
   map_path "README.md" >/dev/null
-  if [[ ${#SELECTED[@]} -eq 0 && "$FORCE_FULL" -eq 0 ]]; then
-    echo "PASS: README.md -> no code suites"
+  hit=0
+  for entry in "${SELECTED[@]:-}"; do
+    [[ "${entry%%$'\t'*}" == "$SUITE_POLICY_CHECK" ]] && hit=1 && break
+  done
+  if [[ "$hit" -eq 1 ]]; then
+    echo "PASS: README.md -> policy_check (README compatibility fixtures)"
   else
-    echo "FAIL: README.md selected suites (${#SELECTED[@]}) or escalated (full=$FORCE_FULL)"
+    echo "FAIL: README.md did NOT route through policy_check (selected ${#SELECTED[@]} suites, full=$FORCE_FULL)"
     fails=$((fails + 1))
   fi
 
