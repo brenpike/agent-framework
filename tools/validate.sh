@@ -124,9 +124,12 @@ run_suites() {
 #
 # Globs verified against each tool:
 #   plugin/workflows/*.json            -> validate_workflows --strict + --self-test
-#   plugin/skills/record-state-result/scripts/**, init-run-ledger/scripts/**, tests/engine/**
-#                                      -> test_engine  (also validate_workflows reads tests/engine)
-#   plugin/skills/spawn-brood/**, brood-status/**, init-run-ledger/scripts/**, tests/brood/**
+#   plugin/skills/record-state-result/scripts/**, init-run-ledger/scripts/**, tests/engine/**,
+#     plugin/skills/_shared/containment.sh
+#                                      -> test_engine  (also validate_workflows reads tests/engine;
+#                                         containment.sh is copied into test_engine's fake plugin)
+#   plugin/skills/spawn-brood/**, brood-status/**, init-run-ledger/scripts/**,
+#     plugin/skills/_shared/containment.sh, tests/brood/**
 #                                      -> test_brood_compat
 #   plugin/skills/_shared/*.sh, tests/brood/**          -> test_shared_libs
 #   tests/reports/**                                    -> validate_reports
@@ -144,6 +147,10 @@ run_suites() {
 SELECTED=()      # lines of "suite<TAB>reason"
 FORCE_FULL=0     # set to 1 by any FAIL-CLOSED escalation
 FORCE_FULL_REASON=''
+FORCE_FULL_SELFTEST=0  # set to 1 when the escalation is a validator-bootstrap change (tools/**,
+                       # .github/**): the full suite must ALSO run this dispatcher's --self-test,
+                       # since a broken path->suite mapping in validate.sh itself would otherwise
+                       # green a --changed run without the mapping-coverage assertions executing.
 
 add_selected() {
   SELECTED+=("$1"$'\t'"$2")
@@ -154,13 +161,21 @@ force_full() {
   FORCE_FULL_REASON="$1"
 }
 
+# force_full_bootstrap: a FAIL-CLOSED escalation triggered by a change to the validator harness
+# itself (tools/**, .github/**). In addition to the full suite, the dispatcher's own --self-test
+# must run so a broken mapping rule cannot merge behind a green --changed.
+force_full_bootstrap() {
+  force_full "$1"
+  FORCE_FULL_SELFTEST=1
+}
+
 map_path() {
   local p="$1"
   local matched=0
 
   # tools/** -> validator bootstrap: re-run everything (including this script's --self-test).
   if [[ "$p" == tools/* ]]; then
-    force_full "tools change ($p) — validator bootstrap, full suite"
+    force_full_bootstrap "tools change ($p) — validator bootstrap, full suite + self-test"
     return 0
   fi
 
@@ -170,7 +185,7 @@ map_path() {
   # as tools/**. Never docs-only: an unguarded workflow edit could green a --changed run with
   # zero suites executed.
   if [[ "$p" == .github/* ]]; then
-    force_full "CI/workflow change ($p) — validator bootstrap, full suite"
+    force_full_bootstrap "CI/workflow change ($p) — validator bootstrap, full suite + self-test"
     return 0
   fi
 
@@ -202,8 +217,12 @@ map_path() {
   fi
 
   # test_engine: engine scripts + engine fixtures (validate_workflows also reads tests/engine).
+  # Also containment.sh: test_engine.sh copies the shared containment guard into its fake plugin
+  # and exercises engine symlink/external-path containment cases, so a containment.sh change must
+  # trigger test_engine or record/init engine containment regressions go untested under --changed.
   if [[ "$p" == plugin/skills/record-state-result/scripts/* \
      || "$p" == plugin/skills/init-run-ledger/scripts/* \
+     || "$p" == plugin/skills/_shared/containment.sh \
      || "$p" == tests/engine/* ]]; then
     add_selected "$SUITE_TEST_ENGINE" "$p (engine script/fixture)"
     matched=1
@@ -345,9 +364,21 @@ run_changed() {
 
   if [[ "$FORCE_FULL" -eq 1 ]]; then
     echo "FAIL-CLOSED escalation: $FORCE_FULL_REASON"
+    local full_rc=0
+    if [[ "$FORCE_FULL_SELFTEST" -eq 1 ]]; then
+      echo "validator-bootstrap change — running --self-test (mapping-coverage gate) first."
+      echo
+      echo "=== validate.sh: running [self-test] ==="
+      if self_test; then
+        echo "--- [self-test] PASS ---"
+      else
+        echo "--- [self-test] FAIL ---" >&2
+        full_rc=1
+      fi
+    fi
     echo "running FULL suite."
-    run_suites "${ALL_SUITES[@]}"
-    return $?
+    run_suites "${ALL_SUITES[@]}" || full_rc=1
+    return "$full_rc"
   fi
 
   # De-dupe SELECTED into a unique suite list, printing WHY each suite was selected.
