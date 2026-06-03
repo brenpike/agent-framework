@@ -2087,6 +2087,127 @@ assert_intent_fallback_inputs_symlink_leaf_rejected() {
     fi
 }
 
+# ── LL. record ledger-file symlinked LEAF rejected by the ledger-read guard ──
+
+assert_record_ledger_symlink_leaf_rejected() {
+    local name="LL:record-ledger-symlink-leaf-rejected"
+    # LEDGER-LEAF vector (L-STEP-002 regression) for record-state-result.sh. Unlike the INPUTS-leaf
+    # cases (HH/II/JJ/KK), here the INPUTS file is real+valid in-checkout; the hostile element is the
+    # derived ledger LEAF: the REAL run dir <gitroot>/.hivemind/runs/<id>/ exists, but its state.json
+    # is ITSELF a symlink to a VALID, COHERENT ledger at an EXTERNAL path outside the checkout. The
+    # ledger reads ([ -f ], jq -e ., jq -r '.run.id') all FOLLOW symlinks, so absent a guard the
+    # engine would read THROUGH the symlink and record the transition. The dedicated leaf guard
+    # hivemind_assert_ledger_contained rejects the symlinked ledger leaf BEFORE any of those reads.
+    #
+    # NON-VACUOUS: the external ledger is VALID JSON with .run.id == run_id (coherence) and
+    # .run.workflow == engine-fixture (def resolves), AND the inputs file is valid in-checkout, so
+    # the ONLY gate that can reject is the ledger-leaf guard — not a missing/invalid/incoherent
+    # ledger and not the inputs read-guard. Removing L-STEP-002's hivemind_assert_ledger_contained
+    # call would let the engine follow the symlink and record (rc=0 / external ledger mutated),
+    # flipping this assertion to a FAIL. Assert: non-zero exit; the ledger-leaf containment blocker
+    # fired; the external ledger byte-unchanged (sha256 before==after).
+    local gitroot external run_id ext_ledger rundir leaf inputs rc=0
+    local before after stderr is_ledger_blocker
+    gitroot="$(new_gitroot ll-git)"
+    run_id="engine-case-ll"
+    external="$WORKDIR/ll-external"
+    # VALID, COHERENT ledger at the EXTERNAL target (outside the checkout). .run.id == run_id and
+    # .run.workflow == engine-fixture so it would be accepted absent the ledger-leaf guard.
+    mkdir -p "$external"
+    ext_ledger="$external/state.json"
+    jq --arg id "$run_id" --arg wf "engine-fixture" \
+        '.run.id = $id | .run.workflow = $wf' \
+        "$LEDGER_AT_PLAN" > "$ext_ledger"
+    # REAL run dir in the checkout; only the state.json LEAF is a symlink -> external ledger.
+    rundir="$gitroot/.hivemind/runs/$run_id"
+    mkdir -p "$rundir"
+    leaf="$rundir/state.json"
+    ln -s "$ext_ledger" "$leaf"
+    before="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    # Real, valid inputs file in-checkout: a valid transition (plan ready -> build) the engine WOULD
+    # record absent the ledger-leaf guard. NOT the cause of rejection.
+    inputs="$gitroot/ll-inputs.json"
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test record ledger symlink leaf" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$inputs"
+
+    stderr="$gitroot/ll-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
+    after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+
+    is_ledger_blocker=no
+    grep -qE 'refusing symlinked ledger file leaf|ledger file .* resolves outside the checkout' "$stderr" \
+        && is_ledger_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$is_ledger_blocker" == "yes" ]]; then
+        pass "$name" "symlinked ledger LEAF rejected by ledger-read guard (exit $rc, ledger blocker); external ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + ledger blocker + external ledger byte-unchanged; rc=$rc ledger_blocker=$is_ledger_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── MM. intent-fallback ledger-file symlinked LEAF rejected by the ledger guard ─
+
+assert_intent_fallback_ledger_symlink_leaf_rejected() {
+    local name="MM:intent-fallback-ledger-symlink-leaf-rejected"
+    # LEDGER-LEAF vector (L-STEP-002 regression) for mark-intent-fallback.sh, which reuses
+    # record-state-result.sh's identity derivation and calls the SAME shared
+    # hivemind_assert_ledger_contained leaf guard before any ledger read. Mirrors LL precisely: the
+    # INPUTS file is real+valid in-checkout; the REAL run dir exists but its state.json LEAF is a
+    # symlink to a VALID, COHERENT skew ledger at an EXTERNAL path. The ledger reads follow symlinks,
+    # so absent the guard the op would read THROUGH the symlink and mutate the external ledger.
+    #
+    # NON-VACUOUS: the external ledger is VALID JSON with .run.id == run_id (coherence) and
+    # .run.workflow == engine-fixture, AND the inputs file is valid in-checkout, so the ONLY gate
+    # that can reject is the ledger-leaf guard. (intent-fallback enforces NO version-binding guard,
+    # so the version-2 skew alone would NOT reject — see BB.) Removing L-STEP-002's
+    # hivemind_assert_ledger_contained call would let the op follow the symlink and write (rc=0 /
+    # external ledger mutated), flipping this to a FAIL. Assert: non-zero exit; the ledger-leaf
+    # containment blocker fired; the external ledger byte-unchanged (sha256 before==after).
+    local gitroot external run_id ext_ledger rundir leaf inputs rc=0
+    local before after stderr is_ledger_blocker
+    gitroot="$(new_gitroot mm-git)"
+    run_id="engine-case-mm"
+    external="$WORKDIR/mm-external"
+    # VALID, COHERENT skew ledger at the EXTERNAL target. .run.id == run_id, .run.workflow ==
+    # engine-fixture; it would be mutated absent the ledger-leaf guard.
+    mkdir -p "$external"
+    ext_ledger="$external/state.json"
+    jq --arg id "$run_id" --arg wf "engine-fixture" \
+        '.run.id = $id | .run.workflow = $wf' \
+        "$LEDGER_WRONG_VERSION" > "$ext_ledger"
+    # REAL run dir in the checkout; only the state.json LEAF is a symlink -> external ledger.
+    rundir="$gitroot/.hivemind/runs/$run_id"
+    mkdir -p "$rundir"
+    leaf="$rundir/state.json"
+    ln -s "$ext_ledger" "$leaf"
+    before="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    # Real, valid inputs file in-checkout: a write the op WOULD record absent the ledger-leaf guard.
+    inputs="$gitroot/mm-inputs.json"
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent-fallback ledger symlink leaf" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$inputs"
+
+    stderr="$gitroot/mm-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
+    after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+
+    is_ledger_blocker=no
+    grep -qE 'refusing symlinked ledger file leaf|ledger file .* resolves outside the checkout' "$stderr" \
+        && is_ledger_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$is_ledger_blocker" == "yes" ]]; then
+        pass "$name" "symlinked ledger LEAF rejected by ledger-read guard (exit $rc, ledger blocker); external ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + ledger blocker + external ledger byte-unchanged; rc=$rc ledger_blocker=$is_ledger_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -2127,6 +2248,8 @@ assert_init_inputs_symlink_leaf_rejected
 assert_record_inputs_symlink_leaf_rejected
 assert_spawn_brood_inputs_symlink_leaf_rejected
 assert_intent_fallback_inputs_symlink_leaf_rejected
+assert_record_ledger_symlink_leaf_rejected
+assert_intent_fallback_ledger_symlink_leaf_rejected
 
 echo ''
 echo '=== Summary ==='
