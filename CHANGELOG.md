@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`hivemind:mark-intent-fallback` engine op + navigator skill — sanctioned ledger write-path for the version-skew intent-fallback resume door and the start-fresh stale-run closeout (#160).** When the overlord detects a version-skew resume stall (ledger workflow definition drifted from installed) or elects to close out a stale run and start fresh, it calls this skill to record the transition atomically: `run.mode` is set to `intent_fallback`, a fallback event is appended to the ledger, and — optionally — `run.status` is updated to `cancelled` or `complete` to close a stale run. No other code path may write `intent_fallback` to the ledger; this skill is the single write gate for that surface. Closes #160.
+- **`hivemind:mark-intent-fallback` engine op + navigator skill — sanctioned ledger write-path for the version-skew intent-fallback resume door and the start-fresh stale-run closeout (#160).** When the overlord detects a version-skew resume stall (ledger workflow definition drifted from installed) or elects to close out a stale run and start fresh, it calls this skill to record the transition atomically: `run.mode` is set to `intent_fallback`, a fallback event is appended to the ledger, and — optionally — `run.status` is updated to `cancelled` or `complete` to close a stale run. The `close_status` closeout path additionally requires the run to be `running` and rejects an already-terminal run (footgun guard). No other code path may write `intent_fallback` to the ledger; this skill is the single write gate for that surface. Closes #160.
 
 ## [2.20.1] - 2026-06-03
 
