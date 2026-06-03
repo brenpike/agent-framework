@@ -68,7 +68,7 @@ Ledger schema version. Distinct from `run.workflow_version`, which tracks the wo
 - `workflow` — selected workflow id (matches a definition under `plugin/workflows/<id>.json`).
 - `workflow_version` — the definition `version` at init time. On resume, a mismatch against the on-disk definition triggers the version-skew gate.
 - `status` — `running` | `complete` | `blocked` | `cancelled`. Terminal-state mapping when `record-state-result` reaches a declared terminal: `complete`→`complete`, `blocked`→`blocked`, `cancelled`→`cancelled`, the human-intervention terminals (`user_input_required` / `review_rejected` / `review_exhausted`)→`blocked` (stopped, needs attention — never masked as success), and any other done-terminal (e.g. `hatchery_monitor`)→`complete`. The enum is fixed; intervention terminals reuse `blocked` rather than adding a new value.
-- `mode` — `deterministic` (default) or `intent_fallback` (see below).
+- `mode` — `deterministic` (default) or `intent_fallback` (see below). The `hivemind:mark-intent-fallback` skill is the sanctioned writer that flips this to `intent_fallback` at a version-skew resume.
 - `created_at` / `updated_at` — ISO 8601 UTC timestamps.
 
 ### `parent.*`
@@ -208,5 +208,9 @@ When the deterministic substrate is invalidated (version skew, torn ledger, miss
   }
 }
 ```
+
+The `hivemind:mark-intent-fallback` skill is the sanctioned writer of this marker. It sets `run.mode: intent_fallback`, appends a fallback event to the `events` log, and — when its `close_status` input is supplied — optionally closes the run by setting `run.status` ∈ {`cancelled`, `complete`}. When `close_status` is omitted the run stays `running` and the ledger continues as an append-only observability log.
+
+`abandoned` is NOT a legal `run.status` value — the enum is fixed at `running` | `complete` | `blocked` | `cancelled`. Stale skew-run closeout therefore reuses `cancelled` rather than introducing a new value.
 
 Determinism only ever adds safety and observability; the `intent_fallback` mode guarantees a run is never stranded. See "Intent-driven execution is the universal fallback" in [workflow-state-machine.md](${CLAUDE_PLUGIN_ROOT}/references/workflow-state-machine.md).
