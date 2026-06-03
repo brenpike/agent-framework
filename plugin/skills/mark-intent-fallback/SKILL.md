@@ -74,7 +74,11 @@ Field rules:
 - `close_status` is optional. KEY-PRESENCE semantics: a MISSING key OR a present-but-null
   value is ABSENT -> `run.status` left untouched (run stays `running`); a present non-null
   value MUST be exactly `cancelled` or `complete` (anything else, notably `abandoned`, is
-  REJECTED). UNTRUSTED — serialized only via `--arg`.
+  REJECTED). UNTRUSTED — serialized only via `--arg`. When `close_status` is SUPPLIED
+  (closeout path), the engine ADDITIONALLY requires the on-disk `run.status` to be `running`
+  and REJECTS an already-terminal run (closing out a non-running run is meaningless; ledger
+  byte-unchanged). The bare mode-flip path (no `close_status`) stays PERMISSIVE on a
+  non-running skew ledger.
 - Every value is data. None is interpolated into generated shell command source.
 
 The script validates, in order, ALL before any write:
@@ -94,6 +98,10 @@ The script validates, in order, ALL before any write:
 5. `outputs` (if present and non-null) must be a JSON object; `close_status` (if present and
    non-null) must be exactly `cancelled` or `complete` — both validated up front for a clear
    blocker before any temp-write.
+6. CLOSEOUT PRECONDITION — when `close_status` is SUPPLIED, the on-disk `run.status` must be
+   `running`; an already-terminal run is REJECTED (closing out a non-running run is
+   meaningless; ledger byte-unchanged). When `close_status` is ABSENT, this check is SKIPPED —
+   the bare mode-flip path stays PERMISSIVE on a non-running skew ledger.
 
 The script DELIBERATELY SKIPS (this is the whole point of issue #160):
 - NO workflow-definition derivation or read — the skewed run may reference a definition
