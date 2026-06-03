@@ -1738,6 +1738,47 @@ assert_intent_fallback_symlink_escape_rejected() {
     fi
 }
 
+# ── GG. closeout footgun guard: close_status on a non-running ledger rejected ─
+
+assert_intent_fallback_close_nonrunning_rejected() {
+    local name="GG:intent-fallback-close-nonrunning-rejected"
+    # The closeout footgun guard: when close_status is SUPPLIED, the op refuses to close a run
+    # whose on-disk run.status is NOT "running" (a run already at a TERMINAL status). This stops
+    # a fallback closeout from clobbering an already-closed ledger. The bare mode-flip path (NO
+    # close_status, asserted by BB) stays permissive; only the SUPPLIED-close path is gated.
+    # Stage the skew ledger (same fixture as BB/CC), then force .run.status AND .state.status to
+    # a TERMINAL value (cancelled) so the precondition fails. Capture sha256 before, invoke with
+    # close_status=complete SUPPLIED, and assert: NON-ZERO exit AND ledger byte-unchanged.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot gg-git)"
+    run_id="engine-case-gg"
+    # stage_record_ledger forces .run.id=run_id (coherence) and .run.workflow=engine-fixture while
+    # keeping the fixture's version skew. Then force run.status + state.status to a TERMINAL value
+    # so the on-disk run is NOT running and the closeout precondition rejects.
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    jq '.run.status = "cancelled" | .state.status = "cancelled"' "$ledger" > "$ledger.tmp" \
+        && mv "$ledger.tmp" "$ledger"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    inputs="$gitroot/gg-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback close non-running" \
+        --arg close_status complete \
+        '{run_id: $run_id, state: $state, summary: $summary, close_status: $close_status}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "close_status on a non-running (cancelled) ledger rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1773,6 +1814,7 @@ assert_intent_fallback_skew_close_cancelled
 assert_intent_fallback_illegal_close_unchanged
 assert_intent_fallback_injection_safe
 assert_intent_fallback_symlink_escape_rejected
+assert_intent_fallback_close_nonrunning_rejected
 
 echo ''
 echo '=== Summary ==='
