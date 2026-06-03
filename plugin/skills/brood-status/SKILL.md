@@ -26,7 +26,7 @@ The entire deterministic collection loop — multi-brood discovery, per-strain e
    ```json
    { "schema": "brood-status-collect/1",
      "broods": [ { "brood_id": "…", "status": "ok|empty|unreadable|blocker", "detail": "…|null",
-       "strains": [ { "name": "…", "branch": "…", "session": "alive|dead",
+       "strains": [ { "name": "…", "branch": "…", "session": "alive|dead", "tmux_session": "…|MISSING|MALFORMED",
          "pr": { "number": null, "state": "open|merged|none|unknown" },
          "workflow_state": "…|MISSING|MALFORMED", "run_status": "…|MISSING|MALFORMED",
          "derived_status": "…" } ],
@@ -62,6 +62,12 @@ The entire deterministic collection loop — multi-brood discovery, per-strain e
      - `PR` ← `#<pr.number>` when `pr.number` is non-null; otherwise `—`. When `pr.state` is `unknown`, render `unknown`.
      - `Workflow State` ← `workflow_state`; `run.status` ← `run_status`. Render `MISSING` → `—`, `MALFORMED` → the literal `MALFORMED`.
      - `Status` ← `derived_status` verbatim.
+
+     After the table, for each strain with `session == "alive"`, emit one attach line so the operator can re-enter the live tmux session:
+     ```
+     <name>: tmux attach -t <tmux_session>
+     ```
+     Render `<tmux_session>` verbatim from the strain's `tmux_session` field — it is already output-encoded by the projector and serialized by `jq` (a `|` is already escaped to `\|` upstream); do not re-escape. Key this strictly on `session == "alive"`, NOT on `tmux_session` being non-sentinel. Strains with `session == "dead"` get no attach line.
    - **`status == "empty"`** — emit the header and:
      ```
      (empty brood — no active strains)

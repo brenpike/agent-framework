@@ -2073,6 +2073,7 @@ assert_collect_ok_one_strain() {
          and (.broods[0].strains|length)==1
          and .broods[0].strains[0].name=="api"
          and .broods[0].strains[0].session=="dead"
+         and .broods[0].strains[0].tmux_session=="\($id)-api"
          and .broods[0].strains[0].workflow_state=="implement_step"
          and .broods[0].strains[0].run_status=="running"
          and (.broods[0].strains[0].derived_status|length)>0
