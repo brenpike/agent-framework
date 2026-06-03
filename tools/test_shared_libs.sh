@@ -1015,6 +1015,67 @@ else
 fi
 assert_eq "c7c:dangling-symlinked-leaf-empty-stdout" "" "$c7c6_out" "inputs: dangling symlinked leaf → empty stdout"
 
+# ── 7d. hivemind_assert_ledger_contained — symlinked-ledger-leaf read-guard ──────
+# 7d-1: real regular-file ledger inside the checkout .hivemind/runs/<id>/ → accept.
+c7d1="$WORKDIR/c7d1/checkout"
+mkdir -p "$c7d1/.hivemind/runs/run-1"
+c7d1_root="$(canon_dir "$c7d1")"
+c7d1_ledger="$c7d1/.hivemind/runs/run-1/state.json"
+: > "$c7d1_ledger"
+c7d1_out="$(hivemind_assert_ledger_contained "$c7d1" "$c7d1_ledger")"
+c7d1_rc=$?
+assert_eq "c7d:real-ledger-rc" "0" "$c7d1_rc" "ledger: real regular-file ledger inside checkout → return 0"
+assert_eq "c7d:real-ledger-root" "$c7d1_root" "$c7d1_out" "ledger: real ledger → canonical root"
+
+# 7d-2: ledger LEAF is a symlink to an external target → reject (leaf read oracle closed).
+# Every dir component is contained; only the leaf symlink ([ -L ] fires) escapes.
+c7d2="$WORKDIR/c7d2/checkout"
+c7d2_ext="$WORKDIR/c7d2/external"
+mkdir -p "$c7d2/.hivemind/runs/run-1" "$c7d2_ext"
+: > "$c7d2_ext/secret.json"
+c7d2_ledger="$c7d2/.hivemind/runs/run-1/state.json"
+ln -s "$c7d2_ext/secret.json" "$c7d2_ledger"
+c7d2_out="$(hivemind_assert_ledger_contained "$c7d2" "$c7d2_ledger" 2>/dev/null)"
+c7d2_rc=$?
+if [ "$c7d2_rc" -ne 0 ]; then
+  pass "c7d:symlinked-leaf-reject" "ledger: symlinked leaf → non-zero return"
+else
+  failed "c7d:symlinked-leaf-reject" "ledger: symlinked leaf must reject; got return 0"
+fi
+assert_eq "c7d:symlinked-leaf-empty-stdout" "" "$c7d2_out" "ledger: symlinked leaf → empty stdout"
+
+# 7d-3: ledger LEAF is a DANGLING symlink (target does not exist) → still reject.
+# Proves [ -L ] fires regardless of target existence.
+c7d3="$WORKDIR/c7d3/checkout"
+c7d3_ext="$WORKDIR/c7d3/external"
+mkdir -p "$c7d3/.hivemind/runs/run-1" "$c7d3_ext"
+c7d3_ledger="$c7d3/.hivemind/runs/run-1/state.json"
+ln -s "$c7d3_ext/missing.json" "$c7d3_ledger"
+c7d3_out="$(hivemind_assert_ledger_contained "$c7d3" "$c7d3_ledger" 2>/dev/null)"
+c7d3_rc=$?
+if [ "$c7d3_rc" -ne 0 ]; then
+  pass "c7d:dangling-symlinked-leaf-reject" "ledger: dangling symlinked leaf → non-zero return"
+else
+  failed "c7d:dangling-symlinked-leaf-reject" "ledger: dangling symlinked leaf must reject; got return 0"
+fi
+assert_eq "c7d:dangling-symlinked-leaf-empty-stdout" "" "$c7d3_out" "ledger: dangling symlinked leaf → empty stdout"
+
+# 7d-4: ledger ANCESTOR is a symlink resolving outside the checkout → reject.
+# The runs/<id> dir is reached through a symlinked .hivemind that escapes the root.
+c7d4="$WORKDIR/c7d4/checkout"
+c7d4_ext="$WORKDIR/c7d4/external"
+mkdir -p "$c7d4" "$c7d4_ext/runs/run-1"
+ln -s "$c7d4_ext" "$c7d4/.hivemind"
+c7d4_ledger="$c7d4/.hivemind/runs/run-1/state.json"
+: > "$c7d4_ledger"
+c7d4_out="$(hivemind_assert_ledger_contained "$c7d4" "$c7d4_ledger" 2>/dev/null)"
+c7d4_rc=$?
+if [ "$c7d4_rc" -ne 0 ]; then
+  pass "c7d:symlinked-ancestor-reject" "ledger: symlinked ancestor escaping root → non-zero return"
+else
+  failed "c7d:symlinked-ancestor-reject" "ledger: symlinked ancestor must reject; got return 0"
+fi
+
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
 echo '=== Summary ==='
