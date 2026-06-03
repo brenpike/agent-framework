@@ -944,6 +944,17 @@ if ! printf '%s\n' "$manifest_json" > "$manifest_tmp" 2>/dev/null \
 fi
 
 # ── Final contract ──────────────────────────────────────────────────────────────
+# Emit a ready-to-paste tmux attach command (stdout) for every strain that is still
+# running, so the operator can watch a live brood child. Skips failed strains; emits
+# nothing (no header, no empty line) when no strain is running.
+emit_attach_lines() {
+  local idx
+  for idx in $(seq 0 $((strain_count - 1))); do
+    [ "${S_STATUS[$idx]}" = "running" ] || continue
+    printf 'attach: tmux attach -t %s   # %s\n' "${S_TMUX[$idx]}" "${S_NAME[$idx]}"
+  done
+}
+
 failed_count=0
 for idx in $(seq 0 $((strain_count - 1))); do
   [ "${S_STATUS[$idx]}" = "failed" ] && failed_count=$((failed_count + 1))
@@ -954,10 +965,12 @@ if [ "$failed_count" -eq 0 ]; then
   # followed by the manifest path.
   printf 'brood_id: %s\n' "$brood_id"
   printf 'manifest: %s\n' "$manifest_path"
+  emit_attach_lines
   exit 0
 fi
 
 printf 'brood_id: %s\n' "$brood_id"
 printf 'blocker: %d of %d strains failed to spawn\nmanifest: %s\n' \
   "$failed_count" "$strain_count" "$manifest_path" >&2
+emit_attach_lines
 exit 1

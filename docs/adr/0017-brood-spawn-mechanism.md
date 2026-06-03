@@ -181,3 +181,19 @@ Decision:
 4. **Manifest v4.** `manifest_version: 4`: ADD top-level `brood_id` + `created_at`; per-strain `branch` DERIVED and `worktree_path` retained as DISPLAY-ONLY; DROP `run.suggested_ledger` (the read side derives it from ground truth) and KEEP `run.suggested_id` (lineage reconciliation key). No back-compat (single-user, unreleased 2.20.0): drain any running brood before upgrade.
 
 The injection-closure architecture (Write-tool/staging inputs, jq-into-inert-variables, out-of-band path derivation, bracketed paste, buffer cleanup, canonical-containment + leaf guards) is unaffected and remains in force. This amendment is APPEND-ONLY; prior text stands as history. Status remains accepted.
+
+## Amendment — 2026-06-02 (#170: permission posture — `--permission-mode auto` + config-provisioning evaluated, rejected; `--dangerously-skip-permissions` retained)
+
+Issue #170 proposed switching brood children off `--dangerously-skip-permissions` to `--permission-mode auto` (with attach-on-demand), and optionally provisioning the child `.claude/` config from the trusted coordinator while sanitizing the base tree's `.claude/` before launch (option C). Both were evaluated against live probes this session and REJECTED; the child retains `--dangerously-skip-permissions`. Base-trust remains the boundary: broods MUST be spawned only against trusted bases.
+
+Rejection reasons:
+
+1. **`--permission-mode auto` introduces a classifier-model Bash dependency.** Under `auto`, every child Bash operation is gated through a safety-classifier model (`claude-opus-4-8`). When that model is unavailable or rate-limited the child can run NO Bash at all (read-only ops still work) — hit live during evaluation. This is a recurring reliability/throughput/cost dependency, amplified across N concurrent strains.
+
+2. **`auto` does not close the flagged channel.** The P0 channel Codex flagged in #156 — a hostile base's committed `.claude/settings.json` SessionStart hooks, `.claude/hooks/` scripts, and `.mcp.json` MCP declarations — executes at child LAUNCH, before any tool-permission gating. Permission mode gates tool ACTIONS, not hook/MCP startup. So `auto` pays a recurring cost to harden an already-trusted-by-precondition channel while leaving the flagged channel open.
+
+3. **Option C would strip load-bearing config.** The base's committed `.claude/settings.json` carries a load-bearing `enabledPlugins` entry enabling the `hivemind` plugin plus `defaultAgent` set to the `hivemind:overlord` agent — that config is what makes a child boot AS an overlord (the `hivemind:overlord` READY substring). Sanitizing/replacing the base `.claude/` before launch would break the child's boot-as-overlord and thus break every strain. C would only help the out-of-scope untrusted-base case while risking breakage of legitimate trusted-base config.
+
+The folder-trust boot gate under `auto` is NOT itself the blocker: folder-trust inherits to subdirectories, and brood worktrees live inside the already-trusted checkout, so children inherit trust at launch. The blocker is reason 1 (classifier dependency), compounded by reasons 2 and 3.
+
+This amendment is APPEND-ONLY; prior text stands as history. Status remains accepted.

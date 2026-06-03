@@ -26,7 +26,7 @@
 #   ONE JSON document on stdout, schema "brood-status-collect/1":
 #     { "schema": "brood-status-collect/1",
 #       "broods": [ { "brood_id", "status":"ok|empty|unreadable|blocker", "detail":string|null,
-#         "strains":[ {"name","branch","session":"alive|dead",
+#         "strains":[ {"name","branch","session":"alive|dead","tmux_session",
 #           "pr":{"number":int|null,"state":"open|merged|none|unknown"},
 #           "workflow_state","run_status","derived_status"} ],
 #         "summary":{"complete","running","blocked_failed","total"} } ],
@@ -236,12 +236,13 @@ for manifest in "${manifests[@]}"; do
       --arg name "$f_name" \
       --arg branch "$f_branch" \
       --arg session "$session_word" \
+      --arg tmux_session "$f_tmux" \
       --argjson number "$pr_num_json" \
       --arg state "$pr_state" \
       --arg wstate "$f_state" \
       --arg run "$f_run" \
       --arg derived "$derived" \
-      '{name:$name, branch:$branch, session:$session,
+      '{name:$name, branch:$branch, session:$session, tmux_session:$tmux_session,
         pr:{number:$number, state:$state},
         workflow_state:$wstate, run_status:$run, derived_status:$derived}')" )
   done <<< "$proj_out"
