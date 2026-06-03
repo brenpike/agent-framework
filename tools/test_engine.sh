@@ -2001,10 +2001,24 @@ assert_spawn_brood_inputs_symlink_leaf_rejected() {
     leaf="$gitroot/.hivemind/jj-spawn-inputs.json"
     ln -s "$target" "$leaf"
 
+    # spawn-brood.sh runs `command -v tmux` / `command -v claude` dependency gates BEFORE the
+    # inputs read-guard. On a host lacking those CLIs (e.g. CI runners) the engine would exit at
+    # the dep gate (rc=1, NO read-guard message) and this assertion could never reach the guard it
+    # is meant to exercise — making the test pass/fail by host tooling, not by the guard. Stub both
+    # on PATH (no-op executables) so execution deterministically reaches the read-guard. Mirrors the
+    # Z-test mktemp-stub idiom; the stub binaries are never invoked because the read-guard rejects
+    # the symlinked leaf well before any tmux/claude call.
+    local stubdir="$WORKDIR/jj-stub"
+    mkdir -p "$stubdir"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$stubdir/tmux"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$stubdir/claude"
+    chmod +x "$stubdir/tmux" "$stubdir/claude"
+
     in_before="$(sha256sum "$target" | awk '{print $1}')"
     stderr="$gitroot/jj-stderr.txt"
-    ( cd "$gitroot" && bash "$FAKE_SPAWN_BROOD_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    ( cd "$gitroot" && PATH="$stubdir:$PATH" bash "$FAKE_SPAWN_BROOD_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
     in_after="$(sha256sum "$target" | awk '{print $1}')"
+    rm -rf "$stubdir"
 
     # No brood state (a manifest.json / inputs.json under broods/) may have been written under the
     # external target — a successful escape would relocate/author state there through the symlink.
