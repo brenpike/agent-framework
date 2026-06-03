@@ -15,29 +15,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Validate JSON manifests
+      - name: Run validation
         run: |
-          python3 -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))"
-          python3 -c "import json; json.load(open('.claude-plugin/marketplace.json'))"
-
-      - name: Run policy_check.sh --strict
-        run: bash ./tools/policy_check.sh --strict
-
-      - name: Run validate_reports.sh (batch)
-        run: bash ./tools/validate_reports.sh --batch tests/reports/
-
-      - name: Run validate_workflows.sh --strict
-        run: bash ./tools/validate_workflows.sh --strict
-
-      - name: Run validate_workflows.sh --self-test
-        run: bash ./tools/validate_workflows.sh --self-test
-
-      - name: Run test_engine.sh
-        run: bash ./tools/test_engine.sh
-
-      - name: Run test_shared_libs.sh
-        run: bash ./tools/test_shared_libs.sh
-
-      - name: Run test_brood_compat.sh
-        run: bash ./tools/test_brood_compat.sh
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            bash ./tools/validate.sh --changed --base origin/main
+          else
+            bash ./tools/validate.sh --all
+          fi
