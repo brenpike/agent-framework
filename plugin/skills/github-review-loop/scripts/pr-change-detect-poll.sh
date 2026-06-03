@@ -127,6 +127,26 @@ POLL_INTERVAL_SECONDS=$((10#$POLL_INTERVAL_SECONDS))
 [ -n "$SELF_LOGIN" ] || poll_fail
 [ -n "$REVIEWER_FILTER" ] || REVIEWER_FILTER="codex-only"
 
+# Timeout wrapper for gh API calls (issue #159).
+# Normal gh graphql/reactions completes in 1-5s; 45s is generous against
+# transient slowness yet bounds a true hang far below Monitor's
+# max_watch_duration, so two consecutive timeouts surface POLL_ERROR well
+# inside any watch window.
+GH_CALL_TIMEOUT_SECONDS=45
+# Prefer coreutils `timeout`; fall back to macOS Homebrew `gtimeout`; degrade
+# gracefully to no wrapper when neither exists (preserves current unguarded
+# behavior on a bare macOS). Using a bash array means an empty prefix expands
+# to zero words — clean prefix of the gh invocation with no extra quoting
+# gymnastics. (issue #159)
+GH_TIMEOUT=()
+if command -v timeout >/dev/null 2>&1; then
+  GH_TIMEOUT=(timeout "$GH_CALL_TIMEOUT_SECONDS")
+elif command -v gtimeout >/dev/null 2>&1; then
+  GH_TIMEOUT=(gtimeout "$GH_CALL_TIMEOUT_SECONDS")
+else
+  echo "github-review-loop: WARNING neither 'timeout' nor 'gtimeout' found on PATH; gh API calls in the change-detection poll are running UNGUARDED and a hung call can stall this poll until max_watch_duration (issue #159). Install GNU coreutils (provides 'timeout'; 'gtimeout' on Homebrew) to restore the timeout guard." >&2
+fi
+
 deadline=$(($(date +%s) + MAX_WATCH_SECONDS))
 fail_count=0
 
@@ -166,7 +186,7 @@ compute_snapshot() {
   local raw line
 
   raw=$( ( set -o pipefail; \
-    gh api graphql \
+    "${GH_TIMEOUT[@]}" gh api graphql \
       -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
       -f query='
 query($owner: String!, $repo: String!, $pr: Int!) {
@@ -275,7 +295,7 @@ EOF
   # --jq per page, so aggregate to a bool in bash (non-empty output = present).
   # This avoids a 100-node GraphQL blind spot and the per-page slurp pitfall.
   local codex_logins
-  codex_logins=$(gh api --paginate "repos/$OWNER/$REPO/issues/$PR_NUMBER/reactions" \
+  codex_logins=$("${GH_TIMEOUT[@]}" gh api --paginate "repos/$OWNER/$REPO/issues/$PR_NUMBER/reactions" \
     --jq '.[] | select(.content == "+1") | ((.user.login // "") | sub("\\[bot\\]$"; "")) | select(. == "chatgpt-codex-connector")' \
     2>/dev/null) || return 1
   if [ -n "$codex_logins" ]; then

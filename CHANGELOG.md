@@ -8,11 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`tmux attach` convenience for running brood children.** `hivemind:spawn-brood` now prints `attach: tmux attach -t <session>` per running strain on its output; `hivemind:brood-status` emits a `tmux_session` field per strain and renders a `tmux attach -t <session>` command for each alive strain, so operators can attach to a running brood child by copy-paste.
-
 ### Changed
 
 ### Fixed
+
+### Security
+
+## [2.20.1] - 2026-06-03
+
+### Added
+
+- **`tmux attach` convenience for running brood children.** `hivemind:spawn-brood` now prints `attach: tmux attach -t <session>` per running strain on its output; `hivemind:brood-status` emits a `tmux_session` field per strain and renders a `tmux attach -t <session>` command for each alive strain, so operators can attach to a running brood child by copy-paste.
+
+### Fixed
+
+- **`github-review-loop`: `gh` API calls in the change-detection poll (`compute_snapshot` in `pr-change-detect-poll.sh`) and in `prefilter.sh` are now wrapped in `timeout` (coreutils `timeout`, macOS `gtimeout` fallback; when neither is present the scripts emit a one-time warning to STDERR and proceed unguarded — install GNU coreutils to restore the timeout guard).** A hung `gh` call previously stalled the persistent Monitor poll loop silently until the Monitor's `max_watch_duration`; it now returns non-zero into the existing failure path — surfacing terminal `POLL_ERROR`/`blocked` in the poll and fail-open `PREFILTER_DISPATCH` in the prefilter. (#159)
 
 ### Security
 
