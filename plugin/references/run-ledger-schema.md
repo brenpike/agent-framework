@@ -209,7 +209,7 @@ When the deterministic substrate is invalidated (version skew, torn ledger, miss
 }
 ```
 
-The `hivemind:mark-intent-fallback` skill is the sanctioned writer of this marker. It sets `run.mode: intent_fallback`, appends a fallback event to the `events` log, and — when its `close_status` input is supplied — optionally closes the run by setting `run.status` ∈ {`cancelled`, `complete`}. When `close_status` is omitted the run stays `running` and the ledger continues as an append-only observability log.
+The `hivemind:mark-intent-fallback` skill is the sanctioned writer of this marker. It sets `run.mode: intent_fallback`, appends a fallback event to the `events` log, and — when its `close_status` input is supplied — optionally closes the run by setting `run.status` ∈ {`cancelled`, `complete`}. Closeout applies ONLY to a `running` run — the engine rejects closing out an already-terminal run (ledger byte-unchanged). When `close_status` is omitted the run stays `running` and the ledger continues as an append-only observability log.
 
 `abandoned` is NOT a legal `run.status` value — the enum is fixed at `running` | `complete` | `blocked` | `cancelled`. Stale skew-run closeout therefore reuses `cancelled` rather than introducing a new value.
 
