@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`hivemind:mark-intent-fallback` engine op + navigator skill — sanctioned ledger write-path for the version-skew intent-fallback resume door and the start-fresh stale-run closeout (#160).** When the overlord detects a version-skew resume stall (ledger workflow definition drifted from installed) or elects to close out a stale run and start fresh, it calls this skill to record the transition atomically: `run.mode` is set to `intent_fallback`, a fallback event is appended to the ledger, and — optionally — `run.status` is updated to `cancelled` or `complete` to close a stale run. The `close_status` closeout path additionally requires the run to be `running` and rejects an already-terminal run (footgun guard). No other code path may write `intent_fallback` to the ledger; this skill is the single write gate for that surface. Closes #160.
 
+### Security
+
+- **Containment-guard-before-read ordering defect swept across all engine scripts, and a CHECK9 regression lint added to `policy_check.sh` (issue #163 root-cause closure).** The defect — a symlinked ancestor or leaf enabling an external-read JSON-validity oracle before the containment assert ran — was first fixed in `mark-intent-fallback.sh`; this sweep applies the same guard-before-read ordering to every remaining engine read site: `record-state-result.sh` (inputs file read + ledger read), `init-run-ledger.sh` (inputs file read site), and `spawn-brood.sh` (inputs validity probe). In each case the containment assert (`hivemind_assert_inputs_contained` / `hivemind_assert_file_contained`) is moved ahead of the first filesystem read so no path content is consumed before containment is confirmed. A new `policy_check.sh` CHECK9 lint enforces this ordering mechanically: any containment-sourcing engine that reads a guarded path before its containment assert fails the lint, preventing regression of the class. Closes #163.
+
 ## [2.20.1] - 2026-06-03
 
 ### Added
