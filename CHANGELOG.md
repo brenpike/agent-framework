@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`github-review-loop`: `gh` API calls in the change-detection poll (`compute_snapshot` in `pr-change-detect-poll.sh`) and in `prefilter.sh` are now wrapped in `timeout` (coreutils `timeout`, macOS `gtimeout` fallback, graceful degrade to unguarded when neither is present).** A hung `gh` call previously stalled the persistent Monitor poll loop silently until the Monitor's `max_watch_duration`; it now returns non-zero into the existing failure path — surfacing terminal `POLL_ERROR`/`blocked` in the poll and fail-open `PREFILTER_DISPATCH` in the prefilter. (#159)
+- **`github-review-loop`: `gh` API calls in the change-detection poll (`compute_snapshot` in `pr-change-detect-poll.sh`) and in `prefilter.sh` are now wrapped in `timeout` (coreutils `timeout`, macOS `gtimeout` fallback; when neither is present the scripts emit a one-time warning to STDERR and proceed unguarded — install GNU coreutils to restore the timeout guard).** A hung `gh` call previously stalled the persistent Monitor poll loop silently until the Monitor's `max_watch_duration`; it now returns non-zero into the existing failure path — surfacing terminal `POLL_ERROR`/`blocked` in the poll and fail-open `PREFILTER_DISPATCH` in the prefilter. (#159)
 
 ### Security
 
