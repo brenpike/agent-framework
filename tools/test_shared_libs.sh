@@ -26,7 +26,7 @@ LEDGER_PRESENT="$FIX_DIR/child-ledger-present.json"
 
 for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/allowlist.sh" "$SHARED_DIR/manifest-json.sh" "$SHARED_DIR/ledger-project.sh" \
-                "$SHARED_DIR/brood-status-derive.sh"; do
+                "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh"; do
   [ -f "$required" ] || { echo "FAIL: required fixture/lib missing: $required" >&2; exit 2; }
 done
 
@@ -41,6 +41,8 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 . "$SHARED_DIR/ledger-project.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/brood-status-derive.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/containment.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -733,6 +735,252 @@ assert_eq "global-agg:multi-with-unreadable" "3 1 3 5" \
 # All unreadable -> total_broods counts them, unreadable counts them, zero strains/complete.
 assert_eq "global-agg:all-unreadable" "2 2 0 0" \
   "$(hivemind_aggregate_global "1:0:0" "1:0:0")" "two unreadable broods -> 2 broods, 2 unreadable, 0/0"
+
+# ── Section 7: containment.sh ───────────────────────────────────────────────────
+echo ''
+echo '=== containment.sh: hivemind_assert_contained / _file_contained / _inputs_contained ==='
+#
+# PURE BASH — no jq/tmux/claude/git required. Every fixture is a real-disk dir/symlink tree
+# built under WORKDIR and cleaned up by the existing EXIT trap. Each case gets its OWN
+# per-case subdir so fixtures never leak between cases.
+
+# ── 7a. hivemind_assert_contained — dir-chain depth-completeness ─────────────────
+
+# Helper: compute the canonical path for a directory that exists on disk.
+# Usage: canon_dir <dir>
+canon_dir() { cd "$1" 2>/dev/null && pwd -P; }
+
+# 7a-1: nonexistent leaf chain inside a real checkout → accept.
+c7a1="$WORKDIR/c7a1/checkout"
+mkdir -p "$c7a1"
+c7a1_root="$(canon_dir "$c7a1")"
+run_id_7a1="2026-01-01T00-00-00Z--run1"
+c7a1_out="$(hivemind_assert_contained "$c7a1" ".hivemind/runs/$run_id_7a1")"
+c7a1_rc=$?
+assert_eq "c7a:nonexistent-leaf-rc" "0" "$c7a1_rc" "nonexistent leaf chain → return 0"
+assert_eq "c7a:nonexistent-leaf-root" "$c7a1_root" "$c7a1_out" "nonexistent leaf chain → echoes canonical root"
+
+# 7a-2: partial ancestors exist (mkdir .hivemind/runs), leaf absent → accept.
+c7a2="$WORKDIR/c7a2/checkout"
+mkdir -p "$c7a2/.hivemind/runs"
+c7a2_root="$(canon_dir "$c7a2")"
+c7a2_out="$(hivemind_assert_contained "$c7a2" ".hivemind/runs/run-leaf-absent")"
+c7a2_rc=$?
+assert_eq "c7a:partial-ancestors-rc" "0" "$c7a2_rc" "partial ancestors real, leaf absent → return 0"
+assert_eq "c7a:partial-ancestors-root" "$c7a2_root" "$c7a2_out" "partial ancestors real → echoes canonical root"
+
+# 7a-3: leaf-depth symlink — .hivemind/runs is real, leaf is a symlink to external dir → reject.
+c7a3="$WORKDIR/c7a3/checkout"
+c7a3_ext="$WORKDIR/c7a3/external"
+mkdir -p "$c7a3/.hivemind/runs" "$c7a3_ext"
+ln -s "$c7a3_ext" "$c7a3/.hivemind/runs/symlinked-run"
+c7a3_out="$(hivemind_assert_contained "$c7a3" ".hivemind/runs/symlinked-run" 2>/dev/null)"
+c7a3_rc=$?
+if [ "$c7a3_rc" -ne 0 ]; then
+  pass "c7a:leaf-symlink-reject" "symlinked leaf → non-zero return"
+else
+  failed "c7a:leaf-symlink-reject" "symlinked leaf must reject; got return 0"
+fi
+
+# 7a-4: ancestor-depth symlink — .hivemind itself is a symlink to external dir → reject.
+c7a4="$WORKDIR/c7a4/checkout"
+c7a4_ext="$WORKDIR/c7a4/external"
+mkdir -p "$c7a4" "$c7a4_ext"
+ln -s "$c7a4_ext" "$c7a4/.hivemind"
+c7a4_out="$(hivemind_assert_contained "$c7a4" ".hivemind/runs/any-run" 2>/dev/null)"
+c7a4_rc=$?
+if [ "$c7a4_rc" -ne 0 ]; then
+  pass "c7a:ancestor-symlink-reject" "symlinked ancestor .hivemind → non-zero return"
+else
+  failed "c7a:ancestor-symlink-reject" "symlinked ancestor .hivemind must reject; got return 0"
+fi
+
+# 7a-5: deepest-existing prefix resolves outside root via symlinked component → reject.
+# .hivemind/runs is real but symlinked TO the external dir, so canonicalization of that
+# prefix yields a path outside the checkout.
+c7a5="$WORKDIR/c7a5/checkout"
+c7a5_ext="$WORKDIR/c7a5/external"
+mkdir -p "$c7a5/.hivemind" "$c7a5_ext"
+ln -s "$c7a5_ext" "$c7a5/.hivemind/runs"
+c7a5_out="$(hivemind_assert_contained "$c7a5" ".hivemind/runs/some-run" 2>/dev/null)"
+c7a5_rc=$?
+if [ "$c7a5_rc" -ne 0 ]; then
+  pass "c7a:outside-prefix-reject" "prefix resolves outside checkout → non-zero return"
+else
+  failed "c7a:outside-prefix-reject" "prefix outside checkout must reject; got return 0"
+fi
+
+# 7a-6: sibling-prefix .hivemind-evil is a real dir and must be independently contained
+# (trailing-slash guard prevents .hivemind-evil from prefix-matching .hivemind).
+c7a6="$WORKDIR/c7a6/checkout"
+mkdir -p "$c7a6/.hivemind-evil"
+c7a6_root="$(canon_dir "$c7a6")"
+c7a6_out="$(hivemind_assert_contained "$c7a6" ".hivemind-evil/data")"
+c7a6_rc=$?
+assert_eq "c7a:sibling-prefix-rc" "0" "$c7a6_rc" "sibling-prefix .hivemind-evil real dir → accept"
+assert_eq "c7a:sibling-prefix-root" "$c7a6_root" "$c7a6_out" "sibling-prefix → echoes canonical root"
+# Also confirm that a SYMLINKED .hivemind-evil rejects independently (no bleed from .hivemind).
+c7a6_ext="$WORKDIR/c7a6/external"
+mkdir -p "$c7a6_ext"
+ln -s "$c7a6_ext" "$c7a6/.hivemind-evil-link"
+c7a6b_out="$(hivemind_assert_contained "$c7a6" ".hivemind-evil-link/data" 2>/dev/null)"
+c7a6b_rc=$?
+if [ "$c7a6b_rc" -ne 0 ]; then
+  pass "c7a:sibling-symlinked-reject" "symlinked sibling .hivemind-evil-link → non-zero return"
+else
+  failed "c7a:sibling-symlinked-reject" "symlinked sibling must reject independently; got return 0"
+fi
+
+# 7a-7: un-canonicalizable root (raw_repo_root does not exist) → non-zero, empty stdout.
+c7a7_out="$(hivemind_assert_contained "$WORKDIR/c7a7/does-not-exist" ".hivemind/runs/x" 2>/dev/null)"
+c7a7_rc=$?
+if [ "$c7a7_rc" -ne 0 ]; then
+  pass "c7a:bad-root-rc" "non-existent root → non-zero return"
+else
+  failed "c7a:bad-root-rc" "non-existent root must reject; got return 0"
+fi
+assert_eq "c7a:bad-root-empty-stdout" "" "$c7a7_out" "non-existent root → empty stdout"
+
+# ── 7b. hivemind_assert_file_contained — regular-or-absent leaf ──────────────────
+
+# 7b-1: non-existent leaf, parent dirs real → accept.
+c7b1="$WORKDIR/c7b1/checkout"
+mkdir -p "$c7b1/.hivemind/brood"
+c7b1_root="$(canon_dir "$c7b1")"
+c7b1_out="$(hivemind_assert_file_contained "$c7b1" ".hivemind/brood/task.md")"
+c7b1_rc=$?
+assert_eq "c7b:nonexistent-leaf-rc" "0" "$c7b1_rc" "file: non-existent leaf → return 0"
+assert_eq "c7b:nonexistent-leaf-root" "$c7b1_root" "$c7b1_out" "file: non-existent leaf → canonical root"
+
+# 7b-2: regular-file leaf exists → accept.
+c7b2="$WORKDIR/c7b2/checkout"
+mkdir -p "$c7b2/.hivemind/brood"
+: > "$c7b2/.hivemind/brood/task.md"
+c7b2_root="$(canon_dir "$c7b2")"
+c7b2_out="$(hivemind_assert_file_contained "$c7b2" ".hivemind/brood/task.md")"
+c7b2_rc=$?
+assert_eq "c7b:regular-file-rc" "0" "$c7b2_rc" "file: regular-file leaf → return 0"
+assert_eq "c7b:regular-file-root" "$c7b2_root" "$c7b2_out" "file: regular-file leaf → canonical root"
+
+# 7b-3: single-component leaf (bare filename at checkout root, nonexistent) → accept.
+c7b3="$WORKDIR/c7b3/checkout"
+mkdir -p "$c7b3"
+c7b3_root="$(canon_dir "$c7b3")"
+c7b3_out="$(hivemind_assert_file_contained "$c7b3" "task.md")"
+c7b3_rc=$?
+assert_eq "c7b:single-component-rc" "0" "$c7b3_rc" "file: single-component nonexistent leaf → return 0"
+assert_eq "c7b:single-component-root" "$c7b3_root" "$c7b3_out" "file: single-component → canonical root"
+
+# 7b-4: symlink leaf pointing at a non-existent target (dangling) → reject.
+c7b4="$WORKDIR/c7b4/checkout"
+mkdir -p "$c7b4/.hivemind/brood"
+ln -s "$WORKDIR/c7b4/nowhere" "$c7b4/.hivemind/brood/task.md"
+c7b4_out="$(hivemind_assert_file_contained "$c7b4" ".hivemind/brood/task.md" 2>/dev/null)"
+c7b4_rc=$?
+if [ "$c7b4_rc" -ne 0 ]; then
+  pass "c7b:dangling-symlink-reject" "file: dangling symlink leaf → non-zero return"
+else
+  failed "c7b:dangling-symlink-reject" "file: dangling symlink leaf must reject; got return 0"
+fi
+
+# 7b-5: directory leaf — leaf path is a directory → reject.
+c7b5="$WORKDIR/c7b5/checkout"
+mkdir -p "$c7b5/.claude/settings.local.json"
+c7b5_out="$(hivemind_assert_file_contained "$c7b5" ".claude/settings.local.json" 2>/dev/null)"
+c7b5_rc=$?
+if [ "$c7b5_rc" -ne 0 ]; then
+  pass "c7b:directory-leaf-reject" "file: directory leaf → non-zero return"
+else
+  failed "c7b:directory-leaf-reject" "file: directory leaf must reject; got return 0"
+fi
+
+# 7b-6: FIFO leaf — gated on mkfifo availability (skip if absent).
+c7b6="$WORKDIR/c7b6/checkout"
+mkdir -p "$c7b6/.hivemind/brood"
+if command -v mkfifo >/dev/null 2>&1; then
+  mkfifo "$c7b6/.hivemind/brood/task.md"
+  c7b6_out="$(hivemind_assert_file_contained "$c7b6" ".hivemind/brood/task.md" 2>/dev/null)"
+  c7b6_rc=$?
+  if [ "$c7b6_rc" -ne 0 ]; then
+    pass "c7b:fifo-leaf-reject" "file: FIFO leaf → non-zero return"
+  else
+    failed "c7b:fifo-leaf-reject" "file: FIFO leaf must reject; got return 0"
+  fi
+else
+  pass "c7b:fifo-leaf-reject" "file: FIFO leaf test skipped (mkfifo absent)"
+fi
+
+# 7b-7: symlinked-parent chain — .hivemind symlinked, leaf .hivemind/brood/task.md → reject.
+c7b7="$WORKDIR/c7b7/checkout"
+c7b7_ext="$WORKDIR/c7b7/external"
+mkdir -p "$c7b7" "$c7b7_ext/brood"
+ln -s "$c7b7_ext" "$c7b7/.hivemind"
+c7b7_out="$(hivemind_assert_file_contained "$c7b7" ".hivemind/brood/task.md" 2>/dev/null)"
+c7b7_rc=$?
+if [ "$c7b7_rc" -ne 0 ]; then
+  pass "c7b:symlinked-parent-reject" "file: symlinked parent .hivemind → non-zero return"
+else
+  failed "c7b:symlinked-parent-reject" "file: symlinked parent chain must reject; got return 0"
+fi
+
+# ── 7c. hivemind_assert_inputs_contained — symlinked-ancestor read-guard ─────────
+
+# 7c-1: inputs file at a real path inside the checkout → accept.
+c7c1="$WORKDIR/c7c1/checkout"
+mkdir -p "$c7c1/.hivemind"
+c7c1_root="$(canon_dir "$c7c1")"
+c7c1_inputs="$c7c1/.hivemind/spawn-inputs.json"
+: > "$c7c1_inputs"
+c7c1_out="$(hivemind_assert_inputs_contained "$c7c1" "$c7c1_inputs")"
+c7c1_rc=$?
+assert_eq "c7c:real-inputs-rc" "0" "$c7c1_rc" "inputs: real path inside checkout → return 0"
+assert_eq "c7c:real-inputs-root" "$c7c1_root" "$c7c1_out" "inputs: real path → canonical root"
+
+# 7c-2: inputs file whose canonical dir escapes via a symlinked ancestor → reject.
+c7c2="$WORKDIR/c7c2/checkout"
+c7c2_ext="$WORKDIR/c7c2/external"
+mkdir -p "$c7c2" "$c7c2_ext"
+ln -s "$c7c2_ext" "$c7c2/link"
+c7c2_inputs="$c7c2/link/spawn-inputs.json"
+: > "$c7c2_inputs"
+c7c2_out="$(hivemind_assert_inputs_contained "$c7c2" "$c7c2_inputs" 2>/dev/null)"
+c7c2_rc=$?
+if [ "$c7c2_rc" -ne 0 ]; then
+  pass "c7c:symlinked-ancestor-reject" "inputs: symlinked ancestor → non-zero return"
+else
+  failed "c7c:symlinked-ancestor-reject" "inputs: symlinked ancestor must reject; got return 0"
+fi
+
+# 7c-3: un-canonicalizable root → non-zero, empty stdout.
+c7c3_fake_root="$WORKDIR/c7c3/does-not-exist"
+c7c3_inputs="$WORKDIR/c7c3/some-file.json"
+mkdir -p "$WORKDIR/c7c3"
+: > "$c7c3_inputs"
+c7c3_out="$(hivemind_assert_inputs_contained "$c7c3_fake_root" "$c7c3_inputs" 2>/dev/null)"
+c7c3_rc=$?
+if [ "$c7c3_rc" -ne 0 ]; then
+  pass "c7c:bad-root-rc" "inputs: non-existent root → non-zero return"
+else
+  failed "c7c:bad-root-rc" "inputs: non-existent root must reject; got return 0"
+fi
+assert_eq "c7c:bad-root-empty-stdout" "" "$c7c3_out" "inputs: non-existent root → empty stdout"
+
+# 7c-4: sibling-named external dir must not prefix-match the checkout root (trailing-slash guard).
+# The external dir shares a prefix with the checkout root (e.g. /tmp/X/checkout-evil vs /tmp/X/checkout)
+# but is distinct. An inputs file there must be rejected.
+c7c4_base="$WORKDIR/c7c4"
+c7c4_root="$c7c4_base/checkout"
+c7c4_evil="$c7c4_base/checkout-evil"
+mkdir -p "$c7c4_root" "$c7c4_evil"
+c7c4_inputs="$c7c4_evil/spawn-inputs.json"
+: > "$c7c4_inputs"
+c7c4_out="$(hivemind_assert_inputs_contained "$c7c4_root" "$c7c4_inputs" 2>/dev/null)"
+c7c4_rc=$?
+if [ "$c7c4_rc" -ne 0 ]; then
+  pass "c7c:sibling-no-prefix-match" "inputs: sibling-named external dir must not prefix-match → non-zero return"
+else
+  failed "c7c:sibling-no-prefix-match" "inputs: sibling-named dir prefix-matched checkout root (trailing-slash guard broken)"
+fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
