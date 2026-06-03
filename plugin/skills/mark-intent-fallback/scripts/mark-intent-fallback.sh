@@ -19,6 +19,11 @@
 #     the intent-driven half.
 #   - NO state-existence check (the recorded state is NOT validated against any definition).
 #   - NO transition/result validation, NO next_state resolution, NO terminal mapping.
+#   - NO binding/version precondition on the closeout path either — that guard stays
+#     deliberately skipped. The ONLY closeout precondition is the narrow footgun guard below:
+#     when close_status is supplied, the on-disk run.status MUST be exactly "running" (you
+#     cannot close out an already-terminal run). The bare mode-flip path (no close_status)
+#     stays fully permissive and may run on a non-running skew ledger.
 #
 # WHAT IT REUSES IDENTICALLY from record-state-result.sh (security posture is unchanged):
 #   - Identity derivation: run_id is the ONLY identity the caller supplies; the ledger path
@@ -223,6 +228,16 @@ if [ "$have_close_status" = true ]; then
     cancelled|complete) : ;;
     *) blocker "close_status must be cancelled or complete, got: $close_status; ledger unchanged" ;;
   esac
+
+  # ── Closeout footgun guard (close_status path ONLY) ─────────────────────────
+  # You cannot close out an already-terminal run. Read the on-disk run.status from the
+  # validated ledger (identity/coherence/containment all proven above) and reject unless it is
+  # exactly "running". Empty/missing status -> not running -> reject (correct). This runs
+  # BEFORE any mktemp/temp-write, so a reject leaves the ledger byte-unchanged. The bare
+  # mode-flip path (no close_status) is intentionally NOT gated and may run on a skew ledger.
+  ledger_status="$(jq -r '.run.status // ""' "$ledger")"
+  [ "$ledger_status" = "running" ] \
+    || blocker "close_status closeout requires a running run; run.status is '$ledger_status'; ledger unchanged"
 fi
 
 # Resulting run.status reported on stdout: the validated close_status if supplied, else the
