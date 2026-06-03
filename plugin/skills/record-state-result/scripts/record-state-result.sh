@@ -247,7 +247,10 @@ ledger="$repo_root/.hivemind/runs/$run_id/state.json"
 # requires the ledger to exist), so the helper checks them all. We then KEEP record's
 # existing basename/parent/state.json-existence assertions on the canonicalized ledger dir
 # (after the existence check below) so net behavior is identical to today; only the
-# symlink-rejection primitive is now shared.
+# symlink-rejection primitive is now shared. The state.json LEAF itself (a symlinked ledger
+# file under a real run dir) is now [ -L ]-rejected by the dedicated
+# hivemind_assert_ledger_contained guard below, before any [ -f ]/jq read, completing
+# leaf-symmetry with the inputs-file and write-target leaves.
 # (containment.sh was sourced once early, just after plugin_root is computed.)
 canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id")" \
   || blocker "refusing: ${canon_repo_root:-$repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged"
@@ -265,6 +268,17 @@ case "$canon_runs/$run_id/state.json/" in
   "$canon_runs/"*) : ;;
   *) blocker "ledger resolves outside the checkout runs dir; ledger unchanged" ;;
 esac
+
+# ── Ledger-read LEAF guard (shared helper) — rejects a symlinked state.json LEAF ──
+# The ancestor/runs-dir guard above proves the chain DOWN TO the <run_id> run-dir but does
+# NOT inspect the state.json leaf itself. When the run dir is real but state.json is a
+# SYMLINK, the `[ -f "$ledger" ]`/`jq -e .`/`jq -r '.run.id'` reads below would FOLLOW it to
+# an external target — a content/validity read oracle the ancestor guard never sees. This
+# shared helper [ -L ]-rejects the leaf on the RAW path FIRST (firing even for a dangling
+# target) before any [ -f ]/jq read, completing leaf-symmetry with the inputs-file and
+# write-target leaves. A legitimate regular-file ledger is [ -L ]-false and passes through.
+hivemind_assert_ledger_contained "$repo_root" "$ledger" >/dev/null \
+  || blocker "refusing to read the ledger: $ledger resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged"
 
 [ -f "$ledger" ] || blocker "ledger file does not exist: $ledger"
 jq -e . "$ledger" >/dev/null 2>&1 || blocker "ledger file is not valid JSON: $ledger"
