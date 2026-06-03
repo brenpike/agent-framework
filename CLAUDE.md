@@ -45,32 +45,53 @@ Default branches:
 
 ## Validation
 
-No compiler or code-coverage suite — this is a Markdown plugin. CI (`.github/workflows/policy-check.yml`) runs on every PR and push to `main` and enforces three gates:
+No compiler or code-coverage suite — this is a Markdown plugin. The full validation suite (`tools/validate.sh --all`) enforces three categories of gates:
 
-1. **JSON manifests parse** — both `plugin/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`. Local equivalent: `jq . <path> > /dev/null`.
-2. **Prose/contract linter** — `bash tools/policy_check.sh --strict`. Validates `plugin/` files against fixtures in `tests/policy/`, `tests/plugin/`, and `tests/workflows/`, and checks that `${CLAUDE_PLUGIN_ROOT}/...` path refs resolve. Advisory by default; `--strict` fails on any finding not in `tests/policy/policy-lint-allowlist.json`. Bare-path invariant enforced here (`CHECK8`).
-3. **Report-format linter** — `bash tools/validate_reports.sh --batch tests/reports/`. Validates agent report fixtures against report format contracts.
+1. **JSON manifests parse** — both `plugin/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
+2. **Prose/contract linter** — `tools/policy_check.sh --strict`. Validates `plugin/` files against fixtures in `tests/policy/`, `tests/plugin/`, and `tests/workflows/`, and checks that `${CLAUDE_PLUGIN_ROOT}/...` path refs resolve. Advisory by default; `--strict` fails on any finding not in `tests/policy/policy-lint-allowlist.json`. Bare-path invariant enforced here (`CHECK8`).
+3. **Report-format linter** — `tools/validate_reports.sh --batch tests/reports/`. Validates agent report fixtures against report format contracts.
 
-Local pre-merge:
+### Local pre-merge
 
-1. JSON manifests parse: `jq . plugin/.claude-plugin/plugin.json > /dev/null` and `jq . .claude-plugin/marketplace.json > /dev/null`.
-2. No bare path refs introduced — `grep -rE '\b(agents|skills|governance)/' plugin/` should only return `${CLAUDE_PLUGIN_ROOT}/...` lines or `_shared/` references; flag anything else. Enforced in CI by `tools/policy_check.sh` (`CHECK8`).
-3. Smoke install in a scratch Claude Code session before publishing breaking layout changes:
-   ```text
-   /plugin marketplace add <local-path-or-git-url>
-   /plugin install hivemind@brenpike
-   ```
+Validation runs **once, before opening the PR**, at the `validate` workflow state. The canonical local command is:
+
+```bash
+bash tools/validate.sh --changed
+```
+
+This resolves the merge-base against `origin/main` → `main` → `HEAD~1`, computes the changed-file set (committed diff + uncommitted working-tree changes), and runs only the suites relevant to those paths. The path→suite mapping lives in `tools/validate.sh`; docs here summarise it rather than duplicate it.
+
+**FAIL-CLOSED guarantee:** any unmapped path inside a code-bearing tree, an unresolvable base ref, or any edit to `tools/**` (validator bootstrap) escalates automatically to the full suite. Nothing relevant is ever silently skipped.
+
+For an exhaustive local run identical to the push-to-main CI gate:
+
+```bash
+bash tools/validate.sh --all
+```
+
+To assert the path→suite mapping covers every suite and test directory (no coverage gaps):
+
+```bash
+bash tools/validate.sh --self-test
+```
+
+Smoke install in a scratch Claude Code session before publishing breaking layout changes:
+
+```text
+/plugin marketplace add <local-path-or-git-url>
+/plugin install hivemind@brenpike
+```
+
+### CI behavior
+
+CI runs via `.github/workflows/policy-check.yml` (job: `policy-check`), enforced on every PR and every push to `main`:
+
+- **PR:** `bash tools/validate.sh --changed --base origin/main` — path-selective subset.
+- **Push to main:** `bash tools/validate.sh --all` — full suite merge gate (belt-and-suspenders).
 
 ### Change-Class Validation
 
-Apply the command set for the change class that matches the files modified.
-
-| Change class | Condition | Required checks |
-|---|---|---|
-| docs-only | All modified files are outside `plugin/` and outside `.claude-plugin/` | None — skip JSON manifest and bare-path checks |
-| plugin-runtime | Any modified file is inside `plugin/` or inside `.claude-plugin/` | Full: JSON manifest parse + bare-path grep (as defined above) |
-
-When a single PR mixes docs-only and plugin-runtime files, apply the plugin-runtime command set.
+`tools/validate.sh --changed` performs change-class selection automatically. There is no manual table to consult: the dispatcher maps each changed path to the relevant suites (FAIL-CLOSED) and runs only those. Edits outside every code-bearing tree (e.g. `README.md`, `docs/`) produce no code-suite runs; edits inside `plugin/`, `.claude-plugin/`, `tools/`, or `tests/` trigger the appropriate suites or, when a path is unmapped, the full suite.
 
 ## Common pitfalls
 
