@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`github-review-loop`: `gh` API calls in the change-detection poll (`compute_snapshot` in `pr-change-detect-poll.sh`) and in `prefilter.sh` are now wrapped in `timeout` (coreutils `timeout`, macOS `gtimeout` fallback, graceful degrade to unguarded when neither is present).** A hung `gh` call previously stalled the persistent Monitor poll loop silently until the Monitor's `max_watch_duration`; it now returns non-zero into the existing failure path — surfacing terminal `POLL_ERROR`/`blocked` in the poll and fail-open `PREFILTER_DISPATCH` in the prefilter. (#159)
+
 ### Security
 
 - **Permission-posture switch for brood children REJECTED — base-trust remains the boundary (#170, closed).** Switching brood children from `--dangerously-skip-permissions` to `--permission-mode auto` and provisioning trusted-coordinator config were evaluated and rejected under #170 (see ADR-0017, 2026-06-02 amendment): `auto` mode gates tool actions but does not bound SessionStart hook / MCP startup execution at child launch, introduces a reliability and throughput dependency across N concurrent strains, and yields no Bash at all when the safety-classifier is unavailable. Trusted-coordinator config provisioning was rejected because the base's committed `.claude/settings.json` carries the load-bearing `enabledPlugins`/`defaultAgent` entries required to boot the child as an overlord — stripping them breaks every strain. Broods must be spawned only against trusted bases.
