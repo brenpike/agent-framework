@@ -161,18 +161,22 @@ INPUTS_FILE="${1:-}"
   || blocker "missing required argument: path to run-ledger inputs JSON file (\$1)"
 [ -f "$INPUTS_FILE" ] \
   || blocker "run-ledger inputs file $INPUTS_FILE does not exist"
-jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
-  || blocker "run-ledger inputs file $INPUTS_FILE is not valid JSON"
 
 # ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
 # Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
 # symlinked ancestor) — converting a silent external-read into a hard blocker BEFORE the
-# first jq field read below. This guards the READ source; the later hivemind_assert_contained
-# call guards the WRITE chain — both are needed. The helper never exits; map non-zero to our
-# blocker. Empty git root (not inside a checkout) is tolerated by the helper's own canonical
-# guard; the write-chain repo_root check below remains the authoritative not-in-a-repo gate.
+# first jq read below (the JSON-validity probe AND every field read). Running this BEFORE the
+# `jq -e` validity probe is REQUIRED: `jq -e` opening an attacker-supplied external path is
+# itself an external-file JSON-validity read oracle, so the containment guard must gate it.
+# This guards the READ source; the later hivemind_assert_contained call guards the WRITE
+# chain — both are needed. The helper never exits; map non-zero to our blocker. Empty git root
+# (not inside a checkout) is tolerated by the helper's own canonical guard; the write-chain
+# repo_root check below remains the authoritative not-in-a-repo gate.
 hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
   || blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)"
+
+jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
+  || blocker "run-ledger inputs file $INPUTS_FILE is not valid JSON"
 
 # Parse every field into the SAME inert variables the downstream logic already uses.
 # Strings via `jq -r '.field // ""'`; the workflow_version stays a JSON number (read as
