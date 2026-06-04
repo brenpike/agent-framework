@@ -108,10 +108,87 @@ export TMUX_TMPDIR
 # it can only ever touch the disposable server's sessions, never the caller's
 # default-server sessions.
 reap_brood_sessions() { tmux kill-session -t brood-api 2>/dev/null || true; return 0; }
+
+# ── Test-scoped `claude` stub (#169 — make the child-provisioning escape cases CI-runnable) ──
+# CI lacks a real `claude` binary, so the six spawn-invoking cases historically SKIP at the
+# spawn-brood dep gate (`command -v claude`). That left the P0 symlink-leaf containment guards
+# UN-exercised in CI: deleting a guard would NOT turn CI red. To close that, this suite ships a
+# SELF-INSTALLED, TEST-SCOPED `claude` shim that lets the dep gate pass on a host without a real
+# claude, WITHOUT ever installing globally — the stub dir is only ever prepended to PATH inside
+# the spawn-invocation subshell of each case (STEP-003), never exported suite-wide.
+#
+# The shim does NO real work. On invocation it: records a launch (CWD via `pwd -P`, argv, and
+# which config surfaces are present relative to CWD) to a per-case launch-marker file passed via
+# the HIVEMIND_STUB_MARKER env var; prints the readiness line spawn-brood polls for
+# (`hivemind:overlord` — READY_SUBSTRING) so the positive case's Pass-2 capture-pane match
+# succeeds without burning the 90s READY_TIMEOUT; keeps the pane alive briefly so at least one
+# capture-pane poll (POLL_INTERVAL=2) reads the line; then exits 0. It uses only POSIX builtins +
+# printf redirection (it runs under `tmux new-session` as a detached pty with no stdin).
+#
+# The marker path is UNIQUE PER CASE (each case sets HIVEMIND_STUB_MARKER to its own file), so a
+# launch recorded by one case can never bleed into another case's assertions.
+STUB_BIN=""
+build_claude_stub() {
+    # Idempotent: build once, reuse across cases. Reaped via the EXIT cleanup() below.
+    [ -n "$STUB_BIN" ] && return 0
+    STUB_BIN="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-stub.XXXXXX")"
+    cat > "$STUB_BIN/claude" <<'STUB_EOF'
+#!/usr/bin/env bash
+# Test-scoped `claude` stub (hivemind #169). NO real work — records the launch + exits 0.
+# Reads HIVEMIND_STUB_MARKER (per-case unique) for the launch-record path.
+marker="${HIVEMIND_STUB_MARKER:-}"
+if [ -n "$marker" ]; then
+    {
+        printf 'LAUNCH\n'
+        printf 'cwd=%s\n' "$(pwd -P)"
+        printf 'argv=%s\n' "$*"
+        if [ -f .hivemind/brood/task.md ]; then printf 'task_md=present\n'; else printf 'task_md=absent\n'; fi
+        if [ -f .claude/settings.local.json ]; then printf 'settings_local=present\n'; else printf 'settings_local=absent\n'; fi
+    } >> "$marker" 2>/dev/null || true
+fi
+# Emit the readiness chrome spawn-brood's capture-pane poll greps for (READY_SUBSTRING),
+# then keep the pane alive long enough for at least one POLL_INTERVAL=2 poll to read it.
+printf 'hivemind:overlord\n'
+sleep 4
+exit 0
+STUB_EOF
+    chmod +x "$STUB_BIN/claude"
+    return 0
+}
+
+# spawn_deps_satisfied: the dep gate for the spawn-invoking cases. `claude` is treated as
+# satisfied UNCONDITIONALLY because each case prepends the test-scoped stub (build_claude_stub)
+# onto PATH for the spawn invocation — so `claude` resolves to the stub whether or not a real
+# binary is present. Building the stub here (always, regardless of a real claude on PATH) makes
+# the launch-marker assertions DETERMINISTIC in both envs: the stub — not a real claude — is the
+# binary tmux execs, so the marker is written under the exact CWD spawn-brood launched into.
+# `tmux` and `jq` remain REAL-binary checks — a host genuinely missing them still SKIPs cleanly,
+# preserving local-dev parity (the suite passes when tmux/jq are genuinely absent). On any
+# genuine miss echoes the missing names (space-joined) and returns 1; on full satisfaction
+# echoes nothing and returns 0.
+spawn_deps_satisfied() {
+    local missing=""
+    for dep in tmux jq; do
+        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
+    done
+    # claude is provided by the test-scoped stub, prebuilt at suite top-level (see the
+    # build_claude_stub call after trap setup). STUB_BIN must be non-empty here — if it is
+    # empty the stub failed to build, which IS a genuine claude miss. This helper runs inside a
+    # command substitution, so it must NOT build the stub itself (a STUB_BIN set in a subshell
+    # would not propagate to the parent) — it only verifies the prebuilt stub is present.
+    [ -n "$STUB_BIN" ] || missing="${missing:+$missing }claude"
+    if [ -n "$missing" ]; then
+        printf '%s' "$missing"
+        return 1
+    fi
+    return 0
+}
+
 cleanup() {
     reap_brood_sessions
     tmux kill-server 2>/dev/null || true   # tear down the private tmux server entirely
     [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"
+    [ -n "${STUB_BIN:-}" ] && rm -rf "$STUB_BIN"
     # PROJ_WORKDIR is folded into WORKDIR only when WORKDIR was empty at first use; when a
     # spawn case set WORKDIR first, PROJ_WORKDIR is a separate dir and needs its own reap.
     [ -n "${PROJ_WORKDIR:-}" ] && [ "${PROJ_WORKDIR:-}" != "${WORKDIR:-}" ] && rm -rf "$PROJ_WORKDIR"
@@ -119,6 +196,12 @@ cleanup() {
     return 0
 }
 trap cleanup EXIT
+
+# Build the test-scoped claude stub ONCE at suite top-level (#169). This MUST happen in the main
+# shell — not inside spawn_deps_satisfied, which runs in a command substitution where a STUB_BIN
+# assignment would be confined to the subshell and never reach the parent. STUB_BIN is reaped by
+# cleanup() on EXIT. After this, $STUB_BIN is non-empty for every spawn-invoking case to prepend.
+build_claude_stub
 
 # extract_tmux_session: pull the first strain's tmux_session value the SAME way the
 # spawn-brood liveness guard and brood-status read it from the JSON manifest — `jq -r
@@ -235,14 +318,12 @@ assert_spawn_brood_symlink_escape_blocked() {
     local name="ESCAPE:spawn-brood-symlink-escape-blocked"
     # Gate: spawn-brood's dep checks (tmux/claude/jq) precede the containment guard and exit
     # at the first missing binary, so the guard is only reachable when all three are present.
+    # claude is provided by the test-scoped stub (#169), so only a genuine tmux/jq miss SKIPs.
     local missing=""
-    for dep in tmux claude jq; do
-        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
-    done
-    if [ -n "$missing" ]; then
+    missing="$(spawn_deps_satisfied)" || {
         skip "$name" "spawn-brood dep check precedes the containment guard; skipping (missing: $missing)"
         return
-    fi
+    }
 
     WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
     local gitroot="$WORKDIR/brood-git"
@@ -259,7 +340,13 @@ assert_spawn_brood_symlink_escape_blocked() {
     # brood_id, a valid base/branch, non-empty overlap_details, valid overlap_risk. Every
     # field passes pre-flight validation so the containment guard — not a malformed input — is
     # the only blocker the run reaches. The ONLY hostile element is the symlinked .hivemind.
-    local inputs="$WORKDIR/brood-inputs.json"
+    # Author the inputs UNDER $gitroot (not $WORKDIR) so the inputs READ-guard
+    # (hivemind_assert_inputs_contained, spawn-brood.sh:142) PASSES and execution reaches the
+    # `.hivemind/broods/<brood-id>` WRITE-CHAIN guard (spawn-brood.sh:285-286) this case targets.
+    # An inputs file outside the checkout would trip the read-guard FIRST, exiting before the
+    # write-chain guard ever runs — making the pass vacuous. The symlinked `.hivemind` above is the
+    # only hostile element; the inputs themselves are contained and valid.
+    local inputs="$gitroot/brood-inputs.json"
     jq -n \
         --arg base "main" \
         --arg overlap_risk "low" \
@@ -275,8 +362,17 @@ assert_spawn_brood_symlink_escape_blocked() {
         > "$inputs"
 
     local rc=0
+    # #169: prepend the test-scoped claude stub onto PATH for THIS spawn invocation only (never
+    # exported suite-wide) so spawn-brood's own `command -v claude` dep check passes on a host
+    # without a real claude. This case blockers at the coordinator-side guard BEFORE the per-strain
+    # loop, so the stub claude is never actually exec'd — but the PATH prefix is still required to
+    # get past spawn-brood's dep gate to the guard under test. Real tmux/jq still resolve normally.
+    local marker="$WORKDIR/launch-marker.txt"
+    # Capture stderr to a file (not discard via 2>&1) so we can assert WHICH guard fired — the
+    # write-chain guard this case targets must be the one that rejected, NOT the inputs read-guard.
+    local stderr_out="$WORKDIR/spawn-stderr.txt"
     reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
-    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
 
     # The guard must reject (non-zero) AND nothing may have been written under the external
     # escape target: no brood/ STATE dir, no manifest, no worktree. A successful escape would
@@ -285,10 +381,26 @@ assert_spawn_brood_symlink_escape_blocked() {
     if find "$external" -mindepth 1 -print 2>/dev/null | grep -q .; then
         escaped=yes
     fi
-    if [[ "$rc" -ne 0 && "$escaped" == "no" ]]; then
-        pass "$name" "symlinked .hivemind rejected (exit $rc); no manifest/worktree written under external target"
+    # ANTI-VACUITY: assert the `.hivemind/broods/<brood-id>` WRITE-CHAIN guard (spawn-brood.sh:286)
+    # is the one that fired — not the inputs READ-guard. With the inputs now contained, a non-zero
+    # exit could otherwise still come from the read-guard if the relocation regressed; pinning the
+    # exact write-chain signature keeps the case keyed on the guard under test.
+    #   - which_guard: write-chain `refusing to spawn:` AND `.hivemind/broods/` present in stderr.
+    #     The `.hivemind/broods/` substring also distinguishes it from the `.claude/worktrees/`
+    #     write-chain guard (spawn-brood.sh:290-291), which would fire only AFTER this one passes.
+    #   - read_guard_fired: the inputs read-guard signature (spawn-brood.sh:143) must be ABSENT.
+    local which_guard=no read_guard_fired=no
+    if grep -q 'refusing to spawn:' "$stderr_out" 2>/dev/null \
+        && grep -q '\.hivemind/broods/' "$stderr_out" 2>/dev/null; then
+        which_guard=yes
+    fi
+    if grep -q 'refusing to read the inputs file:' "$stderr_out" 2>/dev/null; then
+        read_guard_fired=yes
+    fi
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$which_guard" == "yes" && "$read_guard_fired" == "no" ]]; then
+        pass "$name" "symlinked .hivemind rejected by write-chain guard (exit $rc); no manifest/worktree written under external target; read-guard did not pre-empt"
     else
-        failed "$name" "expected non-zero exit + no external write; rc=$rc escaped=$escaped"
+        failed "$name" "expected non-zero exit + no external write + write-chain guard fired + read-guard absent; rc=$rc escaped=$escaped which_guard=$which_guard read_guard_fired=$read_guard_fired stderr: $(cat "$stderr_out" 2>/dev/null)"
     fi
 }
 
@@ -308,14 +420,12 @@ assert_spawn_brood_symlink_escape_blocked() {
 # valid inputs reach.
 assert_spawn_brood_inputs_external_rejected() {
     local name="EXTERNAL:spawn-brood-inputs-external-rejected"
+    # claude is provided by the test-scoped stub (#169), so only a genuine tmux/jq miss SKIPs.
     local missing=""
-    for dep in tmux claude jq; do
-        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
-    done
-    if [ -n "$missing" ]; then
+    missing="$(spawn_deps_satisfied)" || {
         skip "$name" "spawn-brood dep check precedes the read-guard; skipping (missing: $missing)"
         return
-    fi
+    }
 
     WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
     local gitroot="$WORKDIR/brood-git"
@@ -347,8 +457,14 @@ assert_spawn_brood_inputs_external_rejected() {
         > "$inputs"
 
     local rc=0
+    # #169: prepend the test-scoped claude stub onto PATH for THIS spawn invocation only (never
+    # exported suite-wide) so spawn-brood's own `command -v claude` dep check passes on a host
+    # without a real claude. This case blockers at the coordinator-side guard BEFORE the per-strain
+    # loop, so the stub claude is never actually exec'd — but the PATH prefix is still required to
+    # get past spawn-brood's dep gate to the guard under test. Real tmux/jq still resolve normally.
+    local marker="$WORKDIR/launch-marker.txt"
     reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
-    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
 
     # The read-guard must reject (non-zero) AND spawn-brood must have written NOTHING under the
     # external target. The inputs file itself lands at $external/brood-inputs.json (the harness
@@ -389,14 +505,12 @@ assert_spawn_brood_inputs_external_rejected() {
 # all three are present. SKIP cleanly when any is absent (CI lacks `claude`, so this SKIPs in CI).
 assert_spawn_brood_child_worktree_symlink_escape_blocked() {
     local name="CHILD-ESCAPE:spawn-brood-child-worktree-symlink-escape-blocked"
+    # claude is provided by the test-scoped stub (#169), so only a genuine tmux/jq miss SKIPs.
     local missing=""
-    for dep in tmux claude jq; do
-        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
-    done
-    if [ -n "$missing" ]; then
+    missing="$(spawn_deps_satisfied)" || {
         skip "$name" "spawn-brood dep check precedes the child-worktree guard; skipping (missing: $missing)"
         return
-    fi
+    }
 
     WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
     local gitroot="$WORKDIR/brood-git"
@@ -468,8 +582,14 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked() {
         > "$inputs"
 
     local rc=0
+    # #169: prepend the test-scoped claude stub onto PATH for THIS spawn invocation only (never
+    # exported suite-wide) so spawn-brood's own `command -v claude` dep check passes on a host
+    # without a real claude. This case blockers at the coordinator-side guard BEFORE the per-strain
+    # loop, so the stub claude is never actually exec'd — but the PATH prefix is still required to
+    # get past spawn-brood's dep gate to the guard under test. Real tmux/jq still resolve normally.
+    local marker="$WORKDIR/launch-marker.txt"
     reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
-    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
 
     # The child-worktree guard must reject (non-zero — the single strain fails) AND nothing may
     # have been written under the external escape target. A successful escape (OLD behavior) would
@@ -489,10 +609,16 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked() {
          | grep -E '^worktree .*/\.claude/worktrees/' | grep -q .; then
         worktree_leaked=yes
     fi
-    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" ]]; then
-        pass "$name" "child-worktree symlinked .hivemind rejected (exit $rc); worktree removed; nothing written under external target"
+    # #169 NON-VACUITY: the child-worktree guard fires BEFORE the per-strain provisioning/launch,
+    # so the stub claude must NEVER have been exec'd — the per-case launch marker must be ABSENT.
+    # With the guard deleted, provisioning would proceed, tmux would exec the stub into the
+    # escaping worktree, and the marker would record a launch → this flips to FAIL.
+    local stub_launched=no
+    [ -s "$marker" ] && stub_launched=yes
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$stub_launched" == "no" ]]; then
+        pass "$name" "child-worktree symlinked .hivemind rejected (exit $rc); worktree removed; no stub launch; nothing written under external target"
     else
-        failed "$name" "expected non-zero exit + no external write + worktree removed; rc=$rc escaped=$escaped worktree_leaked=$worktree_leaked"
+        failed "$name" "expected non-zero exit + no external write + worktree removed + no stub launch; rc=$rc escaped=$escaped worktree_leaked=$worktree_leaked stub_launched=$stub_launched"
     fi
 }
 
@@ -521,14 +647,12 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked() {
 # SKIP cleanly when any is absent (CI lacks `claude`, so this SKIPs in CI, exit 0).
 assert_spawn_brood_child_leaf_task_escape_blocked() {
     local name="CHILD-LEAF-ESCAPE-task:spawn-brood-task-leaf-symlink-escape-blocked"
+    # claude is provided by the test-scoped stub (#169), so only a genuine tmux/jq miss SKIPs.
     local missing=""
-    for dep in tmux claude jq; do
-        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
-    done
-    if [ -n "$missing" ]; then
+    missing="$(spawn_deps_satisfied)" || {
         skip "$name" "spawn-brood dep check precedes the leaf guard; skipping (missing: $missing)"
         return
-    fi
+    }
 
     WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
     local gitroot="$WORKDIR/brood-git"
@@ -599,8 +723,13 @@ assert_spawn_brood_child_leaf_task_escape_blocked() {
     # the [ -L ] leaf test rejects before any write, emitting the guard's warning to stderr.
     local rc=0
     local stderr_out="$WORKDIR/spawn-stderr.txt"
+    # #169: prepend the test-scoped claude stub onto PATH for THIS spawn invocation only so
+    # spawn-brood's own `command -v claude` dep check passes on a host without a real claude. The
+    # leaf guard fires before any tmux/child launch, so the stub claude is never exec'd here — but
+    # the PATH prefix is required to reach the leaf guard. Real tmux/jq resolve normally.
+    local marker="$WORKDIR/launch-marker.txt"
     reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
-    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
+    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
 
     # Leaf guard must reject (non-zero) AND nothing written under external escape target.
     # A successful escape would CREATE external/task.md (followed from the symlink leaf).
@@ -625,10 +754,16 @@ assert_spawn_brood_child_leaf_task_escape_blocked() {
          | grep -E '^worktree .*/\.claude/worktrees/' | grep -q .; then
         worktree_leaked=yes
     fi
-    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$leaf_guard_rejected" == "yes" ]]; then
-        pass "$name" "task.md symlinked leaf rejected by leaf guard (exit $rc); worktree removed; nothing written under external target"
+    # #169 NON-VACUITY: the task.md leaf guard fires BEFORE the per-strain `tmux new-session`, so
+    # the stub claude must NEVER have been exec'd — the per-case launch marker must be ABSENT.
+    # With the leaf guard deleted, the printf redirect would follow the symlink, the strain would
+    # proceed to launch, and the stub would record a launch into the marker → this flips to FAIL.
+    local stub_launched=no
+    [ -s "$marker" ] && stub_launched=yes
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$leaf_guard_rejected" == "yes" && "$stub_launched" == "no" ]]; then
+        pass "$name" "task.md symlinked leaf rejected by leaf guard (exit $rc); worktree removed; no stub launch; nothing written under external target"
     else
-        failed "$name" "expected non-zero exit + leaf-guard rejection + no external write + worktree removed; rc=$rc escaped=$escaped leaf_guard_rejected=$leaf_guard_rejected worktree_leaked=$worktree_leaked stderr: $(cat "$stderr_out" 2>/dev/null)"
+        failed "$name" "expected non-zero exit + leaf-guard rejection + no external write + worktree removed + no stub launch; rc=$rc escaped=$escaped leaf_guard_rejected=$leaf_guard_rejected worktree_leaked=$worktree_leaked stub_launched=$stub_launched stderr: $(cat "$stderr_out" 2>/dev/null)"
     fi
 }
 
@@ -648,14 +783,12 @@ assert_spawn_brood_child_leaf_task_escape_blocked() {
 # DEPENDENCY GATING: identical to CHILD-LEAF-ESCAPE-task.
 assert_spawn_brood_child_leaf_settings_escape_blocked() {
     local name="CHILD-LEAF-ESCAPE-settings:spawn-brood-settings-leaf-symlink-escape-blocked"
+    # claude is provided by the test-scoped stub (#169), so only a genuine tmux/jq miss SKIPs.
     local missing=""
-    for dep in tmux claude jq; do
-        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
-    done
-    if [ -n "$missing" ]; then
+    missing="$(spawn_deps_satisfied)" || {
         skip "$name" "spawn-brood dep check precedes the leaf guard; skipping (missing: $missing)"
         return
-    fi
+    }
 
     WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
     local gitroot="$WORKDIR/brood-git"
@@ -718,8 +851,13 @@ assert_spawn_brood_child_leaf_settings_escape_blocked() {
     # warning to stderr.
     local rc=0
     local stderr_out="$WORKDIR/spawn-stderr.txt"
+    # #169: prepend the test-scoped claude stub onto PATH for THIS spawn invocation only so
+    # spawn-brood's own `command -v claude` dep check passes on a host without a real claude. The
+    # leaf guard fires before any tmux/child launch, so the stub claude is never exec'd here — but
+    # the PATH prefix is required to reach the leaf guard. Real tmux/jq resolve normally.
+    local marker="$WORKDIR/launch-marker.txt"
     reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
-    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
+    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
 
     # Leaf guard must reject (non-zero) AND nothing written under external escape target.
     # A successful escape would write external/settings.local.json via cp.
@@ -744,10 +882,16 @@ assert_spawn_brood_child_leaf_settings_escape_blocked() {
          | grep -E '^worktree .*/\.claude/worktrees/' | grep -q .; then
         worktree_leaked=yes
     fi
-    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$leaf_guard_rejected" == "yes" ]]; then
-        pass "$name" "settings.local.json symlinked leaf rejected by leaf guard (exit $rc); worktree removed; nothing written under external target"
+    # #169 NON-VACUITY: the settings.local.json leaf guard fires BEFORE the per-strain
+    # `tmux new-session`, so the stub claude must NEVER have been exec'd — the per-case launch
+    # marker must be ABSENT. With the leaf guard deleted, the cp would follow the symlink, the
+    # strain would proceed to launch, and the stub would record a launch → this flips to FAIL.
+    local stub_launched=no
+    [ -s "$marker" ] && stub_launched=yes
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$worktree_leaked" == "no" && "$leaf_guard_rejected" == "yes" && "$stub_launched" == "no" ]]; then
+        pass "$name" "settings.local.json symlinked leaf rejected by leaf guard (exit $rc); worktree removed; no stub launch; nothing written under external target"
     else
-        failed "$name" "expected non-zero exit + leaf-guard rejection + no external write + worktree removed; rc=$rc escaped=$escaped leaf_guard_rejected=$leaf_guard_rejected worktree_leaked=$worktree_leaked stderr: $(cat "$stderr_out" 2>/dev/null)"
+        failed "$name" "expected non-zero exit + leaf-guard rejection + no external write + worktree removed + no stub launch; rc=$rc escaped=$escaped leaf_guard_rejected=$leaf_guard_rejected worktree_leaked=$worktree_leaked stub_launched=$stub_launched stderr: $(cat "$stderr_out" 2>/dev/null)"
     fi
 }
 
@@ -773,14 +917,12 @@ assert_spawn_brood_child_leaf_settings_escape_blocked() {
 # present, the dep gate passes and the guard is exercised all the way to the launch path.
 assert_spawn_brood_child_leaf_regular_ok() {
     local name="CHILD-LEAF-REGULAR-OK:spawn-brood-regular-task-leaf-not-rejected"
+    # claude is provided by the test-scoped stub (#169), so only a genuine tmux/jq miss SKIPs.
     local missing=""
-    for dep in tmux claude jq; do
-        command -v "$dep" >/dev/null 2>&1 || missing="${missing:+$missing }$dep"
-    done
-    if [ -n "$missing" ]; then
+    missing="$(spawn_deps_satisfied)" || {
         skip "$name" "spawn-brood dep check precedes all guards; skipping (missing: $missing)"
         return
-    fi
+    }
 
     WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
     local gitroot="$WORKDIR/brood-git"
@@ -828,12 +970,27 @@ assert_spawn_brood_child_leaf_regular_ok() {
         }' \
         > "$inputs"
 
-    # Capture stderr separately to inspect for leaf-guard rejection messages.
+    # Capture stderr (for leaf-guard rejection inspection) AND stdout (for the brood_id / attach
+    # lines, used to reap the actually-launched session below). #169: prepend the test-scoped
+    # claude stub onto PATH for THIS spawn invocation only, with a per-case launch marker. Unlike
+    # the negative cases, the stub IS exec'd here: the regular-file leaf passes the guard, the run
+    # proceeds to `tmux new-session`, and the stub claude runs in the strain worktree, records the
+    # launch to $marker, prints the readiness chrome so Pass-2 capture-pane matches, and exits 0.
     local rc=0
-    local stderr_out
+    local stderr_out stdout_out marker
     stderr_out="$WORKDIR/spawn-stderr.txt"
+    stdout_out="$WORKDIR/spawn-stdout.txt"
+    marker="$WORKDIR/launch-marker.txt"
     reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
-    ( cd "$gitroot" && bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
+    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" bash "$SPAWN_SCRIPT" "$inputs" ) >"$stdout_out" 2>"$stderr_out" || rc=$?
+    # Reap the ACTUALLY-launched session. v4 namespacing makes the session <brood-id>-api with an
+    # internally-generated brood-id, which the literal `brood-api`-scoped reap_brood_sessions does
+    # NOT kill. Parse the session name from the spawn stdout `attach:` line and kill it on the
+    # private server so no stub session leaks past this case (the EXIT kill-server is the final
+    # safety net, but reaping here keeps later cases isolated).
+    local launched_session
+    launched_session="$(sed -n 's/^attach: tmux attach -t \([^ ]*\).*/\1/p' "$stdout_out" 2>/dev/null | head -1)"
+    [ -n "$launched_session" ] && tmux kill-session -t "$launched_session" 2>/dev/null || true
 
     # ANTI-FALSE-REJECT: the leaf guard emits a specific rejection message. Its ABSENCE
     # in stderr confirms no leaf-guard rejection fired — whether the run succeeded or failed
@@ -842,14 +999,32 @@ assert_spawn_brood_child_leaf_regular_ok() {
     if grep -qE 'symlinked .*(task\.md|settings\.local\.json) leaf' "$stderr_out" 2>/dev/null; then
         leaf_guard_rejected=yes
     fi
-    # ANTI-FALSE-REJECT: the leaf guard removes the worktree before any tmux/launch.
-    # A worktree that still exists (or never existed because launch-path cleanup happened)
-    # confirms no leaf-guard teardown occurred. We check for the leaf-guard warning instead
-    # of worktree presence because the launch-path itself may remove or never create the dir.
-    if [[ "$leaf_guard_rejected" == "no" ]]; then
-        pass "$name" "regular-file task.md leaf NOT rejected by leaf guard (exit $rc is downstream tmux/launch, not containment)"
+    # #169 POSITIVE NON-VACUITY: a regular-file leaf must NOT be false-rejected — the run must
+    # proceed PAST the leaf guard, reach `tmux new-session`, and actually EXEC the stub claude in
+    # the strain worktree. We assert that by requiring the per-case launch marker to be PRESENT
+    # AND the recorded launch CWD to be the strain worktree (.claude/worktrees/<brood-id>/api under
+    # the coordinator checkout). The stub records its CWD via `pwd -P` (canonicalized), so compare
+    # against the canonical coordinator root. If the leaf guard wrongly rejected, no launch would
+    # occur and the marker would be ABSENT → FAIL. This is the inverse of the negative cases'
+    # marker-absent assertion: here a launch into the correct worktree is the proof of non-reject.
+    local canon_gitroot launched_cwd stub_launched_ok=no
+    canon_gitroot="$(cd "$gitroot" 2>/dev/null && pwd -P)"
+    if [ -s "$marker" ]; then
+        launched_cwd="$(sed -n 's/^cwd=//p' "$marker" 2>/dev/null | head -1)"
+        # Expected strain worktree: <canon_gitroot>/.claude/worktrees/<brood-id>/api. The brood-id
+        # is internally generated, so match the fixed prefix + the /api strain leaf rather than a
+        # literal full path.
+        case "$launched_cwd" in
+            "$canon_gitroot/.claude/worktrees/"*/api) stub_launched_ok=yes ;;
+        esac
+    fi
+    # ANTI-FALSE-REJECT: the leaf guard emits a specific rejection message before any tmux/launch.
+    # Its ABSENCE confirms no leaf-guard rejection fired; PRESENCE of a correct stub launch confirms
+    # the run reached the launch path through the guard (not false-rejected).
+    if [[ "$leaf_guard_rejected" == "no" && "$stub_launched_ok" == "yes" ]]; then
+        pass "$name" "regular-file task.md leaf NOT rejected (stub launched into strain worktree $launched_cwd)"
     else
-        failed "$name" "leaf guard incorrectly rejected a regular-file task.md leaf (false-reject); rc=$rc stderr: $(cat "$stderr_out")"
+        failed "$name" "expected no leaf-guard rejection + stub launched into strain worktree; rc=$rc leaf_guard_rejected=$leaf_guard_rejected stub_launched_ok=$stub_launched_ok launched_cwd=[${launched_cwd:-}] stderr: $(cat "$stderr_out")"
     fi
 }
 
