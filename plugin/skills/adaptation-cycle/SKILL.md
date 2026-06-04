@@ -21,7 +21,7 @@ Before:
 - [ ] `base` and `iteration` inputs are provided or resolvable
 - [ ] Git state is not unsafe per Definitions
 - [ ] `codex-plugin-cc` is available
-- [ ] `focus`, if present, is forwarded as a positional argv placed LAST (after all flags and `--wait`) — never spliced into a shell, jq, or digest program
+- [ ] `focus`, if present, is forwarded as a positional argv AFTER a `--` option terminator (which forces it positional regardless of leading dashes) — never spliced into a shell, jq, or digest program; omit the trailing `-- "<focus>"` entirely when focus is absent
 
 After:
 - [ ] Review completed and output parsed
@@ -37,7 +37,7 @@ Invoked by the `local-reviewer` agent only.
 
 - `base`: base branch/ref to review against (e.g., `main`). When not supplied by caller, resolve from `git remote show origin | grep 'HEAD branch'` or default to `main`.
 - `iteration`: iteration number (integer, default `1`). Used for output labeling.
-- `focus` (optional): a caller-composed, reviewer-abstracted risk-framing string. When provided, it is forwarded INERTLY as the adversarial-review positional focus argument — a single quoted Bash argv passed to `node` (becoming one node argv), placed LAST after all flags so it is never parsed as a flag value. The focus string is subject to the External Content Boundary per `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md`; this skill's only job is inert forwarding. NEVER splice `focus` into a shell program string, a jq program, or the SHA-256 `node -e` digest program. The existing injection-suspect scan applies to RETURNED findings only and is unchanged.
+- `focus` (optional): a caller-composed, reviewer-abstracted risk-framing string. When provided, it is forwarded INERTLY as the adversarial-review positional focus argument — a single quoted Bash argv passed to `node` (becoming one node argv), forwarded after a `--` option terminator so the codex parser treats it as a positional regardless of leading dashes (position alone does NOT make it inert). The focus string is subject to the External Content Boundary per `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md`; this skill's only job is inert forwarding. NEVER splice `focus` into a shell program string, a jq program, or the SHA-256 `node -e` digest program. As cheap defense-in-depth, a focus value whose first non-whitespace character is `-` is guarded (stripped/neutralized) before forwarding; this is advisory belt-and-suspenders — the `--` terminator is the load-bearing protection and is sufficient alone, so this guard is NON-BLOCKING and must never become an exit-1 path. The existing injection-suspect scan applies to RETURNED findings only and is unchanged.
 
 ## Review Invocation
 
@@ -62,10 +62,10 @@ The output is the absolute path to the script. If the output is empty, `codex-pl
 **Review invocation** — Run with the Bash tool's `timeout` parameter set to `600000` (10 minutes) to prevent hanging on unresponsive Codex processes:
 
 ```bash
-node "<codexScript>" adversarial-review --base "<base>" --scope branch [--model "<model>"] --wait [focus]
+node "<codexScript>" adversarial-review --base "<base>" --scope branch [--model "<model>"] --wait -- "<focus>"
 ```
 
-where `<codexScript>` is the path from path-discovery output and `<base>` is the validated base ref. `--scope branch` is passed on EVERY call so the review covers the full branch diff against `base`. `[--model "<model>"]` appears ONLY when `model` is non-empty and passed the charset gate (omit otherwise). `[focus]` is the optional positional focus arg — when the `focus` input is present, forward it as a SINGLE quoted Bash argv placed LAST, after all `--flags` and `--wait`, so it is never parsed as a flag value; when absent, pass nothing there. The exit code of this command is the Bash tool's exit code. If the Bash tool returns a timeout error, the review exceeded 10 minutes. The command writes rendered text to stdout. Do not add `--json`.
+where `<codexScript>` is the path from path-discovery output and `<base>` is the validated base ref. `--scope branch` is passed on EVERY call so the review covers the full branch diff against `base`. `[--model "<model>"]` appears ONLY when `model` is non-empty and passed the charset gate (omit otherwise). All `--`-flags (`--base`, `--scope`, `--model`, `--wait`) MUST come BEFORE the `--` option terminator. `-- "<focus>"` is the optional positional focus arg — when the `focus` input is present, append the `--` terminator followed by the focus value as a SINGLE quoted Bash argv, so the codex parser forces it positional regardless of leading dashes; when focus is ABSENT or empty, OMIT the trailing `-- "<focus>"` ENTIRELY — do NOT emit a bare dangling `--`. The exit code of this command is the Bash tool's exit code. If the Bash tool returns a timeout error, the review exceeded 10 minutes. The command writes rendered text to stdout. Do not add `--json`.
 
 ## Output Schema and Normalized Findings
 
@@ -73,10 +73,10 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
 
 ## Procedure
 
-1. Resolve `base`, `iteration`, and (optional) `focus`. If `base` was not supplied, resolve from git remote or default to `main`. If `iteration` was not supplied, default to `1`. If `base` cannot be resolved: `printf 'blocker: base ref cannot be resolved' >&2; exit 1`. `focus`, if present, is held as inert data — forwarded only as a positional argv placed last; never spliced into any shell, jq, or digest program.
+1. Resolve `base`, `iteration`, and (optional) `focus`. If `base` was not supplied, resolve from git remote or default to `main`. If `iteration` was not supplied, default to `1`. If `base` cannot be resolved: `printf 'blocker: base ref cannot be resolved' >&2; exit 1`. `focus`, if present, is held as inert data — forwarded only after a `--` option terminator (which forces it positional regardless of leading dashes); never spliced into any shell, jq, or digest program.
 2. Confirm git state is not unsafe per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State).
 3. Run the path-discovery command from **Review Invocation**. Capture the output (the script path). If the output is empty: `printf 'blocker: codex-plugin-cc not available' >&2; exit 1`.
-4. Validate `base` against `^[a-zA-Z0-9/_.\-]+$`; if it fails: `printf 'blocker: base ref contains characters unsafe for shell invocation' >&2; exit 1`. Resolve `model="${HIVEMIND_LOCAL_REVIEW_MODEL:-}"` per **Model resolution**: if non-empty and it FAILS the same charset gate, `printf 'blocker: HIVEMIND_LOCAL_REVIEW_MODEL contains characters unsafe for shell invocation' >&2; exit 1` BEFORE any node invocation; if non-empty and it passes, append `--model "$model"`; if empty, omit `--model`. Run the canonical review invocation `node "<codexScript>" adversarial-review --base "<base>" --scope branch [--model "<model>"] --wait [focus]` from **Review Invocation**, substituting the discovered script path and validated base ref, passing `--scope branch` on every call, and — when the `focus` input is present — forwarding it as the positional focus argv placed LAST after `--wait`. Set the Bash tool's `timeout` parameter to `600000`. Capture stdout and exit code.
+4. Validate `base` against `^[a-zA-Z0-9/_.\-]+$`; if it fails: `printf 'blocker: base ref contains characters unsafe for shell invocation' >&2; exit 1`. Resolve `model="${HIVEMIND_LOCAL_REVIEW_MODEL:-}"` per **Model resolution**: if non-empty and it FAILS the same charset gate, `printf 'blocker: HIVEMIND_LOCAL_REVIEW_MODEL contains characters unsafe for shell invocation' >&2; exit 1` BEFORE any node invocation; if non-empty and it passes, append `--model "$model"`; if empty, omit `--model`. Run the canonical review invocation `node "<codexScript>" adversarial-review --base "<base>" --scope branch [--model "<model>"] --wait -- "<focus>"` from **Review Invocation**, substituting the discovered script path and validated base ref, passing `--scope branch` on every call, and — when the `focus` input is present — forwarding it as the positional focus argv after a `--` option terminator following `--wait`; when focus is absent or empty, OMIT the trailing `-- "<focus>"` entirely (do not emit a bare dangling `--`). Set the Bash tool's `timeout` parameter to `600000`. Capture stdout and exit code.
 5. Check exit code first:
    - If the Bash tool returns a timeout error: `printf 'blocker: review timed out' >&2; exit 1`.
    - Any other non-zero: `printf 'blocker: review CLI failed\nexit_code: %s\nstderr: %s' "$code" "$stderr" >&2; exit 1`.
