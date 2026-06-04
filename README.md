@@ -243,6 +243,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:create-working-branch` | Create or confirm a compliant working branch before implementation |
 | `hivemind:adaptation-cycle` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `hivemind:local-reviewer` |
 | `hivemind:github-review-loop` | Watch a PR in the main session and dispatch the fix-mode `github-reviewer` per actionable event — owns the post-PR review loop |
+| `hivemind:detect-remediation-signals` | Shared root-cluster / break-fix / diminishing-returns / stop-and-merge detector over a fix-ledger — emits one verdict both reviewers map to their own exit_reason |
 | `hivemind:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `hivemind:push-branch` | Push the current working branch to its remote (no PR creation) — used to land remediation commits before resuming a review loop |
 | `hivemind:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
@@ -275,6 +276,7 @@ Reference documentation in `plugin/governance/`:
 | `report-format.md` | Phase-closing report schemas, handoff formats, and step-delta structure |
 | `versioning.md` | SemVer rules, bump triggers, changelog and tag policy |
 | `security-policy.md` | External content boundaries, destructive-fix confirmation gate, injection classification |
+| `remediation-doctrine.md` | Shared root-cause remediation vocabulary and policy — root-cluster, same-framing test, closed-by-construction, bounded-impact gating, stop-and-merge |
 
 Governance docs are plugin runtime data — agents load them via `${CLAUDE_PLUGIN_ROOT}/governance/` paths at runtime. They are load-bearing: renaming section headers or files can break agent rules that reference them. See `CLAUDE.md` for editing constraints.
 
