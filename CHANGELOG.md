@@ -14,6 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [2.23.0] - 2026-06-04
+
+### Added
+
+- **`hivemind:detect-remediation-signals` skill — shared root-cluster / break-fix / diminishing-returns / stop-and-merge detector over a fix-ledger (#163, #177).** Verdict consumed by both local-reviewer and github-reviewer; extracted from the local-reviewer loop and cross-pollinated to the GitHub review loop to eliminate duplication.
+- **`plugin/governance/remediation-doctrine.md` — shared root-cause remediation vocabulary and policy (#163, #177).** Establishes canonical terminology (root-cluster, break-fix, diminishing-returns, merge-advised) referenced by both reviewer workflows and cerebrate zoom-out mode.
+- **`root-cluster-suspected` reviewer exit_reason routing to cerebrate remediation zoom-out (#163, #177).** Both the local-reviewer and github-reviewer route `root_cluster_suspected` exits to cerebrate for root-cause analysis before the next fix attempt.
+- **`merge_advised` advisory terminal + `merge-advised` exit_reason (github review loop) (#163, #177).** Recommends a human merge of a converged bounded-tail PR when the fix-ledger signals diminishing returns; agents never merge autonomously.
+- **ADR-0023 (root-cause remediation doctrine) (#163, #177).** Documents the detect-remediation-signals contract, the root-cluster zoom-out trigger, and the merge-advised advisory surface.
+- **`fix_framing` / `root_class` fields in the fix-ledger schema (#163, #177).** Carry per-fix root-cause classification from drone to the signal detector.
+
+### Changed
+
+- **Mutation Decay and Creep Stagnation detection extracted from local-reviewer into the shared `hivemind:detect-remediation-signals` skill (#163, #177).** De-duplicated and cross-pollinated to the GitHub review loop; both reviewers now share one detector rather than maintaining independent implementations.
+- **github-reviewer, local-reviewer, cerebrate (remediation zoom-out mode), overlord (zoom-out trigger + merge_advised surface), and drone (cluster flag-back) remediation behavior updated (#163, #177).** All five agents now consume the shared detection vocabulary and route exit signals consistently.
+
 ## [2.22.0] - 2026-06-04
 
 ### Changed
