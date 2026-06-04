@@ -118,6 +118,17 @@ judgment (which signal fires for each cluster shape, and the closed-by-construct
 Emit exactly this YAML. Every block is always present; payloads appear only when the detector
 fires.
 
+**Consumer rule (NORMATIVE).** Every verdict block (`cluster`, `break_fix`,
+`diminishing_returns`, `merge_advisory`) is ALWAYS present in the emitted YAML — block presence
+is unconditional and carries NO signal. The fired state is encoded ONLY in each block's INNER
+field. Consumers MUST test the inner fired field and MUST NEVER test block presence or block
+truthiness:
+
+- break-fix fired  ⇔  `break_fix.verdict == "break-fix"`
+- diminishing-returns fired  ⇔  `diminishing_returns.verdict == "diminishing-returns"`
+- root-cluster fired  ⇔  `cluster.cluster_suspected == true`
+- merge-advisory fired  ⇔  `merge_advisory.advise == true`
+
 ```yaml
 cluster:
   cluster_suspected: true | false
@@ -148,6 +159,7 @@ merge_advisory:
 ## Do Not
 
 - emit an `exit_reason` — emit the verdict; the reviewer maps it.
+- never presence-test a verdict block — block presence is unconditional; read the inner fired field (per the Output Contract Consumer rule).
 - read or write `.hivemind` or any store — reason only over the supplied ledger structure.
 - apply a standalone severity trigger — severity only tunes the cluster threshold N.
 - weaken or drop any Mutation Decay or Creep Stagnation guard relocated here.

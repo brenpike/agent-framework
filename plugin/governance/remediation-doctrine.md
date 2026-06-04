@@ -58,6 +58,18 @@ Severity only TUNES the **Root-Cluster** threshold N:
 - **N=2** when a high-severity finding lands on a just-touched or same-framing surface
 - **N=3** by default otherwise
 
+## Verdict Consumption
+
+The `hivemind:detect-remediation-signals` skill emits a verdict in which EVERY block
+(`cluster`, `break_fix`, `diminishing_returns`, `merge_advisory`) is ALWAYS present — block
+presence is unconditional and carries NO signal. The fired state lives ONLY in each block's
+INNER field. All four consumers — `github-reviewer`, `local-reviewer`, the overlord, and the
+cerebrate — MUST read the inner fired field (`break_fix.verdict == "break-fix"`,
+`diminishing_returns.verdict == "diminishing-returns"`, `cluster.cluster_suspected == true`,
+`merge_advisory.advise == true`) and MUST NEVER test block presence or block truthiness. The
+authority for the exact block keys and inner field names is the
+`hivemind:detect-remediation-signals` Output Contract.
+
 ## Relationship to Existing Detectors
 
 Two review-loop detectors predate this doctrine and remain its companions; their policy meaning is unified here so both review loops share one vocabulary.
