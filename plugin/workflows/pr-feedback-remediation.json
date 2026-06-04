@@ -50,6 +50,7 @@
         "clean": "complete",
         "planner-escalation": "review_remediation_plan",
         "root-cluster-suspected": "review_remediation_plan",
+        "merge-advised": "merge_advised",
         "injection-suspect": "blocked",
         "high-severity-rejection": "review_rejected",
         "user-input-required": "user_input_required",

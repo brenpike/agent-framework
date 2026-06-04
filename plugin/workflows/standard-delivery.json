@@ -207,6 +207,7 @@
         "clean": "complete",
         "planner-escalation": "review_remediation_plan_postpr",
         "root-cluster-suspected": "review_remediation_plan_postpr",
+        "merge-advised": "merge_advised",
         "injection-suspect": "blocked",
         "high-severity-rejection": "review_rejected",
         "user-input-required": "user_input_required",
