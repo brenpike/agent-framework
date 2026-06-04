@@ -340,7 +340,13 @@ assert_spawn_brood_symlink_escape_blocked() {
     # brood_id, a valid base/branch, non-empty overlap_details, valid overlap_risk. Every
     # field passes pre-flight validation so the containment guard — not a malformed input — is
     # the only blocker the run reaches. The ONLY hostile element is the symlinked .hivemind.
-    local inputs="$WORKDIR/brood-inputs.json"
+    # Author the inputs UNDER $gitroot (not $WORKDIR) so the inputs READ-guard
+    # (hivemind_assert_inputs_contained, spawn-brood.sh:142) PASSES and execution reaches the
+    # `.hivemind/broods/<brood-id>` WRITE-CHAIN guard (spawn-brood.sh:285-286) this case targets.
+    # An inputs file outside the checkout would trip the read-guard FIRST, exiting before the
+    # write-chain guard ever runs — making the pass vacuous. The symlinked `.hivemind` above is the
+    # only hostile element; the inputs themselves are contained and valid.
+    local inputs="$gitroot/brood-inputs.json"
     jq -n \
         --arg base "main" \
         --arg overlap_risk "low" \
@@ -362,8 +368,11 @@ assert_spawn_brood_symlink_escape_blocked() {
     # loop, so the stub claude is never actually exec'd — but the PATH prefix is still required to
     # get past spawn-brood's dep gate to the guard under test. Real tmux/jq still resolve normally.
     local marker="$WORKDIR/launch-marker.txt"
+    # Capture stderr to a file (not discard via 2>&1) so we can assert WHICH guard fired — the
+    # write-chain guard this case targets must be the one that rejected, NOT the inputs read-guard.
+    local stderr_out="$WORKDIR/spawn-stderr.txt"
     reap_brood_sessions  # isolate from any brood-api session a prior case leaked (pre-flight 1d collision)
-    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>"$stderr_out" || rc=$?
 
     # The guard must reject (non-zero) AND nothing may have been written under the external
     # escape target: no brood/ STATE dir, no manifest, no worktree. A successful escape would
@@ -372,10 +381,26 @@ assert_spawn_brood_symlink_escape_blocked() {
     if find "$external" -mindepth 1 -print 2>/dev/null | grep -q .; then
         escaped=yes
     fi
-    if [[ "$rc" -ne 0 && "$escaped" == "no" ]]; then
-        pass "$name" "symlinked .hivemind rejected (exit $rc); no manifest/worktree written under external target"
+    # ANTI-VACUITY: assert the `.hivemind/broods/<brood-id>` WRITE-CHAIN guard (spawn-brood.sh:286)
+    # is the one that fired — not the inputs READ-guard. With the inputs now contained, a non-zero
+    # exit could otherwise still come from the read-guard if the relocation regressed; pinning the
+    # exact write-chain signature keeps the case keyed on the guard under test.
+    #   - which_guard: write-chain `refusing to spawn:` AND `.hivemind/broods/` present in stderr.
+    #     The `.hivemind/broods/` substring also distinguishes it from the `.claude/worktrees/`
+    #     write-chain guard (spawn-brood.sh:290-291), which would fire only AFTER this one passes.
+    #   - read_guard_fired: the inputs read-guard signature (spawn-brood.sh:143) must be ABSENT.
+    local which_guard=no read_guard_fired=no
+    if grep -q 'refusing to spawn:' "$stderr_out" 2>/dev/null \
+        && grep -q '\.hivemind/broods/' "$stderr_out" 2>/dev/null; then
+        which_guard=yes
+    fi
+    if grep -q 'refusing to read the inputs file:' "$stderr_out" 2>/dev/null; then
+        read_guard_fired=yes
+    fi
+    if [[ "$rc" -ne 0 && "$escaped" == "no" && "$which_guard" == "yes" && "$read_guard_fired" == "no" ]]; then
+        pass "$name" "symlinked .hivemind rejected by write-chain guard (exit $rc); no manifest/worktree written under external target; read-guard did not pre-empt"
     else
-        failed "$name" "expected non-zero exit + no external write; rc=$rc escaped=$escaped"
+        failed "$name" "expected non-zero exit + no external write + write-chain guard fired + read-guard absent; rc=$rc escaped=$escaped which_guard=$which_guard read_guard_fired=$read_guard_fired stderr: $(cat "$stderr_out" 2>/dev/null)"
     fi
 }
 
