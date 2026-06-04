@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [2.21.0] - 2026-06-03
+
+### Added
+
+- **`hivemind:mark-intent-fallback` engine op + navigator skill — sanctioned ledger write-path for the version-skew intent-fallback resume door and the start-fresh stale-run closeout (#160).** When the overlord detects a version-skew resume stall (ledger workflow definition drifted from installed) or elects to close out a stale run and start fresh, it calls this skill to record the transition atomically: `run.mode` is set to `intent_fallback`, a fallback event is appended to the ledger, and — optionally — `run.status` is updated to `cancelled` or `complete` to close a stale run. The `close_status` closeout path additionally requires the run to be `running` and rejects an already-terminal run (footgun guard). No other code path may write `intent_fallback` to the ledger; this skill is the single write gate for that surface. Closes #160.
+
+### Security
+
+- **Containment-guard-before-read ordering defect swept across all engine scripts, and a CHECK9 regression lint added to `policy_check.sh` (issue #163 root-cause closure).** The defect — a symlinked ancestor or leaf enabling an external-read JSON-validity oracle before the containment assert ran — was first fixed in `mark-intent-fallback.sh`; this sweep applies the same guard-before-read ordering to every remaining engine read site: `record-state-result.sh` (inputs file read + ledger read), `init-run-ledger.sh` (inputs file read site), and `spawn-brood.sh` (inputs validity probe). In each case the containment assert (`hivemind_assert_inputs_contained` / `hivemind_assert_file_contained`) is moved ahead of the first filesystem read so no path content is consumed before containment is confirmed. A new `policy_check.sh` CHECK9 lint enforces this ordering mechanically: any containment-sourcing engine that reads a guarded path before its containment assert fails the lint, preventing regression of the class. Closes #163.
+- **`hivemind_assert_inputs_contained` read-guard in `_shared/containment.sh` now also rejects a symlinked inputs-file LEAF (`[ -L ]`), closing a symlinked-leaf external-content read oracle and restoring symmetry with `hivemind_assert_file_contained`'s existing leaf reject (issue #163).** Previously the read-guard canonicalized and confined the ancestor chain but did not check whether the inputs-file leaf itself was a symlink; a committed symlinked leaf at the inputs path resolved outside the checkout and the engine consumed externally-sourced content before the containment assert could block it. Adding `[ -L ]` on the resolved leaf closes this variant by construction, matching the write-guard's existing posture.
+- **LEDGER-READ leaf is now `[ -L ]`-rejected via a new shared `hivemind_assert_ledger_contained` guard in `_shared/containment.sh`, completing leaf-symmetry across all three leaf classes — inputs-file / write-target / ledger-read (#160).** The prior containment framing assumed the ledger leaf was covered by the ancestor walk (`hivemind_assert_contained` up to the `<run_id>` run-dir); it was not: `state.json` sits BELOW the `<run_id>` chain and was never leaf-checked. Both ledger-reading engines (`mark-intent-fallback.sh`, `record-state-result.sh`) now call `hivemind_assert_ledger_contained` before the first ledger read, rejecting a symlinked `state.json` leaf before any `[ -f ]`/`jq` read that would follow the symlink. CHECK9 in `policy_check.sh` is extended to enforce this guard is present in every containment-sourcing ledger-reading engine, making the requirement terminal.
+
 ## [2.20.1] - 2026-06-03
 
 ### Added

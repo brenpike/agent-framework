@@ -21,7 +21,10 @@ NEVER supplies it (ADR-0018 §C).
 Rules: ADR-0018 §C (engine is the committed script, reads the allowed-set); §A (ledger and
 definitions are JSON); §I (engine hard-rejects a non-binding id/version mismatch and exposes
 no rebind; the overlord resume gate owns the two version-skew doors — start fresh / proceed
-intent-driven).
+intent-driven). This script is NOT the fallback writer — it still hard-rejects skew. The
+SANCTIONED engine op for both version-skew doors (proceed intent-driven AND start-fresh
+stale-run closeout) is the separate `hivemind:mark-intent-fallback` skill and its own
+committed engine script; neither door is dangling.
 
 ## Required Inputs
 
@@ -211,7 +214,10 @@ This is a pipeline skill:
 - supply or guess the allowed-result set — the script reads it directly from the workflow
   definition.
 - advance to any state other than the `current_state` the script returns.
-- mutate the ledger by hand or with any tool other than the script.
+- mutate the ledger by hand or with any tool other than the script. This stays ABSOLUTE:
+  the version-skew intent-fallback write and the start-fresh stale-run closeout are SANCTIONED
+  engine ops via the `hivemind:mark-intent-fallback` skill (its own committed engine script),
+  NOT hand-mutation.
 - use the Write tool for anything other than the `.hivemind/runs/.record-inputs-<token>.json`
   inputs file.
 - commit, push, or open a PR.

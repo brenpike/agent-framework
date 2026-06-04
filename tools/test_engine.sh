@@ -156,6 +156,8 @@ SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 ENGINE="$REPO_ROOT/plugin/skills/record-state-result/scripts/record-state-result.sh"
 INIT_ENGINE="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
+INTENT_FALLBACK_ENGINE="$REPO_ROOT/plugin/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
+SPAWN_BROOD_ENGINE="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
 FIXTURES_DIR="$REPO_ROOT/tests/engine"
 WORKFLOW_DEF="$FIXTURES_DIR/workflow-engine-fixture.json"
 LEDGER_AT_PLAN="$FIXTURES_DIR/ledger-at-plan.json"
@@ -171,8 +173,8 @@ for dep in jq sha256sum git; do
         || { echo "FAIL: required dependency '$dep' is not installed" >&2; exit 2; }
 done
 
-for required in "$ENGINE" "$INIT_ENGINE" "$WORKFLOW_DEF" "$LEDGER_AT_PLAN" \
-    "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION" \
+for required in "$ENGINE" "$INIT_ENGINE" "$INTENT_FALLBACK_ENGINE" "$SPAWN_BROOD_ENGINE" "$WORKFLOW_DEF" \
+    "$LEDGER_AT_PLAN" "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION" \
     "$LEDGER_AT_REMEDIATION_PLAN"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required input missing: $required" >&2; exit 2; }
@@ -192,10 +194,20 @@ trap cleanup EXIT
 FAKEPLUGIN="$WORKDIR/fakeplugin"
 FAKE_ENGINE="$FAKEPLUGIN/skills/record-state-result/scripts/record-state-result.sh"
 FAKE_INIT_ENGINE="$FAKEPLUGIN/skills/init-run-ledger/scripts/init-run-ledger.sh"
+FAKE_INTENT_FALLBACK_ENGINE="$FAKEPLUGIN/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
+FAKE_SPAWN_BROOD_ENGINE="$FAKEPLUGIN/skills/spawn-brood/scripts/spawn-brood.sh"
 FAKE_WORKFLOW_DEF="$FAKEPLUGIN/workflows/engine-fixture.json"
-mkdir -p "$(dirname "$FAKE_ENGINE")" "$(dirname "$FAKE_INIT_ENGINE")" "$FAKEPLUGIN/workflows"
+mkdir -p "$(dirname "$FAKE_ENGINE")" "$(dirname "$FAKE_INIT_ENGINE")" \
+    "$(dirname "$FAKE_INTENT_FALLBACK_ENGINE")" "$(dirname "$FAKE_SPAWN_BROOD_ENGINE")" \
+    "$FAKEPLUGIN/workflows"
 cp "$ENGINE" "$FAKE_ENGINE"
 cp "$INIT_ENGINE" "$FAKE_INIT_ENGINE"
+# mark-intent-fallback.sh self-locates plugin_root=<fakeplugin> (3 dirs up from its scripts/
+# dir) like the other engines. It reads NO workflow definition (the whole point — version
+# skew), so the fakeplugin def copy below is irrelevant to it; it sources only the shared
+# containment helper staged into <fakeplugin>/skills/_shared. A COPY, never a symlink: pwd -P
+# would resolve a symlink back to the real tree and defeat the isolation.
+cp "$INTENT_FALLBACK_ENGINE" "$FAKE_INTENT_FALLBACK_ENGINE"
 # The fixture def id=engine-fixture / version 1 / start plan; the filename stem MUST equal the
 # id so `ledger.run.workflow=engine-fixture` resolves to <fakeplugin>/workflows/engine-fixture.json.
 cp "$WORKFLOW_DEF" "$FAKE_WORKFLOW_DEF"
@@ -208,6 +220,16 @@ SHARED_CONTAINMENT="$REPO_ROOT/plugin/skills/_shared/containment.sh"
     || { echo "FAIL: required input missing: $SHARED_CONTAINMENT" >&2; exit 2; }
 mkdir -p "$FAKEPLUGIN/skills/_shared"
 cp "$SHARED_CONTAINMENT" "$FAKEPLUGIN/skills/_shared/containment.sh"
+# spawn-brood.sh self-locates plugin_root=<fakeplugin> (3 dirs up from its scripts/ dir) like the
+# other engines and sources BOTH the shared containment helper AND the shared allowlist helper
+# (skills/_shared/allowlist.sh) BEFORE its inputs READ-guard. Stage the engine COPY and the
+# allowlist helper so the sourced paths resolve. A COPY, never a symlink: pwd -P would resolve a
+# symlink back to the real tree and defeat the isolation.
+cp "$SPAWN_BROOD_ENGINE" "$FAKE_SPAWN_BROOD_ENGINE"
+SHARED_ALLOWLIST="$REPO_ROOT/plugin/skills/_shared/allowlist.sh"
+[[ -f "$SHARED_ALLOWLIST" ]] \
+    || { echo "FAIL: required input missing: $SHARED_ALLOWLIST" >&2; exit 2; }
+cp "$SHARED_ALLOWLIST" "$FAKEPLUGIN/skills/_shared/allowlist.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1106,7 +1128,19 @@ assert_record_symlink_escape_rejected() {
     # guard canonicalizes the existing ledger, sees it resolves OUTSIDE the checkout, and rejects.
     # CRITICAL: the rejection is by CONTAINMENT (file reachable but unmutated), not file-absence —
     # the pre-staged file proves the guard, not a missing file, blocked the write.
+    #
+    # ORACLE-CLOSED (STEP-001 reorder regression): the ledger containment guard
+    # (hivemind_assert_contained) MUST fire BEFORE the `[ -f ]` existence check, the ledger
+    # `jq -e` JSON-validity probe, AND the coherence `jq -r '.run.id'` read — otherwise an
+    # externally-resolved state.json would be opened by jq (a validity read oracle) and its
+    # `.run.id` could be echoed in the coherence blocker before rejection. The pre-staged
+    # external ledger is a VALID, coherent ledger (run.id == run_id, run.workflow resolves), so
+    # if the guard were ordered AFTER those reads the run would either succeed-then-write or fail
+    # with the coherence/validity blocker. We therefore assert the failing blocker is the
+    # CONTAINMENT blocker ("resolves outside the checkout") — proving the guard preceded the
+    # existence/validity/coherence reads — in ADDITION to byte-unchanged + no-temp-leaked.
     local gitroot external run_id ext_ledger inputs before after rc=0
+    local stderr is_containment_blocker
     gitroot="$(new_gitroot u-git)"
     run_id="engine-case-u"
     external="$WORKDIR/u-external"
@@ -1135,7 +1169,8 @@ assert_record_symlink_escape_rejected() {
         '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
         > "$inputs"
 
-    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    stderr="$gitroot/u-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
 
     after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
     # No engine temp file (.state.json.XXXXXX) may have leaked under the external runs dir.
@@ -1143,10 +1178,16 @@ assert_record_symlink_escape_rejected() {
     if find "$external" -name '.state.json.*' -print 2>/dev/null | grep -q .; then
         leaked=yes
     fi
-    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" ]]; then
-        pass "$name" "external ledger reachable but rejected by containment (exit $rc): byte-unchanged, no temp leaked"
+    # The blocker MUST be the CONTAINMENT blocker — proving the guard fired BEFORE the ledger
+    # existence/validity/coherence reads (a valid+coherent external ledger would otherwise pass
+    # those and surface a different message or none).
+    is_containment_blocker=no
+    grep -q 'resolves outside the checkout' "$stderr" && is_containment_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" \
+          && "$is_containment_blocker" == "yes" ]]; then
+        pass "$name" "containment guard fired BEFORE existence/validity/coherence reads (exit $rc, containment blocker): external ledger byte-unchanged, no temp leaked"
     else
-        failed "$name" "expected non-zero exit + external ledger byte-unchanged + no temp; rc=$rc changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
+        failed "$name" "expected non-zero exit + containment blocker + external ledger byte-unchanged + no temp; rc=$rc containment=$is_containment_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
     fi
 }
 
@@ -1264,7 +1305,17 @@ assert_init_inputs_external_rejected() {
     # VALID init inputs file at $gitroot/link/init-inputs.json where `link` is a symlink to an
     # EXTERNAL dir, so the file's canonical path is under $external. init must exit non-zero on
     # the read-guard AND write no ledger/state.json anywhere (inside or under $external).
+    #
+    # ORACLE-CLOSED (STEP-002 reorder regression): the inputs read-guard
+    # (hivemind_assert_inputs_contained) MUST fire BEFORE the inputs `jq -e` JSON-validity probe
+    # and BEFORE any field parse — otherwise `jq -e` opening the attacker-supplied external path
+    # is itself an external-file read oracle. The inputs payload here is VALID JSON, so if the
+    # guard were ordered AFTER the probe the probe would PASS and the run would fail later with a
+    # DIFFERENT blocker (or write a ledger). We therefore assert the failing blocker is the
+    # read-guard's containment blocker ("refusing to read the inputs file") — proving the guard
+    # preceded the validity probe — AND that the external inputs file is byte-unchanged.
     local gitroot external inputs rc=0
+    local in_before in_after stderr is_readguard_blocker
     gitroot="$(new_gitroot x-git)"
     external="$WORKDIR/x-external"
     mkdir -p "$external"
@@ -1284,7 +1335,12 @@ assert_init_inputs_external_rejected() {
         '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized}' \
         > "$inputs"
 
-    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    # sha256 of the external inputs file BEFORE the run: it must be byte-unchanged (the guard
+    # rejects before any read/parse that could touch it).
+    in_before="$(sha256sum "$inputs" | awk '{print $1}')"
+    stderr="$gitroot/x-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
+    in_after="$(sha256sum "$inputs" | awk '{print $1}')"
 
     # No state.json may have been written under the external target NOR under the gitroot's
     # real runs tree (the read-guard rejects before any path derivation).
@@ -1293,10 +1349,16 @@ assert_init_inputs_external_rejected() {
     if [[ -d "$gitroot/.hivemind/runs" ]] && find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then
         wrote=yes
     fi
-    if [[ "$rc" -ne 0 && "$wrote" == "no" ]]; then
-        pass "$name" "externally-resolving inputs refused by read-guard (exit $rc); no ledger written"
+    # The blocker MUST be the inputs read-guard containment blocker — proving the guard fired
+    # BEFORE the `jq -e` validity probe (the inputs payload is valid JSON, so any later gate
+    # would emit a different message or write a ledger).
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$wrote" == "no" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "read-guard fired BEFORE the inputs validity probe (exit $rc, containment blocker); external inputs byte-unchanged, no ledger written"
     else
-        failed "$name" "expected non-zero exit + no ledger; rc=$rc wrote=$wrote"
+        failed "$name" "expected non-zero exit + containment blocker + unchanged inputs + no ledger; rc=$rc readguard=$is_readguard_blocker inputs_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
     fi
 }
 
@@ -1309,7 +1371,18 @@ assert_record_inputs_external_rejected() {
     # shared read-guard, not a missing ledger. Author a valid record inputs file at an
     # externally-resolving path (via a symlinked ancestor). record must exit non-zero on the
     # read-guard AND leave the staged ledger byte-unchanged.
+    #
+    # ORACLE-CLOSED (STEP-001 reorder regression): the inputs read-guard
+    # (hivemind_assert_inputs_contained) MUST fire BEFORE the inputs `jq -e` JSON-validity probe
+    # and BEFORE any field parse — otherwise `jq -e` opening the attacker-supplied external path
+    # is itself an external-file read oracle. The inputs payload here is VALID JSON, so if the
+    # guard were ordered AFTER the probe the probe would PASS and the run would fail later with a
+    # DIFFERENT blocker (or not at all). We therefore assert the failing blocker is the
+    # read-guard's containment blocker ("refusing to read the inputs file") — proving the guard
+    # preceded the validity probe — AND that the external inputs file is byte-unchanged with no
+    # read side effect (no temp leaked beside it).
     local gitroot external run_id ledger inputs before after rc=0
+    local in_before in_after stderr
     gitroot="$(new_gitroot y-git)"
     run_id="engine-case-y"
     # Stage a real, well-formed ledger the engine WOULD accept absent the read-guard.
@@ -1332,13 +1405,30 @@ assert_record_inputs_external_rejected() {
         '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
         > "$inputs"
 
-    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    # sha256 of the external inputs file BEFORE the run: it must be byte-unchanged (the guard
+    # rejects before any read/parse that could touch it).
+    in_before="$(sha256sum "$inputs" | awk '{print $1}')"
+    stderr="$gitroot/y-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
 
     after="$(sha256sum "$ledger" | awk '{print $1}')"
-    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
-        pass "$name" "externally-resolving inputs refused by read-guard (exit $rc); staged ledger byte-unchanged"
+    in_after="$(sha256sum "$inputs" | awk '{print $1}')"
+    # No engine temp file may have leaked beside the external inputs file (a read-then-write
+    # leak signal under the external target).
+    local leaked=no
+    if find "$external" -name '.state.json.*' -print 2>/dev/null | grep -q .; then
+        leaked=yes
+    fi
+    # The blocker MUST be the inputs read-guard containment blocker — proving the guard fired
+    # BEFORE the `jq -e` validity probe (the inputs payload is valid JSON, so any later gate
+    # would emit a different message or none).
+    local is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$in_before" == "$in_after" \
+          && "$leaked" == "no" && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "read-guard fired BEFORE the inputs validity probe (exit $rc, containment blocker): external inputs + staged ledger byte-unchanged, no temp leaked"
     else
-        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+        failed "$name" "expected non-zero exit + containment blocker + unchanged inputs/ledger + no temp; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) inputs_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) leaked=$leaked"
     fi
 }
 
@@ -1505,6 +1595,619 @@ assert_init_trap_preserves_committed_ledger() {
     pass "$name" "trap predicate: (a) PRESERVES committed ledger (FALSE when state.json present), (b) CLEANS orphan (TRUE when state.json absent); anti-drift grep passed"
 }
 
+# ── BB. intent-fallback over version skew, NO close_status -> run stays running ─
+
+assert_intent_fallback_skew_no_close() {
+    local name="BB:intent-fallback-skew-no-close"
+    # The mark-intent-fallback engine is the sanctioned version-skew resume write-path that
+    # record-state-result.sh DELIBERATELY refuses (its case H rejects ledger.run.workflow_version
+    # != def.version). This proves the op does NOT enforce that binding guard: a SKEW ledger
+    # (run.workflow_version=2 vs the fakeplugin def.version=1) with NO close_status is ACCEPTED.
+    # ledger-wrong-version.json carries version 2, state.current=plan, run.status=running — ideal.
+    # Assert: exit 0; run.mode=="intent_fallback"; EXACTLY one event appended; run.status STILL
+    # "running" (no close); atomicity (ledger remains valid JSON).
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot bb-git)"
+    run_id="engine-case-bb"
+    # stage_record_ledger forces .run.id=run_id (coherence) and .run.workflow=engine-fixture but
+    # KEEPS the fixture's run.workflow_version=2 (no version arg) — that is the skew that
+    # record-state-result rejects and this op must tolerate.
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    inputs="$gitroot/bb-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback skew no close" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "intent-fallback engine exited $rc on a skew ledger (expected 0 — no binding guard)"
+        return
+    fi
+    if ! jq -e . "$ledger" >/dev/null 2>&1; then
+        failed "$name" "ledger is no longer valid JSON after intent-fallback write (atomicity broken)"
+        return
+    fi
+
+    local mode events_len run_status
+    mode="$(jq -r '.run.mode' "$ledger")"
+    events_len="$(jq -r '.events | length' "$ledger")"
+    run_status="$(jq -r '.run.status' "$ledger")"
+    if [[ "$mode" == "intent_fallback" && "$events_len" -eq 1 && "$run_status" == "running" ]]; then
+        pass "$name" "skew accepted without binding guard: run.mode=intent_fallback, 1 event, run.status still running"
+    else
+        failed "$name" "expected mode=intent_fallback/events=1/status=running, got mode=$mode/events=$events_len/status=$run_status"
+    fi
+}
+
+# ── CC. intent-fallback over version skew, close_status=cancelled -> closed ──
+
+assert_intent_fallback_skew_close_cancelled() {
+    local name="CC:intent-fallback-skew-close-cancelled"
+    # Same skew ledger as BB, but with close_status=cancelled. The op closes the run WITHOUT the
+    # binding guard: exit 0; run.mode=="intent_fallback"; run.status=="cancelled"; state.status==
+    # "cancelled".
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot cc-git)"
+    run_id="engine-case-cc"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    inputs="$gitroot/cc-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback skew close cancelled" \
+        --arg close_status cancelled \
+        '{run_id: $run_id, state: $state, summary: $summary, close_status: $close_status}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "intent-fallback engine exited $rc closing a skew ledger as cancelled (expected 0)"
+        return
+    fi
+
+    local mode run_status state_status
+    mode="$(jq -r '.run.mode' "$ledger")"
+    run_status="$(jq -r '.run.status' "$ledger")"
+    state_status="$(jq -r '.state.status' "$ledger")"
+    if [[ "$mode" == "intent_fallback" && "$run_status" == "cancelled" && "$state_status" == "cancelled" ]]; then
+        pass "$name" "skew closed as cancelled: run.mode=intent_fallback, run.status=cancelled, state.status=cancelled"
+    else
+        failed "$name" "expected mode=intent_fallback/run.status=cancelled/state.status=cancelled, got mode=$mode/run.status=$run_status/state.status=$state_status"
+    fi
+}
+
+# ── DD. illegal close_status (abandoned) -> non-zero, ledger byte-unchanged ──
+
+assert_intent_fallback_illegal_close_unchanged() {
+    local name="DD:intent-fallback-illegal-close-unchanged"
+    # close_status is OPTIONAL but when present MUST be exactly "cancelled" or "complete". The
+    # op EXPLICITLY rejects "abandoned" (and anything else). All validation runs BEFORE the temp
+    # file is created, so the on-disk ledger is byte-unchanged on rejection. Capture sha256
+    # before+after to prove it.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot dd-git)"
+    run_id="engine-case-dd"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    inputs="$gitroot/dd-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback illegal close" \
+        --arg close_status abandoned \
+        '{run_id: $run_id, state: $state, summary: $summary, close_status: $close_status}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "illegal close_status 'abandoned' rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── EE. intent-fallback injection safety: payload inert in summary + outputs ──
+
+assert_intent_fallback_injection_safe() {
+    local name="EE:intent-fallback-injection-safe"
+    # The untrusted summary / outputs fields are serialized ONLY via jq --arg / --argjson and
+    # never enter the jq program or any shell command source. A command-substitution + backtick
+    # payload in BOTH summary AND outputs must round-trip VERBATIM into the appended event and
+    # NEVER execute (no PWNED5 file anywhere).
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot ee-git)"
+    run_id="engine-case-ee"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    inputs="$gitroot/ee-inputs.json"
+
+    # The payload is DATA, authored SAFELY via jq --arg (jq JSON-escapes the literal). The
+    # single-quoted bash literal is never evaluated by bash — it is a string handed to jq.
+    local payload='inject $(touch PWNED5) and `touch PWNED5b` and ; rm end'
+    local outputs
+    outputs="$(jq -n --arg p "$payload" '{note: $p}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "$payload" \
+        --argjson outputs "$outputs" \
+        '{run_id: $run_id, state: $state, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "intent-fallback engine exited $rc on an injection payload (expected 0)"
+        return
+    fi
+    if ! assert_no_pwned_file PWNED5 || ! assert_no_pwned_file PWNED5b; then
+        failed "$name" "injection payload EXECUTED: a PWNED5 file was created"
+        return
+    fi
+
+    local got_summary got_output
+    got_summary="$(jq -r '.events[-1].summary' "$ledger")"
+    got_output="$(jq -r '.events[-1].outputs.note' "$ledger")"
+    if [[ "$got_summary" == "$payload" && "$got_output" == "$payload" ]]; then
+        pass "$name" "payload inert: no PWNED5 file, summary + outputs round-trip verbatim, exit 0"
+    else
+        failed "$name" "expected verbatim round-trip; got summary=$got_summary output=$got_output"
+    fi
+}
+
+# ── FF. symlink-escape rejected: external ledger reachable but unmutated ─────
+
+assert_intent_fallback_symlink_escape_rejected() {
+    local name="FF:intent-fallback-symlink-escape-rejected"
+    # mark-intent-fallback.sh reuses record-state-result.sh's identity derivation and the shared
+    # depth-complete containment guard. It requires the ledger to EXIST, so the escape vector
+    # PRE-STAGES the external target with a valid skew ledger, then symlinks the gitroot's
+    # .hivemind -> external so `[ -f ]` passes THROUGH the symlink (the ledger is REACHABLE). The
+    # containment guard canonicalizes the existing ledger, sees it resolves OUTSIDE the checkout,
+    # and rejects. CRITICAL: rejection is by CONTAINMENT (file reachable but unmutated), not
+    # file-absence. Mirrors record-state-result's case U precisely. Assert: non-zero exit, the
+    # external ledger BYTE-UNCHANGED (sha256 before==after), and NO temp file leaked under it.
+    local gitroot external run_id ext_ledger inputs before after rc=0
+    gitroot="$(new_gitroot ff-git)"
+    run_id="engine-case-ff"
+    external="$WORKDIR/ff-external"
+    # Pre-stage a VALID skew ledger at the external target's runs/<run-id>/state.json: .run.id ==
+    # run_id (coherence passes) and .run.workflow == engine-fixture. Authored from the skew
+    # fixture via jq so it is a real, well-formed ledger the op would mutate absent the guard.
+    mkdir -p "$external/runs/$run_id"
+    ext_ledger="$external/runs/$run_id/state.json"
+    jq --arg id "$run_id" --arg wf "engine-fixture" \
+        '.run.id = $id | .run.workflow = $wf' \
+        "$LEDGER_WRONG_VERSION" > "$ext_ledger"
+    # Symlink the gitroot's .hivemind -> external so the derived
+    # <gitroot>/.hivemind/runs/<run-id>/state.json resolves THROUGH the symlink to the pre-staged
+    # external ledger (so `[ -f ]` passes and the containment guard — not a missing file — blocks).
+    ln -s "$external" "$gitroot/.hivemind"
+    before="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    inputs="$gitroot/ff-inputs.json"
+
+    # A write the op WOULD record absent the containment guard.
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback symlink escape" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    # No engine temp file (.state.json.XXXXXX) may have leaked under the external runs dir.
+    local leaked=no
+    if find "$external" -name '.state.json.*' -print 2>/dev/null | grep -q .; then
+        leaked=yes
+    fi
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" ]]; then
+        pass "$name" "external ledger reachable but rejected by containment (exit $rc): byte-unchanged, no temp leaked"
+    else
+        failed "$name" "expected non-zero exit + external ledger byte-unchanged + no temp; rc=$rc changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
+    fi
+}
+
+# ── GG. closeout footgun guard: close_status on a non-running ledger rejected ─
+
+assert_intent_fallback_close_nonrunning_rejected() {
+    local name="GG:intent-fallback-close-nonrunning-rejected"
+    # The closeout footgun guard: when close_status is SUPPLIED, the op refuses to close a run
+    # whose on-disk run.status is NOT "running" (a run already at a TERMINAL status). This stops
+    # a fallback closeout from clobbering an already-closed ledger. The bare mode-flip path (NO
+    # close_status, asserted by BB) stays permissive; only the SUPPLIED-close path is gated.
+    # Stage the skew ledger (same fixture as BB/CC), then force .run.status AND .state.status to
+    # a TERMINAL value (cancelled) so the precondition fails. Capture sha256 before, invoke with
+    # close_status=complete SUPPLIED, and assert: NON-ZERO exit AND ledger byte-unchanged.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot gg-git)"
+    run_id="engine-case-gg"
+    # stage_record_ledger forces .run.id=run_id (coherence) and .run.workflow=engine-fixture while
+    # keeping the fixture's version skew. Then force run.status + state.status to a TERMINAL value
+    # so the on-disk run is NOT running and the closeout precondition rejects.
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    jq '.run.status = "cancelled" | .state.status = "cancelled"' "$ledger" > "$ledger.tmp" \
+        && mv "$ledger.tmp" "$ledger"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    inputs="$gitroot/gg-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback close non-running" \
+        --arg close_status complete \
+        '{run_id: $run_id, state: $state, summary: $summary, close_status: $close_status}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "close_status on a non-running (cancelled) ledger rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── HH. init inputs-file symlinked LEAF rejected by the read-guard ───────────
+
+assert_init_inputs_symlink_leaf_rejected() {
+    local name="HH:init-inputs-symlink-leaf-rejected"
+    # LEAF vector (STEP-001 regression): unlike case X (symlinked ANCESTOR), here the inputs PATH
+    # passed to the engine is ITSELF a symlink (the leaf) whose target is a VALID init inputs file
+    # at an EXTERNAL path outside the checkout. The hardened shared read-guard
+    # (hivemind_assert_inputs_contained) rejects a symlinked inputs LEAF ([ -L ]) BEFORE the inputs
+    # `jq -e` validity probe — so a valid-JSON external target cannot be opened as a read oracle.
+    #
+    # NON-VACUOUS: the external target is VALID JSON, so the ONLY thing that can reject is the
+    # leaf read-guard — not a JSON-parse error. Reverting STEP-001's `[ -L ]` leaf reject would
+    # let the engine canonicalize THROUGH the symlink and read the external payload, flipping this
+    # assertion to a FAIL (rc=0 / ledger written / different blocker). Assert: non-zero exit; the
+    # read-guard containment blocker fired; the external target byte-unchanged; no ledger written.
+    local gitroot external target leaf rc=0
+    local in_before in_after stderr is_readguard_blocker
+    gitroot="$(new_gitroot hh-git)"
+    external="$WORKDIR/hh-external"
+    mkdir -p "$external"
+    # VALID init inputs at the EXTERNAL target (the symlink's destination, outside the checkout).
+    target="$external/hh-init-inputs.json"
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init symlink-leaf inputs" \
+        --arg normalized "engine test init symlink-leaf inputs" \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized}' \
+        > "$target"
+    # The inputs LEAF is a symlink INSIDE the checkout (under the real runs tree) -> external target.
+    mkdir -p "$gitroot/.hivemind/runs"
+    leaf="$gitroot/.hivemind/runs/hh-init-inputs.json"
+    ln -s "$target" "$leaf"
+
+    in_before="$(sha256sum "$target" | awk '{print $1}')"
+    stderr="$gitroot/hh-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    in_after="$(sha256sum "$target" | awk '{print $1}')"
+
+    # No state.json may have been written under the external target NOR the real runs tree.
+    local wrote=no
+    if find "$external" -name state.json -print 2>/dev/null | grep -q .; then wrote=yes; fi
+    if find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then wrote=yes; fi
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$wrote" == "no" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "symlinked inputs LEAF rejected by read-guard (exit $rc, containment blocker); external target byte-unchanged, no ledger written"
+    else
+        failed "$name" "expected non-zero exit + containment blocker + unchanged target + no ledger; rc=$rc readguard=$is_readguard_blocker target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
+    fi
+}
+
+# ── II. record inputs-file symlinked LEAF rejected by the read-guard ─────────
+
+assert_record_inputs_symlink_leaf_rejected() {
+    local name="II:record-inputs-symlink-leaf-rejected"
+    # LEAF vector (STEP-001 regression) for record-state-result.sh. Stage a VALID ledger at
+    # runs/<id>/state.json FIRST so the ONLY thing that can block is the read-guard, not a missing
+    # ledger. The inputs PATH passed to the engine is ITSELF a symlink whose target is a VALID
+    # record inputs file at an EXTERNAL path. The hardened read-guard rejects the symlinked leaf
+    # ([ -L ]) BEFORE the inputs `jq -e` validity probe.
+    #
+    # NON-VACUOUS: the external target is VALID JSON AND the staged ledger is valid+coherent, so
+    # the ONLY thing that can reject is the leaf read-guard — not a JSON-parse error and not a
+    # missing/incoherent ledger. Reverting STEP-001's `[ -L ]` leaf reject would let the engine
+    # read THROUGH the symlink and record the transition (rc=0 / ledger mutated), flipping this to
+    # a FAIL. Assert: non-zero exit; read-guard containment blocker fired; staged ledger AND
+    # external target byte-unchanged.
+    local gitroot external run_id ledger target leaf rc=0
+    local before after in_before in_after stderr is_readguard_blocker
+    gitroot="$(new_gitroot ii-git)"
+    run_id="engine-case-ii"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    external="$WORKDIR/ii-external"
+    mkdir -p "$external"
+    # VALID record inputs (plan ready -> build) at the EXTERNAL target.
+    target="$external/ii-record-inputs.json"
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test record symlink-leaf inputs" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$target"
+    # The inputs LEAF is a symlink INSIDE the checkout -> external target.
+    leaf="$gitroot/.hivemind/runs/$run_id/ii-record-inputs.json"
+    ln -s "$target" "$leaf"
+
+    in_before="$(sha256sum "$target" | awk '{print $1}')"
+    stderr="$gitroot/ii-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    in_after="$(sha256sum "$target" | awk '{print $1}')"
+
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "symlinked inputs LEAF rejected by read-guard (exit $rc, containment blocker); staged ledger + external target byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + containment blocker + unchanged ledger/target; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── JJ. spawn-brood inputs-file symlinked LEAF rejected by the read-guard ────
+
+assert_spawn_brood_inputs_symlink_leaf_rejected() {
+    local name="JJ:spawn-brood-inputs-symlink-leaf-rejected"
+    # LEAF vector (STEP-001 regression) for spawn-brood.sh, which sources the SAME shared
+    # containment helper and runs hivemind_assert_inputs_contained BEFORE its `jq -e` validity
+    # probe and BEFORE any strain/base field parse. The inputs PATH passed to the engine is ITSELF
+    # a symlink whose target is a VALID spawn-brood inputs file at an EXTERNAL path.
+    #
+    # NON-VACUOUS: the external target is VALID JSON, so the ONLY thing that can reject is the leaf
+    # read-guard — not a JSON-parse error and not a missing-field blocker (those parse AFTER the
+    # guard). Reverting STEP-001's `[ -L ]` leaf reject would let spawn-brood canonicalize THROUGH
+    # the symlink and read the external payload, flipping this to a FAIL. Assert: non-zero exit;
+    # read-guard containment blocker fired; external target byte-unchanged; no brood state dir
+    # written under the external target.
+    local gitroot external target leaf rc=0
+    local in_before in_after stderr is_readguard_blocker
+    gitroot="$(new_gitroot jj-git)"
+    external="$WORKDIR/jj-external"
+    mkdir -p "$external"
+    # VALID spawn-brood inputs at the EXTERNAL target. The fields are well-formed so only the leaf
+    # read-guard — which fires before any of them is parsed — can be the rejecting gate.
+    target="$external/jj-spawn-inputs.json"
+    jq -n \
+        --arg base main \
+        --arg overlap_risk low \
+        --argjson strains '[{"strain_id":"jj-strain","prompt":"engine test spawn-brood symlink-leaf"}]' \
+        '{base: $base, overlap_risk: $overlap_risk, strains: $strains}' \
+        > "$target"
+    # The inputs LEAF is a symlink INSIDE the checkout (under the real .hivemind tree) -> external.
+    mkdir -p "$gitroot/.hivemind"
+    leaf="$gitroot/.hivemind/jj-spawn-inputs.json"
+    ln -s "$target" "$leaf"
+
+    # spawn-brood.sh runs `command -v tmux` / `command -v claude` dependency gates BEFORE the
+    # inputs read-guard. On a host lacking those CLIs (e.g. CI runners) the engine would exit at
+    # the dep gate (rc=1, NO read-guard message) and this assertion could never reach the guard it
+    # is meant to exercise — making the test pass/fail by host tooling, not by the guard. Stub both
+    # on PATH (no-op executables) so execution deterministically reaches the read-guard. Mirrors the
+    # Z-test mktemp-stub idiom; the stub binaries are never invoked because the read-guard rejects
+    # the symlinked leaf well before any tmux/claude call.
+    local stubdir="$WORKDIR/jj-stub"
+    mkdir -p "$stubdir"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$stubdir/tmux"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$stubdir/claude"
+    chmod +x "$stubdir/tmux" "$stubdir/claude"
+
+    in_before="$(sha256sum "$target" | awk '{print $1}')"
+    stderr="$gitroot/jj-stderr.txt"
+    ( cd "$gitroot" && PATH="$stubdir:$PATH" bash "$FAKE_SPAWN_BROOD_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    in_after="$(sha256sum "$target" | awk '{print $1}')"
+    rm -rf "$stubdir"
+
+    # No brood state (a manifest.json / inputs.json under broods/) may have been written under the
+    # external target — a successful escape would relocate/author state there through the symlink.
+    local wrote=no
+    if find "$external" \( -name manifest.json -o -name inputs.json \) -print 2>/dev/null | grep -q .; then
+        wrote=yes
+    fi
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$wrote" == "no" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "symlinked inputs LEAF rejected by read-guard (exit $rc, containment blocker); external target byte-unchanged, no brood state written"
+    else
+        failed "$name" "expected non-zero exit + containment blocker + unchanged target + no brood state; rc=$rc readguard=$is_readguard_blocker target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
+    fi
+}
+
+# ── KK. intent-fallback inputs-file symlinked LEAF rejected by the read-guard ─
+
+assert_intent_fallback_inputs_symlink_leaf_rejected() {
+    local name="KK:intent-fallback-inputs-symlink-leaf-rejected"
+    # LEAF vector (STEP-001 regression) for mark-intent-fallback.sh, which reuses the shared
+    # containment helper and runs the inputs read-guard BEFORE its `jq -e` validity probe and field
+    # parse. Stage a VALID skew ledger at runs/<id>/state.json FIRST so the ONLY thing that can
+    # block is the read-guard, not a missing ledger. The inputs PATH passed to the engine is ITSELF
+    # a symlink whose target is a VALID intent-fallback inputs file at an EXTERNAL path.
+    #
+    # NON-VACUOUS: the external target is VALID JSON AND the staged ledger is valid+coherent, so the
+    # ONLY thing that can reject is the leaf read-guard. Reverting STEP-001's `[ -L ]` leaf reject
+    # would let the op read THROUGH the symlink and mutate the ledger (rc=0), flipping this to a
+    # FAIL. Assert: non-zero exit; read-guard containment blocker fired; staged ledger AND external
+    # target byte-unchanged.
+    local gitroot external run_id ledger target leaf rc=0
+    local before after in_before in_after stderr is_readguard_blocker
+    gitroot="$(new_gitroot kk-git)"
+    run_id="engine-case-kk"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+    external="$WORKDIR/kk-external"
+    mkdir -p "$external"
+    # VALID intent-fallback inputs at the EXTERNAL target.
+    target="$external/kk-intent-inputs.json"
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent-fallback symlink-leaf inputs" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$target"
+    # The inputs LEAF is a symlink INSIDE the checkout -> external target.
+    leaf="$gitroot/.hivemind/runs/$run_id/kk-intent-inputs.json"
+    ln -s "$target" "$leaf"
+
+    in_before="$(sha256sum "$target" | awk '{print $1}')"
+    stderr="$gitroot/kk-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$leaf" ) >/dev/null 2>"$stderr" || rc=$?
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    in_after="$(sha256sum "$target" | awk '{print $1}')"
+
+    is_readguard_blocker=no
+    grep -q 'refusing to read the inputs file' "$stderr" && is_readguard_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$in_before" == "$in_after" \
+          && "$is_readguard_blocker" == "yes" ]]; then
+        pass "$name" "symlinked inputs LEAF rejected by read-guard (exit $rc, containment blocker); staged ledger + external target byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + containment blocker + unchanged ledger/target; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── LL. record ledger-file symlinked LEAF rejected by the ledger-read guard ──
+
+assert_record_ledger_symlink_leaf_rejected() {
+    local name="LL:record-ledger-symlink-leaf-rejected"
+    # LEDGER-LEAF vector (L-STEP-002 regression) for record-state-result.sh. Unlike the INPUTS-leaf
+    # cases (HH/II/JJ/KK), here the INPUTS file is real+valid in-checkout; the hostile element is the
+    # derived ledger LEAF: the REAL run dir <gitroot>/.hivemind/runs/<id>/ exists, but its state.json
+    # is ITSELF a symlink to a VALID, COHERENT ledger at an EXTERNAL path outside the checkout. The
+    # ledger reads ([ -f ], jq -e ., jq -r '.run.id') all FOLLOW symlinks, so absent a guard the
+    # engine would read THROUGH the symlink and record the transition. The dedicated leaf guard
+    # hivemind_assert_ledger_contained rejects the symlinked ledger leaf BEFORE any of those reads.
+    #
+    # NON-VACUOUS: the external ledger is VALID JSON with .run.id == run_id (coherence) and
+    # .run.workflow == engine-fixture (def resolves), AND the inputs file is valid in-checkout, so
+    # the ONLY gate that can reject is the ledger-leaf guard — not a missing/invalid/incoherent
+    # ledger and not the inputs read-guard. Removing L-STEP-002's hivemind_assert_ledger_contained
+    # call would let the engine follow the symlink and record (rc=0 / external ledger mutated),
+    # flipping this assertion to a FAIL. Assert: non-zero exit; the ledger-leaf containment blocker
+    # fired; the external ledger byte-unchanged (sha256 before==after).
+    local gitroot external run_id ext_ledger rundir leaf inputs rc=0
+    local before after stderr is_ledger_blocker
+    gitroot="$(new_gitroot ll-git)"
+    run_id="engine-case-ll"
+    external="$WORKDIR/ll-external"
+    # VALID, COHERENT ledger at the EXTERNAL target (outside the checkout). .run.id == run_id and
+    # .run.workflow == engine-fixture so it would be accepted absent the ledger-leaf guard.
+    mkdir -p "$external"
+    ext_ledger="$external/state.json"
+    jq --arg id "$run_id" --arg wf "engine-fixture" \
+        '.run.id = $id | .run.workflow = $wf' \
+        "$LEDGER_AT_PLAN" > "$ext_ledger"
+    # REAL run dir in the checkout; only the state.json LEAF is a symlink -> external ledger.
+    rundir="$gitroot/.hivemind/runs/$run_id"
+    mkdir -p "$rundir"
+    leaf="$rundir/state.json"
+    ln -s "$ext_ledger" "$leaf"
+    before="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    # Real, valid inputs file in-checkout: a valid transition (plan ready -> build) the engine WOULD
+    # record absent the ledger-leaf guard. NOT the cause of rejection.
+    inputs="$gitroot/ll-inputs.json"
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test record ledger symlink leaf" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$inputs"
+
+    stderr="$gitroot/ll-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
+    after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+
+    is_ledger_blocker=no
+    grep -qE 'refusing symlinked ledger file leaf|ledger file .* resolves outside the checkout' "$stderr" \
+        && is_ledger_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$is_ledger_blocker" == "yes" ]]; then
+        pass "$name" "symlinked ledger LEAF rejected by ledger-read guard (exit $rc, ledger blocker); external ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + ledger blocker + external ledger byte-unchanged; rc=$rc ledger_blocker=$is_ledger_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── MM. intent-fallback ledger-file symlinked LEAF rejected by the ledger guard ─
+
+assert_intent_fallback_ledger_symlink_leaf_rejected() {
+    local name="MM:intent-fallback-ledger-symlink-leaf-rejected"
+    # LEDGER-LEAF vector (L-STEP-002 regression) for mark-intent-fallback.sh, which reuses
+    # record-state-result.sh's identity derivation and calls the SAME shared
+    # hivemind_assert_ledger_contained leaf guard before any ledger read. Mirrors LL precisely: the
+    # INPUTS file is real+valid in-checkout; the REAL run dir exists but its state.json LEAF is a
+    # symlink to a VALID, COHERENT skew ledger at an EXTERNAL path. The ledger reads follow symlinks,
+    # so absent the guard the op would read THROUGH the symlink and mutate the external ledger.
+    #
+    # NON-VACUOUS: the external ledger is VALID JSON with .run.id == run_id (coherence) and
+    # .run.workflow == engine-fixture, AND the inputs file is valid in-checkout, so the ONLY gate
+    # that can reject is the ledger-leaf guard. (intent-fallback enforces NO version-binding guard,
+    # so the version-2 skew alone would NOT reject — see BB.) Removing L-STEP-002's
+    # hivemind_assert_ledger_contained call would let the op follow the symlink and write (rc=0 /
+    # external ledger mutated), flipping this to a FAIL. Assert: non-zero exit; the ledger-leaf
+    # containment blocker fired; the external ledger byte-unchanged (sha256 before==after).
+    local gitroot external run_id ext_ledger rundir leaf inputs rc=0
+    local before after stderr is_ledger_blocker
+    gitroot="$(new_gitroot mm-git)"
+    run_id="engine-case-mm"
+    external="$WORKDIR/mm-external"
+    # VALID, COHERENT skew ledger at the EXTERNAL target. .run.id == run_id, .run.workflow ==
+    # engine-fixture; it would be mutated absent the ledger-leaf guard.
+    mkdir -p "$external"
+    ext_ledger="$external/state.json"
+    jq --arg id "$run_id" --arg wf "engine-fixture" \
+        '.run.id = $id | .run.workflow = $wf' \
+        "$LEDGER_WRONG_VERSION" > "$ext_ledger"
+    # REAL run dir in the checkout; only the state.json LEAF is a symlink -> external ledger.
+    rundir="$gitroot/.hivemind/runs/$run_id"
+    mkdir -p "$rundir"
+    leaf="$rundir/state.json"
+    ln -s "$ext_ledger" "$leaf"
+    before="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+    # Real, valid inputs file in-checkout: a write the op WOULD record absent the ledger-leaf guard.
+    inputs="$gitroot/mm-inputs.json"
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent-fallback ledger symlink leaf" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$inputs"
+
+    stderr="$gitroot/mm-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
+    after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
+
+    is_ledger_blocker=no
+    grep -qE 'refusing symlinked ledger file leaf|ledger file .* resolves outside the checkout' "$stderr" \
+        && is_ledger_blocker=yes
+    if [[ "$rc" -ne 0 && "$before" == "$after" && "$is_ledger_blocker" == "yes" ]]; then
+        pass "$name" "symlinked ledger LEAF rejected by ledger-read guard (exit $rc, ledger blocker); external ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + ledger blocker + external ledger byte-unchanged; rc=$rc ledger_blocker=$is_ledger_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -1535,6 +2238,18 @@ assert_init_inputs_external_rejected
 assert_record_inputs_external_rejected
 assert_init_pre_ledger_failure_rolls_back_then_retry_succeeds
 assert_init_trap_preserves_committed_ledger
+assert_intent_fallback_skew_no_close
+assert_intent_fallback_skew_close_cancelled
+assert_intent_fallback_illegal_close_unchanged
+assert_intent_fallback_injection_safe
+assert_intent_fallback_symlink_escape_rejected
+assert_intent_fallback_close_nonrunning_rejected
+assert_init_inputs_symlink_leaf_rejected
+assert_record_inputs_symlink_leaf_rejected
+assert_spawn_brood_inputs_symlink_leaf_rejected
+assert_intent_fallback_inputs_symlink_leaf_rejected
+assert_record_ledger_symlink_leaf_rejected
+assert_intent_fallback_ledger_symlink_leaf_rejected
 
 echo ''
 echo '=== Summary ==='

@@ -2,7 +2,9 @@
 #
 # containment.sh — shared symlink-write-escape containment idiom for the three
 # committed hivemind run-ledger / brood writers (init-run-ledger, record-state-result,
-# spawn-brood).
+# spawn-brood); it also provides the ledger-read leaf guard (hivemind_assert_ledger_contained)
+# for the two ledger-reading engines (mark-intent-fallback, record-state-result), completing
+# leaf-symmetry across inputs-file / write-target / ledger-read leaves.
 #
 # THIS FILE IS SOURCED, NOT EXECUTED. No shebang: each caller sources it by absolute
 # path derived from its OWN script_dir (`. "$plugin_root/skills/_shared/containment.sh"`).
@@ -218,6 +220,81 @@ hivemind_assert_file_contained() {
   return 0
 }
 
+# hivemind_assert_ledger_contained <raw_repo_root> <ledger_file_path>
+#
+# LEDGER-READ leaf guard for the two ledger-reading engines (mark-intent-fallback,
+# record-state-result). Those engines read the run-ledger state.json via [ -f "$ledger" ],
+# jq -e . "$ledger", and jq -r '.run.id' "$ledger" — all of which FOLLOW SYMLINKS. Their
+# existing hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id" guard validates
+# the chain only DOWN TO the <run_id> run-dir, NOT the state.json leaf below it. When the
+# run dir is real but state.json is itself a symlink, the ledger reads follow it to an
+# external target — a content/validity read oracle the ancestor guard never inspects.
+#
+# This function REFUSES TO READ such a leaf, mirroring hivemind_assert_inputs_contained's
+# read-guard structure exactly. It completes leaf-symmetry across the three leaf classes:
+# inputs-file leaf (hivemind_assert_inputs_contained), write-target leaf
+# (hivemind_assert_file_contained), and ledger-read leaf (this function).
+#
+# LEAF REJECT: rejects a symlinked LEAF (the ledger file itself) via [ -L ] on the RAW
+# passed path FIRST — fires even when the symlink target is dangling/non-existent, and
+# before any [ -f ]/jq read (which follow symlinks). Then canonicalizes the leaf's DIRNAME
+# (cd && pwd -P), re-appends the basename, and prefix-matches against the canonical root —
+# catching a symlinked ANCESTOR as well.
+#
+# CALLER CONTRACT: callers run this AFTER deriving repo_root/run_id and BEFORE the first
+# ledger read. It does NOT replace the existing ancestor/runs-dir containment guard or the
+# post-existence canonical confirmation — those remain in the callers as defense-in-depth.
+#
+# On success: echoes the canonical repo root and returns 0.
+# On reject:  prints a concise reason to stderr and returns non-zero. Never exits.
+hivemind_assert_ledger_contained() {
+  local raw_root="$1"
+  local ledger_file_path="$2"
+
+  local canon_root
+  canon_root="$(hivemind_canon_root "$raw_root")"
+  if [ -z "$canon_root" ]; then
+    printf 'failed to canonicalize repo root %s\n' "$raw_root" >&2
+    return 1
+  fi
+
+  # Reject a symlinked LEAF before any path resolution. Tests the RAW passed path so it fires
+  # even for a dangling symlink target, and before the [ -f ]/jq reads that follow symlinks.
+  # Mirrors hivemind_assert_inputs_contained's [ -L ] leaf reject. A regular-file leaf is
+  # [ -L ]-false and proceeds to the ancestor check below.
+  if [ -L "$ledger_file_path" ]; then
+    printf 'refusing symlinked ledger file leaf %s under %s\n' "$ledger_file_path" "$canon_root" >&2
+    return 1
+  fi
+
+  # Canonicalize the ledger file path using the same cd && pwd -P idiom as the rest of this
+  # file. We cd into dirname (which must already exist) and re-append the basename. This
+  # resolves every symlink component in the directory path.
+  local ledger_dir ledger_base canon_ledger
+  ledger_dir="$(dirname "$ledger_file_path")"
+  ledger_base="$(basename "$ledger_file_path")"
+  canon_ledger="$(cd "$ledger_dir" 2>/dev/null && pwd -P)"
+  if [ -z "$canon_ledger" ]; then
+    printf 'failed to canonicalize ledger file directory %s\n' "$ledger_dir" >&2
+    return 1
+  fi
+  canon_ledger="$canon_ledger/$ledger_base"
+
+  # Trailing-slash-guarded prefix match — mirrors hivemind_assert_inputs_contained's case
+  # pattern exactly so a sibling path like /repo-evil cannot prefix-match /repo.
+  case "$canon_ledger/" in
+    "$canon_root/"*)
+      ;;
+    *)
+      printf 'ledger file %s resolves outside the checkout: %s\n' "$ledger_file_path" "$canon_ledger" >&2
+      return 1
+      ;;
+  esac
+
+  printf '%s' "$canon_root"
+  return 0
+}
+
 # hivemind_assert_inputs_contained <raw_repo_root> <inputs_file_path>
 #
 # Defense-in-depth READ-guard for the three inputs-file navigators (init-run-ledger,
@@ -237,6 +314,15 @@ hivemind_assert_file_contained() {
 # PRECONDITION: the caller must verify the file exists ([ -f "$inputs_file" ]) before
 # calling this function. Behavior on a missing file is unspecified.
 #
+# LEAF REJECT: in addition to rejecting a symlinked ANCESTOR (caught by the dirname
+# cd && pwd -P canonicalization + prefix case below), this guard rejects a symlinked LEAF
+# (the inputs file itself) via [ -L ] on the RAW passed path — fires even when the symlink
+# target is dangling/non-existent. Without this, a symlinked leaf whose parent dir is
+# in-checkout passes the ancestor check, then the caller's `jq -e . "$INPUTS_FILE"` follows
+# the symlink to an external target — a content/validity read oracle. [ -f ]/[ -e ] do NOT
+# help (they follow symlinks). This MIRRORS hivemind_assert_file_contained's write-guard
+# [ -L ] leaf reject; the two guards are now symmetric on leaf-symlink handling.
+#
 # On success: echoes the canonical repo root and returns 0.
 # On reject:  prints a concise reason to stderr and returns non-zero. Never exits.
 hivemind_assert_inputs_contained() {
@@ -247,6 +333,14 @@ hivemind_assert_inputs_contained() {
   canon_root="$(hivemind_canon_root "$raw_root")"
   if [ -z "$canon_root" ]; then
     printf 'failed to canonicalize repo root %s\n' "$raw_root" >&2
+    return 1
+  fi
+
+  # Reject a symlinked LEAF before any path resolution. Tests the RAW passed path so it fires
+  # even for a dangling symlink target. Mirrors hivemind_assert_file_contained's [ -L ] leaf
+  # reject. A regular-file leaf is [ -L ]-false and proceeds to the ancestor check below.
+  if [ -L "$inputs_file_path" ]; then
+    printf 'refusing symlinked inputs file leaf %s under %s\n' "$inputs_file_path" "$canon_root" >&2
     return 1
   fi
 

@@ -117,8 +117,6 @@ INPUTS_FILE="${1:-}"
   || { printf 'blocker: missing required argument: path to brood inputs JSON file ($1)\n' >&2; exit 1; }
 [ -f "$INPUTS_FILE" ] \
   || { printf 'blocker: brood inputs file %s does not exist\n' "$INPUTS_FILE" >&2; exit 1; }
-jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
-  || { printf 'blocker: brood inputs file %s is not valid JSON\n' "$INPUTS_FILE" >&2; exit 1; }
 
 # ── Script self-location + shared containment helper (sourced early) ────────────
 # Self-locate from THIS script (layout plugin/skills/spawn-brood/scripts/ => 3 dirs up is the
@@ -143,6 +141,14 @@ plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 # blocker idiom. The authoritative not-in-a-repo gate remains the repo_root check further below.
 hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
   || { printf 'blocker: refusing to read the inputs file: %s resolves outside the checkout (symlinked ancestor)\n' "$INPUTS_FILE" >&2; exit 1; }
+
+# ── JSON-validity probe (AFTER the inputs READ-guard) ───────────────────────────
+# `jq -e .` opening an attacker-supplied external path is itself an external-file JSON-validity
+# read oracle, so the containment guard above MUST gate it. This probe therefore runs AFTER
+# hivemind_assert_inputs_contained — never before. A contained-but-invalid-JSON inputs file
+# still hits this blocker (the guard passes, the probe rejects).
+jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
+  || { printf 'blocker: brood inputs file %s is not valid JSON\n' "$INPUTS_FILE" >&2; exit 1; }
 
 # ── Brood-id generation (internal, OQ locked) ────────────────────────────────────
 # Generate the brood-id INTERNALLY as brood-<uuidv4>. Any caller-supplied brood_id in the
