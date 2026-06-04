@@ -106,6 +106,8 @@ CI runs via `.github/workflows/policy-check.yml` (job: `policy-check`), enforced
 
 `codex@openai-codex` is optional — the overlord uses `codex-plugin-cc` for pre-PR local review via the `local-reviewer` agent (`hivemind:adaptation-cycle`). If not installed, the overlord skips local review and proceeds to PR. Run `codex:setup` after installation. Do not hard-require it from any agent or skill.
 
+The local Codex review model is operator-overridable via `HIVEMIND_LOCAL_REVIEW_MODEL`, set in the `env` block of `.claude/settings.json` (committed) or `.claude/settings.local.json` (gitignored, per-account). Empty/unset → codex uses its own default (zero consumer regression). The value passes a charset gate `^[a-zA-Z0-9/_.\-]+$` (e.g. `gpt-5.3-codex`, `gpt-5.5` are valid). The unavailable-model `400` case is account-specific. Reference: ADR-0022.
+
 ## Brood execution
 
 The plugin supports parallel multi-overlord execution via spawn-brood and brood-status skills. Each brood session runs in its own git worktree as an independent Claude Code instance.

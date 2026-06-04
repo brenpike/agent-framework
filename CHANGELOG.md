@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [2.22.0] - 2026-06-04
+
+### Changed
+
+- **Local pre-PR Codex review brought to parity with the post-PR GitHub Codex review (#165).** The local review loop now reviews the full branch diff vs base on every iteration (`--scope branch`), reversing the prior incremental-diff design so fix-induced defects in already-reviewed code and sibling sites are no longer missed. See ADR-0022.
+- **Configurable local-review model via `HIVEMIND_LOCAL_REVIEW_MODEL` (#165).** Set it in the `env` block of `.claude/settings.json` / `.claude/settings.local.json` to pin the Codex review model (charset-gated, forwarded as `--model`); unset/empty omits the flag so Codex uses its own default — zero change for existing consumers.
+- **Context-derived additive review focus with ADR-compliance probe (#165).** The local reviewer now judges, per-PR, which classes of a universal language-agnostic risk taxonomy (untrusted-input, injection, authz, resource/path safety, concurrency, secrets-exposure, performance, ADR-compliance) apply to the diff, discovers ADRs at root and nested `docs/adr`, and passes an abstracted focus directive to Codex; plus generalize-the-finding across analogous sites on both the find and fix sides.
+
 ## [2.21.0] - 2026-06-03
 
 ### Added
