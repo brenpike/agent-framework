@@ -553,7 +553,15 @@ fi
 #
 # Two distinct guards are enforced for the ledger, as SEPARATE token rows:
 #   * $ledger      — the ANCESTOR/runs-dir ordering guard (hivemind_assert_contained)
-#                    must precede the first ledger read.
+#                    must precede the first ledger read. Its guard pattern is anchored
+#                    to the EXECUTABLE invocation (^[[:space:]]*[^#]*hivemind_assert_contained
+#                    [^#]*\.hivemind/runs/$run_id) so the prose comments that merely NAME
+#                    hivemind_assert_contained are not miscounted as the guard line —
+#                    otherwise the first match would be an explanatory comment ABOVE the
+#                    real call, and a $ledger read moved above the real guard could pass.
+#                    The read pattern is likewise line-start anchored (^[[:space:]]*) so a
+#                    `[ -f "$ledger" ]` appearing inside a comment is not miscounted as the
+#                    first read.
 #   * $ledger-leaf — the LEAF symlink guard (hivemind_assert_ledger_contained) must
 #                    ALSO precede the first ledger read. This makes the leaf guard
 #                    TERMINAL: a containment-sourcing engine that reads "$ledger"
@@ -605,19 +613,19 @@ while IFS= read -r -d '' engine_script; do
     declare -a token_guards=(
         'hivemind_assert_inputs_contained[^#]*"\$INPUTS_FILE"'
         '(hivemind_assert_inputs_contained|\[ -L )[^#]*"\$MANIFEST"'
-        'hivemind_assert_contained'
+        '^[[:space:]]*[^#]*hivemind_assert_contained[^#]*\.hivemind/runs/\$run_id'
         '^[[:space:]]*hivemind_assert_ledger_contained'
     )
     declare -a token_reads=(
         '(jq |cat )[^#]*"\$INPUTS_FILE"'
         '(jq |cat )[^#]*"\$MANIFEST"'
-        '(jq |cat |\[ -f )[^#]*"\$ledger"'
+        '^[[:space:]]*(jq |cat |\[ -f )[^#]*"\$ledger"'
         '^[[:space:]]*(jq |cat |\[ -f )[^#]*"\$ledger"'
     )
     declare -a token_read_excludes=(
         'hivemind_assert_inputs_contained|\[ -[fnL] '
         'hivemind_assert_inputs_contained|\[ -[fnL] '
-        'hivemind_assert_contained'
+        'hivemind_assert(_contained|_ledger_contained)'
         'hivemind_assert(_contained|_ledger_contained)'
     )
 
