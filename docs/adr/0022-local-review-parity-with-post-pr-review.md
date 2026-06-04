@@ -19,7 +19,7 @@ This is the load-bearing change. Reasons:
 3. **Precondition for generalize-the-finding.** A reviewer can only enumerate sibling occurrences of a pattern it can SEE. Incremental scope hides the siblings that live outside the latest delta, so pattern generalization is impossible without full-branch scope.
 4. **Adversarial findings are cross-file relationships.** The dangerous shapes are flows — untrusted bytes originating in an UNTOUCHED file and reaching a CHANGED file. An incremental diff that shows only changed lines cannot represent the source end of that flow.
 
-**Tradeoff:** parity costs more per iteration than an incremental diff. The cost is SELF-LIMITING. The loop only continues after `HEAD` advances; a zero-fix iteration leaves `HEAD` unchanged and exits `clean`, so full re-review re-runs ONLY on iterations that actually changed code. The existing anti-churn guards — break-fix detection, diminishing-returns, and max-iterations — already bound runaway re-litigation. Parity is therefore bought without an unbounded per-iteration tax.
+**Tradeoff:** parity costs more per iteration than an incremental diff. The cost is SELF-LIMITING. The loop only continues after `HEAD` advances; a zero-fix non-actionable pass converges within that SAME pass — the deterministic no-progress guard returns `clean` intra-iteration, without advancing to a re-review — so full re-review re-runs ONLY on iterations that actually changed code. Because that guard tests the current pass and carries no prior-HEAD dependency, it fires on iteration 1 too: an all-noise first pass costs exactly ONE review, not two. The existing anti-churn guards — break-fix detection, diminishing-returns, and max-iterations — already bound runaway re-litigation. Parity is therefore bought without an unbounded per-iteration tax.
 
 ### Supporting decisions
 
@@ -41,7 +41,7 @@ Escalation TIMING is unchanged by this ADR. ADR-0003 (immediate-stop-on-planner-
 
 ## Consequences
 
-- **Parity-driven higher per-iteration cost,** bounded and self-limiting: full re-review only re-runs on iterations that advanced `HEAD`; a zero-fix iteration exits `clean`, and break-fix / diminishing-returns / max-iterations bound the loop.
+- **Parity-driven higher per-iteration cost,** bounded and self-limiting: full re-review only re-runs on iterations that advanced `HEAD`; a zero-fix non-actionable pass converges to `clean` WITHIN that same pass (no extra review), including on iteration 1, and break-fix / diminishing-returns / max-iterations bound the loop.
 - **Operators can tune the review model** without a plugin change via `HIVEMIND_LOCAL_REVIEW_MODEL`; unset is a no-op that defers to codex's default.
 - **The ADR-compliance probe makes the loop enforce project ADRs** — diff-relevant constraints from root and nested `docs/adr` are folded into the focus directive; a no-op when the consumer has no ADRs.
 - **Generalize-the-finding closes the sibling-gap whack-a-mole** — patterns are enumerated and remediated (or escalated) as one unit on both the codex and reviewer sides.
