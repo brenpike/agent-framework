@@ -1,2 +1,4 @@
 # Force LF line endings for shell scripts regardless of core.autocrlf
 *.sh text eol=lf
+# Pin brood test fixtures to LF (regression-proofing against core.autocrlf=true checkouts)
+tests/brood/*.json text eol=lf
