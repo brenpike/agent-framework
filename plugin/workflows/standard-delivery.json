@@ -2,7 +2,7 @@
   "id": "standard-delivery",
   "version": 1,
   "start": "plan",
-  "terminal": ["complete", "blocked", "cancelled", "hatchery_monitor", "user_input_required", "review_rejected", "review_exhausted"],
+  "terminal": ["complete", "blocked", "cancelled", "hatchery_monitor", "user_input_required", "review_rejected", "review_exhausted", "merge_advised"],
   "states": {
     "plan": {
       "type": "agent",
@@ -139,6 +139,7 @@
       "transitions": {
         "clean": "open_pr",
         "planner-escalation": "review_remediation_plan",
+        "root-cluster-suspected": "review_remediation_plan",
         "max-iterations-reached": "review_exhausted",
         "break-fix-break": "review_exhausted",
         "diminishing-returns": "open_pr",
@@ -190,6 +191,8 @@
         "pr-closed": "complete",
         "max-cycles-reached": "review_exhausted",
         "planner-escalation": "review_remediation_plan_postpr",
+        "root-cluster-suspected": "review_remediation_plan_postpr",
+        "merge-advised": "merge_advised",
         "injection-suspect": "blocked",
         "high-severity-rejection": "review_rejected",
         "user-input-required": "user_input_required",
@@ -203,6 +206,7 @@
       "transitions": {
         "clean": "complete",
         "planner-escalation": "review_remediation_plan_postpr",
+        "root-cluster-suspected": "review_remediation_plan_postpr",
         "injection-suspect": "blocked",
         "high-severity-rejection": "review_rejected",
         "user-input-required": "user_input_required",
@@ -274,6 +278,7 @@
     "cancelled": { "type": "terminal" },
     "user_input_required": { "type": "terminal" },
     "review_rejected": { "type": "terminal" },
-    "review_exhausted": { "type": "terminal" }
+    "review_exhausted": { "type": "terminal" },
+    "merge_advised": { "type": "terminal" }
   }
 }

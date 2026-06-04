@@ -94,9 +94,13 @@ V1_STATE_TYPES='["decision","agent","skill","user_gate","terminal"]'
 #                          exit_reason — it is intentionally absent here.
 #   - REVIEW_LOOP_SET    : plugin/skills/github-review-loop/SKILL.md (terminal exit_reason)
 #   - REVIEWER_FIX_SET   : plugin/agents/github-reviewer.md (fix-mode Output Contract exit_reason)
-LOCAL_REVIEWER_SET=(clean max-iterations-reached break-fix-break diminishing-returns injection-suspect user-input-required planner-escalation high-severity-rejection blocked)
-REVIEW_LOOP_SET=(clean pr-merged pr-closed max-cycles-reached planner-escalation blocked injection-suspect high-severity-rejection user-input-required)
-REVIEWER_FIX_SET=(clean injection-suspect user-input-required planner-escalation high-severity-rejection blocked)
+#   root-cluster-suspected is emitted by all three reviewer producers and routes to
+#   the planner (remediation plan) like planner-escalation. merge-advised is loop-only
+#   (REVIEW_LOOP_SET): it terminates the run at the merge_advised terminal state and is
+#   intentionally absent from LOCAL_REVIEWER_SET and REVIEWER_FIX_SET.
+LOCAL_REVIEWER_SET=(clean max-iterations-reached break-fix-break diminishing-returns injection-suspect user-input-required planner-escalation root-cluster-suspected high-severity-rejection blocked)
+REVIEW_LOOP_SET=(clean pr-merged pr-closed max-cycles-reached planner-escalation root-cluster-suspected merge-advised blocked injection-suspect high-severity-rejection user-input-required)
+REVIEWER_FIX_SET=(clean injection-suspect user-input-required planner-escalation root-cluster-suspected high-severity-rejection blocked)
 
 # CEREBRATE_PLANNING_SET / CEREBRATE_ANALYSIS_SET : cerebrate's two output-mode
 # vocabularies.
