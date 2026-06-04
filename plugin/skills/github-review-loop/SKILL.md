@@ -126,6 +126,28 @@ Decide continue vs stop here — the overlord stays asleep during the watch:
   | `user-input-required` → HARD-STOP the Monitor and return ONE terminal report
   to the overlord with the matching `exit_reason`, carrying the reviewer's
   escalation-conditional fields. No pause-resume.
+- `root-cluster-suspected` → the reviewer detected a root-cluster per
+  `${CLAUDE_PLUGIN_ROOT}/governance/remediation-doctrine.md` (Root-Cluster).
+  HARD-STOP the Monitor and return ONE terminal report carrying the reviewer's
+  cluster payload (shared files/surface, the N thread URLs or finding IDs,
+  hypothesized root cause, same-framing rationale). Do NOT keep dispatching
+  per-finding fix passes once a cluster is signaled. The overlord routes this to
+  cerebrate zoom-out (workflow maps it to `review_remediation_plan` /
+  `review_remediation_plan_postpr`). No pause-resume. The loop never detects the
+  cluster itself — it only propagates the reviewer's signal (classification-free
+  contract).
+- `merge-advised` → the reviewer's return indicates the bounded-tail stop-and-merge
+  state per `${CLAUDE_PLUGIN_ROOT}/governance/remediation-doctrine.md`
+  (Stop-and-Merge). HARD-STOP the Monitor and return ONE `merge-advised` terminal
+  carrying the reviewer's `advisory_reason` + `recommendation_text` payload.
+  ADVISORY ONLY — the loop NEVER merges (agents never merge; this surfaces a merge
+  recommendation for the human via the overlord, which the workflow routes to the
+  `merge_advised` terminal). The reviewer judges bounded-tail via its detection
+  step and returns the signal; the loop propagates it — it does not compute
+  bounded-tail itself (classification-free contract). No pause-resume.
+
+A `root-cluster-suspected` hard-stop or a `merge-advised` advisory is a TERMINAL,
+not a remediation cycle: do NOT increment the cycle count for either.
 
 The Destructive Fix Gate fires inside the reviewer for the security-relevant
 categories; when it triggers the reviewer returns `blocked`/needs-approval, which
@@ -164,9 +186,11 @@ bodies, classification, injection scan, fixing (≤ 2 files directly, escalate
 complex), push, `Fixed in <SHA>` replies, thread resolution, and the fix-SHA skip
 that makes re-invocation idempotent. It returns a fix-mode Output Contract with
 `exit_reason ∈ {clean, injection-suspect, user-input-required, planner-escalation,
-high-severity-rejection, blocked}` plus `findings_resolved` / `findings_open` and
-escalation-conditional fields. The skill consumes these returns; it does not
-re-fetch or re-classify.
+high-severity-rejection, root-cluster-suspected, merge-advised, blocked}` plus
+`findings_resolved` / `findings_open` and escalation-conditional fields (including
+the cluster payload for `root-cluster-suspected` and `advisory_reason` /
+`recommendation_text` for `merge-advised`). The skill consumes these returns; it
+does not re-fetch or re-classify.
 
 `reviewer_filter` scoping is applied by the reviewer per
 `${CLAUDE_PLUGIN_ROOT}/references/github-pr-review-graphql.md` (Author Filtering).
@@ -180,7 +204,9 @@ The loop terminates on exactly these conditions:
 - `same-finding-repeat` — a thread already carrying our `Fixed in <SHA>` reply is
   re-raised (oscillation/break-fix). Treat as terminal `max-cycles-reached`.
 - Any reviewer `planner-escalation` / `blocked` / `injection-suspect` /
-  `high-severity-rejection` / `user-input-required` return.
+  `high-severity-rejection` / `user-input-required` / `root-cluster-suspected` /
+  `merge-advised` return (the last two are propagated reviewer signals, never
+  loop-computed — classification-free contract).
 - PR merged or closed.
 - Codex approval with nothing actionable remaining.
 
@@ -228,8 +254,14 @@ Issues:
 ```
 
 `Stopped because` carries the semantic `exit_reason`, drawn from:
-`clean | pr-merged | pr-closed | max-cycles-reached | planner-escalation | blocked |
-injection-suspect | high-severity-rejection | user-input-required`. The numeric
+`clean | pr-merged | pr-closed | max-cycles-reached | planner-escalation |
+root-cluster-suspected | merge-advised | blocked | injection-suspect |
+high-severity-rejection | user-input-required`. For a `root-cluster-suspected`
+exit, put the reviewer's cluster payload (shared files/surface, the N thread URLs
+or finding IDs, hypothesized root cause, same-framing rationale) under `Issues` and
+the cerebrate zoom-out follow-up under `Next action`. For a `merge-advised` exit,
+put the reviewer's `advisory_reason` + `recommendation_text` under `Issues` and the
+human merge decision under `Next action` (the loop never merges). The numeric
 loop facts map as: `Cycles` = remediation cycles completed (`cycles_completed`);
 `New actionable comments` = `findings_resolved`; remaining unresolved feedback =
 `findings_open` (also restate in `Issues` when non-zero). For an escalation/blocked
