@@ -11,6 +11,7 @@
       "transitions": {
         "clean": "open_pr",
         "planner-escalation": "review_remediation_plan",
+        "root-cluster-suspected": "review_remediation_plan",
         "max-iterations-reached": "review_exhausted",
         "break-fix-break": "review_exhausted",
         "diminishing-returns": "open_pr",

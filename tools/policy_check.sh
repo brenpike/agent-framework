@@ -509,7 +509,7 @@ while IFS= read -r -d '' md_file; do
             check8_found=true
             add_finding 'CHECK8' "$md_file" "$line_num" \
                 "Bare path ref (missing \${CLAUDE_PLUGIN_ROOT}/ prefix): $bare_ref"
-        done < <(echo "$stripped" | grep -oP '(^|[^A-Za-z0-9_./-])\K(agents|skills|governance)/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.(md|sh|json)' || true)
+        done < <(echo "$stripped" | grep -oP '(^|[^A-Za-z0-9_./-])\K(agents|skills|governance|references|workflows)/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.(md|sh|json)' || true)
     done < "$md_file"
 done < <(find "$PLUGIN_ROOT" -name '*.md' -type f -print0)
 
@@ -664,6 +664,34 @@ done < <(find "$PLUGIN_ROOT/skills" -path '*/scripts/*.sh' -type f -print0)
 
 if [[ "$check9_found" == false ]]; then
     echo "[PASS] Check 9: All $check9_script_count containment-sourcing engine scripts guard each token before its first read"
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
+# ── CHECK 10: No literal NUL byte in plugin Markdown payload ───────────────
+#
+# Packaged plugin .md files (skills, agents, governance, references) are
+# runtime-loaded TEXT assets. A literal NUL byte makes a file binary to
+# `file`, truncates shell-based validators and Markdown tooling, and may be
+# dropped or mistaken for binary by plugin consumers. Forbid it outright; a
+# textual escape such as `\u0000` or `<NUL>` represents the byte in prose.
+echo ''
+echo '=== CHECK 10: No literal NUL byte in plugin Markdown payload ==='
+
+check10_found=false
+check10_md_count=0
+while IFS= read -r -d '' md_file; do
+    check10_md_count=$((check10_md_count + 1))
+    if LC_ALL=C grep -qaP '\x00' "$md_file" 2>/dev/null; then
+        check10_found=true
+        add_finding 'CHECK10' "$md_file" 0 \
+            "Literal NUL byte in plugin Markdown payload — replace with a textual escape (e.g. \\u0000 or <NUL>); NUL makes the file binary and breaks Markdown/shell tooling and plugin consumers"
+    fi
+done < <(find "$PLUGIN_ROOT" -name '*.md' -type f -print0)
+
+if [[ "$check10_found" == false ]]; then
+    echo "[PASS] Check 10: All $check10_md_count plugin Markdown payload files are free of literal NUL bytes"
     CHECKS_PASSED=$((CHECKS_PASSED + 1))
 else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))

@@ -150,12 +150,12 @@ The act of addressing a review finding: classify, fix directly (≤2 files) or f
 _Avoid_: resolution, fix (too generic)
 
 **Mutation Decay**:
-The detected oscillation where fixing one finding reintroduces a previously fixed finding (2-of-3 signal match), indicating unstable evolution. Forces a mandatory stop.
+The detected oscillation where fixing one finding reintroduces a previously fixed finding (2-of-3 signal match), indicating unstable evolution. Forces a mandatory stop. Operational detail (detection signals, precedence) now in `hivemind:detect-remediation-signals`; policy meaning in the **Remediation Doctrine**.
 _Alias_: break-fix-break cycle
 _Avoid_: regression loop, flip-flop
 
 **Creep Stagnation**:
-The detected pattern where the adaptation cycle yields diminishing returns across 2+ iterations — the loop spreads but gains no new ground. Recognized from the fix ledger by one or more signals: shrinking yield (fewer findings and/or lower max severity each pass), style drift (findings trending subjective/low-severity with no security/contract/architecture impact), re-litigation of already-accepted tradeoffs, or non-converging churn. Unlike Mutation Decay, this is an ADVISORY early exit (`diminishing-returns`), not a mandatory stop: the local-reviewer recommends ending the loop and returns the decision to the overlord/Overmind. Guarded — runs only after auto-fixable findings are fixed and checkpointed and never fires while any actionable finding is open, and never at or after the iteration ceiling (`max-iterations-reached` wins there).
+The detected pattern where the adaptation cycle yields diminishing returns across 2+ iterations — the loop spreads but gains no new ground. Recognized from the fix ledger by one or more signals: shrinking yield (fewer findings and/or lower max severity each pass), style drift (findings trending subjective/low-severity with no security/contract/architecture impact), re-litigation of already-accepted tradeoffs, or non-converging churn. Unlike Mutation Decay, this is an ADVISORY early exit (`diminishing-returns`), not a mandatory stop: the local-reviewer recommends ending the loop and returns the decision to the overlord/Overmind. Guarded — runs only after auto-fixable findings are fixed and checkpointed and never fires while any actionable finding is open, and never at or after the iteration ceiling (`max-iterations-reached` wins there). Operational detail (signals, guards) now in `hivemind:detect-remediation-signals`; policy meaning in the **Remediation Doctrine**.
 _Alias_: diminishing-returns exit
 _Avoid_: decay (reserved for Mutation Decay), regression loop, flip-flop
 
@@ -168,12 +168,33 @@ The one-shot operating mode of the github-reviewer agent that processes existing
 _Avoid_: one-shot mode, immediate mode
 
 **GitHub Review Loop**:
-The main-session skill (`hivemind:github-review-loop`, executed by the overlord) that watches a single PR via a thin change-detection poll armed on a Monitor and dispatches the github-reviewer agent in fix mode per actionable event. It owns the loop lifecycle — cycle counting, continue/stop decisions, and the single terminal report to the overlord — but never reads, interprets, or classifies feedback (that is the reviewer's job). It returns ONLY on a terminal condition: merged, closed, timeout, max cycles, same-finding-repeat, deferred escalation, injection-suspect, or Codex approval with nothing actionable remaining. Distinct from the **Adaptation Cycle** ("review loop"), which is the local pre-PR Codex cycle.
+The main-session skill (`hivemind:github-review-loop`, executed by the overlord) that watches a single PR via a thin change-detection poll armed on a Monitor and dispatches the github-reviewer agent in fix mode per actionable event. It owns the loop lifecycle — cycle counting, continue/stop decisions, and the single terminal report to the overlord — but never reads, interprets, or classifies feedback (that is the reviewer's job). It returns ONLY on a terminal condition: merged, closed, timeout, max cycles, same-finding-repeat, deferred escalation, injection-suspect, or Codex approval with nothing actionable remaining. Distinct from the **Adaptation Cycle** ("review loop"), which is the local pre-PR Codex cycle. Operational detail of its remediation signals now in `hivemind:detect-remediation-signals`; remediation policy in the **Remediation Doctrine**.
 _Avoid_: watch mode, polling mode, monitor mode, continuous mode, background watch
 
 **Codex Approval**:
 The terminal signal that the Codex reviewer bot (`chatgpt-codex-connector`) is satisfied with a PR: a 👍 `THUMBS_UP` reaction on the pull request object authored by that bot identity. Codex never files a GitHub `APPROVED` review, so detection uses the `reactions(content: THUMBS_UP)` connection, not review state. Terminal for the github-reviewer only when no unresolved non-self actionable items remain.
 _Avoid_: codex sign-off, approved review, thumbs-up comment
+
+**Remediation Doctrine**:
+The governance doc (`plugin/governance/remediation-doctrine.md`) holding the shared, definitional policy meaning of root-cause review remediation — Root-Cluster, Same-Framing Test, Closed-by-Construction Preference, Bounded-Impact Gating, Defer-with-Scope, Stop-and-Merge, and Severity as Sensitivity Modifier — loaded by both reviewers, the overlord, and the cerebrate so all four share one vocabulary. Policy only; detection mechanics live in **detect-remediation-signals**.
+_Avoid_: remediation policy, doctrine doc, remediation rules
+
+**Root-Cluster**:
+A set of N-or-more review findings sharing a root cause, surface, or fix-framing — the signal to stop per-finding patching and zoom out, because the findings are symptoms of one defect. The cluster threshold N is severity-tuned (N=2 on a high-severity just-touched surface, N=3 by default).
+_Avoid_: finding group, batch, duplicate set
+
+**`root-cluster-suspected`**:
+The reviewer exit_reason that carries a detected **Root-Cluster** (shared surface, member thread/finding refs, hypothesized root cause, same-framing rationale). Routes the overlord to a cerebrate remediation zoom-out (`review_remediation_plan` / `review_remediation_plan_postpr`) for one structural fix instead of N narrow patches.
+_Avoid_: cluster-found, zoom-out signal, whack-a-mole exit
+
+**Merge-Advised**:
+The advisory terminal (`merge_advised`) recommending a human merge of a converged bounded-tail PR — fired only when zero actionable threads remain, the remaining tail is bounded on a hardened surface with a tracked structural home, and each push spawns only a fresh bounded tail. Agents never merge; the reason is carried as `advisory_reason` plus `recommendation_text`.
+_Alias_: stop-and-merge advisory
+_Avoid_: auto-merge, merge signal, approved-to-merge
+
+**detect-remediation-signals**:
+The shared, store-agnostic detection skill (`hivemind:detect-remediation-signals`) invoked by both reviewers over a supplied fix-ledger; returns ONE verdict across four detectors (root-cluster, break-fix, diminishing-returns, merge-advisory). Emits a verdict, not an exit_reason — each reviewer maps the verdict to its own terminal. Operationalizes the **Remediation Doctrine**; carries the detection mechanics that the Mutation Decay / Creep Stagnation / GitHub Review Loop glossary entries point to.
+_Avoid_: signal detector, classifier, cluster checker
 
 ### Plugin Structure
 

@@ -2,7 +2,7 @@
   "id": "pr-feedback-remediation",
   "version": 1,
   "start": "intake",
-  "terminal": ["complete", "blocked", "cancelled", "user_input_required", "review_rejected", "review_exhausted"],
+  "terminal": ["complete", "blocked", "cancelled", "user_input_required", "review_rejected", "review_exhausted", "merge_advised"],
   "states": {
     "intake": {
       "type": "decision",
@@ -34,6 +34,8 @@
         "pr-closed": "complete",
         "max-cycles-reached": "review_exhausted",
         "planner-escalation": "review_remediation_plan",
+        "root-cluster-suspected": "review_remediation_plan",
+        "merge-advised": "merge_advised",
         "injection-suspect": "blocked",
         "high-severity-rejection": "review_rejected",
         "user-input-required": "user_input_required",
@@ -47,6 +49,8 @@
       "transitions": {
         "clean": "complete",
         "planner-escalation": "review_remediation_plan",
+        "root-cluster-suspected": "review_remediation_plan",
+        "merge-advised": "merge_advised",
         "injection-suspect": "blocked",
         "high-severity-rejection": "review_rejected",
         "user-input-required": "user_input_required",
@@ -118,6 +122,7 @@
     "cancelled": { "type": "terminal" },
     "user_input_required": { "type": "terminal" },
     "review_rejected": { "type": "terminal" },
-    "review_exhausted": { "type": "terminal" }
+    "review_exhausted": { "type": "terminal" },
+    "merge_advised": { "type": "terminal" }
   }
 }

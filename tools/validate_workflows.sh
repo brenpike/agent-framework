@@ -94,9 +94,15 @@ V1_STATE_TYPES='["decision","agent","skill","user_gate","terminal"]'
 #                          exit_reason — it is intentionally absent here.
 #   - REVIEW_LOOP_SET    : plugin/skills/github-review-loop/SKILL.md (terminal exit_reason)
 #   - REVIEWER_FIX_SET   : plugin/agents/github-reviewer.md (fix-mode Output Contract exit_reason)
-LOCAL_REVIEWER_SET=(clean max-iterations-reached break-fix-break diminishing-returns injection-suspect user-input-required planner-escalation high-severity-rejection blocked)
-REVIEW_LOOP_SET=(clean pr-merged pr-closed max-cycles-reached planner-escalation blocked injection-suspect high-severity-rejection user-input-required)
-REVIEWER_FIX_SET=(clean injection-suspect user-input-required planner-escalation high-severity-rejection blocked)
+#   root-cluster-suspected is emitted by all three reviewer producers and routes to
+#   the planner (remediation plan) like planner-escalation. merge-advised is a
+#   github-reviewer producer outcome (emitted in both loop and fix mode): it routes to
+#   the merge_advised terminal from BOTH github_review_loop (REVIEW_LOOP_SET) and
+#   github_reviewer_fix (REVIEWER_FIX_SET). It is absent from LOCAL_REVIEWER_SET because
+#   local-reviewer does not emit merge-advised.
+LOCAL_REVIEWER_SET=(clean max-iterations-reached break-fix-break diminishing-returns injection-suspect user-input-required planner-escalation root-cluster-suspected high-severity-rejection blocked)
+REVIEW_LOOP_SET=(clean pr-merged pr-closed max-cycles-reached planner-escalation root-cluster-suspected merge-advised blocked injection-suspect high-severity-rejection user-input-required)
+REVIEWER_FIX_SET=(clean injection-suspect user-input-required planner-escalation root-cluster-suspected high-severity-rejection merge-advised blocked)
 
 # CEREBRATE_PLANNING_SET / CEREBRATE_ANALYSIS_SET : cerebrate's two output-mode
 # vocabularies.
@@ -261,6 +267,13 @@ validate_workflow_definition() {
 # (increments FAILURES) on any unmapped producer outcome. This is the check that
 # would have caught F1: a reviewer state whose transition keys diverge from the
 # producer's emitted exit_reason vocabulary.
+#
+# It also performs the INVERSE terminal-coverage check: for each producer-state
+# transition whose target is a declared terminal, the outcome key MUST appear in
+# that state's producer set. A producer state cannot route to an advisory terminal
+# via an outcome the set omits — that would mean the terminal is reachable only via
+# a producer set out of lockstep with the workflow (the exact merge-advised gap that
+# motivated #163/#177). This reuses the same CONTRACT_ROWS traversal and resolved set.
 validate_producer_contract() {
     local def_file="$1"
     local label
@@ -292,6 +305,27 @@ validate_producer_contract() {
             [[ "$present" == "true" ]] \
                 || fail "$label" "producer-contract violation: state '$state_name' does not declare producer outcome '$outcome' (set $set_var) as a transition key"
         done
+
+        # INVERSE terminal-coverage: every producer-state transition whose target is
+        # a declared terminal MUST be keyed by an outcome present in this producer set.
+        local set_json terminal_outcomes uncovered
+        set_json="$(printf '%s\n' "${producer_set[@]}" | jq -R . | jq -s .)"
+        # Outcomes on this state that route to a declared terminal.
+        terminal_outcomes="$(jq -r --arg st "$state_name" '
+            (.terminal // []) as $declared
+            | [(.states[$st].transitions // {}) | to_entries[]
+               | .key as $k | .value as $tgt
+               | select(($declared | index($tgt)) != null)
+               | $k]
+            | .[]
+        ' "$def_file" 2>/dev/null || true)"
+        while IFS= read -r outcome; do
+            [[ -n "$outcome" ]] || continue
+            uncovered="$(jq -rn --argjson set "$set_json" --arg o "$outcome" \
+                '($set | index($o)) == null')"
+            [[ "$uncovered" == "true" ]] \
+                && fail "$label" "terminal-coverage violation: state '$state_name' routes outcome '$outcome' to a declared terminal but '$outcome' is absent from its producer set ($set_var) — set is out of lockstep with the workflow"
+        done <<< "$terminal_outcomes"
     done
 
     if [[ "$FAILURES" -eq "$file_failures_before" ]]; then
