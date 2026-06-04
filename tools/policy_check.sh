@@ -675,7 +675,7 @@ fi
 # runtime-loaded TEXT assets. A literal NUL byte makes a file binary to
 # `file`, truncates shell-based validators and Markdown tooling, and may be
 # dropped or mistaken for binary by plugin consumers. Forbid it outright; a
-# textual escape such as ` ` or `<NUL>` represents the byte in prose.
+# textual escape such as `\u0000` or `<NUL>` represents the byte in prose.
 echo ''
 echo '=== CHECK 10: No literal NUL byte in plugin Markdown payload ==='
 
