@@ -35,6 +35,7 @@ SUITE_TEST_SHARED='test_shared_libs.sh'
 SUITE_TEST_BROOD='test_brood_compat.sh'
 SUITE_TEST_FIX_HISTORY='test_fix_history_classify.sh'
 SUITE_TEST_FETCH_NORMALIZE='test_fetch_normalize.sh'
+SUITE_TEST_EXIT_PRECEDENCE='test_exit_precedence.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -48,6 +49,7 @@ ALL_SUITES=(
   "$SUITE_TEST_BROOD"
   "$SUITE_TEST_FIX_HISTORY"
   "$SUITE_TEST_FETCH_NORMALIZE"
+  "$SUITE_TEST_EXIT_PRECEDENCE"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -62,6 +64,7 @@ KNOWN_SUITES=(
   test_brood_compat.sh
   test_fix_history_classify.sh
   test_fetch_normalize.sh
+  test_exit_precedence.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -290,6 +293,17 @@ map_path() {
     matched=1
   fi
 
+  # test_exit_precedence: the exit-precedence decision script + its inline test harness. The .sh
+  # script is ALSO a plugin/* file (policy_check prose-lints it via the wholesale rule below), but
+  # policy_check NEVER EXECUTES bash — so without this rule a script edit would only be prose-linted,
+  # never behaviorally exercised. Tests are inline table-driven (no fixture dir).
+  # (tools/test_exit_precedence.sh itself is covered by the tools/** full-suite leg.)
+  if [[ "$p" == plugin/skills/github-review-loop/scripts/exit-precedence.sh \
+     || "$p" == tools/test_exit_precedence.sh ]]; then
+    add_selected "$SUITE_TEST_EXIT_PRECEDENCE" "$p (exit-precedence script/test)"
+    matched=1
+  fi
+
   # policy_check: all plugin/.claude-plugin runtime + policy/plugin/workflows fixtures.
   if [[ "$p" == plugin/* \
      || "$p" == .claude-plugin/* \
@@ -478,6 +492,7 @@ self_test() {
     ["test_brood_compat.sh"]="tests/brood/manifest-x.json"
     ["test_fix_history_classify.sh"]="tests/fix-history/case01-x.json"
     ["test_fetch_normalize.sh"]="tests/fetch-normalize/case-x.json"
+    ["test_exit_precedence.sh"]="plugin/skills/github-review-loop/scripts/exit-precedence.sh"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do
