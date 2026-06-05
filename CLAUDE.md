@@ -8,7 +8,7 @@ Source for the `hivemind` Claude Code plugin + a single-plugin marketplace point
 
 ## Engineering principles
 
-Project engineering principles governing how prose, scripts, and skills are factored across agents/skills/governance live in `engineering-principles.md` (repo root). Consult it before extracting procedure out of an agent or skill, or when deciding whether something belongs in a script, a skill, or a governance doc.
+Project engineering principles governing how prose, scripts, and skills are factored across agents/skills/governance live in `docs/engineering-principles.md`. Consult it before extracting procedure out of an agent or skill, or when deciding whether something belongs in a script, a skill, or a governance doc.
 
 ## Repository layout
 
