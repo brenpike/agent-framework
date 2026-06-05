@@ -114,6 +114,67 @@ stderr_contains() {
   esac
 }
 
+# run_fail_case <case> <expected-reason> <arg...>
+# Run the normalize core with the given raw args, capturing stdout + exit code WITHOUT a pipe (so
+# the script's own exit status is observed, not a downstream filter's). Assert the script exited
+# NON-ZERO and that stdout carries the single `FETCHNORM_ERROR=<expected-reason>` line. This is the
+# fail-CLOSED asserter: it locks the RS-001 structural guarantee that a live-fetch / input error
+# surfaces as exit 1 + a FETCHNORM_ERROR marker rather than being silently swallowed (the original
+# #203 bug). Distinct from run_case, which treats any non-zero exit as a regression.
+run_fail_case() {
+  local case_name="$1" expected_reason="$2"; shift 2
+  local out status
+  out="$(bash "$NORMALIZE" "$@" 2>/dev/null)"
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    failed "$case_name" "expected NON-ZERO exit, got 0 (stdout: $out)"
+    return
+  fi
+  if printf '%s\n' "$out" | grep -q "^FETCHNORM_ERROR=$expected_reason$"; then
+    pass "$case_name" "exit=$status FETCHNORM_ERROR=$expected_reason"
+  else
+    failed "$case_name" "exit=$status but stdout missing 'FETCHNORM_ERROR=$expected_reason' (got: $out)"
+  fi
+}
+
+# run_failopen_case <case> <review-fixture-abspath> <ci-fixture-abspath|-> <expected-fixture-abspath>
+# Like run_case, but ALSO asserts the script exited 0 explicitly (run_case pipes stdout into canon,
+# so the script's own exit status is masked by canon's). This locks the PRESERVED fail-OPEN
+# guarantee: a malformed / empty / non-array injected payload yields the expected (usually empty)
+# candidate set AND exit 0 — never an error. Captures stdout + status WITHOUT a pipe, then
+# canonicalizes the captured buffer.
+run_failopen_case() {
+  local case_name="$1" review_fix="$2" ci_fix="$3" expected_fix="$4"
+  if [ ! -f "$review_fix" ]; then failed "$case_name" "review fixture missing: $review_fix"; return; fi
+  if [ ! -f "$expected_fix" ]; then failed "$case_name" "expected fixture missing: $expected_fix"; return; fi
+
+  local -a ci_args=()
+  if [ "$ci_fix" != "-" ]; then
+    if [ ! -f "$ci_fix" ]; then failed "$case_name" "ci fixture missing: $ci_fix"; return; fi
+    ci_args=(--ci-payload-file "$ci_fix")
+  fi
+
+  local raw status expected actual
+  raw="$(bash "$NORMALIZE" --payload-file "$review_fix" "${ci_args[@]}" -- "" "" "" all selfuser 2>/dev/null)"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    failed "$case_name" "expected exit 0 (fail-open), got $status (stdout: $raw)"
+    return
+  fi
+  if ! expected="$(canon < "$expected_fix")"; then
+    failed "$case_name" "could not canonicalize expected fixture $expected_fix"
+    return
+  fi
+  actual="$(printf '%s' "$raw" | canon)"
+  if [ "$actual" = "$expected" ]; then
+    pass "$case_name" "(exit=0 $(basename "$review_fix") ci=$(basename "$ci_fix"))"
+  else
+    failed "$case_name" "($(basename "$review_fix") ci=$(basename "$ci_fix"))
+    expected: $expected
+    actual:   $actual"
+  fi
+}
+
 # ── Review surfaces ───────────────────────────────────────────────────────────────
 # thread surface, handled classification: a thread comment carrying a `Fixed in <sha>.` marker
 # normalizes to one review record, item_source review, classification handled.
@@ -188,14 +249,45 @@ run_case "ci:union-with-review" \
   "$FIX_HISTORY_DIR/case01-handled-by-marker.json" "$FN_DIR/ci-checks.json" all \
   "$EXPECTED_DIR/review-plus-ci.json"
 
-# ── Empty / malformed payload -> [] (fail-open) ───────────────────────────────────
-run_case "empty:no-records" \
-  "$FN_DIR/empty-review.json" - all \
+# ── Empty / malformed payload CONTENT -> [] + explicit exit 0 (PRESERVED fail-open) ─
+# RS-001 hardened the LIVE-fetch / input-error path to fail CLOSED, but the malformed/empty injected
+# CONTENT path MUST stay fail-OPEN. run_failopen_case asserts BOTH the empty array AND exit 0
+# explicitly (run_case's pipe to canon masks the script's own exit status). This locks the
+# behavior-preserving boundary: bad payload CONTENT is "nothing classified", never an error.
+run_failopen_case "empty:no-records" \
+  "$FN_DIR/empty-review.json" - \
   "$EXPECTED_DIR/empty.json"
 
-run_case "malformed:fail-open" \
-  "$FN_DIR/malformed.json" - all \
+run_failopen_case "malformed:fail-open" \
+  "$FN_DIR/malformed.json" - \
   "$EXPECTED_DIR/empty-malformed.json"
+
+# A non-array CI payload fed through the OFFLINE --ci-payload-file seam fails OPEN: the ci_records
+# jq projects `if type=="array" then .[] else empty end`, so a non-array CI payload contributes ZERO
+# CI candidates and the script exits 0. (The ci-checks-failed REJECTION lives ONLY in the LIVE
+# fetch_ci_payload path, which --ci-payload-file bypasses — see report limitation note.)
+run_failopen_case "ci:non-array-fail-open" \
+  "$FN_DIR/empty-review.json" "$FN_DIR/ci-non-array.json" \
+  "$EXPECTED_DIR/empty.json"
+
+# ── Fail-CLOSED cluster lock (RS-001 structural fix regression guard) ──────────────
+# Each case drives a live-fetch / input error through the OFFLINE seam and asserts the net observable
+# RS-001 guarantees: exit NON-ZERO + a single `FETCHNORM_ERROR=<reason>` line on stdout. Before
+# RS-001 these were silently swallowed (the original #203 bug); these cases ensure that can never
+# regress.
+
+# Nonexistent --payload-file: the clearest reproduction of the original bug now failing correctly.
+# A path that does not exist trips read_payload_source's regular-file guard. No fixture needed.
+run_fail_case "fail-closed:payload-file-not-found" "payload-file-not-found" \
+  --payload-file "$FN_DIR/__does-not-exist__.json" -- "" "" "" all selfuser
+
+# Empty inline --payload-file= : rejected as an input error, NOT silently re-routed to live GraphQL.
+run_fail_case "fail-closed:empty-inline-payload-file" "missing-value-for-payload-file" \
+  --payload-file= -- "" "" "" all selfuser
+
+# Empty inline --ci-payload-file= : same input-error rejection on the CI seam.
+run_fail_case "fail-closed:empty-inline-ci-payload-file" "missing-value-for-ci-payload-file" \
+  --payload-file "$FN_DIR/empty-review.json" --ci-payload-file= -- "" "" "" all selfuser
 
 # ── reviewer_filter scoping ───────────────────────────────────────────────────────
 # Same payload, three filters. codex-only matches ONLY chatgpt-codex-connector (900). all matches

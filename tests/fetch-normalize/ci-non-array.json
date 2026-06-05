@@ -1,0 +1,3 @@
+{
+  "note": "A JSON OBJECT, not the expected `gh pr checks --json ...` array. Fed through the OFFLINE --ci-payload-file seam. The seam reads the file raw; the ci_records jq projects `if type==\"array\" then .[] else empty end`, so a non-array CI payload FAILS OPEN to zero CI candidates (exit 0), NOT a ci-checks-failed rejection. The ci-checks-failed reason lives ONLY in the LIVE fetch_ci_payload path, unreachable through this seam — see the test comment + the report limitation note."
+}
