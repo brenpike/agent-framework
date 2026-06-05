@@ -17,6 +17,7 @@ allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/preflight.sh *)
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh *)
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/prefilter.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/exit-precedence.sh *)
 shell: bash
 ---
 
@@ -153,6 +154,14 @@ The Destructive Fix Gate fires inside the reviewer for the security-relevant
 categories; when it triggers the reviewer returns `blocked`/needs-approval, which
 hard-stops here and surfaces — no change to the gate; it bubbles as a stop.
 
+When a cycle surfaces multiple simultaneously-applicable reviewer returns, the
+relative precedence ORDER among them is resolved by the shared kernel:
+`${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/exit-precedence.sh`.
+Pass the fired tokens as positional arguments; the kernel outputs the single
+highest-precedence winner. The per-return actions described above (which exit_reason
+to carry, which payload fields to propagate) remain as stated here — only the
+ordering when two or more fire at once defers to the kernel.
+
 ### 6. Cycle counting and cost bounding
 
 Increment a remediation cycle ONLY when the reviewer resolved ≥ 1 finding
@@ -216,6 +225,12 @@ idempotent on restart (cycle counter and last-seen marker reset; the first poll
 treats activity as new; already-handled items are skipped). Break-fix protection is
 `same-finding-repeat` only — the local fix-ledger's Mutation Decay and Creep
 Stagnation do NOT transfer here and remain local-reviewer-owned.
+
+When multiple guards fire simultaneously, the relative ORDER in which their
+exit_reasons resolve is determined by the shared kernel:
+`${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/exit-precedence.sh`.
+The guard set above defines WHICH conditions terminate the loop; the kernel is the
+single source of truth for which exit_reason wins when more than one applies.
 
 ## Terminal report
 
