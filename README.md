@@ -244,6 +244,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:adaptation-cycle` | Run a pre-PR local Codex review on the current branch diff — invocable directly by users or via `hivemind:local-reviewer` |
 | `hivemind:github-review-loop` | Watch a PR in the main session and dispatch the fix-mode `github-reviewer` per actionable event — owns the post-PR review loop |
 | `hivemind:detect-remediation-signals` | Shared root-cluster / break-fix / diminishing-returns / stop-and-merge detector over a fix-ledger — emits one verdict both reviewers map to their own exit_reason |
+| `hivemind:injection-scan` | Scan external-content items for prompt-injection / instruction-override attempts against the security-policy taxonomy — shared judgment skill used by both reviewer agents |
 | `hivemind:open-plan-pr` | Open a pull request after completion, validation, and versioning gates pass |
 | `hivemind:push-branch` | Push the current working branch to its remote (no PR creation) — used to land remediation commits before resuming a review loop |
 | `hivemind:plan-interrogation` | Interactive plan interview — challenges a plan against the project's domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) as decisions crystallise |
