@@ -18,7 +18,7 @@ OUT (non-goals): workflow-calls-workflow / sub-workflow composition (parked — 
 
 ## Guardrails
 
-All extraction follows `engineering-principles.md` (P1–P10): single-source contracts (P1), spec-moves-with-mechanism + test-backed (P2/P3), extraction-home policy (P4/P5/P10), execute-not-load token discipline (P6), don't-hollow-the-agent (P7), skill-warrant test (P8), don't-over-generalize shared scripts (P9).
+All extraction follows `docs/engineering-principles.md` (P1–P10): single-source contracts (P1), spec-moves-with-mechanism + test-backed (P2/P3), extraction-home policy (P4/P5/P10), execute-not-load token discipline (P6), don't-hollow-the-agent (P7), skill-warrant test (P8), don't-over-generalize shared scripts (P9).
 
 ## Vertical slices (each slice = one GitHub issue = one Strain candidate)
 
