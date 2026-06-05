@@ -118,6 +118,8 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
 
 Use this query to retrieve additional pages of comments from a single review thread when `comments(first: 20)` returns `pageInfo.hasNextPage == true`. `threadId` is the thread's GraphQL node id (e.g., `PRRT_...`).
 
+The thread node `id` selected in [Fetch Review Threads](#fetch-review-threads) (`reviewThreads.nodes[].id`) is the value `fix-history-classify.jq` carries as the `thread_id` field on each thread-surface classifier record (per-comment AND the overflow sentinel). A consumer paginating an overflowed thread feeds that `thread_id` straight back as this query's `threadId` argument.
+
 ```bash
 gh api graphql \
   -f threadId="THREAD_NODE_ID" \

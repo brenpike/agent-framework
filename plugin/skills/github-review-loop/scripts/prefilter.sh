@@ -153,7 +153,8 @@ fi
 
 # Single non-paginated GraphQL call. The query must fetch a payload CONFORMING
 # to fix-history-classify.jq's INPUT CONTRACT (see its header §2): each
-# unresolved review thread's last 20 comments (per-thread; threads with >20
+# review thread's `id` (the PRRT_... node id the filter threads through as
+# `thread_id`) plus its last 20 comments (per-thread; threads with >20
 # comments overflow to DISPATCH via the filter's thread_overflow flag), bounded
 # to the first 50 threads; plus the last 50 top-level PR comments and last 50
 # review summaries so the shared filter can classify non-self matching feedback
@@ -183,6 +184,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       reviewThreads(first: 50) {
         totalCount
         nodes {
+          id
           isResolved
           comments(last: 20) {
             totalCount
