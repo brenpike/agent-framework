@@ -34,10 +34,14 @@
 #       .comments.nodes[].author.login
 #       .comments.nodes[].body
 #   .data.repository.pullRequest.comments.nodes[]
+#       .id                        # GraphQL comment node id (IC_...);
+#                                  # threaded through as `id` for node(id:) body refetch
 #       .author.login
 #       .body
 #       .url
 #   .data.repository.pullRequest.reviews.nodes[]
+#       .id                        # GraphQL review node id (PRR_...);
+#                                  # threaded through as `id` for node(id:) body refetch
 #       .author.login
 #       .body
 #       .state
@@ -68,11 +72,14 @@
 #                                     #   so a consumer can paginate the thread.
 #                                     #   null for toplevel/review surfaces, and
 #                                     #   null when a thread node lacks `.id`.
-#     "id":             <string>|null,# thread surface per-comment ONLY: the
-#                                     #   GraphQL comment node id (PRRC_...) for
-#                                     #   node(id:) body refetch in step 4.
-#                                     #   null for sentinel, toplevel, and review
-#                                     #   records (those use url or thread_id).
+#     "id":             <string>|null,# the GraphQL node id for node(id:) body
+#                                     #   refetch in step 4:
+#                                     #   - thread per-comment: PRRC_... comment id
+#                                     #   - toplevel: IC_... issue comment id
+#                                     #   - review: PRR_... review id
+#                                     #   null ONLY for the thread-level overflow
+#                                     #   sentinel (databaseId:null records), which
+#                                     #   have no single comment node to fetch.
 #     "databaseId":     <int> | null, # null for toplevel/review surfaces
 #     "url":            <string>|null,# null for thread surface
 #     "classification": "handled" | "actionable" | "followup-after-fix"
@@ -252,7 +259,7 @@ $pr.reviewThreads as $rt |
       thread_resolved: false,
       thread_overflow: false,
       thread_id: null,
-      id: null,
+      id: ($c.id // null),
       databaseId: null,
       url: $u,
       classification: (
@@ -277,7 +284,7 @@ $pr.reviewThreads as $rt |
       thread_resolved: false,
       thread_overflow: false,
       thread_id: null,
-      id: null,
+      id: ($r.id // null),
       databaseId: null,
       url: $u,
       classification: (

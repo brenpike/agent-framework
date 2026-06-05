@@ -108,14 +108,14 @@ run_case "case05:thread-overflow" "case05-thread-overflow.json" "selfuser" "all"
 # non-self top-level comment → handled; the unaddressed one → actionable; the self comment is not
 # emitted.
 run_case "case06:toplevel-addressed" "case06-toplevel-addressed.json" "selfuser" "all" \
-  '[{"surface":"toplevel","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":null,"databaseId":null,"url":"https://github.com/o/r/pull/1#issuecomment-600","classification":"handled"},{"surface":"toplevel","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":null,"databaseId":null,"url":"https://github.com/o/r/pull/1#issuecomment-601","classification":"actionable"}]'
+  '[{"surface":"toplevel","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":"IC_kwDOcase06comment600","databaseId":null,"url":"https://github.com/o/r/pull/1#issuecomment-600","classification":"handled"},{"surface":"toplevel","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":"IC_kwDOcase06comment601","databaseId":null,"url":"https://github.com/o/r/pull/1#issuecomment-601","classification":"actionable"}]'
 
 # ── Case 7: review summaries ─────────────────────────────────────────────────────
 # CHANGES_REQUESTED/COMMENTED + non-empty body, url unaddressed → actionable; an addressed
 # CHANGES_REQUESTED review (self `Addresses:` harvested its url) → handled; APPROVED and DISMISSED
 # emit NO record.
 run_case "case07:review-summary" "case07-review-summary.json" "selfuser" "all" \
-  '[{"surface":"review","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":null,"databaseId":null,"url":"https://github.com/o/r/pull/1#pullrequestreview-700","classification":"handled"},{"surface":"review","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":null,"databaseId":null,"url":"https://github.com/o/r/pull/1#pullrequestreview-701","classification":"actionable"},{"surface":"review","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":null,"databaseId":null,"url":"https://github.com/o/r/pull/1#pullrequestreview-702","classification":"actionable"}]'
+  '[{"surface":"review","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":"PRR_kwDOcase07review700","databaseId":null,"url":"https://github.com/o/r/pull/1#pullrequestreview-700","classification":"handled"},{"surface":"review","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":"PRR_kwDOcase07review701","databaseId":null,"url":"https://github.com/o/r/pull/1#pullrequestreview-701","classification":"actionable"},{"surface":"review","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":"PRR_kwDOcase07review702","databaseId":null,"url":"https://github.com/o/r/pull/1#pullrequestreview-702","classification":"actionable"}]'
 
 # ── Case 8: [bot] normalization ──────────────────────────────────────────────────
 # A self author login carrying a trailing `[bot]` suffix (selfuser[bot]) normalizes to selfuser →

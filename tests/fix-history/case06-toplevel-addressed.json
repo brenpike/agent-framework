@@ -7,16 +7,19 @@
           "totalCount": 3,
           "nodes": [
             {
+              "id": "IC_kwDOcase06comment600",
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Please rename this variable.",
               "url": "https://github.com/o/r/pull/1#issuecomment-600"
             },
             {
+              "id": "IC_kwDOcase06comment601",
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Consider extracting this helper.",
               "url": "https://github.com/o/r/pull/1#issuecomment-601"
             },
             {
+              "id": "IC_kwDOcase06comment602",
               "author": { "login": "selfuser" },
               "body": "Addresses: https://github.com/o/r/pull/1#issuecomment-600",
               "url": "https://github.com/o/r/pull/1#issuecomment-602"

@@ -7,6 +7,7 @@
           "totalCount": 1,
           "nodes": [
             {
+              "id": "IC_kwDOcase07comment799",
               "author": { "login": "selfuser" },
               "body": "Addresses: https://github.com/o/r/pull/1#pullrequestreview-700",
               "url": "https://github.com/o/r/pull/1#issuecomment-799"
@@ -17,30 +18,35 @@
           "totalCount": 5,
           "nodes": [
             {
+              "id": "PRR_kwDOcase07review701",
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Changes requested: several issues remain.",
               "state": "CHANGES_REQUESTED",
               "url": "https://github.com/o/r/pull/1#pullrequestreview-701"
             },
             {
+              "id": "PRR_kwDOcase07review702",
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Some commentary on the approach.",
               "state": "COMMENTED",
               "url": "https://github.com/o/r/pull/1#pullrequestreview-702"
             },
             {
+              "id": "PRR_kwDOcase07review700",
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Earlier requested change, now handled.",
               "state": "CHANGES_REQUESTED",
               "url": "https://github.com/o/r/pull/1#pullrequestreview-700"
             },
             {
+              "id": "PRR_kwDOcase07review703",
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Looks good to me.",
               "state": "APPROVED",
               "url": "https://github.com/o/r/pull/1#pullrequestreview-703"
             },
             {
+              "id": "PRR_kwDOcase07review704",
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Dismissed review.",
               "state": "DISMISSED",
