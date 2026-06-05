@@ -236,6 +236,28 @@ stderr_contains "tripwire:reviews-stderr" "$FN_DIR/overflow-reviews.json" "OVERF
 # Control: a payload with all totalCounts <= 50 emits NO OVERFLOW diagnostic.
 stderr_contains "tripwire:no-overflow-control" "$FIX_HISTORY_DIR/case01-handled-by-marker.json" "OVERFLOW" absent
 
+# Read-only-FS regression (iter-4): the overflow tripwire must NOT depend on a
+# writable TMPDIR. The original here-doc-fed `while read` loop required bash to
+# create a here-doc temp file; on a read-only filesystem that create fails, the
+# loop never runs, the counters stay 0, and a real >50 overflow is silently lost
+# (exit 0). This case points TMPDIR at an unwritable, non-existent path so any
+# temp-file creation would fail, then asserts the OVERFLOW diagnostic STILL fires
+# — locking the temp-file-free (command-substitution) overflow read.
+stderr_contains_unwritable_tmp() {
+  local case_name="$1" review_fix="$2" needle="$3"
+  if [ ! -f "$review_fix" ]; then failed "$case_name" "review fixture missing: $review_fix"; return; fi
+  local err
+  err="$(TMPDIR=/nonexistent-readonly-tmpdir-$$/cannot-create \
+    bash "$NORMALIZE" --payload-file "$review_fix" -- "" "" "" all selfuser 2>&1 1>/dev/null)"
+  if printf '%s' "$err" | grep -q "$needle"; then
+    pass "$case_name" "stderr contains '$needle' with unwritable TMPDIR"
+  else
+    failed "$case_name" "stderr MISSING '$needle' with unwritable TMPDIR (got: $err)"
+  fi
+}
+stderr_contains_unwritable_tmp "tripwire:threads-stderr-readonly-tmp" \
+  "$FN_DIR/overflow-threads.json" "OVERFLOW"
+
 # ── CI-check candidate injection ──────────────────────────────────────────────────
 # An empty review payload + a `gh pr checks --json bucket,name,description,link,state,workflow`
 # array yields ONLY the bucket==fail checks as ci-check-failure records (id ALWAYS null);

@@ -561,30 +561,23 @@ fi
 # malformed/empty payload behaves like a 0-node page. Mirrors prefilter.sh. Emit
 # an OVERFLOW diagnostic on stderr (never silently drop) when any exceeds 50; the
 # consumer's existing >50 fail-open stays the authority. ------------------------
+# Each count is read via its OWN command substitution — NO here-doc / here-string
+# and NO temp file. A here-doc-fed `while read` loop requires a writable TMPDIR;
+# on a read-only filesystem bash cannot create the here-doc temp file, the loop
+# body never runs, the counters stay 0, and a real >50 overflow is silently lost
+# (exit 0) — the overflow signal must NEVER fail open on an unwritable FS. Reading
+# each scalar by command substitution removes that filesystem dependency entirely.
 # INTENTIONAL fail-open-on-CONTENT: a jq failure here (malformed payload) yields
-# an empty `totals` string, which the while-read loop below resolves to 0 for
-# each counter. This swallow is deliberate — graphql_payload is already cleared
-# by validate_live_response (live) or is trusted injected content (--payload-file).
+# an empty substitution, which the integer guard below resolves to 0 per counter.
+# This swallow is deliberate — graphql_payload is already cleared by
+# validate_live_response (live) or is trusted injected content (--payload-file).
 # This is NOT an unguarded live boundary; the live gate ran before this point.
-totals="$(printf '%s' "$graphql_payload" | jq -r '
-  .data.repository.pullRequest as $pr |
-  "THREADS_TOTAL=" + (($pr.reviewThreads.totalCount // 0) | tostring),
-  "COMMENTS_TOTAL=" + (($pr.comments.totalCount // 0) | tostring),
-  "REVIEWS_TOTAL=" + (($pr.reviews.totalCount // 0) | tostring)
-' 2>/dev/null)"
-
-threads_total=0
-comments_total=0
-reviews_total=0
-while IFS= read -r line; do
-  case "$line" in
-    THREADS_TOTAL=*) threads_total="${line#THREADS_TOTAL=}" ;;
-    COMMENTS_TOTAL=*) comments_total="${line#COMMENTS_TOTAL=}" ;;
-    REVIEWS_TOTAL=*) reviews_total="${line#REVIEWS_TOTAL=}" ;;
-  esac
-done <<EOF
-$totals
-EOF
+threads_total="$(printf '%s' "$graphql_payload" | jq -r '
+  (.data.repository.pullRequest.reviewThreads.totalCount // 0) | tostring' 2>/dev/null)"
+comments_total="$(printf '%s' "$graphql_payload" | jq -r '
+  (.data.repository.pullRequest.comments.totalCount // 0) | tostring' 2>/dev/null)"
+reviews_total="$(printf '%s' "$graphql_payload" | jq -r '
+  (.data.repository.pullRequest.reviews.totalCount // 0) | tostring' 2>/dev/null)"
 case "$threads_total" in ''|*[!0-9]*) threads_total=0 ;; esac
 case "$comments_total" in ''|*[!0-9]*) comments_total=0 ;; esac
 case "$reviews_total" in ''|*[!0-9]*) reviews_total=0 ;; esac
