@@ -112,16 +112,20 @@
 #     as the filter's empty-stream behavior. Injected payloads (--payload-file /
 #     --ci-payload-file / read_payload_source) are TRUSTED content and are NOT
 #     routed through the live-response gate (see validate_live_response, §5) — the
-#     fail-OPEN-on-CONTENT guarantee for injected fixtures is UNCHANGED.
+#     fail-OPEN-on-CONTENT guarantee for injected fixtures is UNCHANGED. The three
+#     downstream jq pipelines (overflow-read, review pipeline, CI pipeline) swallow
+#     malformed content to empty — this is the INTENTIONAL fail-open-on-CONTENT
+#     behavior for trusted/already-gated payloads, not unguarded live boundaries.
 #   - FAIL-CLOSED on a LIVE-response operational failure (§5 validate_live_response):
 #     a live `gh` response that returns exit 0 with a non-empty `.errors` array, a
 #     null/absent `.data.repository.pullRequest`, or an empty body — OR a live
-#     `gh pr checks` non-zero exit outside the documented checks-carrying allowlist
-#     — fails CLOSED (non-zero + a stable FETCHNORM_ERROR reason). This closes the
-#     RESPONSE-CONTENT fail-open one layer below the command-substitution boundary
-#     (RS-001 closed the EXIT boundary; this closes the CONTENT boundary): an
-#     operational failure (auth / missing-repo / missing-PR / cancelled) must
-#     never masquerade as "zero candidates".
+#     `gh pr checks` response at ANY allowlisted status (0, 1, 8) whose stdout is
+#     NOT a JSON array, or a non-allowlisted status — fails CLOSED (non-zero + a
+#     stable FETCHNORM_ERROR reason). All three allowlisted CI statuses share ONE
+#     uniform `type=="array"` parse (iter-3 closure — no per-status carve-out may
+#     skip the check). RS-001 closed the EXIT boundary; RS2-001 + iter-3 close the
+#     CONTENT boundary: an operational failure must never masquerade as "zero
+#     candidates".
 #   - >50-node connection overflow is NOT silently dropped. The three
 #     connection-level totalCounts are emitted on stderr as a diagnostic
 #     OVERFLOW notice AND surfaced to the caller via the trailing exit/marker
@@ -199,13 +203,19 @@
 #     stdout is the expected JSON array: 0 (all pass; [] or absent) and the
 #     checks-failing/pending states 1 and 8. Allowlist, NOT a reject-list — an
 #     unknown/new exit code fails CLOSED by default (closed-by-construction).
-#   - any allowlisted NON-zero status (1 / 8) whose stdout is NOT a JSON array
-#     -> ci-not-array (a failing-CI exit must still carry the check array).
+#   - ALL allowlisted statuses (0, 1, 8) share ONE uniform `type=="array"` parse
+#     (iter-3 closure). No per-status carve-out may skip the check. A non-array
+#     body at ANY allowlisted status (incl. 0) -> ci-not-array.
 #   - any NON-allowlisted non-zero status (auth=4, cancelled=2, network, unknown)
 #     -> ci-operational-failure (EVEN IF stdout happens to be a valid JSON array;
 #     the prior shape-only `type=="array"` trust wrongly accepted auth-4 + []).
-#   - status 0 with `[]` / absent / a valid array                -> PASSES
-#     (zero or some CI candidates; exit 0 unchanged).
+#   - status 0 with `[]` or a valid non-empty array               -> PASSES
+#     ([] is a valid-but-empty all-pass result; do NOT over-reject it).
+#   - The three jq pipelines downstream of this gate (overflow-read, review
+#     pipeline, CI pipeline) swallow malformed content to empty — those are
+#     INTENTIONAL fail-open-on-CONTENT behaviors, NOT unguarded live boundaries.
+#     They operate on payload already cleared here (live) or on trusted injected
+#     content (--payload-file/--ci-payload-file). See §4 fail-open invariant.
 #
 # Reason tokens (STABLE — asserted by RS2-002, documented above):
 #   graphql-empty-body | graphql-errors | graphql-null-pullrequest
@@ -398,12 +408,15 @@ validate_live_response() {
       return 0 ;;
     ci)
       # Status ALLOWLIST: 0 (all pass), 1 (failing), 8 (pending) are the
-      # documented check-carrying exit states. Anything else fails closed.
+      # documented check-carrying exit states. ALL three must carry a JSON array
+      # (including status 0 — `[]` is valid-but-empty on an all-pass run).
+      # Anything else fails closed. Closed-by-construction: ONE array-parse path
+      # for every allowlisted status; no per-status branch may skip the check.
       case "$status" in
-        0)
-          return 0 ;;
-        1|8)
-          # An allowlisted failing/pending exit MUST still carry the JSON array.
+        0|1|8)
+          # INVARIANT: every allowlisted status (incl. 0) must produce a JSON
+          # array. Status 0 with `[]` or a non-empty array passes; status 0 with
+          # a non-array body (e.g. an error object) is an operational failure.
           if printf '%s' "$body" | jq -e 'type == "array"' >/dev/null 2>&1; then
             return 0
           fi
@@ -548,6 +561,11 @@ fi
 # malformed/empty payload behaves like a 0-node page. Mirrors prefilter.sh. Emit
 # an OVERFLOW diagnostic on stderr (never silently drop) when any exceeds 50; the
 # consumer's existing >50 fail-open stays the authority. ------------------------
+# INTENTIONAL fail-open-on-CONTENT: a jq failure here (malformed payload) yields
+# an empty `totals` string, which the while-read loop below resolves to 0 for
+# each counter. This swallow is deliberate — graphql_payload is already cleared
+# by validate_live_response (live) or is trusted injected content (--payload-file).
+# This is NOT an unguarded live boundary; the live gate ran before this point.
 totals="$(printf '%s' "$graphql_payload" | jq -r '
   .data.repository.pullRequest as $pr |
   "THREADS_TOTAL=" + (($pr.reviewThreads.totalCount // 0) | tostring),
@@ -580,6 +598,12 @@ fi
 # tag each emitted record with item_source: "review". FAIL-OPEN: a malformed /
 # empty / unparseable payload yields an empty review-record set (NOT an error) —
 # the normalize core never errors on a bad injected payload. -------------------
+# INTENTIONAL fail-open-on-CONTENT: the 2>/dev/null swallow here is deliberate.
+# graphql_payload is already cleared by validate_live_response (live) or is
+# trusted injected content (--payload-file). A jq content-level parse failure
+# (e.g. structurally valid JSON but unexpected shape) degrades to an empty record
+# set — the slurp below canonicalizes to []. This is NOT an unguarded live
+# boundary; the live gate ran before this point.
 review_records="$(printf '%s' "$graphql_payload" \
   | jq -c -f "$CLASSIFY_FILTER" --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" 2>/dev/null \
   | jq -c '. + {item_source: "review"}' 2>/dev/null)"
@@ -590,6 +614,13 @@ review_records="$(printf '%s' "$graphql_payload" \
 # to failed checks only (bucket == "fail"), normalizing each into a CI candidate
 # carrying NO node id (id: null). A malformed / empty CI payload yields zero CI
 # candidates (fail-open). The raw gh output is a JSON array of check objects. ----
+# INTENTIONAL fail-open-on-CONTENT: the `if type == "array" then .[] else empty
+# end` guard and 2>/dev/null swallow are deliberate. ci_payload is already
+# cleared by validate_live_response (live) or is trusted injected content
+# (--ci-payload-file). A non-array body here means validate_live_response already
+# rejected it (live) or it is a trusted injected fixture whose shape mismatch
+# degrades to zero CI candidates. This is NOT an unguarded live boundary; the
+# live gate ran before this point.
 ci_records="$(printf '%s' "$ci_payload" | jq -c '
   if type == "array" then .[] else empty end
   | select(.bucket == "fail")
