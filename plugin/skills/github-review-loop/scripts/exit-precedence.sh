@@ -52,9 +52,16 @@
 #   7  root-cluster-suspected
 #   8  diminishing-returns       ← local-reviewer only; pre-empts merge-advised
 #   9  merge-advised
-#  10  max-iterations-reached    ← local-reviewer ceiling token
-#  11  max-cycles-reached        ← github-review-loop WATCH_TIMEOUT token
-#  12  clean                     ← floor: nothing fired
+#  10  pr-merged                 ← github-review-loop STATE=MERGED terminal: the PR
+#                                  is gone (merged), an observed-reality terminal
+#                                  that dominates the loop-budget ceilings below but
+#                                  must NOT mask an unaddressed escalation above.
+#  11  pr-closed                 ← github-review-loop STATE=CLOSED terminal: same
+#                                  observed-reality tier as pr-merged; ranks just
+#                                  below it (merge is the success terminal).
+#  12  max-iterations-reached    ← local-reviewer ceiling token
+#  13  max-cycles-reached        ← github-review-loop WATCH_TIMEOUT token
+#  14  clean                     ← floor: nothing fired
 #
 # ALIAS NOTE: local-reviewer emits `break-fix-break` for the Mutation Decay
 # mandatory stop; github-reviewer surfaces the same condition as `blocked` with
@@ -89,9 +96,11 @@ token_rank() {
     root-cluster-suspected)   echo 7  ;;
     diminishing-returns)      echo 8  ;;
     merge-advised)            echo 9  ;;
-    max-iterations-reached)   echo 10 ;;
-    max-cycles-reached)       echo 11 ;;
-    clean)                    echo 12 ;;
+    pr-merged)                echo 10 ;;
+    pr-closed)                echo 11 ;;
+    max-iterations-reached)   echo 12 ;;
+    max-cycles-reached)       echo 13 ;;
+    clean)                    echo 14 ;;
     *)
       printf 'exit-precedence: unknown exit_reason token: %s\n' "$token" >&2
       return 1 ;;

@@ -3,7 +3,7 @@
 # Behavioral unit runner for the exit_reason precedence ladder (issue #204, STEP-003).
 #
 # Tests plugin/skills/github-review-loop/scripts/exit-precedence.sh against the
-# 12-rank ladder defined in that script's header. CI-runnable with bash only — no
+# 14-rank ladder defined in that script's header. CI-runnable with bash only — no
 # jq, no tmux, no network. Pure subprocess invocation of the script under test.
 #
 # Mirrors tools/test_fix_history_classify.sh: pass/fail counters, per-case
@@ -135,8 +135,9 @@ assert_stdin "single:merge-advised-stdin"          "merge-advised"           "me
 assert_stdin "single:max-cycles-reached-stdin"     "max-cycles-reached"      "max-cycles-reached"
 
 # ============================================================================
-# SECTION 3: Adjacent ladder pairs — each should return the higher (11 pairs)
-# Ranks: 1  2  3  4  5  6  7  8  9  10  11  12
+# SECTION 3: Adjacent ladder pairs — each should return the higher (13 pairs)
+# Ranks: 1  2  3  4  5  6  7  8  9  10  11  12  13  14
+# 10=pr-merged 11=pr-closed 12=max-iterations 13=max-cycles 14=clean
 # ============================================================================
 
 # Pair 1/2: injection-suspect beats high-severity-rejection
@@ -171,17 +172,25 @@ assert_stdin "adj:rank7-beats-8-stdin" "root-cluster-suspected" "diminishing-ret
 assert_args "adj:rank8-beats-9-args"   "diminishing-returns" "diminishing-returns" "merge-advised"
 assert_stdin "adj:rank8-beats-9-stdin" "diminishing-returns" "merge-advised diminishing-returns"
 
-# Pair 9/10
-assert_args "adj:rank9-beats-10-args"   "merge-advised" "merge-advised" "max-iterations-reached"
-assert_stdin "adj:rank9-beats-10-stdin" "merge-advised" "max-iterations-reached merge-advised"
+# Pair 9/10: merge-advised beats pr-merged
+assert_args "adj:rank9-beats-10-args"   "merge-advised" "merge-advised" "pr-merged"
+assert_stdin "adj:rank9-beats-10-stdin" "merge-advised" "pr-merged merge-advised"
 
-# Pair 10/11
-assert_args "adj:rank10-beats-11-args"   "max-iterations-reached" "max-iterations-reached" "max-cycles-reached"
-assert_stdin "adj:rank10-beats-11-stdin" "max-iterations-reached" "max-cycles-reached max-iterations-reached"
+# Pair 10/11: pr-merged beats pr-closed (merge is the success terminal)
+assert_args "adj:rank10-beats-11-args"   "pr-merged" "pr-merged" "pr-closed"
+assert_stdin "adj:rank10-beats-11-stdin" "pr-merged" "pr-closed pr-merged"
 
-# Pair 11/12
-assert_args "adj:rank11-beats-12-args"   "max-cycles-reached" "max-cycles-reached" "clean"
-assert_stdin "adj:rank11-beats-12-stdin" "max-cycles-reached" "clean max-cycles-reached"
+# Pair 11/12: pr-closed beats max-iterations-reached (PR-state terminal dominates budget ceiling)
+assert_args "adj:rank11-beats-12-args"   "pr-closed" "pr-closed" "max-iterations-reached"
+assert_stdin "adj:rank11-beats-12-stdin" "pr-closed" "max-iterations-reached pr-closed"
+
+# Pair 12/13
+assert_args "adj:rank12-beats-13-args"   "max-iterations-reached" "max-iterations-reached" "max-cycles-reached"
+assert_stdin "adj:rank12-beats-13-stdin" "max-iterations-reached" "max-cycles-reached max-iterations-reached"
+
+# Pair 13/14
+assert_args "adj:rank13-beats-14-args"   "max-cycles-reached" "max-cycles-reached" "clean"
+assert_stdin "adj:rank13-beats-14-stdin" "max-cycles-reached" "clean max-cycles-reached"
 
 # ============================================================================
 # SECTION 4: Non-adjacent multi-token inputs spanning tiers
@@ -203,22 +212,49 @@ assert_stdin "nonadj:rank4-beats-9-10-stdin" "planner-escalation" \
 assert_args "nonadj:rank6-beats-9-12" "blocked" \
   "merge-advised" "clean" "blocked"
 
-# rank7 beats rank10 and rank11
-assert_stdin "nonadj:rank7-beats-10-11-stdin" "root-cluster-suspected" \
+# rank7 beats rank13 and rank12
+assert_stdin "nonadj:rank7-beats-12-13-stdin" "root-cluster-suspected" \
   "max-iterations-reached root-cluster-suspected max-cycles-reached"
 
 # ============================================================================
-# SECTION 5: All 12 tokens at once → injection-suspect
+# SECTION 4b: PR-state terminals (pr-merged rank 10, pr-closed rank 11) — these
+# are the github-review-loop STATE=MERGED / STATE=CLOSED guard tokens. Before
+# this they were absent from the ladder and hit the unknown-token reject path
+# whenever surfaced alongside another guard (e.g. max-cycles-reached). Assert
+# they are now VALID tokens: pass through as singletons, dominate the budget
+# ceilings, and lose to genuine escalations above them.
 # ============================================================================
 
-assert_args "all12:args" "injection-suspect" \
+# Singleton passthrough — must NOT be rejected as unknown.
+assert_args  "prstate:pr-merged-single-args"  "pr-merged" "pr-merged"
+assert_args  "prstate:pr-closed-single-args"  "pr-closed" "pr-closed"
+assert_stdin "prstate:pr-merged-single-stdin" "pr-merged" "pr-merged"
+assert_stdin "prstate:pr-closed-single-stdin" "pr-closed" "pr-closed"
+
+# The exact regression the finding describes: MERGED/CLOSED alongside another
+# guard must produce a terminal, not exit 1.
+assert_args  "prstate:pr-merged-beats-max-cycles" "pr-merged" "pr-merged" "max-cycles-reached"
+assert_stdin "prstate:pr-closed-beats-max-cycles" "pr-closed" "max-cycles-reached pr-closed"
+assert_args  "prstate:pr-merged-beats-max-iters"  "pr-merged" "max-iterations-reached" "pr-merged"
+
+# PR-state terminals lose to genuine escalations above them.
+assert_args  "prstate:injection-beats-pr-merged"  "injection-suspect" "pr-merged" "injection-suspect"
+assert_stdin "prstate:blocked-beats-pr-closed"    "blocked" "pr-closed blocked"
+assert_args  "prstate:merge-advised-beats-pr-merged" "merge-advised" "pr-merged" "merge-advised"
+
+# ============================================================================
+# SECTION 5: All 14 tokens at once → injection-suspect
+# ============================================================================
+
+assert_args "all14:args" "injection-suspect" \
   "injection-suspect" "high-severity-rejection" "user-input-required" \
   "planner-escalation" "break-fix-break" "blocked" \
   "root-cluster-suspected" "diminishing-returns" "merge-advised" \
+  "pr-merged" "pr-closed" \
   "max-iterations-reached" "max-cycles-reached" "clean"
 
-assert_stdin "all12:stdin" "injection-suspect" \
-  "injection-suspect high-severity-rejection user-input-required planner-escalation break-fix-break blocked root-cluster-suspected diminishing-returns merge-advised max-iterations-reached max-cycles-reached clean"
+assert_stdin "all14:stdin" "injection-suspect" \
+  "injection-suspect high-severity-rejection user-input-required planner-escalation break-fix-break blocked root-cluster-suspected diminishing-returns merge-advised pr-merged pr-closed max-iterations-reached max-cycles-reached clean"
 
 # ============================================================================
 # SECTION 6: Alias tier — break-fix-break (5) vs blocked (6) vs root-cluster (7)
@@ -291,6 +327,8 @@ assert_stdin "multiline:all-ranks-newline" "injection-suspect" \
   "clean
 max-cycles-reached
 max-iterations-reached
+pr-closed
+pr-merged
 merge-advised
 diminishing-returns
 root-cluster-suspected
