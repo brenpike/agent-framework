@@ -106,11 +106,22 @@
 #
 # 4. BEHAVIOR-PRESERVING INVARIANTS
 # ---------------------------------
-#   - FAIL-OPEN on a malformed / empty / unparseable payload: the normalize core
-#     emits an empty candidate set (`[]`) rather than erroring, so a consumer
-#     treats a broken fetch as "nothing classified" exactly as the filter's
-#     empty-stream behavior. (The LIVE-fetch path still fails non-zero on a gh
-#     error so a real fetch failure is never silently swallowed — see §5.)
+#   - FAIL-OPEN on a malformed / empty / unparseable INJECTED payload: the
+#     normalize core emits an empty candidate set (`[]`) rather than erroring, so
+#     a consumer treats a broken INJECTED fixture as "nothing classified" exactly
+#     as the filter's empty-stream behavior. Injected payloads (--payload-file /
+#     --ci-payload-file / read_payload_source) are TRUSTED content and are NOT
+#     routed through the live-response gate (see validate_live_response, §5) — the
+#     fail-OPEN-on-CONTENT guarantee for injected fixtures is UNCHANGED.
+#   - FAIL-CLOSED on a LIVE-response operational failure (§5 validate_live_response):
+#     a live `gh` response that returns exit 0 with a non-empty `.errors` array, a
+#     null/absent `.data.repository.pullRequest`, or an empty body — OR a live
+#     `gh pr checks` non-zero exit outside the documented checks-carrying allowlist
+#     — fails CLOSED (non-zero + a stable FETCHNORM_ERROR reason). This closes the
+#     RESPONSE-CONTENT fail-open one layer below the command-substitution boundary
+#     (RS-001 closed the EXIT boundary; this closes the CONTENT boundary): an
+#     operational failure (auth / missing-repo / missing-PR / cancelled) must
+#     never masquerade as "zero candidates".
 #   - >50-node connection overflow is NOT silently dropped. The three
 #     connection-level totalCounts are emitted on stderr as a diagnostic
 #     OVERFLOW notice AND surfaced to the caller via the trailing exit/marker
@@ -157,9 +168,64 @@
 #   - stdout: the single normalized JSON array (always, on success).
 #   - exit 0 on success (including the fail-open empty-set case).
 #   - FETCHNORM_ERROR=<reason> on stdout + exit 1 ONLY on a LIVE-fetch failure
-#     (gh error, missing shared filter, bad input) — never on a merely-empty or
-#     malformed injected payload (that is the fail-open empty-set path).
+#     (gh error, missing shared filter, bad input, or a LIVE-RESPONSE operational
+#     failure caught by validate_live_response) — never on a merely-empty or
+#     malformed INJECTED payload (that is the fail-open empty-set path).
 #   - OVERFLOW diagnostic emitted on stderr when any connection totalCount > 50.
+#
+# 5a. LIVE-RESPONSE GATE — validate_live_response (closed-by-construction)
+# ------------------------------------------------------------------------
+# ONE shared gate, invoked by BOTH fetch_graphql_payload and fetch_ci_payload
+# over the RAW live response BEFORE the value crosses the command-substitution
+# return boundary. This is the ONLY place live-response operational-failure
+# detection lives — no per-helper duplicate — so a future live surface is
+# structurally forced through the same gate. SCOPE: LIVE PATH ONLY. The injected
+# --payload-file / --ci-payload-file / read_payload_source path is TRUSTED and is
+# NEVER routed through this gate (forcing injected fixtures through it would break
+# the fail-OPEN-on-CONTENT guarantee and the offline test suite). This is the
+# explicit, deliberate divergence: live response = validated; injected = trusted.
+#
+# GraphQL mode (validate_live_response graphql <body> <status>):
+#   - exit-0 with empty/whitespace body (no JSON)            -> graphql-empty-body
+#   - non-empty `.errors` array (EVEN IF a pullRequest is also
+#     present — `.errors` is the operational-failure signal)  -> graphql-errors
+#   - null/absent `.data.repository.pullRequest` (covers
+#     repo-not-found AND PR-not-found AND auth)               -> graphql-null-pullrequest
+#   - present pullRequest with empty/zero connections          -> PASSES (valid empty;
+#     downstream fail-open -> [] exit 0; do NOT over-reject valid-but-empty)
+#
+# CI mode (validate_live_response ci <body> <status>):
+#   - status is an ALLOWLIST of the documented check-carrying exit states whose
+#     stdout is the expected JSON array: 0 (all pass; [] or absent) and the
+#     checks-failing/pending states 1 and 8. Allowlist, NOT a reject-list — an
+#     unknown/new exit code fails CLOSED by default (closed-by-construction).
+#   - any allowlisted NON-zero status (1 / 8) whose stdout is NOT a JSON array
+#     -> ci-not-array (a failing-CI exit must still carry the check array).
+#   - any NON-allowlisted non-zero status (auth=4, cancelled=2, network, unknown)
+#     -> ci-operational-failure (EVEN IF stdout happens to be a valid JSON array;
+#     the prior shape-only `type=="array"` trust wrongly accepted auth-4 + []).
+#   - status 0 with `[]` / absent / a valid array                -> PASSES
+#     (zero or some CI candidates; exit 0 unchanged).
+#
+# Reason tokens (STABLE — asserted by RS2-002, documented above):
+#   graphql-empty-body | graphql-errors | graphql-null-pullrequest
+#   ci-not-array | ci-operational-failure
+#
+# 5b. LIVE-RESPONSE TEST SEAM (offline drive THROUGH the gate)
+# ------------------------------------------------------------
+# DISTINCT from --payload-file (which BYPASSES the live path + gate). These env
+# seams inject a RAW live response + exit status that the LIVE helpers consume
+# exactly as a real `gh` response, so validate_live_response runs over injected
+# content identically to a real fetch. INERT in production (unset -> real gh):
+#   FETCHNORM_LIVE_GRAPHQL_FILE    raw graphql response body file (`-` = stdin n/a here)
+#   FETCHNORM_LIVE_GRAPHQL_STATUS  simulated gh exit status (default 0)
+#   FETCHNORM_LIVE_CI_FILE         raw `gh pr checks` response body file
+#   FETCHNORM_LIVE_CI_STATUS       simulated gh exit status (default 0)
+# When the *_FILE var is set + non-empty, the helper reads that file as the live
+# response and uses *_STATUS as the live exit code INSTEAD of invoking gh, then
+# routes the result THROUGH validate_live_response. An unreadable seam file is an
+# input error (live-seam-file-not-found). The seams are checked ONLY inside the
+# live helpers, which the --payload-file path never reaches.
 
 set -u
 
@@ -298,6 +364,64 @@ read_payload_source() {
   fi
 }
 
+# validate_live_response <mode> <body> <status>: the SINGLE shared live-response
+# operational-failure gate (closed-by-construction). Invoked by BOTH live helpers
+# over the RAW live response BEFORE the value crosses the command-substitution
+# boundary. LIVE PATH ONLY — injected --payload-file content is TRUSTED and never
+# reaches here. On a detected operational failure it emits the stable
+# FETCHNORM_ERROR marker on stdout and RETURNS non-zero (the caller propagates via
+# the return-code boundary, never `exit`). On success returns 0 and emits nothing
+# (the caller is responsible for emitting the validated body). See §5a.
+validate_live_response() {
+  local mode="$1" body="$2" status="$3"
+  case "$mode" in
+    graphql)
+      # exit-0 with no JSON body is an operational failure, distinct from a valid
+      # empty-connections response (which still carries a pullRequest object).
+      case "$body" in
+        *[![:space:]]*) : ;;
+        *) echo "FETCHNORM_ERROR=graphql-empty-body"; return 1 ;;
+      esac
+      # A non-empty `.errors` array is THE operational-failure signal — fail
+      # closed even if a pullRequest is also present.
+      if printf '%s' "$body" | jq -e '(.errors // []) | length > 0' >/dev/null 2>&1; then
+        echo "FETCHNORM_ERROR=graphql-errors"
+        return 1
+      fi
+      # A concrete pullRequest object MUST be present. null/absent covers
+      # repo-not-found, PR-not-found, and auth-stripped data.
+      if ! printf '%s' "$body" \
+        | jq -e '.data.repository.pullRequest | type == "object"' >/dev/null 2>&1; then
+        echo "FETCHNORM_ERROR=graphql-null-pullrequest"
+        return 1
+      fi
+      return 0 ;;
+    ci)
+      # Status ALLOWLIST: 0 (all pass), 1 (failing), 8 (pending) are the
+      # documented check-carrying exit states. Anything else fails closed.
+      case "$status" in
+        0)
+          return 0 ;;
+        1|8)
+          # An allowlisted failing/pending exit MUST still carry the JSON array.
+          if printf '%s' "$body" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            return 0
+          fi
+          echo "FETCHNORM_ERROR=ci-not-array"
+          return 1 ;;
+        *)
+          # Non-allowlisted non-zero (auth=4, cancelled=2, network, unknown):
+          # fail closed EVEN IF stdout is a valid JSON array (the prior shape-only
+          # check wrongly accepted auth-4 + []).
+          echo "FETCHNORM_ERROR=ci-operational-failure"
+          return 1 ;;
+      esac ;;
+    *)
+      echo "FETCHNORM_ERROR=validate-live-bad-mode"
+      return 1 ;;
+  esac
+}
+
 # fetch_graphql_payload: thin outer shell — the LIVE fetch, BYPASSED under test.
 # Requires OWNER/REPO/PR_NUMBER (validated here, not at top, so the offline
 # --payload-file path needs none of them). Captures the raw GraphQL JSON
@@ -307,19 +431,39 @@ read_payload_source() {
 # `exit` (which the capture site would discard). Stderr diagnostics -> /dev/null.
 # Mirrors prefilter.sh. (F1)
 fetch_graphql_payload() {
-  [ -n "$OWNER" ] || { echo "FETCHNORM_ERROR=missing-owner"; return 1; }
-  [ -n "$REPO" ] || { echo "FETCHNORM_ERROR=missing-repo"; return 1; }
-  case "$PR_NUMBER" in
-    ''|*[!0-9]*) echo "FETCHNORM_ERROR=invalid-pr-number"; return 1 ;;
-  esac
-  if ! ( set -o pipefail; \
-    "${GH_TIMEOUT[@]}" gh api graphql \
+  local gql_body gql_status
+  # LIVE-RESPONSE TEST SEAM (§5b): inject a raw response + status THROUGH the gate
+  # instead of invoking gh. Inert in production (unset -> real fetch). The seam
+  # response is validated exactly as a real one — UNLIKE --payload-file.
+  if [ -n "${FETCHNORM_LIVE_GRAPHQL_FILE:-}" ]; then
+    if [ ! -f "$FETCHNORM_LIVE_GRAPHQL_FILE" ]; then
+      echo "FETCHNORM_ERROR=live-seam-file-not-found"
+      return 1
+    fi
+    gql_body="$(cat "$FETCHNORM_LIVE_GRAPHQL_FILE")"
+    gql_status="${FETCHNORM_LIVE_GRAPHQL_STATUS:-0}"
+  else
+    [ -n "$OWNER" ] || { echo "FETCHNORM_ERROR=missing-owner"; return 1; }
+    [ -n "$REPO" ] || { echo "FETCHNORM_ERROR=missing-repo"; return 1; }
+    case "$PR_NUMBER" in
+      ''|*[!0-9]*) echo "FETCHNORM_ERROR=invalid-pr-number"; return 1 ;;
+    esac
+    gql_body="$("${GH_TIMEOUT[@]}" gh api graphql \
       -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
-      -f query="$QUERY" 2>/dev/null \
-  ); then
+      -f query="$QUERY" 2>/dev/null)"
+    gql_status=$?
+  fi
+  # gh transport / non-zero exit is still a hard failure (RS-001 exit boundary).
+  if [ "$gql_status" -ne 0 ]; then
     echo "FETCHNORM_ERROR=graphql-failed"
     return 1
   fi
+  # RESPONSE-CONTENT gate (RS2-001): reject exit-0 operational failures (errors
+  # array / null pullRequest / empty body) BEFORE the body crosses the boundary.
+  if ! validate_live_response graphql "$gql_body" "$gql_status"; then
+    return 1
+  fi
+  printf '%s' "$gql_body"
 }
 
 # fetch_ci_payload: thin outer shell — the LIVE failed-CI-check fetch, BYPASSED
@@ -336,29 +480,33 @@ fetch_graphql_payload() {
 # inside command substitution — failure crosses via return code, never `exit`.
 # (F2)
 fetch_ci_payload() {
-  [ -n "$OWNER" ] || { echo "FETCHNORM_ERROR=missing-owner"; return 1; }
-  [ -n "$REPO" ] || { echo "FETCHNORM_ERROR=missing-repo"; return 1; }
-  case "$PR_NUMBER" in
-    ''|*[!0-9]*) echo "FETCHNORM_ERROR=invalid-pr-number"; return 1 ;;
-  esac
   local ci_out ci_status
-  ci_out="$("${GH_TIMEOUT[@]}" gh pr checks "$PR_NUMBER" --repo "$OWNER/$REPO" \
-    --json bucket,name,description,link,state,workflow 2>/dev/null)"
-  ci_status=$?
-  if [ "$ci_status" -ne 0 ]; then
-    # Non-zero: accept ONLY when stdout is the expected JSON array (the
-    # documented checks-failing/pending outcome). Any other non-zero (auth,
-    # network, repo-not-found, unsupported field) leaves stdout non-array ->
-    # propagate as a live-fetch failure rather than fail-OPEN to no candidates.
-    if printf '%s' "$ci_out" | jq -e 'type == "array"' >/dev/null 2>&1; then
-      printf '%s' "$ci_out"
-    else
-      echo "FETCHNORM_ERROR=ci-checks-failed"
+  # LIVE-RESPONSE TEST SEAM (§5b): inject a raw response + status THROUGH the gate
+  # instead of invoking gh. Inert in production (unset -> real fetch).
+  if [ -n "${FETCHNORM_LIVE_CI_FILE:-}" ]; then
+    if [ ! -f "$FETCHNORM_LIVE_CI_FILE" ]; then
+      echo "FETCHNORM_ERROR=live-seam-file-not-found"
       return 1
     fi
+    ci_out="$(cat "$FETCHNORM_LIVE_CI_FILE")"
+    ci_status="${FETCHNORM_LIVE_CI_STATUS:-0}"
   else
-    printf '%s' "$ci_out"
+    [ -n "$OWNER" ] || { echo "FETCHNORM_ERROR=missing-owner"; return 1; }
+    [ -n "$REPO" ] || { echo "FETCHNORM_ERROR=missing-repo"; return 1; }
+    case "$PR_NUMBER" in
+      ''|*[!0-9]*) echo "FETCHNORM_ERROR=invalid-pr-number"; return 1 ;;
+    esac
+    ci_out="$("${GH_TIMEOUT[@]}" gh pr checks "$PR_NUMBER" --repo "$OWNER/$REPO" \
+      --json bucket,name,description,link,state,workflow 2>/dev/null)"
+    ci_status=$?
   fi
+  # RESPONSE-CONTENT gate (RS2-001): status-ALLOWLIST + array-shape over the live
+  # response. Replaces the prior shape-only `type=="array"` trust that wrongly
+  # accepted auth(4)/cancelled(2) + a valid JSON array. See §5a.
+  if ! validate_live_response ci "$ci_out" "$ci_status"; then
+    return 1
+  fi
+  printf '%s' "$ci_out"
 }
 
 # --- Resolve the two raw payloads (live fetch OR injected fixture) -----------
