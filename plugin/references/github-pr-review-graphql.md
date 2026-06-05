@@ -129,6 +129,7 @@ query($threadId: ID!, $after: String) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id
+          databaseId
           author { login }
           body
           createdAt
