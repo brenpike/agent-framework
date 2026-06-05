@@ -20,7 +20,9 @@ Resolvable pull request review threads are GraphQL objects. Do not try to resolv
 
 ## Shell and Parsing Rules
 
-Use `gh --jq` only. No standalone `jq`, `python3`, `python`, `node`, or PowerShell. No `/tmp/` for data processing. If `gh --jq` cannot produce the required value, return `blocked`.
+Use `gh --jq` only for inline value extraction. No ad-hoc standalone `jq`, `python3`, `python`, `node`, or PowerShell. No `/tmp/` for data processing. If `gh --jq` cannot produce the required value, return `blocked`.
+
+Sanctioned exception — canonical fix-history classification: the github-reviewer agent captures the raw `gh api graphql` JSON (threads/comments/reviews/top-level, with the contract fields `isResolved`, `comments.totalCount`, comment `databaseId`, `author.login`, `body`, top-level/review `url`, review `state`) and pipes it through the shared filter FILE `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/fix-history-classify.jq` via `jq -f`. This is a pure offline function over already-fetched JSON and is the single source of truth for the skip/order/overflow predicate; it is NOT the ad-hoc inline `jq` munging this rule prohibits.
 
 ## Pagination Requirement
 
@@ -78,9 +80,11 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
           path
           line
           comments(first: 20) {
+            totalCount
             pageInfo { hasNextPage endCursor }
             nodes {
               id
+              databaseId
               author { login }
               body
               createdAt
