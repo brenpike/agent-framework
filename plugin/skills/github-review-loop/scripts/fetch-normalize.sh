@@ -186,12 +186,19 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || fetchnorm_fail "missing-value-for-payload-file"
       PAYLOAD_FILE="$2"; shift 2 ;;
     --payload-file=*)
-      PAYLOAD_FILE="${1#--payload-file=}"; shift ;;
+      PAYLOAD_FILE="${1#--payload-file=}"
+      # An empty inline value (`--payload-file=`) is the same input error as the
+      # separated form with no value: reject rather than silently re-routing to
+      # the live GraphQL path. (F3)
+      [ -n "$PAYLOAD_FILE" ] || fetchnorm_fail "missing-value-for-payload-file"
+      shift ;;
     --ci-payload-file)
       [ "$#" -ge 2 ] || fetchnorm_fail "missing-value-for-ci-payload-file"
       CI_PAYLOAD_FILE="$2"; shift 2 ;;
     --ci-payload-file=*)
-      CI_PAYLOAD_FILE="${1#--ci-payload-file=}"; shift ;;
+      CI_PAYLOAD_FILE="${1#--ci-payload-file=}"
+      [ -n "$CI_PAYLOAD_FILE" ] || fetchnorm_fail "missing-value-for-ci-payload-file"
+      shift ;;
     --)
       shift
       while [ "$#" -gt 0 ]; do positionals+=("$1"); shift; done ;;
@@ -271,15 +278,22 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 }'
 
 # read_payload_source <path>: read the raw payload from a file or stdin (`-`).
-# Returns the content on stdout. Fails the script when the file is unreadable —
-# an explicitly-supplied --payload-file that cannot be read is an input error,
-# distinct from the fail-open empty-payload normalize path.
+# Returns the content on stdout. RETURNS non-zero (emitting the FETCHNORM_ERROR
+# marker on stdout) when the file is unreadable — an explicitly-supplied
+# --payload-file that cannot be read is an input error, distinct from the
+# fail-open empty-payload normalize path. INVARIANT: this helper runs inside
+# command substitution, so failure MUST cross the boundary via return code, not
+# `exit` (which would only kill the subshell and be discarded by `x="$(...)"`).
+# Every capture site checks the substitution status (`if ! x="$(...)"`). (F1)
 read_payload_source() {
   local src="$1"
   if [ "$src" = "-" ]; then
     cat
   else
-    [ -f "$src" ] || fetchnorm_fail "payload-file-not-found"
+    if [ ! -f "$src" ]; then
+      echo "FETCHNORM_ERROR=payload-file-not-found"
+      return 1
+    fi
     cat "$src"
   fi
 }
@@ -287,45 +301,96 @@ read_payload_source() {
 # fetch_graphql_payload: thin outer shell — the LIVE fetch, BYPASSED under test.
 # Requires OWNER/REPO/PR_NUMBER (validated here, not at top, so the offline
 # --payload-file path needs none of them). Captures the raw GraphQL JSON
-# verbatim. Fails non-zero on a gh error (a real fetch failure is never silently
-# swallowed). Stderr diagnostics -> /dev/null. Mirrors prefilter.sh.
+# verbatim. RETURNS non-zero (emitting the FETCHNORM_ERROR marker) on a gh error
+# so a real fetch failure is never silently swallowed. INVARIANT: runs inside
+# command substitution — failure crosses the boundary via return code, never
+# `exit` (which the capture site would discard). Stderr diagnostics -> /dev/null.
+# Mirrors prefilter.sh. (F1)
 fetch_graphql_payload() {
-  [ -n "$OWNER" ] || fetchnorm_fail "missing-owner"
-  [ -n "$REPO" ] || fetchnorm_fail "missing-repo"
-  case "$PR_NUMBER" in ''|*[!0-9]*) fetchnorm_fail "invalid-pr-number" ;; esac
-  ( set -o pipefail; \
+  [ -n "$OWNER" ] || { echo "FETCHNORM_ERROR=missing-owner"; return 1; }
+  [ -n "$REPO" ] || { echo "FETCHNORM_ERROR=missing-repo"; return 1; }
+  case "$PR_NUMBER" in
+    ''|*[!0-9]*) echo "FETCHNORM_ERROR=invalid-pr-number"; return 1 ;;
+  esac
+  if ! ( set -o pipefail; \
     "${GH_TIMEOUT[@]}" gh api graphql \
       -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
       -f query="$QUERY" 2>/dev/null \
-  ) || fetchnorm_fail "graphql-failed"
+  ); then
+    echo "FETCHNORM_ERROR=graphql-failed"
+    return 1
+  fi
 }
 
 # fetch_ci_payload: thin outer shell — the LIVE failed-CI-check fetch, BYPASSED
-# under test. `gh pr checks` EXITS NON-ZERO when any check is failing/pending
-# (exit 8 = pending), so its non-zero exit is NOT a hard error here: capture the
-# JSON regardless and let the normalize core filter `bucket == "fail"`. An empty
-# / absent result yields zero CI candidates. Requires OWNER/REPO/PR_NUMBER.
+# under test. `gh pr checks` EXITS NON-ZERO both for the LEGITIMATE
+# checks-failing/pending case (exit 8 = pending; exit 1 = failing) AND for real
+# fetch errors (auth=4, repo-not-found / unsupported-field=1, cancelled=2). gh's
+# exit codes do NOT cleanly separate "checks failing" (where we WANT the JSON and
+# let the normalize core filter bucket=="fail") from a live-fetch failure, so the
+# discrimination is by PAYLOAD SHAPE: on a non-zero exit, accept the output ONLY
+# when stdout parses as the expected JSON array (the documented checks-state
+# case); otherwise propagate as a live-fetch failure via the return-code boundary
+# (a real error must never fail-OPEN to zero CI candidates). Exit 0 (all checks
+# pass; output is `[]` or absent) yields zero CI candidates. INVARIANT: runs
+# inside command substitution — failure crosses via return code, never `exit`.
+# (F2)
 fetch_ci_payload() {
-  [ -n "$OWNER" ] || fetchnorm_fail "missing-owner"
-  [ -n "$REPO" ] || fetchnorm_fail "missing-repo"
-  case "$PR_NUMBER" in ''|*[!0-9]*) fetchnorm_fail "invalid-pr-number" ;; esac
-  "${GH_TIMEOUT[@]}" gh pr checks "$PR_NUMBER" --repo "$OWNER/$REPO" \
-    --json bucket,name,description,link,state,workflow 2>/dev/null || true
+  [ -n "$OWNER" ] || { echo "FETCHNORM_ERROR=missing-owner"; return 1; }
+  [ -n "$REPO" ] || { echo "FETCHNORM_ERROR=missing-repo"; return 1; }
+  case "$PR_NUMBER" in
+    ''|*[!0-9]*) echo "FETCHNORM_ERROR=invalid-pr-number"; return 1 ;;
+  esac
+  local ci_out ci_status
+  ci_out="$("${GH_TIMEOUT[@]}" gh pr checks "$PR_NUMBER" --repo "$OWNER/$REPO" \
+    --json bucket,name,description,link,state,workflow 2>/dev/null)"
+  ci_status=$?
+  if [ "$ci_status" -ne 0 ]; then
+    # Non-zero: accept ONLY when stdout is the expected JSON array (the
+    # documented checks-failing/pending outcome). Any other non-zero (auth,
+    # network, repo-not-found, unsupported field) leaves stdout non-array ->
+    # propagate as a live-fetch failure rather than fail-OPEN to no candidates.
+    if printf '%s' "$ci_out" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      printf '%s' "$ci_out"
+    else
+      echo "FETCHNORM_ERROR=ci-checks-failed"
+      return 1
+    fi
+  else
+    printf '%s' "$ci_out"
+  fi
 }
 
-# --- Resolve the two raw payloads (live fetch OR injected fixture) ----------
+# --- Resolve the two raw payloads (live fetch OR injected fixture) -----------
+# INVARIANT: each helper RETURNS non-zero on a live/input failure (emitting its
+# FETCHNORM_ERROR marker on stdout, which is captured into the var). The capture
+# site checks the substitution status explicitly so the inner failure can no
+# longer be discarded by a bare `x="$(...)"`. On failure the captured marker is
+# the FETCHNORM_ERROR line; re-emit it verbatim and exit 1. (F1)
 if [ -n "$PAYLOAD_FILE" ]; then
-  graphql_payload="$(read_payload_source "$PAYLOAD_FILE")"
+  if ! graphql_payload="$(read_payload_source "$PAYLOAD_FILE")"; then
+    printf '%s\n' "$graphql_payload"
+    exit 1
+  fi
 else
-  graphql_payload="$(fetch_graphql_payload)"
+  if ! graphql_payload="$(fetch_graphql_payload)"; then
+    printf '%s\n' "$graphql_payload"
+    exit 1
+  fi
 fi
 
 if [ -n "$CI_PAYLOAD_FILE" ]; then
-  ci_payload="$(read_payload_source "$CI_PAYLOAD_FILE")"
+  if ! ci_payload="$(read_payload_source "$CI_PAYLOAD_FILE")"; then
+    printf '%s\n' "$ci_payload"
+    exit 1
+  fi
 elif [ -z "$PAYLOAD_FILE" ]; then
   # Live path: fetch CI checks too. Offline review-only path (--payload-file with
   # no --ci-payload-file) deliberately yields NO CI candidates.
-  ci_payload="$(fetch_ci_payload)"
+  if ! ci_payload="$(fetch_ci_payload)"; then
+    printf '%s\n' "$ci_payload"
+    exit 1
+  fi
 else
   ci_payload=""
 fi
