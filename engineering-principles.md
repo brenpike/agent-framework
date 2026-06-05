@@ -1,0 +1,49 @@
+# Engineering Principles
+
+Project-specific engineering principles for the hivemind plugin, distilled from the issue #201 reviewer-prose-rescue interrogation. They govern how prose, scripts, and skills are factored across agents, skills, and governance. Where a principle is rooted in external best-practice it cites the source; otherwise it is a project decision. Referenced by `CLAUDE.md`.
+
+## P1 — Single-source contract
+
+A contract or spec lives in exactly ONE place. An extraction is not "done" until the duplicated prose copy is DELETED, not merely supplemented. Multi-site contracts drift, and one lagging site is a real defect — this was the root cause of the PR #200 node-id escalation chain, where the same contract was smeared across a jq header, two agent steps, and a graphql reference doc.
+
+## P2 — Spec moves with the mechanism
+
+When procedure is extracted to a script, its spec moves WITH it as a contract-only header — the input/output schema, the invariants, and the WHY. The spec never just evaporates into undocumented code. The header narrates the contract, not the code line-by-line.
+
+## P3 — Header without a test is decoration
+
+A header comment can drift from the code below it in the same file; nothing enforces it. Every extraction is therefore a triple: the script, the contract header, and a `test_*.sh` CI fixture. The test is the behavioral guarantee; the header is human-readable intent. (Precedent: #198's `fix-history-classify.jq` paired with `test_fix_history_classify.sh`.)
+
+## P4 — Extraction-home policy
+
+Pure deterministic mechanism goes to a shared committed SCRIPT, called directly via Bash. Judgment-bearing procedure that is reusable or ad-hoc-invokable goes to a SKILL. Single-use judgment stays in the agent body as narrative. (Rooted in Anthropic guidance that deterministic work belongs in executed scripts and reusable procedure belongs in skills — see Sources.)
+
+## P5 — Bash cannot invoke a Skill
+
+A shell script can only call another script, never a Skill — skills are invoked by an LLM agent via the Skill tool. Therefore any substrate that must be shared with a bash caller MUST be a script, not a skill. This is a forced home, not a preference.
+
+## P6 — Scripts are execute-not-load
+
+An agent or subagent body is loaded in FULL as the system prompt on every dispatch — eager, permanent prompt weight. A skill body loads only on activation (lazy). A script invoked via Bash is EXECUTED, never read into context. Moving a dense contract out of agent prose into a script is therefore a runtime-token win, not just a tidiness win. (Rooted in Anthropic progressive-disclosure guidance — see Sources.)
+
+## P7 — Don't hollow the agent (illegibility guard)
+
+Over-extracting an agent's CORE judgment into opaque script or skill calls is its own failure mode. Extract the shared CRITERIA, but keep the per-instance decision in the agent so it still reads as a coherent judgment narrative.
+
+## P8 — When a skill is warranted
+
+Extract prose into a skill when BOTH hold: (1) it is judgment prose legitimately too complex to reduce to a deterministic script — an LLM must run it — AND (2) it has standalone or generic value, reusable by another agent OR ad-hoc user-invokable. (Rooted in Anthropic's create-a-skill trigger — see Sources.)
+
+## P9 — Don't over-generalize a shared script
+
+If forcing one script to serve two callers requires heavy parameterization or a leaky abstraction, keep the machines separate and extract only the genuinely-shared kernel — for example, an exit-precedence resolver shared by two otherwise-divergent review loops, not the whole loop.
+
+## P10 — Procedure → skill; fact/binding-policy → governance
+
+The deciding axis between a lazy skill and an always-loaded governance doc is procedure-vs-fact. Executable, procedural how-to that runs at a decision point goes to a skill (progressive disclosure, loaded on demand). Facts, definitions, invariants, glossary, and always-binding policy or safety posture go to governance docs (eager-loaded BY NECESSITY — a binding posture demoted to a lazy skill is silently OFF whenever it is not invoked). Do not put executable procedure in eager governance; do not demote always-binding policy to a lazy skill. This applies only when a skill genuinely makes sense (see P8). (Rooted in Anthropic's "procedure rather than a fact" guidance — see Sources.)
+
+## Sources
+
+- https://code.claude.com/docs/en/skills — Claude Code "Extend Claude with skills": the create-a-skill trigger ("a section of CLAUDE.md has grown into a procedure rather than a fact"; "a skill's body loads only when it's used"). Roots for P4/P6/P8/P10.
+- https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills — Agent Skills launch: deterministic reliability of code; progressive disclosure. Roots for P4/P6/P8/P10.
+- https://agentskills.io/specification — Agent Skills spec: the `scripts/` directory is "executed, not loaded"; metadata / SKILL.md / resources disclosure levels. Roots for P4/P6/P8/P10.

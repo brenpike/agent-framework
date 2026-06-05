@@ -6,6 +6,10 @@ Guidance for Claude Code instances working **on this repo** (not consuming the p
 
 Source for the `hivemind` Claude Code plugin + a single-plugin marketplace pointing at it. Plugin defines four agents (overlord, cerebrate, drone, changeling) and ten skills; governance docs are plugin **runtime data** loaded by agents, not just human reference.
 
+## Engineering principles
+
+Project engineering principles governing how prose, scripts, and skills are factored across agents/skills/governance live in `engineering-principles.md` (repo root). Consult it before extracting procedure out of an agent or skill, or when deciding whether something belongs in a script, a skill, or a governance doc.
+
 ## Repository layout
 
 ```
