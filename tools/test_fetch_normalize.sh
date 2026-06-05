@@ -403,6 +403,12 @@ run_live_fail_case "live-closed:ci-pending8-non-array" "ci-not-array" \
   "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
   "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-non-array.json" "FETCHNORM_LIVE_CI_STATUS=8" \
   -- o r 5 all selfuser
+# 7b. STATUS=0 (success — allowlisted) with a NON-array body -> ci-not-array (uniform parse: ALL
+#     allowlisted statuses 0/1/8 must carry a JSON array; a non-array at exit 0 fails closed).
+run_live_fail_case "live-closed:ci-status0-non-array" "ci-not-array" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-non-array.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
 # 8. seam file unreadable -> live-seam-file-not-found (an explicitly-set seam path that does not exist
 #    is an input error, distinct from the fail-open empty path).
 run_live_fail_case "live-closed:seam-file-not-found" "live-seam-file-not-found" \
