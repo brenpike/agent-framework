@@ -24,6 +24,8 @@
 # ---------------------------------------------
 # Both consumers MUST feed a payload conforming to this contract:
 #   .data.repository.pullRequest.reviewThreads.nodes[]
+#       .id                        # GraphQL thread node id (PRRT_...);
+#                                  # threaded through as `thread_id`
 #       .isResolved
 #       .comments.totalCount
 #       .comments.nodes[].databaseId
@@ -59,6 +61,11 @@
 #     "thread_overflow": bool,        # true => this thread had >page comments;
 #                                     #         classification is forced
 #                                     #         "actionable" filter-blind
+#     "thread_id":      <string>|null,# thread surface (per-comment + sentinel):
+#                                     #   the GraphQL thread node id (PRRT_...),
+#                                     #   so a consumer can paginate the thread.
+#                                     #   null for toplevel/review surfaces, and
+#                                     #   null when a thread node lacks `.id`.
 #     "databaseId":     <int> | null, # null for toplevel/review surfaces
 #     "url":            <string>|null,# null for thread surface
 #     "classification": "handled" | "actionable" | "followup-after-fix"
@@ -100,7 +107,10 @@
 # level sentinel record, ONCE PER THREAD, INDEPENDENT of whether any matching
 # comment is visible:
 #   {"surface":"thread","thread_resolved":false,"thread_overflow":true,
-#    "databaseId":null,"url":null,"classification":"actionable"}
+#    "thread_id":"PRRT_...","databaseId":null,"url":null,
+#    "classification":"actionable"}
+# The sentinel's thread_id is the overflowed thread's node id (or null if the
+# thread node lacks `.id`), so a consumer can paginate that exact thread.
 # The sentinel's databaseId is null (it is NOT a single comment — it stands for
 # the whole overflowed thread). Resolved threads NEVER emit a sentinel. A non-
 # overflowed thread NEVER emits a sentinel. An overflowed thread WITH a visible
@@ -188,6 +198,7 @@ $pr.reviewThreads as $rt |
           surface: "thread",
           thread_resolved: false,
           thread_overflow: $thread_overflow,
+          thread_id: ($thread.id // null),
           databaseId: $dbid,
           url: null,
           classification: (
@@ -210,6 +221,7 @@ $pr.reviewThreads as $rt |
         surface: "thread",
         thread_resolved: false,
         thread_overflow: true,
+        thread_id: ($thread.id // null),
         databaseId: null,
         url: null,
         classification: "actionable"
@@ -230,6 +242,7 @@ $pr.reviewThreads as $rt |
       surface: "toplevel",
       thread_resolved: false,
       thread_overflow: false,
+      thread_id: null,
       databaseId: null,
       url: $u,
       classification: (
@@ -253,6 +266,7 @@ $pr.reviewThreads as $rt |
       surface: "review",
       thread_resolved: false,
       thread_overflow: false,
+      thread_id: null,
       databaseId: null,
       url: $u,
       classification: (
