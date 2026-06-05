@@ -33,6 +33,7 @@ SUITE_WORKFLOWS_SELFTEST='validate_workflows.sh --self-test'
 SUITE_TEST_ENGINE='test_engine.sh'
 SUITE_TEST_SHARED='test_shared_libs.sh'
 SUITE_TEST_BROOD='test_brood_compat.sh'
+SUITE_TEST_FIX_HISTORY='test_fix_history_classify.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -44,6 +45,7 @@ ALL_SUITES=(
   "$SUITE_TEST_ENGINE"
   "$SUITE_TEST_SHARED"
   "$SUITE_TEST_BROOD"
+  "$SUITE_TEST_FIX_HISTORY"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -56,6 +58,7 @@ KNOWN_SUITES=(
   test_engine.sh
   test_shared_libs.sh
   test_brood_compat.sh
+  test_fix_history_classify.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -257,6 +260,17 @@ map_path() {
     matched=1
   fi
 
+  # test_fix_history_classify: the pure jq classification filter + its payload fixtures. The .jq
+  # filter is ALSO a plugin/* file (policy_check prose-lints it via the wholesale rule below), but
+  # policy_check NEVER EXECUTES jq — so without this rule a filter edit would only be prose-linted,
+  # never behaviorally exercised. Route both the filter glob and the fixture dir to the behavioral
+  # suite. (tools/test_fix_history_classify.sh itself is covered by the tools/** full-suite leg.)
+  if [[ "$p" == plugin/skills/github-review-loop/scripts/*.jq \
+     || "$p" == tests/fix-history/* ]]; then
+    add_selected "$SUITE_TEST_FIX_HISTORY" "$p (fix-history classify filter/fixture)"
+    matched=1
+  fi
+
   # policy_check: all plugin/.claude-plugin runtime + policy/plugin/workflows fixtures.
   if [[ "$p" == plugin/* \
      || "$p" == .claude-plugin/* \
@@ -443,6 +457,7 @@ self_test() {
     ["test_engine.sh"]="tests/engine/ledger-x.json"
     ["test_shared_libs.sh"]="plugin/skills/_shared/allowlist.sh"
     ["test_brood_compat.sh"]="tests/brood/manifest-x.json"
+    ["test_fix_history_classify.sh"]="tests/fix-history/case01-x.json"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do

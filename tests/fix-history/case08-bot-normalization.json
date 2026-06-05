@@ -1,0 +1,33 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "isResolved": false,
+              "comments": {
+                "totalCount": 2,
+                "nodes": [
+                  {
+                    "databaseId": 800,
+                    "author": { "login": "chatgpt-codex-connector" },
+                    "body": "Race condition in the handler."
+                  },
+                  {
+                    "databaseId": 801,
+                    "author": { "login": "selfuser[bot]" },
+                    "body": "Fixed in 0ff1ce42."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "comments": { "totalCount": 0, "nodes": [] },
+        "reviews": { "totalCount": 0, "nodes": [] }
+      }
+    }
+  }
+}

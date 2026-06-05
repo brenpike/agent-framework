@@ -1,0 +1,30 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": { "totalCount": 0, "nodes": [] },
+        "comments": {
+          "totalCount": 3,
+          "nodes": [
+            {
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Please rename this variable.",
+              "url": "https://github.com/o/r/pull/1#issuecomment-600"
+            },
+            {
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Consider extracting this helper.",
+              "url": "https://github.com/o/r/pull/1#issuecomment-601"
+            },
+            {
+              "author": { "login": "selfuser" },
+              "body": "Addresses: https://github.com/o/r/pull/1#issuecomment-600",
+              "url": "https://github.com/o/r/pull/1#issuecomment-602"
+            }
+          ]
+        },
+        "reviews": { "totalCount": 0, "nodes": [] }
+      }
+    }
+  }
+}

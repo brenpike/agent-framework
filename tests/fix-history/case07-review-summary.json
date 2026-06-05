@@ -1,0 +1,54 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": { "totalCount": 0, "nodes": [] },
+        "comments": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "author": { "login": "selfuser" },
+              "body": "Addresses: https://github.com/o/r/pull/1#pullrequestreview-700",
+              "url": "https://github.com/o/r/pull/1#issuecomment-799"
+            }
+          ]
+        },
+        "reviews": {
+          "totalCount": 5,
+          "nodes": [
+            {
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Changes requested: several issues remain.",
+              "state": "CHANGES_REQUESTED",
+              "url": "https://github.com/o/r/pull/1#pullrequestreview-701"
+            },
+            {
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Some commentary on the approach.",
+              "state": "COMMENTED",
+              "url": "https://github.com/o/r/pull/1#pullrequestreview-702"
+            },
+            {
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Earlier requested change, now handled.",
+              "state": "CHANGES_REQUESTED",
+              "url": "https://github.com/o/r/pull/1#pullrequestreview-700"
+            },
+            {
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Looks good to me.",
+              "state": "APPROVED",
+              "url": "https://github.com/o/r/pull/1#pullrequestreview-703"
+            },
+            {
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Dismissed review.",
+              "state": "DISMISSED",
+              "url": "https://github.com/o/r/pull/1#pullrequestreview-704"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -61,18 +61,26 @@
 #   }
 #
 # Classification labels:
-#   handled            in-thread: body carries `Fixed in <SHA>.` marker, OR
-#                      databaseId <= latest self fix-reply id in the thread.
+#   handled            in-thread: body carries `Fixed in <SHA>.` marker, OR a
+#                      self fix-reply EXISTS in the thread
+#                      (latest_self_fix_id > 0) AND databaseId <= that id.
 #                      toplevel/review: own `url` is in the addressed-url set.
-#   followup-after-fix in-thread ONLY: databaseId > latest self fix-reply id
-#                      AND own body has no marker. A non-self comment that
-#                      post-dates our latest fix-reply in the same thread = a
-#                      re-raise after our fix (cycling / regression evidence).
+#   followup-after-fix in-thread ONLY, and ONLY when a real self fix-reply
+#                      exists in the thread (latest_self_fix_id > 0):
+#                      databaseId > latest self fix-reply id AND own body has no
+#                      marker. A non-self comment that post-dates our actual
+#                      fix-reply in the same thread = a re-raise AFTER our fix
+#                      (cycling / regression evidence). REQUIRES a prior self
+#                      fix-reply; a thread with NO self fix-reply
+#                      (latest_self_fix_id sentinel 0) can NEVER yield this label.
 #   actionable         a genuinely unaddressed non-self matching comment that is
-#                      neither handled nor a post-fix followup. For
-#                      toplevel/review surfaces (no databaseId ordering),
-#                      unaddressed == actionable — there is no
-#                      followup-after-fix distinction off-thread.
+#                      neither handled nor a post-fix followup. Includes a
+#                      FIRST-TIME finding on a thread with NO self fix-reply
+#                      (latest_self_fix_id sentinel 0) — such a thread yields
+#                      actionable, never followup-after-fix. For toplevel/review
+#                      surfaces (no databaseId ordering), unaddressed ==
+#                      actionable — there is no followup-after-fix distinction
+#                      off-thread.
 #
 # Thread-overflow signal: when a thread's `comments.totalCount` exceeds the
 # fetched `comments.nodes` length, EVERY non-self matching comment in that
@@ -161,8 +169,9 @@ $pr.reviewThreads as $rt |
       classification: (
         if $thread_overflow then "actionable"
         elif $has_marker then "handled"
-        elif $dbid <= $latest_self_fix_id then "handled"
-        else "followup-after-fix"
+        elif ($latest_self_fix_id > 0) and ($dbid <= $latest_self_fix_id) then "handled"
+        elif ($latest_self_fix_id > 0) and ($dbid > $latest_self_fix_id) then "followup-after-fix"
+        else "actionable"
         end
       )
     }

@@ -1,0 +1,33 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "isResolved": false,
+              "comments": {
+                "totalCount": 2,
+                "nodes": [
+                  {
+                    "databaseId": 200,
+                    "author": { "login": "chatgpt-codex-connector" },
+                    "body": "Null deref possible here."
+                  },
+                  {
+                    "databaseId": 201,
+                    "author": { "login": "selfuser" },
+                    "body": "Fixed in deadbeef1234."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "comments": { "totalCount": 0, "nodes": [] },
+        "reviews": { "totalCount": 0, "nodes": [] }
+      }
+    }
+  }
+}
