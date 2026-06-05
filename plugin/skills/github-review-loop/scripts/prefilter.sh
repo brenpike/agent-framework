@@ -210,11 +210,13 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 # thread_overflow=true records (oversized threads) arrive as `actionable`. A
 # pure `{handled}`-only or empty stream yields `false`. Fail open (DISPATCH) if
 # the filter pass itself errors, consistent with the GraphQL-error posture.
-dispatch_class=$( printf '%s' "$response" \
+dispatch_class=$( ( set -o pipefail; \
+  printf '%s' "$response" \
   | jq -r -f "$CLASSIFY_FILTER" --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" \
     2>/dev/null \
   | jq -rs 'any(.[]?; .classification == "actionable" or .classification == "followup-after-fix")' \
-    2>/dev/null ) || prefilter_fail "classify-failed"
+    2>/dev/null \
+) ) || prefilter_fail "classify-failed"
 
 # Pass 2 — read the three connection-level totalCounts DIRECTLY off the raw
 # payload (the filter does not emit them). Default each to 0 when absent so a

@@ -12,16 +12,19 @@
                 "totalCount": 3,
                 "nodes": [
                   {
+                    "id": "PRRC_case03comment300",
                     "databaseId": 300,
                     "author": { "login": "chatgpt-codex-connector" },
                     "body": "Original finding."
                   },
                   {
+                    "id": "PRRC_case03comment301",
                     "databaseId": 301,
                     "author": { "login": "selfuser" },
                     "body": "Fixed in cafe1234."
                   },
                   {
+                    "id": "PRRC_case03comment302",
                     "databaseId": 302,
                     "author": { "login": "chatgpt-codex-connector" },
                     "body": "Still wrong after your fix, the edge case remains."

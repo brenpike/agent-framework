@@ -12,11 +12,13 @@
                 "totalCount": 2,
                 "nodes": [
                   {
+                    "id": "PRRC_case02comment200",
                     "databaseId": 200,
                     "author": { "login": "chatgpt-codex-connector" },
                     "body": "Null deref possible here."
                   },
                   {
+                    "id": "PRRC_case02comment201",
                     "databaseId": 201,
                     "author": { "login": "selfuser" },
                     "body": "Fixed in deadbeef1234."

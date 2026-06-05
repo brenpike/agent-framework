@@ -28,6 +28,8 @@
 #                                  # threaded through as `thread_id`
 #       .isResolved
 #       .comments.totalCount
+#       .comments.nodes[].id       # GraphQL comment node id (PRRC_...);
+#                                  # threaded through as `id` for node(id:) body refetch
 #       .comments.nodes[].databaseId
 #       .comments.nodes[].author.login
 #       .comments.nodes[].body
@@ -66,6 +68,11 @@
 #                                     #   so a consumer can paginate the thread.
 #                                     #   null for toplevel/review surfaces, and
 #                                     #   null when a thread node lacks `.id`.
+#     "id":             <string>|null,# thread surface per-comment ONLY: the
+#                                     #   GraphQL comment node id (PRRC_...) for
+#                                     #   node(id:) body refetch in step 4.
+#                                     #   null for sentinel, toplevel, and review
+#                                     #   records (those use url or thread_id).
 #     "databaseId":     <int> | null, # null for toplevel/review surfaces
 #     "url":            <string>|null,# null for thread surface
 #     "classification": "handled" | "actionable" | "followup-after-fix"
@@ -199,6 +206,7 @@ $pr.reviewThreads as $rt |
           thread_resolved: false,
           thread_overflow: $thread_overflow,
           thread_id: ($thread.id // null),
+          id: ($c.id // null),
           databaseId: $dbid,
           url: null,
           classification: (
@@ -222,6 +230,7 @@ $pr.reviewThreads as $rt |
         thread_resolved: false,
         thread_overflow: true,
         thread_id: ($thread.id // null),
+        id: null,
         databaseId: null,
         url: null,
         classification: "actionable"
@@ -243,6 +252,7 @@ $pr.reviewThreads as $rt |
       thread_resolved: false,
       thread_overflow: false,
       thread_id: null,
+      id: null,
       databaseId: null,
       url: $u,
       classification: (
@@ -267,6 +277,7 @@ $pr.reviewThreads as $rt |
       thread_resolved: false,
       thread_overflow: false,
       thread_id: null,
+      id: null,
       databaseId: null,
       url: $u,
       classification: (
