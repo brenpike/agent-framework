@@ -1,0 +1,10 @@
+[
+  {
+    "bucket": "fail",
+    "name": "unit",
+    "description": "3 tests failed",
+    "link": "https://github.com/o/r/runs/9",
+    "state": "FAILURE",
+    "workflow": "CI"
+  }
+]

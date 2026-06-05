@@ -1,0 +1,1 @@
+[{"description":"shellcheck warnings","id":null,"item_source":"ci-check-failure","link":null,"name":"lint","state":"FAILURE","workflow":null},{"description":"validate.sh failed","id":null,"item_source":"ci-check-failure","link":"https://github.com/o/r/runs/1","name":"policy-check","state":"FAILURE","workflow":"CI"}]

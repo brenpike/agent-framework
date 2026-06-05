@@ -1,0 +1,34 @@
+[
+  {
+    "bucket": "fail",
+    "name": "policy-check",
+    "description": "validate.sh failed",
+    "link": "https://github.com/o/r/runs/1",
+    "state": "FAILURE",
+    "workflow": "CI"
+  },
+  {
+    "bucket": "pass",
+    "name": "build",
+    "description": "ok",
+    "link": "https://github.com/o/r/runs/2",
+    "state": "SUCCESS",
+    "workflow": "CI"
+  },
+  {
+    "bucket": "pending",
+    "name": "deploy",
+    "description": "queued",
+    "link": "https://github.com/o/r/runs/3",
+    "state": "PENDING",
+    "workflow": "CD"
+  },
+  {
+    "bucket": "fail",
+    "name": "lint",
+    "description": "shellcheck warnings",
+    "link": null,
+    "state": "FAILURE",
+    "workflow": null
+  }
+]

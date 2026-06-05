@@ -1,0 +1,22 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": { "totalCount": 0, "nodes": [] },
+        "comments": { "totalCount": 0, "nodes": [] },
+        "reviews": {
+          "totalCount": 51,
+          "nodes": [
+            {
+              "id": "PRR_overflowreviews01",
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Review summary on an overflowed reviews connection.",
+              "state": "CHANGES_REQUESTED",
+              "url": "https://github.com/o/r/pull/1#pullrequestreview-1"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
