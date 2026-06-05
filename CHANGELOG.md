@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.25.0] - 2026-06-05
+
+### Added
+
+- **`plugin/skills/github-review-loop/scripts/fetch-normalize.sh` — shared PR fetch+normalize substrate (#203, initiative #201).** Single-source normalized PR-review-surface fetch: retrieves all review threads, comments, and CI status in one call and emits a normalized structure consumed downstream, eliminating per-consumer fetch duplication. Behaviorally tested by a CI-wired fixture test; behavior-preserving foundation for the github-review-loop skill family.
+
 ## [2.24.0] - 2026-06-04
 
 ### Added
