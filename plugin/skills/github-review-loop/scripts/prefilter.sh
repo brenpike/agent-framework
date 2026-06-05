@@ -63,10 +63,16 @@
 #   - The per-thread >20-comment overflow is owned by the shared filter: when a
 #     thread's `comments.totalCount` exceeds its fetched `comments.nodes`
 #     length, the filter force-labels every non-self matching comment in that
-#     thread `actionable` (with `thread_overflow=true`). Those records fall
-#     into prefilter's DISPATCH branch, preserving the old "oversized thread →
-#     DISPATCH" fail-open. An older unresolved reviewer finding sitting outside
-#     the fetched page is never silently skipped.
+#     thread `actionable` (with `thread_overflow=true`). Beyond that, each
+#     UNRESOLVED overflowed thread also emits a thread-level overflow SENTINEL
+#     record (databaseId:null, classification:actionable) ONCE PER THREAD, EVEN
+#     when no matching comment is visible on the fetched page — so an older
+#     unresolved finding that sits OUTSIDE the page still lands in DISPATCH via
+#     the existing `any(... .classification=="actionable" ...)` pass-1
+#     projection. prefilter therefore retains NO independent per-thread overflow
+#     tripwire: both the per-comment overflow records and the sentinel project
+#     to DISPATCH through the same any(actionable) read, preserving the old
+#     "oversized thread → DISPATCH" fail-open with no extra bash logic.
 #   - Body-marker detection, the latest-self-fix-id ordering, and the
 #     `Addresses: <url>` top-level/review harvest all live in the shared filter
 #     now (see its header for the exact predicates). prefilter no longer

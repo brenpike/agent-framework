@@ -96,9 +96,12 @@ run_case "case04:no-self-fix-thread" "case04-no-self-fix-thread.json" "selfuser"
 
 # ── Case 5: thread-overflow ──────────────────────────────────────────────────────
 # comments.totalCount (50) > fetched nodes length (1) → thread_overflow=true forces classification
-# actionable filter-blind, EVEN for a comment whose body carries a fix marker.
+# actionable filter-blind, EVEN for a comment whose body carries a fix marker. Because the thread is
+# unresolved AND overflowed it ALSO emits the per-thread overflow SENTINEL (databaseId:null), so the
+# stream is BOTH the per-comment record (500) AND the sentinel — both actionable, both project to
+# DISPATCH/candidate. canon sorts the null-databaseId sentinel (// -1) before 500.
 run_case "case05:thread-overflow" "case05-thread-overflow.json" "selfuser" "all" \
-  '[{"surface":"thread","thread_resolved":false,"thread_overflow":true,"databaseId":500,"url":null,"classification":"actionable"}]'
+  '[{"surface":"thread","thread_resolved":false,"thread_overflow":true,"databaseId":null,"url":null,"classification":"actionable"},{"surface":"thread","thread_resolved":false,"thread_overflow":true,"databaseId":500,"url":null,"classification":"actionable"}]'
 
 # ── Case 6: top-level addressed / unaddressed ────────────────────────────────────
 # A self-authored top-level comment carries `Addresses: <url>` harvesting one url. The addressed
@@ -129,6 +132,16 @@ run_case "case09:reviewer-filter-codex-only" "case09-reviewer-filter.json" "self
   '[{"surface":"thread","thread_resolved":false,"thread_overflow":false,"databaseId":900,"url":null,"classification":"actionable"}]'
 run_case "case09:reviewer-filter-all" "case09-reviewer-filter.json" "selfuser" "all" \
   '[{"surface":"thread","thread_resolved":false,"thread_overflow":false,"databaseId":900,"url":null,"classification":"actionable"},{"surface":"thread","thread_resolved":false,"thread_overflow":false,"databaseId":901,"url":null,"classification":"actionable"}]'
+
+# ── Case 10: thread-overflow, ZERO visible matching comment ──────────────────────
+# An UNRESOLVED thread with comments.totalCount (50) > visible nodes whose ONLY visible node is
+# SELF-authored (selfuser) → matches_filter strips it, so the per-comment loop emits NOTHING. The
+# older unaddressed finding sits OUTSIDE the fetched page. Without the per-thread sentinel this
+# thread would emit ZERO records and silently lose the overflow actionable signal. The filter must
+# emit EXACTLY the thread-level overflow sentinel (databaseId:null, classification:actionable) and
+# no spurious record — preserving main's unconditional-ACTIONABLE fail-open for oversized threads.
+run_case "case10:thread-overflow-no-visible-match" "case10-thread-overflow-no-visible-match.json" "selfuser" "all" \
+  '[{"surface":"thread","thread_resolved":false,"thread_overflow":true,"databaseId":null,"url":null,"classification":"actionable"}]'
 
 # ── Summary ──────────────────────────────────────────────────────────────────────
 echo

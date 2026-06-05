@@ -1,0 +1,28 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "isResolved": false,
+              "comments": {
+                "totalCount": 50,
+                "nodes": [
+                  {
+                    "databaseId": 1000,
+                    "author": { "login": "selfuser" },
+                    "body": "Fixed in feed1234. (self fix-reply; only visible node on an overflowed page)"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "comments": { "totalCount": 0, "nodes": [] },
+        "reviews": { "totalCount": 0, "nodes": [] }
+      }
+    }
+  }
+}
