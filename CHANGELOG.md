@@ -12,7 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-### Security
+## [2.24.0] - 2026-06-04
+
+### Added
+
+- **`plugin/skills/github-review-loop/scripts/fix-history-classify.jq` — shared fix-history skip/order predicate filter (#198).** Single source of truth for the "already-handled by our own fix-reply?" per-comment classification (`handled` / `actionable` / `followup-after-fix`), consumed by both `prefilter.sh` and the `github-reviewer` agent so the prose and jq encodings can no longer drift. Behaviorally tested by `tools/test_fix_history_classify.sh`.
+
+### Changed
+
+- **`github-review-loop` prefilter and the `github-reviewer` agent now consume the shared `fix-history-classify.jq` instead of duplicating the skip/order predicate (#198).** prefilter's observable `PREFILTER_SKIP`/`PREFILTER_DISPATCH` behavior is preserved; github-reviewer step 3 cites the filter as canonical and builds candidates from its per-comment output (`followup-after-fix` tagged as cycling evidence for root-cause clustering).
+
+### Fixed
+
+- **`github-reviewer` merge advisory is now judged against a fresh post-resolve GraphQL refetch (F6a, #198).** Step 13 refetches PR state after fix-replies and thread resolves land, so a failed non-blocking resolve correctly withholds `merge-advised` instead of a stale pre-resolution snapshot falsely showing convergence.
+- **`detect-remediation-signals`: a `null`/absent `fix_framing` is now inert as the primary cluster key (F6b, #198).** Two null-framing findings no longer false-cluster by the primary axis; null-framing findings may cluster only via the secondary `file:line-range` spatial key.
 
 ## [2.23.0] - 2026-06-04
 
