@@ -279,8 +279,13 @@ map_path() {
   # below), but policy_check NEVER EXECUTES bash — so without this rule a fetch-normalize edit would
   # only be prose-linted, never behaviorally exercised. Route both the script and its fixture dir to
   # the behavioral suite. (tools/test_fetch_normalize.sh itself is covered by the tools/** leg.)
+  # tests/fix-history/* is ALSO routed here: test_fetch_normalize.sh reuses the fix-history fixtures
+  # (FIX_HISTORY_DIR) as its review-path inputs, so a fix-history fixture edit changes this suite's
+  # inputs too — without this leg a fixture-only PR would skip the fetch-normalize suite pre-PR and
+  # leave stale expected outputs to be caught only by the full push-to-main gate (Codex P2 PR #210).
   if [[ "$p" == plugin/skills/github-review-loop/scripts/fetch-normalize.sh \
-     || "$p" == tests/fetch-normalize/* ]]; then
+     || "$p" == tests/fetch-normalize/* \
+     || "$p" == tests/fix-history/* ]]; then
     add_selected "$SUITE_TEST_FETCH_NORMALIZE" "$p (fetch-normalize builder/fixture)"
     matched=1
   fi
