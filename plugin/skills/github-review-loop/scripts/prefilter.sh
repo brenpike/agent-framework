@@ -11,16 +11,34 @@
 # where the latest non-self thread comment already carries a self-authored
 # `Fixed in <SHA>.` reply but no thread resolution has been recorded yet.
 #
+# Architecture (since #198):
+#   The per-comment / per-thread "already handled by our own fix-reply?"
+#   classification is NO LONGER inlined here. It is DELEGATED to the shared,
+#   pure, offline jq filter:
+#       ${SCRIPT_DIR}/fix-history-classify.jq
+#   which is the single source of truth for the skip/order semantics shared
+#   between this prefilter and the github-reviewer agent (so the two can never
+#   drift again). prefilter feeds the captured GraphQL payload into
+#   `jq -f fix-history-classify.jq --arg login --arg filter` and projects the
+#   emitted per-comment stream down to its binary SKIP / DISPATCH decision.
+#   prefilter KEEPS its own concerns: the gh fetch, the timeout wrapper, the
+#   fail-open posture, the three connection-level totalCount tripwires (read
+#   DIRECTLY off the raw payload — the filter does not emit them), and input
+#   validation.
+#
 # Contract:
 #   - Cheap single-query check. Reads the captured GraphQL string directly via
 #     command substitution — no functional pipe feeding any consumer.
-#   - Emits `PREFILTER_SKIP` only when zero unresolved review threads carry a
-#     latest non-self comment that matches `REVIEWER_FILTER` AND lacks a
-#     `Fixed in <SHA>.` marker AND the `reviewThreads.totalCount` tripwire is
-#     ≤ 50. Otherwise emits `PREFILTER_DISPATCH`.
+#   - Emits `PREFILTER_SKIP` only when the shared filter classifies EVERY
+#     non-self matching comment as `handled` (or emits nothing) AND all three
+#     `reviewThreads` / `comments` / `reviews` totalCounts are ≤ 50. Otherwise
+#     emits `PREFILTER_DISPATCH`.
 #   - Fail-open on GraphQL error: emits `PREFILTER_ERROR=<reason>` and exits
 #     non-zero so the skill treats the event as DISPATCH. Better to wake the
 #     reviewer for an extra cycle than to silently swallow real feedback.
+#   - Fail-open on a missing shared filter file: emits
+#     `PREFILTER_ERROR=missing-filter` and exits non-zero (DISPATCH),
+#     consistent with the GraphQL-error fail-open posture.
 #   - Fail-open on >50-node overflow in any of `reviewThreads`, `comments`, or
 #     `reviews`. The bound is reached when any connection's `totalCount`
 #     exceeds 50 nodes; the prefilter cannot reliably author-classify activity
@@ -42,58 +60,23 @@
 #     the same "wake unnecessarily > miss feedback" posture. Cost under
 #     `codex-only`: a >50 issue-comment burst from humans will wake the
 #     reviewer once and return clean — acceptable vs silent drop.
-#   - Body-marker detection uses regex `Fixed in [0-9a-f]{7,40}\.` (required
-#     trailing period per `plugin/agents/github-reviewer.md` step 11 reply
-#     format: `Fixed in <SHA>. <one-line summary>.`). Loose prose mentioning
-#     "Fixed in" without a hex SHA + trailing period is rejected.
-#   - Each unresolved review thread is inspected with `comments(last: 20)`,
-#     not `comments(last: 1)`. The full set of non-self matching comments in
-#     each thread is walked: a thread is `ACTIONABLE` if ANY non-self comment
-#     matching `REVIEWER_FILTER` lacks a `Fixed in <SHA>.` marker. This
-#     prevents an unresolved reviewer finding from being hidden when a later
-#     reply from a non-matching author (maintainer, different bot) sits as
-#     the latest comment under `codex-only`. The thread also tracks the
-#     latest self-authored `Fixed in <SHA>.` reply by `databaseId` (monotonic
-#     per-comment, matches the poll's id-token discipline). The reviewer
-#     posts that reply after committing a fix and BEFORE attempting to
-#     resolve the thread; the resolve mutation is non-blocking and may fail.
-#     A non-self matching comment is treated as HANDLED only when its
-#     `databaseId` is LESS THAN OR EQUAL to that latest self fix-reply id;
-#     otherwise it is ACTIONABLE. This covers two cases together:
-#       (a) crash-recovery: the reviewer posted its fix-SHA reply but the
-#           resolve mutation failed → the original Codex finding's
-#           databaseId is below the self reply's databaseId → HANDLED, the
-#           original finding is NOT re-dispatched on its own fix.
-#       (b) follow-up finding: a later Codex (or matching-author) comment
-#           lands in the SAME unresolved thread → its databaseId is above
-#           the latest self fix-reply → ACTIONABLE, the reviewer is
-#           dispatched. Without the per-comment ordering, any self fix-reply
-#           would short-circuit the whole thread to HANDLED and the new
-#           finding would be silently swallowed.
-#   - If a thread carries more than 20 comments, the per-thread overflow
-#     ALWAYS falls back to DISPATCH (filter-blind — same posture as the
-#     connection-level 50-node bounds). An older unresolved reviewer finding
-#     can sit outside the last 20 replies; failing open only when matching
-#     comments are already visible would let the original finding go
-#     undispatched while the poll wakes on later thread activity.
-#   - Top-level PR comments and review-body summaries are also inspected.
-#     `github-reviewer` treats those as fix candidates (see
-#     `plugin/agents/github-reviewer.md` step 3) but they live outside review
-#     threads, so the per-thread fix-SHA skip rule does not apply to them.
-#     Instead, `github-reviewer` step 11 posts a SEPARATE self-authored
-#     top-level reply containing `Addresses: <candidate_url>` for each
-#     handled top-level / review-summary candidate. The prefilter walks the
-#     same top-level comment page for self-authored bodies and harvests the
-#     full set of `Addresses: <url>` URLs into an "addressed-url set"; a
-#     non-self matching top-level comment or review summary is treated as
-#     HANDLED when its own `url` appears in that set (URL is per-comment
-#     unique on GitHub — a follow-up Codex finding lands as a NEW comment
-#     with a NEW url, so set membership alone is sufficient and no
-#     databaseId ordering is required). When the candidate is not handled,
-#     emit `PREFILTER_DISPATCH`. The poll's own author-aware id-token dedup
-#     (`LATEST_NONSELF_ISSUE_COMMENT_ID`, `LATEST_FILTERED_REVIEW_ID`)
-#     bounds the cost — a static unhandled top-level finding fires at most
-#     once per its appearance, not repeatedly.
+#   - The per-thread >20-comment overflow is owned by the shared filter: when a
+#     thread's `comments.totalCount` exceeds its fetched `comments.nodes`
+#     length, the filter force-labels every non-self matching comment in that
+#     thread `actionable` (with `thread_overflow=true`). Beyond that, each
+#     UNRESOLVED overflowed thread also emits a thread-level overflow SENTINEL
+#     record (databaseId:null, classification:actionable) ONCE PER THREAD, EVEN
+#     when no matching comment is visible on the fetched page — so an older
+#     unresolved finding that sits OUTSIDE the page still lands in DISPATCH via
+#     the existing `any(... .classification=="actionable" ...)` pass-1
+#     projection. prefilter therefore retains NO independent per-thread overflow
+#     tripwire: both the per-comment overflow records and the sentinel project
+#     to DISPATCH through the same any(actionable) read, preserving the old
+#     "oversized thread → DISPATCH" fail-open with no extra bash logic.
+#   - Body-marker detection, the latest-self-fix-id ordering, and the
+#     `Addresses: <url>` top-level/review harvest all live in the shared filter
+#     now (see its header for the exact predicates). prefilter no longer
+#     re-implements them; it only reads the filter's `classification` field.
 #   - The `Addresses:` URL harvest only scans self-authored bodies inside the
 #     `comments(last: 50)` page; the >50 fail-open at the bash layer covers
 #     the case where the addressing reply has been pushed off the page along
@@ -101,9 +84,10 @@
 #
 # Markers emitted (one labeled line):
 #   PREFILTER_SKIP            silently update baseline; do NOT dispatch
-#   PREFILTER_DISPATCH        at least one actionable unresolved thread exists
-#   PREFILTER_ERROR=<reason>  GraphQL or input failure; skill treats as
-#                             DISPATCH (fail-open)
+#   PREFILTER_DISPATCH        at least one actionable/followup comment exists,
+#                             or a connection overflowed the 50-node bound
+#   PREFILTER_ERROR=<reason>  GraphQL, filter, or input failure; skill treats
+#                             as DISPATCH (fail-open)
 #
 # Positional arguments supplied by the skill at invocation:
 #   $1  OWNER             base-repo owner
@@ -135,10 +119,19 @@ case "$PR_NUMBER" in ''|*[!0-9]*) prefilter_fail "invalid-pr-number" ;; esac
 # REVIEWER_FILTER defaults to codex-only when empty; any non-empty string is
 # accepted as a login form (codex-only | all | <login>).
 [ -n "$REVIEWER_FILTER" ] || REVIEWER_FILTER="codex-only"
-# SELF_LOGIN is required: without it the jq filter cannot strip self-authored
-# latest comments, and the self-echo storm this prefilter exists to suppress
-# would re-emerge.
+# SELF_LOGIN is required: without it the shared filter cannot strip
+# self-authored comments, and the self-echo storm this prefilter exists to
+# suppress would re-emerge.
 [ -n "$SELF_LOGIN" ] || prefilter_fail "missing-self-login"
+
+# Resolve the shared classifier filter RELATIVE to this script's own location.
+# prefilter is executed directly as a sibling of fix-history-classify.jq, so a
+# hard-coded absolute or ${CLAUDE_PLUGIN_ROOT} path would be wrong at runtime.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLASSIFY_FILTER="$SCRIPT_DIR/fix-history-classify.jq"
+# Fail open (DISPATCH) when the shared filter is missing, consistent with the
+# GraphQL-error posture: better to wake the reviewer than to silently skip.
+[ -f "$CLASSIFY_FILTER" ] || prefilter_fail "missing-filter"
 
 # Timeout wrapper for gh API calls (issue #159).
 # Normal gh graphql completes in 1-5s; 45s is generous against transient
@@ -158,28 +151,22 @@ else
   echo "github-review-loop: WARNING neither 'timeout' nor 'gtimeout' found on PATH; gh API calls in the prefilter are running UNGUARDED and a hung call can stall this dispatch (issue #159). Install GNU coreutils (provides 'timeout'; 'gtimeout' on Homebrew) to restore the timeout guard." >&2
 fi
 
-# Single non-paginated GraphQL call: each unresolved review thread's last 20
-# comments (per-thread; threads with >20 comments overflow to DISPATCH), bounded
+# Single non-paginated GraphQL call. The query must fetch a payload CONFORMING
+# to fix-history-classify.jq's INPUT CONTRACT (see its header §2): each
+# review thread's `id` (the PRRT_... node id the filter threads through as
+# `thread_id`) plus its last 20 comments (per-thread; threads with >20
+# comments overflow to DISPATCH via the filter's thread_overflow flag), bounded
 # to the first 50 threads; plus the last 50 top-level PR comments and last 50
-# review summaries so the prefilter can detect non-self matching feedback
-# outside review threads. The --jq filter emits tokens for the bash-side
-# decision:
-#   ACTIONABLE          any non-self matching thread comment lacks a
-#                       `Fixed in <SHA>.` marker
-#   HANDLED             every non-self matching thread comment carries the
-#                       marker
-#   ACTIONABLE_TOPLEVEL any non-self matching top-level PR comment exists
-#   ACTIONABLE_REVIEW   any non-self matching review summary body exists
-# All non-self comments in each thread are walked, not just the latest, so a
-# later non-matching author reply cannot hide an unresolved matching finding.
-# For top-level and review-body candidates (which live OUTSIDE review threads
-# and so cannot use the per-thread fix-SHA skip), the prefilter harvests a
-# set of `Addresses: <url>` URLs from self-authored top-level bodies and
-# treats a candidate as HANDLED when its own `url` is in that set. This is
-# the top-level analogue of the in-thread fix-SHA skip — both close the
-# self-induced loop that fires when the reviewer's OWN address/fix reply
-# bumps the corresponding totalCount and wakes the poll.
-result=$( ( set -o pipefail; \
+# review summaries so the shared filter can classify non-self matching feedback
+# outside review threads. The connection-level totalCounts are fetched here too
+# (NOT a filter concern) for the bash-side 50-node tripwires.
+#
+# The raw GraphQL JSON is captured verbatim into $response. It is then fed,
+# UNMODIFIED, through TWO passes below: (1) the shared classifier filter, and
+# (2) a tiny totalCount read. External content (comment/review bodies) is DATA:
+# prefilter never interprets it; the only pattern-matching happens inside the
+# pure filter.
+response=$( ( set -o pipefail; \
   "${GH_TIMEOUT[@]}" gh api graphql \
     -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
     -f query='
@@ -197,6 +184,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {
       reviewThreads(first: 50) {
         totalCount
         nodes {
+          id
           isResolved
           comments(last: 20) {
             totalCount
@@ -211,137 +199,37 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     }
   }
 }' 2>/dev/null \
-  | jq -r --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" '
-    # Reusable identity-match predicate for the active REVIEWER_FILTER. The
-    # caller passes the stripped login; this returns true when that login is
-    # non-self AND matches the filter.
-    def matches_filter($a):
-      $a != $login
-      and (
-        if $filter == "codex-only" then $a == "chatgpt-codex-connector"
-        elif $filter == "all" then true
-        else $a == $filter
-        end
-      );
-
-    .data.repository.pullRequest as $pr |
-    $pr.reviewThreads as $rt |
-
-    # Harvest the set of candidate URLs that self-authored top-level comments
-    # have already addressed via `Addresses: <url>`. `github-reviewer` step 11
-    # posts those replies for top-level PR comments and review-summary
-    # candidates. Without this set, a self `Addresses:` reply bumps
-    # `COMMENTS_TOTAL` (the poll wakes), and the prefilter re-dispatches the
-    # reviewer for the original non-self candidate it already handled — the
-    # exact self-induced loop this script exists to suppress, ported from
-    # threads to top-level / review feedback. URL is GitHub-unique per comment
-    # / review, so set-membership alone is sufficient — a follow-up Codex
-    # finding lands as a new top-level item with a new URL and is NOT in the
-    # set, so it still dispatches.
-    ([ $pr.comments.nodes[]?
-       | . as $c
-       | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
-       | select($a == $login)
-       | ($c.body // "")
-       | scan("Addresses:[[:space:]]*([^[:space:]]+)")
-       | .[0]
-     ]) as $addressed_urls |
-
-    "THREADS_TOTAL=" + (($rt.totalCount // 0) | tostring),
-    "COMMENTS_TOTAL=" + (($pr.comments.totalCount // 0) | tostring),
-    "REVIEWS_TOTAL=" + (($pr.reviews.totalCount // 0) | tostring),
-
-    # Per-thread inspection: walk ALL non-self matching comments. A thread is
-    # ACTIONABLE if ANY matching comment lacks a `Fixed in <SHA>.` marker OR
-    # post-dates the latest self fix-reply.
-    #
-    # The thread tracks the latest self-authored `Fixed in <SHA>.` reply by
-    # `databaseId` (monotonic per-comment, matches the id-token discipline
-    # used by the poll script). The reviewer posts that reply after
-    # committing a fix and BEFORE attempting to resolve the thread; the
-    # resolve mutation is non-blocking and may fail. A non-self matching
-    # comment is HANDLED only when its body already carries the marker OR
-    # when its databaseId is LESS THAN OR EQUAL to the latest self fix-reply
-    # databaseId. Otherwise it is ACTIONABLE. This handles both:
-    #   (a) crash-recovery: the existing reviewer comment databaseId is
-    #       below the self reply databaseId → HANDLED, not re-dispatched.
-    #   (b) follow-up finding in the same unresolved thread: the new
-    #       reviewer comment databaseId is above the latest self fix-reply
-    #       → ACTIONABLE, the reviewer wakes. The previous `$self_fixed`
-    #       short-circuit would have hidden this; the per-comment ordering
-    #       guarantees it surfaces.
-    # If no self fix-reply exists in the page, the latest-id sentinel is 0
-    # (every non-self matching databaseId is > 0), so ordering reduces to
-    # the marker check alone.
-    #
-    # When a thread carries more than 20 comments, the per-thread page may
-    # have dropped earlier matching comments; fail open with ACTIONABLE
-    # UNCONDITIONALLY. An older unresolved reviewer finding sitting outside
-    # the last 20 replies would otherwise yield an empty marks set and emit
-    # nothing, letting the poll silently `PREFILTER_SKIP` after the wake.
-    ($rt.nodes[]
-      | select(.isResolved == false)
-      | . as $thread
-      | (($thread.comments.totalCount // 0) > ($thread.comments.nodes | length)) as $thread_overflow
-      | ([
-          $thread.comments.nodes[]
-          | . as $c
-          | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
-          | select($a == $login)
-          | select((($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\.")))
-          | (.databaseId // 0)
-        ] | (if length == 0 then 0 else max end)) as $latest_self_fix_id
-      | ([
-          $thread.comments.nodes[]
-          | . as $c
-          | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
-          | select(matches_filter($a))
-          | (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\."))
-            or ((.databaseId // 0) <= $latest_self_fix_id)
-        ]) as $marks
-      | if $thread_overflow then "ACTIONABLE"
-        elif ($marks | length) == 0 then empty
-        elif ($marks | any(. == false)) then "ACTIONABLE"
-        else "HANDLED"
-        end),
-
-    # Top-level PR comments: a non-self matching body emits
-    # ACTIONABLE_TOPLEVEL ONLY when its own `url` does not appear in the
-    # `$addressed_urls` set. The reviewer posts a separate self-authored
-    # `Addresses: <url>` reply for top-level work; without this URL guard,
-    # that self reply bumps `COMMENTS_TOTAL`, the poll wakes, the prefilter
-    # dispatches, and the reviewer is re-dispatched on its own already-handled
-    # candidate — the same self-induced loop the per-thread fix-SHA skip
-    # suppresses for inline threads.
-    ($pr.comments.nodes[]?
-      | . as $c
-      | (($c.author.login // "") | sub("\\[bot\\]$"; "")) as $a
-      | select(matches_filter($a))
-      | select((($c.body // "") | gsub("[[:space:]]+"; "")) != "")
-      | select(($c.url // "") as $u | ($addressed_urls | index($u)) == null)
-      | "ACTIONABLE_TOPLEVEL"),
-
-    # Review summaries (CHANGES_REQUESTED / COMMENTED with body): a non-self
-    # matching body emits ACTIONABLE_REVIEW ONLY when its own `url` does not
-    # appear in the `$addressed_urls` set (same `Addresses: <url>` covers both
-    # top-level comments and review summaries — they use the same URL-keyed
-    # reply contract). APPROVED / DISMISSED are not actionable feedback for
-    # the reviewer.
-    ($pr.reviews.nodes[]?
-      | . as $r
-      | (($r.author.login // "") | sub("\\[bot\\]$"; "")) as $a
-      | select(matches_filter($a))
-      | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED")
-      | select((($r.body // "") | gsub("[[:space:]]+"; "")) != "")
-      | select(($r.url // "") as $u | ($addressed_urls | index($u)) == null)
-      | "ACTIONABLE_REVIEW")
-  ' \
 ) ) || prefilter_fail "graphql-failed"
 
-# Parse the three totalCount tripwires out of the captured output. Mirrors the
-# label-prefixed parse pattern used by pr-change-detect-poll.sh. Defaults each
-# to 0 when the line is absent so a malformed payload behaves like a 0-node
-# page on every connection.
+# Pass 1 — delegate per-comment/thread classification to the shared filter.
+# Emits a stream of one JSON object per classified non-self matching comment;
+# we project that stream to a single boolean: does ANY record carry a
+# classification of `actionable` OR `followup-after-fix`? This subsumes the old
+# inline ACTIONABLE / ACTIONABLE_TOPLEVEL / ACTIONABLE_REVIEW tokens — thread,
+# top-level, and review surfaces all collapse here, and the filter's
+# thread_overflow=true records (oversized threads) arrive as `actionable`. A
+# pure `{handled}`-only or empty stream yields `false`. Fail open (DISPATCH) if
+# the filter pass itself errors, consistent with the GraphQL-error posture.
+dispatch_class=$( ( set -o pipefail; \
+  printf '%s' "$response" \
+  | jq -r -f "$CLASSIFY_FILTER" --arg login "$SELF_LOGIN" --arg filter "$REVIEWER_FILTER" \
+    2>/dev/null \
+  | jq -rs 'any(.[]?; .classification == "actionable" or .classification == "followup-after-fix")' \
+    2>/dev/null \
+) ) || prefilter_fail "classify-failed"
+
+# Pass 2 — read the three connection-level totalCounts DIRECTLY off the raw
+# payload (the filter does not emit them). Default each to 0 when absent so a
+# malformed/empty payload behaves like a 0-node page on every connection. A
+# single jq pass emits three label-prefixed lines, parsed exactly as the old
+# inline-token path did.
+totals=$( printf '%s' "$response" | jq -r '
+  .data.repository.pullRequest as $pr |
+  "THREADS_TOTAL=" + (($pr.reviewThreads.totalCount // 0) | tostring),
+  "COMMENTS_TOTAL=" + (($pr.comments.totalCount // 0) | tostring),
+  "REVIEWS_TOTAL=" + (($pr.reviews.totalCount // 0) | tostring)
+' 2>/dev/null )
+
 threads_total=0
 comments_total=0
 reviews_total=0
@@ -352,31 +240,26 @@ while IFS= read -r line; do
     REVIEWS_TOTAL=*) reviews_total="${line#REVIEWS_TOTAL=}" ;;
   esac
 done <<EOF
-$result
+$totals
 EOF
 case "$threads_total" in ''|*[!0-9]*) threads_total=0 ;; esac
 case "$comments_total" in ''|*[!0-9]*) comments_total=0 ;; esac
 case "$reviews_total" in ''|*[!0-9]*) reviews_total=0 ;; esac
 
-# Bash-side decision. ACTIONABLE / ACTIONABLE_TOPLEVEL / ACTIONABLE_REVIEW
+# Bash-side decision. An `actionable` or `followup-after-fix` classification
 # anywhere wins (dispatch). Otherwise, when ANY of the three pullRequest
 # connections (`reviewThreads`, `comments`, `reviews`) holds more than 50 nodes,
 # the in-page inspection is untrustworthy on at least one axis — fail OPEN to
-# DISPATCH rather than risk skipping a real finding outside the page. Only
-# HANDLED lines (or empty output) with all three totalCounts bounded means
-# every unresolved actionable thread already carries a `Fixed in <SHA>.` reply
-# and no non-self top-level / review activity is present and no oversized
-# connection could be hiding new feedback — silently update baseline.
-case "$result" in
-  *ACTIONABLE_TOPLEVEL*|*ACTIONABLE_REVIEW*|*ACTIONABLE*)
-    echo "PREFILTER_DISPATCH"
-    ;;
-  *)
-    if [ "$threads_total" -gt 50 ] || [ "$comments_total" -gt 50 ] || [ "$reviews_total" -gt 50 ]; then
-      echo "PREFILTER_DISPATCH"
-    else
-      echo "PREFILTER_SKIP"
-    fi
-    ;;
-esac
+# DISPATCH rather than risk skipping a real finding outside the page. Only a
+# `{handled}`-only (or empty) classification with all three totalCounts bounded
+# means every unresolved candidate already carries its `Fixed in <SHA>.` /
+# `Addresses: <url>` self reply and no oversized connection could be hiding new
+# feedback — silently update baseline.
+if [ "$dispatch_class" = "true" ]; then
+  echo "PREFILTER_DISPATCH"
+elif [ "$threads_total" -gt 50 ] || [ "$comments_total" -gt 50 ] || [ "$reviews_total" -gt 50 ]; then
+  echo "PREFILTER_DISPATCH"
+else
+  echo "PREFILTER_SKIP"
+fi
 exit 0

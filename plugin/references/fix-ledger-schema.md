@@ -42,7 +42,7 @@ Read this file when initializing or updating the fix ledger in Procedure step 3.
 
 ### `iterations[].findings[].fix_framing` (string|null, optional, default null)
 
-The normalized shape/intent of the fix applied to this finding. Serves as the PRIMARY cluster key for `hivemind:detect-remediation-signals`. Examples: `"reject-enumeration"`, `"trust-untrusted-path"`, `"metadata-above-preamble"`, `"per-flag-contract-patch"`. Null if no framing has been assigned. Absent and null are treated identically.
+The normalized shape/intent of the fix applied to this finding. Serves as the PRIMARY cluster key for `hivemind:detect-remediation-signals`. Examples: `"reject-enumeration"`, `"trust-untrusted-path"`, `"metadata-above-preamble"`, `"per-flag-contract-patch"`. Null if no framing has been assigned. Absent and null are treated identically. A null/absent `fix_framing` is INERT as a cluster-match key on the PRIMARY axis — two null-framing findings do NOT cluster by the primary key. The SECONDARY `file:line-range` spatial key still applies to null-framing findings.
 
 ### `iterations[].findings[].root_class` (string|null, optional, default null)
 

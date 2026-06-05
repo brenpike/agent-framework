@@ -20,7 +20,9 @@ Resolvable pull request review threads are GraphQL objects. Do not try to resolv
 
 ## Shell and Parsing Rules
 
-Use `gh --jq` only. No standalone `jq`, `python3`, `python`, `node`, or PowerShell. No `/tmp/` for data processing. If `gh --jq` cannot produce the required value, return `blocked`.
+Use `gh --jq` only for inline value extraction. No ad-hoc standalone `jq`, `python3`, `python`, `node`, or PowerShell. No `/tmp/` for data processing. If `gh --jq` cannot produce the required value, return `blocked`.
+
+Sanctioned exception — canonical fix-history classification: the github-reviewer agent captures the raw `gh api graphql` JSON (threads/comments/reviews/top-level, with the contract fields `isResolved`, `comments.totalCount`, comment `databaseId`, `author.login`, `body`, top-level/review `url`, review `state`) and pipes it through the shared filter FILE `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/fix-history-classify.jq` via `jq -f`. This is a pure offline function over already-fetched JSON and is the single source of truth for the skip/order/overflow predicate; it is NOT the ad-hoc inline `jq` munging this rule prohibits.
 
 ## Pagination Requirement
 
@@ -78,9 +80,11 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
           path
           line
           comments(first: 20) {
+            totalCount
             pageInfo { hasNextPage endCursor }
             nodes {
               id
+              databaseId
               author { login }
               body
               createdAt
@@ -114,6 +118,8 @@ query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
 
 Use this query to retrieve additional pages of comments from a single review thread when `comments(first: 20)` returns `pageInfo.hasNextPage == true`. `threadId` is the thread's GraphQL node id (e.g., `PRRT_...`).
 
+The thread node `id` selected in [Fetch Review Threads](#fetch-review-threads) (`reviewThreads.nodes[].id`) is the value `fix-history-classify.jq` carries as the `thread_id` field on each thread-surface classifier record (per-comment AND the overflow sentinel). A consumer paginating an overflowed thread feeds that `thread_id` straight back as this query's `threadId` argument.
+
 ```bash
 gh api graphql \
   -f threadId="THREAD_NODE_ID" \
@@ -125,6 +131,7 @@ query($threadId: ID!, $after: String) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id
+          databaseId
           author { login }
           body
           createdAt
