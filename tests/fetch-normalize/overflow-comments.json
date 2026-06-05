@@ -1,0 +1,21 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": { "totalCount": 0, "nodes": [] },
+        "comments": {
+          "totalCount": 51,
+          "nodes": [
+            {
+              "id": "IC_overflowcomments01",
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Top-level finding on an overflowed comments connection.",
+              "url": "https://github.com/o/r/pull/1#issuecomment-1"
+            }
+          ]
+        },
+        "reviews": { "totalCount": 0, "nodes": [] }
+      }
+    }
+  }
+}

@@ -34,6 +34,7 @@ SUITE_TEST_ENGINE='test_engine.sh'
 SUITE_TEST_SHARED='test_shared_libs.sh'
 SUITE_TEST_BROOD='test_brood_compat.sh'
 SUITE_TEST_FIX_HISTORY='test_fix_history_classify.sh'
+SUITE_TEST_FETCH_NORMALIZE='test_fetch_normalize.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -46,6 +47,7 @@ ALL_SUITES=(
   "$SUITE_TEST_SHARED"
   "$SUITE_TEST_BROOD"
   "$SUITE_TEST_FIX_HISTORY"
+  "$SUITE_TEST_FETCH_NORMALIZE"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -59,6 +61,7 @@ KNOWN_SUITES=(
   test_shared_libs.sh
   test_brood_compat.sh
   test_fix_history_classify.sh
+  test_fetch_normalize.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -271,6 +274,17 @@ map_path() {
     matched=1
   fi
 
+  # test_fetch_normalize: the fetch + normalize candidate-set builder (.sh) + its payload/expected
+  # fixtures. The script is ALSO a plugin/* file (policy_check prose-lints it via the wholesale rule
+  # below), but policy_check NEVER EXECUTES bash — so without this rule a fetch-normalize edit would
+  # only be prose-linted, never behaviorally exercised. Route both the script and its fixture dir to
+  # the behavioral suite. (tools/test_fetch_normalize.sh itself is covered by the tools/** leg.)
+  if [[ "$p" == plugin/skills/github-review-loop/scripts/fetch-normalize.sh \
+     || "$p" == tests/fetch-normalize/* ]]; then
+    add_selected "$SUITE_TEST_FETCH_NORMALIZE" "$p (fetch-normalize builder/fixture)"
+    matched=1
+  fi
+
   # policy_check: all plugin/.claude-plugin runtime + policy/plugin/workflows fixtures.
   if [[ "$p" == plugin/* \
      || "$p" == .claude-plugin/* \
@@ -458,6 +472,7 @@ self_test() {
     ["test_shared_libs.sh"]="plugin/skills/_shared/allowlist.sh"
     ["test_brood_compat.sh"]="tests/brood/manifest-x.json"
     ["test_fix_history_classify.sh"]="tests/fix-history/case01-x.json"
+    ["test_fetch_normalize.sh"]="tests/fetch-normalize/case-x.json"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do
