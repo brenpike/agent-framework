@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.26.0] - 2026-06-05
+
+### Added
+
+- **`plugin/skills/injection-scan/` — shared prompt-injection judgment skill (#204, initiative #201).** Scans external content (PR comments, review bodies, Codex findings) for prompt-injection attempts against the security-policy taxonomy, producing a structured verdict consumed by `github-reviewer`, `local-reviewer`, and the `github-review-loop`; extracts the injection-detection responsibility that was previously implicit in each reviewer's External Content Boundary handling into a single callable skill.
+- **`plugin/skills/github-review-loop/scripts/exit-precedence.sh` — shared escalation-precedence kernel (#204, initiative #201).** Single-sources the `exit_reason` precedence ladder (which terminal exit wins when multiple signals fire simultaneously) for both reviewer agents and the github-review-loop, eliminating the previously duplicated and potentially diverging per-consumer precedence tables.
+
 ## [2.25.0] - 2026-06-05
 
 ### Added
