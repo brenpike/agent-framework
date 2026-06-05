@@ -257,10 +257,16 @@ clean"
 # ============================================================================
 
 assert_nonzero_stderr_args "unknown:garbage-string-args"       "notarealtoken"
-# An empty-string positional arg word-splits to nothing; the script sees no
-# tokens and correctly returns clean (the empty-input contract). Not a valid
-# token rejection case — skip.
-# assert_nonzero_stderr_args "unknown:empty-string-token-args" ""
+# A single positional argv is exactly ONE token (no word-splitting). An empty
+# string argv is a single empty token and must REJECT LOUDLY, not silently drop
+# to the empty-input clean floor.
+assert_nonzero_stderr_args "unknown:empty-string-token-args"   ""
+# A single argv carrying internal whitespace (e.g. "blocked clean") is ONE
+# malformed token, not two valid tokens — it must reject, never split to "blocked".
+assert_nonzero_stderr_args "unknown:whitespace-in-single-argv" "blocked clean"
+# A single argv carrying a glob character must reject as one unknown token, never
+# glob-expand against the working directory.
+assert_nonzero_stderr_args "unknown:glob-char-in-single-argv"  "blocked *"
 assert_nonzero_stderr_args "unknown:partial-token-args"        "injection"
 assert_nonzero_stderr_args "unknown:mixed-valid-invalid-args"  "clean" "notarealtoken"
 

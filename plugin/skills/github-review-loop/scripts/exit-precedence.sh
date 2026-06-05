@@ -103,9 +103,12 @@ token_rank() {
 # ---------------------------------------------------------------------------
 all_tokens=()
 
-# Positional args
+# Positional args — each argv is exactly ONE token. Do NOT word-split: a single
+# malformed argv (e.g. "blocked clean", or an empty string) must reach token_rank
+# as one token so it is REJECTED LOUDLY per the unknown-token contract, never
+# silently split into valid tokens or dropped.
 for arg in "$@"; do
-  all_tokens+=($arg)
+  all_tokens+=("$arg")
 done
 
 # Stdin — read only when stdin is not a terminal (pipe or redirect).
