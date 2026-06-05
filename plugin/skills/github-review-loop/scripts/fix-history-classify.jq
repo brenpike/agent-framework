@@ -47,8 +47,12 @@
 #
 # 3. OUTPUT SCHEMA
 # ----------------
-# One JSON object per CLASSIFIED non-self matching comment, emitted as a stream
-# (one object per line under `jq` default output):
+# One JSON object per CLASSIFIED non-self matching comment, PLUS one thread-level
+# overflow sentinel per unresolved overflowed thread (see THREAD-OVERFLOW
+# SENTINEL below), emitted as a stream (one object per line under `jq` default
+# output). The sentinel carries databaseId:null and url:null and is emitted ONCE
+# PER unresolved overflowed thread EVEN when no matching comment is visible on
+# the fetched page; its classification is always "actionable":
 #   {
 #     "surface":        "thread" | "toplevel" | "review",
 #     "thread_resolved": bool,        # false for toplevel/review (no thread)
@@ -86,6 +90,24 @@
 # fetched `comments.nodes` length, EVERY non-self matching comment in that
 # thread is emitted with classification="actionable" and thread_overflow=true.
 # Matches prefilter's unconditional ACTIONABLE fail-open for oversized threads.
+#
+# THREAD-OVERFLOW SENTINEL: per-matching-comment records only fire for comments
+# VISIBLE on the fetched page. An unresolved overflowed thread whose visible page
+# contains ONLY self / non-matching replies would therefore emit ZERO records and
+# silently lose the overflow actionable signal — the older unaddressed finding
+# sits OUTSIDE the fetched page. To preserve main's unconditional-ACTIONABLE
+# fail-open, every UNRESOLVED overflowed thread ALSO emits exactly ONE thread-
+# level sentinel record, ONCE PER THREAD, INDEPENDENT of whether any matching
+# comment is visible:
+#   {"surface":"thread","thread_resolved":false,"thread_overflow":true,
+#    "databaseId":null,"url":null,"classification":"actionable"}
+# The sentinel's databaseId is null (it is NOT a single comment — it stands for
+# the whole overflowed thread). Resolved threads NEVER emit a sentinel. A non-
+# overflowed thread NEVER emits a sentinel. An overflowed thread WITH a visible
+# matching comment emits BOTH the per-comment actionable record(s) AND the
+# sentinel; both project to DISPATCH / candidate, so the duplication is benign.
+# Consumers MUST treat a databaseId:null thread-surface record as a THREAD-level
+# signal (inspect the full thread), not a single-comment record.
 #
 # Consumer projection (documented here; NOT implemented by this filter):
 #   - prefilter.sh: {actionable, followup-after-fix} -> DISPATCH;
@@ -154,27 +176,46 @@ $pr.reviewThreads as $rt |
       | select((($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\.")))
       | (.databaseId // 0)
     ] | (if length == 0 then 0 else max end)) as $latest_self_fix_id
-  | $thread.comments.nodes[]
-  | . as $c
-  | strip_bot($c.author.login) as $a
-  | select(matches_filter($a))
-  | (.databaseId // 0) as $dbid
-  | (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\.")) as $has_marker
-  | {
-      surface: "thread",
-      thread_resolved: false,
-      thread_overflow: $thread_overflow,
-      databaseId: $dbid,
-      url: null,
-      classification: (
-        if $thread_overflow then "actionable"
-        elif $has_marker then "handled"
-        elif ($latest_self_fix_id > 0) and ($dbid <= $latest_self_fix_id) then "handled"
-        elif ($latest_self_fix_id > 0) and ($dbid > $latest_self_fix_id) then "followup-after-fix"
-        else "actionable"
-        end
-      )
-    }
+  # Per-matching-comment records (visible page only) ...
+  | (
+      $thread.comments.nodes[]
+      | . as $c
+      | strip_bot($c.author.login) as $a
+      | select(matches_filter($a))
+      | (.databaseId // 0) as $dbid
+      | (($c.body // "") | test("Fixed in [0-9a-f]{7,40}\\.")) as $has_marker
+      | {
+          surface: "thread",
+          thread_resolved: false,
+          thread_overflow: $thread_overflow,
+          databaseId: $dbid,
+          url: null,
+          classification: (
+            if $thread_overflow then "actionable"
+            elif $has_marker then "handled"
+            elif ($latest_self_fix_id > 0) and ($dbid <= $latest_self_fix_id) then "handled"
+            elif ($latest_self_fix_id > 0) and ($dbid > $latest_self_fix_id) then "followup-after-fix"
+            else "actionable"
+            end
+          )
+        }
+    ),
+  # ... PLUS a single thread-level overflow sentinel, emitted ONCE PER unresolved
+  # overflowed thread INDEPENDENT of any visible matching comment, so an
+  # overflowed thread always yields >=1 actionable record (see THREAD-OVERFLOW
+  # SENTINEL in the header). databaseId:null marks it as a thread-level signal.
+  (
+    if $thread_overflow then
+      {
+        surface: "thread",
+        thread_resolved: false,
+        thread_overflow: true,
+        databaseId: null,
+        url: null,
+        classification: "actionable"
+      }
+    else empty end
+  )
 ),
 
 # --- Top-level PR comments (surface=toplevel) -------------------------------
