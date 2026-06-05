@@ -289,6 +289,158 @@ run_fail_case "fail-closed:empty-inline-payload-file" "missing-value-for-payload
 run_fail_case "fail-closed:empty-inline-ci-payload-file" "missing-value-for-ci-payload-file" \
   --payload-file "$FN_DIR/empty-review.json" --ci-payload-file= -- "" "" "" all selfuser
 
+# ── Live-response gate (RS2-001) — driven OFFLINE via the FETCHNORM_LIVE_* seam ────
+# DISTINCT from --payload-file (which BYPASSES the live path + gate). These cases set the
+# FETCHNORM_LIVE_GRAPHQL_FILE/STATUS and/or FETCHNORM_LIVE_CI_FILE/STATUS env vars for a SINGLE
+# invocation (via `env VAR=...`, so nothing leaks into sibling cases), feeding a raw live response
+# + simulated gh exit status THROUGH validate_live_response exactly as a real fetch would. No real
+# gh / network is touched. The live helpers require OWNER/REPO/PR positionals are present for the
+# non-seam branch, but the seam SHORT-CIRCUITS that — we still pass placeholder "o r 5" positionals
+# so the offline run never hits the OWNER guard ordering (the seam is checked first).
+
+# run_live_fail_case <case> <expected-reason> <env-assignment...> -- <arg...>
+# Run the normalize core with the FETCHNORM_LIVE_* env vars set ONLY for this invocation and assert
+# the fail-CLOSED contract: NON-ZERO exit + a single `FETCHNORM_ERROR=<reason>` line on stdout. The
+# `--` separates the leading `VAR=value` env assignments from the script's positional/flag args.
+# This locks the RS2-001 live-response gate: an exit-0 operational failure (errors array / null
+# pullRequest / empty body) or a non-allowlisted CI exit must surface as an error, never zero
+# candidates.
+run_live_fail_case() {
+  local case_name="$1" expected_reason="$2"; shift 2
+  local -a env_assign=()
+  while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do env_assign+=("$1"); shift; done
+  shift  # drop the "--"
+  local out status
+  out="$(env "${env_assign[@]}" bash "$NORMALIZE" "$@" 2>/dev/null)"
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    failed "$case_name" "expected NON-ZERO exit, got 0 (stdout: $out)"
+    return
+  fi
+  if printf '%s\n' "$out" | grep -q "^FETCHNORM_ERROR=$expected_reason$"; then
+    pass "$case_name" "exit=$status FETCHNORM_ERROR=$expected_reason"
+  else
+    failed "$case_name" "exit=$status but stdout missing 'FETCHNORM_ERROR=$expected_reason' (got: $out)"
+  fi
+}
+
+# run_live_failopen_case <case> <expected-fixture-abspath> <env-assignment...> -- <arg...>
+# Run with the FETCHNORM_LIVE_* env vars set ONLY for this invocation and assert the fail-OPEN
+# guarantee: exit 0 + the canonicalized candidate array equals the expected fixture. Proves the gate
+# does NOT over-reject a valid-but-empty live response, that a passing/failing CI exit yields the
+# right candidate set, and (via the no-env variant) that injected content bypasses the gate. Captures
+# stdout + status WITHOUT a pipe, then canonicalizes the buffer (mirrors run_failopen_case).
+run_live_failopen_case() {
+  local case_name="$1" expected_fix="$2"; shift 2
+  local -a env_assign=()
+  while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do env_assign+=("$1"); shift; done
+  shift  # drop the "--"
+  if [ ! -f "$expected_fix" ]; then failed "$case_name" "expected fixture missing: $expected_fix"; return; fi
+  local raw status expected actual
+  raw="$(env "${env_assign[@]}" bash "$NORMALIZE" "$@" 2>/dev/null)"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    failed "$case_name" "expected exit 0 (fail-open), got $status (stdout: $raw)"
+    return
+  fi
+  if ! expected="$(canon < "$expected_fix")"; then
+    failed "$case_name" "could not canonicalize expected fixture $expected_fix"
+    return
+  fi
+  actual="$(printf '%s' "$raw" | canon)"
+  if [ "$actual" = "$expected" ]; then
+    pass "$case_name" "(exit=0 $(basename "$expected_fix"))"
+  else
+    failed "$case_name" "($case_name)
+    expected: $expected
+    actual:   $actual"
+  fi
+}
+
+# Fail-CLOSED via the GraphQL live seam (FETCHNORM_LIVE_GRAPHQL_FILE/STATUS). Each pairs a passing CI
+# seam ([] @ status 0) so the live CI fetch is also short-circuited offline — the GraphQL gate is the
+# subject under test and must fire before CI is even consulted.
+# 1. non-empty .errors at status 0 -> graphql-errors.
+run_live_fail_case "live-closed:graphql-errors" "graphql-errors" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-errors.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+# 2. null/absent .data.repository.pullRequest at status 0 -> graphql-null-pullrequest.
+run_live_fail_case "live-closed:graphql-null-pullrequest" "graphql-null-pullrequest" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-null-pr.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+# 3. empty/whitespace body at status 0 -> graphql-empty-body.
+run_live_fail_case "live-closed:graphql-empty-body" "graphql-empty-body" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+# 4. EDGE: .errors populated AND a present pullRequest at status 0 -> graphql-errors (errors overrides
+#    presence — the operational-failure signal wins).
+run_live_fail_case "live-closed:graphql-errors-override-presence" "graphql-errors" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-errors-with-pr.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+
+# Fail-CLOSED via the CI live seam (FETCHNORM_LIVE_CI_FILE/STATUS). Each pairs a VALID empty GraphQL
+# seam (present pullRequest, zero connections @ status 0) so the GraphQL gate passes and the CI gate
+# is the subject under test.
+# 5. valid JSON array but STATUS=4 (auth) -> ci-operational-failure (the F5 shape-only-trust bug edge:
+#    a non-allowlisted exit fails closed EVEN WITH a valid array body).
+run_live_fail_case "live-closed:ci-auth4-with-array" "ci-operational-failure" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-array.json" "FETCHNORM_LIVE_CI_STATUS=4" \
+  -- o r 5 all selfuser
+# 6. STATUS=2 (cancelled) with [] -> ci-operational-failure (non-allowlisted exit, even with an empty
+#    array body).
+run_live_fail_case "live-closed:ci-cancelled2-with-empty" "ci-operational-failure" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=2" \
+  -- o r 5 all selfuser
+# 7. STATUS=8 (pending — allowlisted) with a NON-array body -> ci-not-array (an allowlisted failing/
+#    pending exit must still carry the JSON array).
+run_live_fail_case "live-closed:ci-pending8-non-array" "ci-not-array" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-non-array.json" "FETCHNORM_LIVE_CI_STATUS=8" \
+  -- o r 5 all selfuser
+# 8. seam file unreadable -> live-seam-file-not-found (an explicitly-set seam path that does not exist
+#    is an input error, distinct from the fail-open empty path).
+run_live_fail_case "live-closed:seam-file-not-found" "live-seam-file-not-found" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/__live-seam-missing__.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  -- o r 5 all selfuser
+
+# Fail-OPEN guards (exit 0). Prove the gate does NOT over-reject valid responses.
+# 9. valid live GraphQL, present pullRequest, ZERO connections @ status 0 -> [] exit 0 (paired with a
+#    passing CI seam so the whole live path is offline). Gate must accept valid-but-empty.
+run_live_failopen_case "live-open:graphql-valid-empty" \
+  "$EXPECTED_DIR/live-graphql-valid-empty.json" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+# 10. CI STATUS=0 with [] -> zero CI candidates, exit 0.
+run_live_failopen_case "live-open:ci-empty-status0" \
+  "$EXPECTED_DIR/live-ci-empty.json" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+# 11. CI STATUS=1 (failing — allowlisted) with a real array of failing check objects -> emits the CI
+#     candidate(s), exit 0 (the genuine failing-CI path stays intact through the gate).
+run_live_failopen_case "live-open:ci-failing-status1" \
+  "$EXPECTED_DIR/live-ci-failing.json" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-array.json" "FETCHNORM_LIVE_CI_STATUS=1" \
+  -- o r 5 all selfuser
+
+# ── Live-vs-injected divergence lock (the critical boundary assertion) ──────────────
+# 12. A --payload-file fixture whose body carries a non-empty .errors array, with NO live seam env
+#     vars set, STILL yields [] exit 0: injected content is TRUSTED and bypasses validate_live_response
+#     entirely. The SAME body shape, were it a LIVE response, would fail closed as graphql-errors
+#     (case 1) — this proves the deliberate live=validated / injected=trusted divergence. No env vars,
+#     so it runs through run_failopen_case's existing --payload-file path.
+run_failopen_case "injected-bypass:errors-array-trusted" \
+  "$FN_DIR/injected-graphql-with-errors.json" - \
+  "$EXPECTED_DIR/injected-errors-bypass.json"
+
 # ── reviewer_filter scoping ───────────────────────────────────────────────────────
 # Same payload, three filters. codex-only matches ONLY chatgpt-codex-connector (900). all matches
 # any non-self author (900 + human reviewer 901). An empty filter slot defaults to codex-only.
