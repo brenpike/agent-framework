@@ -1,0 +1,13 @@
+COMMITaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaFix null check in auth handler
+diff --git a/src/auth.py b/src/auth.py
+index 000..111 100644
+--- a/src/auth.py
++++ b/src/auth.py
+@@ -10,3 +10,4 @@
++    if token is None:
+diff --git a/src/db.py b/src/db.py
+index 000..111 100644
+--- a/src/db.py
++++ b/src/db.py
+@@ -5 +5,2 @@
++    conn = get_conn()

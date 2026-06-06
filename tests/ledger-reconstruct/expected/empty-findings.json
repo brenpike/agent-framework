@@ -1,0 +1,16 @@
+{
+  "base": null,
+  "branch": null,
+  "exit_iteration": null,
+  "exit_reason": null,
+  "iterations": [
+    {
+      "exit_reason": null,
+      "findings": [],
+      "iteration": 1,
+      "review_base_ref": null,
+      "verdict": "needs-attention"
+    }
+  ],
+  "max_iterations": 10
+}

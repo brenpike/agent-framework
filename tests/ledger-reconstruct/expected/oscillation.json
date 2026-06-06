@@ -1,0 +1,68 @@
+{
+  "base": null,
+  "branch": null,
+  "exit_iteration": null,
+  "exit_reason": null,
+  "iterations": [
+    {
+      "exit_reason": null,
+      "findings": [
+        {
+          "body": null,
+          "file": "src/handler.py",
+          "fix_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:src/handler.py:20",
+          "introduced_iteration": 1,
+          "line_end": 24,
+          "line_start": 20,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "cycling",
+          "thread_resolved": null,
+          "title": "First fix of handler loop"
+        },
+        {
+          "body": null,
+          "file": "src/other.py",
+          "fix_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:src/other.py:1",
+          "introduced_iteration": 1,
+          "line_end": 4,
+          "line_start": 1,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": null,
+          "title": "First fix of handler loop"
+        },
+        {
+          "body": null,
+          "file": "src/handler.py",
+          "fix_commit": "cccccccccccccccccccccccccccccccccccccccc",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:cccccccccccccccccccccccccccccccccccccccc:src/handler.py:20",
+          "introduced_iteration": 1,
+          "line_end": 24,
+          "line_start": 20,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "cycling",
+          "thread_resolved": null,
+          "title": "Second fix of handler loop"
+        }
+      ],
+      "iteration": 1,
+      "review_base_ref": null,
+      "verdict": "needs-attention"
+    }
+  ],
+  "max_iterations": 10
+}

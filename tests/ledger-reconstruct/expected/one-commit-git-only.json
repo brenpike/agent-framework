@@ -1,0 +1,51 @@
+{
+  "base": null,
+  "branch": null,
+  "exit_iteration": null,
+  "exit_reason": null,
+  "iterations": [
+    {
+      "exit_reason": null,
+      "findings": [
+        {
+          "body": null,
+          "file": "src/auth.py",
+          "fix_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:src/auth.py:10",
+          "introduced_iteration": 1,
+          "line_end": 13,
+          "line_start": 10,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": null,
+          "title": "Fix null check in auth handler"
+        },
+        {
+          "body": null,
+          "file": "src/db.py",
+          "fix_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:src/db.py:5",
+          "introduced_iteration": 1,
+          "line_end": 6,
+          "line_start": 5,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": null,
+          "title": "Fix null check in auth handler"
+        }
+      ],
+      "iteration": 1,
+      "review_base_ref": null,
+      "verdict": "needs-attention"
+    }
+  ],
+  "max_iterations": 10
+}
