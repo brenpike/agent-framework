@@ -33,6 +33,12 @@
 #                --json number,title,labels,body,id   (id = GraphQL node id)
 #     offline: re-emits the injected --response-file verbatim (identity), no gh.
 #     N defaults to 500. PRs are excluded by `gh issue list` default.
+#     NO SILENT TRUNCATION: the skill advertises the ENTIRE backlog, but `gh issue
+#     list --limit N` caps at N with no overflow signal. So when the produced
+#     row-count EQUALS the requested --limit (cap possibly hit) the subcommand
+#     FAILS CLOSED with a diagnostic to raise --limit and re-run (no pagination).
+#     The cap check runs UNIFORMLY over the produced rows in BOTH offline and live
+#     paths so it is offline-drivable (STEP-002).
 #     --response-file is a TEST SEAM honored ONLY when TRIAGE_OPS_OFFLINE is set;
 #     a live invocation supplying it is REJECTED fail-closed via the shared guard
 #     (see §5) BEFORE any gh call.
@@ -62,16 +68,26 @@
 #     (see §5) BEFORE any gh call.
 #
 #   deps-add --issue-id <NODE_ID> --blocked-by-id <NODE_ID> [--response-file <path|->]
+#            [--issue-labels-file <path|->]
 #     Operates on GraphQL NODE IDs (from list-issues' `id` field), not numbers —
 #     no number->id resolution round-trip is needed because the skill already has
 #     the ids. ADD-ONLY: never removes an existing dependency.
-#     online:  runs the addBlockedBy mutation and surfaces the response.
+#     online:  resolves the GROUND-TRUTH labels of the issue being MUTATED
+#              (--issue-id) via a node(id:) GraphQL query, honors the human-only
+#              triage:locked lock through the SHARED gate assert_unlocked_live (a
+#              locked issue emits a skipped-locked record and mutates NOTHING,
+#              exit 0 — same gate apply-labels uses), then runs the addBlockedBy
+#              mutation and surfaces the response. FAILS CLOSED if the lock state
+#              cannot be verified (unreadable/malformed label read) — never mutate.
+#              Only --issue-id is gated; a locked BLOCKER does not block the edge.
 #     offline: with --response-file -> surfaces that injected response (exercises
-#              the cycle/error/success records); without it -> emits the
+#              the cycle/error/success records); else with --issue-labels-file ->
+#              drives the lock gate over the injected label array (skipped-locked
+#              for a locked set; else proceeds); without either -> emits the
 #              constructed GraphQL variables payload (exercises payload build).
-#     --response-file is a TEST SEAM honored ONLY when TRIAGE_OPS_OFFLINE is set;
-#              a live invocation supplying it is REJECTED fail-closed via the shared
-#              guard (see §5) BEFORE the live addBlockedBy mutation.
+#     --response-file and --issue-labels-file are TEST SEAMS honored ONLY when
+#              TRIAGE_OPS_OFFLINE is set; a live invocation supplying EITHER is
+#              REJECTED fail-closed via the shared guard (see §5) BEFORE any gh call.
 #
 # 3. OUTPUT SCHEMA — JSON on stdout (compact)
 # -------------------------------------------
@@ -116,6 +132,14 @@
 #     this skill is grouping-agnostic).
 #   - ADD-ONLY dependencies. deps-add never removes an existing dependency; removal
 #     is a human decision outside this script.
+#   - deps-add HONORS triage:locked. Before the addBlockedBy write it resolves the
+#     ground-truth labels of the issue being MUTATED (the --issue-id NODE ID) via a
+#     node(id:) query and gates through the SINGLE shared decision point
+#     assert_unlocked_live (the same lock test apply-labels uses, so the two live
+#     mutation paths can never diverge). A locked issue is reported skipped-locked
+#     and mutated NOT at all; an unverifiable lock state (unreadable/malformed label
+#     read) FAILS CLOSED — never mutate. Only --issue-id is gated; a locked BLOCKER
+#     does not block the edge.
 #   - A GitHub-rejected dependency CYCLE is surfaced as a warning record (kind
 #     cycle-rejected) with exit 0 — the script never crashes on it, so a batch
 #     keeps going (issues are independent).
@@ -133,13 +157,16 @@
 # emitting the deterministic artifact (palette / delta / payload / surfaced
 # record / normalized deps) to stdout. Input that would normally come from gh is
 # injected via flags: --current-labels-file (apply-labels), --response-file
-# (deps-read, deps-add, list-issues). EVERY fixture/injection flag is honored ONLY
-# when TRIAGE_OPS_OFFLINE is set; a live invocation supplying ANY of them is
-# REJECTED fail-closed (exit 2) BEFORE any gh call — they are test seams, not live
-# caller payloads, and would otherwise spoof state or silently no-op a real
-# mutation. This offline-only invariant is enforced UNIFORMLY for all four
-# subcommands by the single shared guard reject_fixture_flags_in_live_mode (one
-# mechanism, no per-subcommand divergence). Use `-` for stdin on any *-file
+# (deps-read, deps-add, list-issues), --issue-labels-file (deps-add — injects the
+# label set the live path would resolve by node id, so the lock gate is offline-
+# drivable). EVERY fixture/injection flag is honored ONLY when TRIAGE_OPS_OFFLINE
+# is set; a live invocation supplying ANY of them is REJECTED fail-closed (exit 2)
+# BEFORE any gh call — they are test seams, not live caller payloads, and would
+# otherwise spoof state (e.g. omit triage:locked to bypass the human-only lock on
+# the deps-add path) or silently no-op a real mutation. This offline-only invariant
+# is enforced UNIFORMLY for all four subcommands by the single shared guard
+# reject_fixture_flags_in_live_mode (one mechanism, no per-subcommand divergence).
+# Use `-` for stdin on any *-file
 # flag. The pure transforms are factored as functions reading from injected input
 # (compute_mutex_delta, build_deps_add_payload, surface_dep_response,
 # normalize_deps_read, triage_palette) so the test can drive each directly via
@@ -200,6 +227,40 @@ read_injected() {
   else
     die "injection file not found: $src" 1
   fi
+}
+
+# is_locked_labels <labels-json-array>: pure predicate — true (exit 0) when the
+# array of label-name strings contains the human-only control label
+# "triage:locked". SINGLE SOURCE of the lock test: both apply-labels and deps-add
+# gate through this, so the two live mutation paths can never diverge on what
+# "locked" means. Mirrors the apply-labels jq `index("triage:locked")` check.
+is_locked_labels() {
+  printf '%s' "$1" | jq -e 'index("triage:locked") != null' >/dev/null 2>&1
+}
+
+# assert_unlocked_live <subcmd> <labels-json>: the SINGLE live lock decision point
+# every live mutation calls (mirrors the shared reject_fixture_flags_in_live_mode
+# pattern — one mechanism, no per-subcommand divergence). If the issue's labels
+# carry triage:locked, emit the byte-identical skipped-locked record to stdout and
+# return 10 to signal the caller to SKIP the mutation and exit 0 (do NOT mutate).
+# Otherwise return 0 (caller proceeds to mutate). The skipped-locked record shape
+# is per-subcommand: apply-labels emits {issue,status} (existing tests depend on
+# the exact bytes); deps-add emits {id,status} keyed on the node id of the issue
+# being mutated (--issue-id). The CALLER selects the record via <subcmd>; the lock
+# TEST is shared.
+# Exit codes: 0 = unlocked (proceed) | 10 = locked (record emitted, skip mutation).
+assert_unlocked_live() {
+  local subcmd="$1" labels_json="$2"
+  is_locked_labels "$labels_json" || return 0
+  case "$subcmd" in
+    apply-labels)
+      jq -c -n --argjson issue "$3" '{ issue: $issue, status: "skipped-locked" }' ;;
+    deps-add)
+      jq -c -n --arg id "$3" '{ id: $id, status: "skipped-locked" }' ;;
+    *)
+      die "assert_unlocked_live: unknown subcmd '$subcmd'" 1 ;;
+  esac
+  return 10
 }
 
 # --- Pure transform core (offline-exercisable; no gh) ------------------------
@@ -457,6 +518,21 @@ query($owner: String!, $repo: String!, $number: Int!) {
   }
 }'
 
+# Resolve ground-truth labels for an issue by its GraphQL NODE ID — used by
+# deps-add to honor the human-only triage:locked lock on the issue being mutated
+# (--issue-id) before running addBlockedBy. $id is passed via -f (never
+# interpolated); the untrusted label NAMEs flow back only through --jq output.
+DEPS_ISSUE_LABELS_QUERY='
+query($id: ID!) {
+  node(id: $id) {
+    ... on Issue {
+      labels(first: 100) {
+        nodes { name }
+      }
+    }
+  }
+}'
+
 DEPS_ADD_MUTATION='
 mutation($issueId: ID!, $blockedByIssueId: ID!) {
   addBlockedBy(input: { issueId: $issueId, blockedByIssueId: $blockedByIssueId }) {
@@ -501,15 +577,29 @@ cmd_list_issues() {
     esac
   done
   case "$limit" in ''|*[!0-9]*) die "list-issues: --limit must be an integer" 2 ;; esac
+
+  # No silent truncation. The skill advertises the ENTIRE backlog, but `gh issue
+  # list --limit N` caps at N with no signal that more exist. So: whenever the
+  # produced row-count EQUALS the requested --limit, the cap may have been hit —
+  # FAIL CLOSED with a diagnostic telling the caller to raise --limit and re-run
+  # (no pagination). The check is applied UNIFORMLY over the produced rows in BOTH
+  # offline (identity over --response-file) and live (gh) paths, so STEP-L002 can
+  # drive it offline with an injected fixture of exactly --limit rows.
+  local rows row_count
   if is_offline; then
     [ -n "$response_file" ] || die "offline list-issues requires --response-file" 2
-    read_injected "$response_file" | jq -c .
-    return 0
+    rows="$(read_injected "$response_file" | jq -c .)"
+  else
+    reject_fixture_flags_in_live_mode "list-issues" "--response-file=$response_file"
+    require_gh "list-issues"
+    rows="$(gh issue list --state open --limit "$limit" \
+              --json number,title,labels,body,id)" \
+      || die "list-issues: gh issue list failed" 1
   fi
-  reject_fixture_flags_in_live_mode "list-issues" "--response-file=$response_file"
-  require_gh "list-issues"
-  gh issue list --state open --limit "$limit" \
-    --json number,title,labels,body,id
+  row_count="$(printf '%s' "$rows" | jq 'length')"
+  [ "$row_count" -lt "$limit" ] \
+    || die "list-issues: returned exactly --limit ($limit) rows — the cap may have truncated the backlog; raise --limit and re-run" 1
+  printf '%s\n' "$rows"
 }
 
 cmd_apply_labels() {
@@ -554,11 +644,10 @@ cmd_apply_labels() {
   require_gh "apply-labels"
   current_json="$(gh issue view "$issue" --json labels --jq '[.labels[].name]')" \
     || die "apply-labels: failed to read current labels for issue #$issue" 1
-  # Honor the human-only lock: a locked issue is reported and mutated NOT at all.
-  if printf '%s' "$current_json" | jq -e 'index("triage:locked") != null' >/dev/null 2>&1; then
-    jq -c -n --argjson issue "$issue" '{ issue: $issue, status: "skipped-locked" }'
-    return 0
-  fi
+  # Honor the human-only lock via the SHARED gate (single decision point; mirrors
+  # reject_fixture_flags_in_live_mode). A locked issue emits the byte-identical
+  # skipped-locked record (return 10) and mutates NOTHING — caller exits 0.
+  assert_unlocked_live "apply-labels" "$current_json" "$issue" || return 0
 
   local delta
   delta="$(compute_mutex_delta "$issue" "$targets_json" "$current_json")"
@@ -612,7 +701,7 @@ cmd_deps_read() {
 }
 
 cmd_deps_add() {
-  local issue_id="" blocked_by_id="" response_file=""
+  local issue_id="" blocked_by_id="" response_file="" issue_labels_file=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --issue-id) [ "$#" -ge 2 ] || die "missing value for --issue-id" 2
@@ -621,6 +710,8 @@ cmd_deps_add() {
                blocked_by_id="$2"; shift 2 ;;
       --response-file) [ "$#" -ge 2 ] || die "missing value for --response-file" 2
                response_file="$2"; shift 2 ;;
+      --issue-labels-file) [ "$#" -ge 2 ] || die "missing value for --issue-labels-file" 2
+               issue_labels_file="$2"; shift 2 ;;
       *) die "deps-add: unexpected argument '$1'" 2 ;;
     esac
   done
@@ -634,14 +725,41 @@ cmd_deps_add() {
     fi
     [ -n "$issue_id" ] && [ -n "$blocked_by_id" ] \
       || die "offline deps-add requires --issue-id and --blocked-by-id (or --response-file)" 2
+    # Offline lock seam: drive the SHARED gate over injected labels. A locked set
+    # emits the byte-identical skipped-locked record and short-circuits with NO
+    # payload (mirrors the live skip); an unlocked set proceeds to payload build.
+    if [ -n "$issue_labels_file" ]; then
+      local injected_labels
+      injected_labels="$(read_injected "$issue_labels_file")"
+      printf '%s' "$injected_labels" | jq -e 'type == "array"' >/dev/null 2>&1 \
+        || die "deps-add: --issue-labels-file must be a JSON array of label names" 2
+      assert_unlocked_live "deps-add" "$injected_labels" "$issue_id" || return 0
+    fi
     build_deps_add_payload "$issue_id" "$blocked_by_id"
     return 0
   fi
 
-  reject_fixture_flags_in_live_mode "deps-add" "--response-file=$response_file"
+  reject_fixture_flags_in_live_mode "deps-add" \
+    "--response-file=$response_file" "--issue-labels-file=$issue_labels_file"
   [ -n "$issue_id" ] && [ -n "$blocked_by_id" ] \
     || die "deps-add requires --issue-id and --blocked-by-id" 2
   require_gh "deps-add"
+  # Honor the human-only lock on the issue being MUTATED (--issue-id) BEFORE the
+  # addBlockedBy write, via the SAME shared gate apply-labels uses. Resolve
+  # ground-truth labels by node id ($id passed via -f, never interpolated). Only
+  # the issue GAINING the dependency is gated — a locked BLOCKER does not block the
+  # edge. FAIL CLOSED on an unreadable/malformed label set: never mutate on an
+  # unverifiable lock state (mirrors normalize_deps_read's fail-closed posture).
+  local labels_resp current_json
+  labels_resp="$(gh api graphql -f query="$DEPS_ISSUE_LABELS_QUERY" \
+                   -f id="$issue_id" 2>/dev/null)" \
+    || die "deps-add: failed to read labels for issue id '$issue_id' (cannot verify lock state)" 1
+  current_json="$(printf '%s' "$labels_resp" | jq -c '[.data.node.labels.nodes[].name]' 2>/dev/null)" \
+    || die "deps-add: malformed label response for issue id '$issue_id' (cannot verify lock state)" 1
+  printf '%s' "$current_json" | jq -e 'type == "array"' >/dev/null 2>&1 \
+    || die "deps-add: label response did not yield a label array for issue id '$issue_id' (cannot verify lock state)" 1
+  assert_unlocked_live "deps-add" "$current_json" "$issue_id" || return 0
+
   # Capture stdout regardless of gh's exit status: a GraphQL cycle rejection
   # returns the error BODY (which surface_dep_response classifies) yet gh exits
   # nonzero. The surfacing function is the single decision point — never crash.
@@ -662,7 +780,7 @@ subcommands:
   list-issues   [--limit N] [--response-file <path|->]
   apply-labels  <issue> --targets <json>|--targets-file <path> [--current-labels-file <path|->]
   deps-read     <issue> [--response-file <path|->]
-  deps-add      --issue-id <ID> --blocked-by-id <ID> [--response-file <path|->]
+  deps-add      --issue-id <ID> --blocked-by-id <ID> [--response-file <path|->] [--issue-labels-file <path|->]
 Set TRIAGE_OPS_OFFLINE to drive the pure transforms over injected input (no gh).
 EOF
 }
