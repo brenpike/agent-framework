@@ -281,14 +281,17 @@ build_deps_add_payload() {
 
 # surface_dep_response <response-json>: classify a raw addBlockedBy GraphQL
 # response into a structured record AND signal recoverability via exit code.
-# A GraphQL `.errors` entry whose message names a cycle becomes an exit-0
-# `cycle-rejected` warning (the one expected, non-fatal GitHub rejection — a
-# cycle is a legitimate "can't add this edge" answer, not a failed write). EVERY
-# other failure is FAIL-CLOSED and exits nonzero so the caller never proceeds as
-# if an edge were written when none was: empty/non-JSON transport errors, a
-# success body missing the expected addBlockedBy issue numbers, and any
-# non-cycle GraphQL error (auth, rate-limit, 4xx, schema, malformed). The record
-# is still emitted on stdout for diagnostics; the EXIT CODE is the gate.
+# A GraphQL `.errors` array becomes an exit-0 `cycle-rejected` warning ONLY when
+# EVERY error in the array names a cycle (the one expected, non-fatal GitHub
+# rejection — a cycle is a legitimate "can't add this edge" answer, not a failed
+# write). A MIXED array (a cycle error alongside ANY non-cycle error — auth,
+# rate-limit, schema) is FAIL-CLOSED: the non-cycle sibling marks a genuine write
+# failure that a first-error-only check would mask. EVERY other failure is
+# FAIL-CLOSED and exits nonzero so the caller never proceeds as if an edge were
+# written when none was: empty/non-JSON transport errors, a success body missing
+# the expected addBlockedBy issue numbers, and any array containing a non-cycle
+# GraphQL error (auth, rate-limit, 4xx, schema, malformed). The record is still
+# emitted on stdout for diagnostics; the EXIT CODE is the gate.
 # See INVARIANT §4. Exit codes: 0 = added | cycle-rejected; 1 = fail-closed.
 surface_dep_response() {
   local resp="$1"
@@ -307,10 +310,15 @@ surface_dep_response() {
   record="$(printf '%s' "$resp" | jq -c '
         if ((.errors // []) | length) > 0
         then
-          ((.errors[0].message) // "addBlockedBy rejected") as $msg
-          | if ($msg | test("cycl|circular"; "i"))
-            then { status: "warning", kind: "cycle-rejected", message: $msg }
-            else { status: "error", kind: "graphql-error", message: $msg } end
+          (.errors | map(.message // "")) as $msgs
+          # Recoverable ONLY when EVERY error names a cycle. A single non-cycle
+          # sibling (auth/rate-limit/schema) fails the whole array closed — a
+          # first-error-only check would mask a real write failure.
+          | if ($msgs | all(test("cycl|circular"; "i")))
+            then { status: "warning", kind: "cycle-rejected",
+                   message: ($msgs[0] // "addBlockedBy rejected") }
+            else { status: "error", kind: "graphql-error",
+                   message: ($msgs | map(select(test("cycl|circular"; "i") | not)))[0] } end
         elif (.data.addBlockedBy.issue.number != null
               and .data.addBlockedBy.blockedBy.number != null)
         then { status: "added",
@@ -335,8 +343,13 @@ surface_dep_response() {
 # never makes triage/dependency decisions from a corrupted-into-"no blockers"
 # state. Fail-closed on: empty/non-JSON transport errors, any non-empty
 # `.errors` (auth, rate-limit, 4xx, schema), a missing/null `.data.repository.issue`
-# (issue absent or 200-with-error body), and a missing/non-array
-# `blockedByIssues.nodes`. Only a well-formed issue node is normalized and emitted
+# (issue absent or 200-with-error body), a missing/non-array
+# `blockedByIssues.nodes`, and any null/wrong-typed identifier FIELD on the issue
+# or a blocker node (null issue id/number, or a blocker missing its number/id/title).
+# A 200 body satisfying the outer shape but carrying null identifiers would
+# normalize into dependency records that cannot be safely matched for later
+# deps-add/removal, so the field-completeness gate fails it closed too. Only a
+# fully-formed issue node with fully-formed blocker nodes is normalized and emitted
 # on stdout with exit 0. See INVARIANT §3/§4. Exit codes: 0 = normalized; 1 = fail-closed.
 normalize_deps_read() {
   local resp="$1"
@@ -361,6 +374,24 @@ normalize_deps_read() {
         >/dev/null 2>&1; then
     jq -c -n '{ status:"error", kind:"malformed-read",
                 message:"blockedByIssues response missing issue or nodes array" }' >&2
+    return 1
+  fi
+  # Field-completeness gate: the outer shape can be satisfied while a key
+  # identifier is null/wrong-typed. Require a numeric issue number, a nonempty
+  # string issue id, and — for EVERY blocker node — a numeric number plus nonempty
+  # string id and title. A null id/number would normalize into a record that
+  # cannot be matched for later deps-add/removal, so fail it closed here.
+  if ! printf '%s' "$resp" | jq -e \
+        '(.data.repository.issue) as $i
+         | ($i.number | type == "number")
+         and ($i.id | type == "string" and length > 0)
+         and (($i.blockedByIssues.nodes) | all(
+               (.number | type == "number")
+               and (.id | type == "string" and length > 0)
+               and (.title | type == "string" and length > 0)))' \
+        >/dev/null 2>&1; then
+    jq -c -n '{ status:"error", kind:"malformed-read",
+                message:"blockedByIssues response has null/invalid issue or blocker identifier fields" }' >&2
     return 1
   fi
   printf '%s' "$resp" | jq -c '

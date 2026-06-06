@@ -257,6 +257,12 @@ run_exit1_case "deps-add:empty-transport-exit1" -- \
   deps-add --response-file "$TB_DIR/deps-add-empty-response.json"
 run_exit1_case "deps-add:malformed-success-exit1" -- \
   deps-add --response-file "$TB_DIR/deps-add-malformed-success-response.json"
+# Mixed `.errors` array: a cycle error FIRST and a non-cycle (auth/permission)
+# error SECOND MUST fail closed — recoverability is decided over the WHOLE array,
+# not just .errors[0], so a first-error-only check can no longer mask the failed
+# write behind a benign cycle.
+run_exit1_case "deps-add:mixed-cycle-noncycle-exit1" -- \
+  deps-add --response-file "$TB_DIR/deps-add-mixed-error-response.json"
 
 # ── deps-read normalize + list-issues identity ────────────────────────────────────
 # A canned blockedByIssues GraphQL response normalizes into the stable deps-read schema.
@@ -272,6 +278,12 @@ run_exit1_case "deps-read:graphql-error-exit1" -- \
   deps-read 5 --response-file "$TB_DIR/deps-read-graphql-error-response.json"
 run_exit1_case "deps-read:null-issue-exit1" -- \
   deps-read 5 --response-file "$TB_DIR/deps-read-null-issue-response.json"
+# Field-completeness gate: a 200 body that satisfies the outer shape (issue
+# present, nodes is an array) but carries null issue id and null blocker
+# id/number/title MUST fail closed — null identifiers would normalize into a
+# record that cannot be matched for later deps-add/removal.
+run_exit1_case "deps-read:null-fields-exit1" -- \
+  deps-read 5 --response-file "$TB_DIR/deps-read-null-fields-response.json"
 
 # list-issues offline re-emits the injected response verbatim (identity pass-through).
 run_case "list-issues:identity" "$EXPECTED_DIR/list-issues-identity.json" -- \
