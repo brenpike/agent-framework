@@ -246,9 +246,18 @@ compute_mutex_delta() {
         {
           issue: $issue,
           remove: ( [ $fams[] as $f
-                      | $current[]
+                      | $current[] as $lbl
+                      | $lbl
                       | select(startswith($f.key + ":"))
-                      | select(. != ($f.key + ":" + $f.value)) ] | unique ),
+                      | select(. != ($f.key + ":" + $f.value))
+                      # Bound the remove set to the FIXED managed palette: a
+                      # foreign/human label sharing a family prefix (e.g.
+                      # priority:customer) is invisible and MUST NOT be removed.
+                      # NOTE: capture $lbl first — inside `$valid | index(.)` the
+                      # `.` rebinds to $valid (the pipe input), so index(.) would
+                      # search for the whole array and always match; test the
+                      # captured element with `index($lbl)` instead.
+                      | select( $valid | index($lbl) ) ] | unique ),
           add:    ( [ $fams[]
                       | (.key + ":" + .value) as $want
                       | select( ($current | index($want)) | not )
@@ -265,29 +274,52 @@ build_deps_add_payload() {
 }
 
 # surface_dep_response <response-json>: classify a raw addBlockedBy GraphQL
-# response into a structured record. A GraphQL `.errors` entry becomes a warning
-# (cycle-rejected when the message names a cycle, else error); a success becomes
-# an added record. Non-JSON / empty input -> a transport-error warning. NEVER
-# exits nonzero — surfacing a rejection must not crash the batch (INVARIANT §4).
+# response into a structured record AND signal recoverability via exit code.
+# A GraphQL `.errors` entry whose message names a cycle becomes an exit-0
+# `cycle-rejected` warning (the one expected, non-fatal GitHub rejection — a
+# cycle is a legitimate "can't add this edge" answer, not a failed write). EVERY
+# other failure is FAIL-CLOSED and exits nonzero so the caller never proceeds as
+# if an edge were written when none was: empty/non-JSON transport errors, a
+# success body missing the expected addBlockedBy issue numbers, and any
+# non-cycle GraphQL error (auth, rate-limit, 4xx, schema, malformed). The record
+# is still emitted on stdout for diagnostics; the EXIT CODE is the gate.
+# See INVARIANT §4. Exit codes: 0 = added | cycle-rejected; 1 = fail-closed.
 surface_dep_response() {
   local resp="$1"
+  # Empty / non-JSON => transport error. Fail closed: record to stderr, exit 1.
   if ! printf '%s' "$resp" | jq -e . >/dev/null 2>&1; then
-    jq -c -n '{ status:"warning", kind:"transport-error",
-                message:"empty or non-JSON response from addBlockedBy" }'
-    return 0
+    jq -c -n '{ status:"error", kind:"transport-error",
+                message:"empty or non-JSON response from addBlockedBy" }' >&2
+    return 1
   fi
-  printf '%s' "$resp" | jq -c '
-    if ((.errors // []) | length) > 0
-    then
-      ((.errors[0].message) // "addBlockedBy rejected") as $msg
-      | { status: "warning",
-          kind: (if ($msg | test("cycl|circular"; "i")) then "cycle-rejected" else "error" end),
-          message: $msg }
-    else
-      { status: "added",
-        issue: (.data.addBlockedBy.issue.number),
-        blocked_by: (.data.addBlockedBy.blockedBy.number) }
-    end'
+  # Single classification pass (always exits 0): emit the structured record. The
+  # record's `kind` is the gate the caller honors — `cycle-rejected` and `added`
+  # are recoverable (exit 0); every other kind is fail-closed (exit 1). A
+  # non-cycle GraphQL error, or a success body missing the expected addBlockedBy
+  # issue numbers, is classified `graphql-error` / `malformed-success`.
+  local record kind
+  record="$(printf '%s' "$resp" | jq -c '
+        if ((.errors // []) | length) > 0
+        then
+          ((.errors[0].message) // "addBlockedBy rejected") as $msg
+          | if ($msg | test("cycl|circular"; "i"))
+            then { status: "warning", kind: "cycle-rejected", message: $msg }
+            else { status: "error", kind: "graphql-error", message: $msg } end
+        elif (.data.addBlockedBy.issue.number != null
+              and .data.addBlockedBy.blockedBy.number != null)
+        then { status: "added",
+               issue: (.data.addBlockedBy.issue.number),
+               blocked_by: (.data.addBlockedBy.blockedBy.number) }
+        else { status: "error", kind: "malformed-success",
+               message: "addBlockedBy response missing expected issue numbers" }
+        end')"
+  kind="$(printf '%s' "$record" | jq -r '.kind // "added"')"
+  case "$kind" in
+    added|cycle-rejected)  # recoverable: emit on stdout, caller continues.
+      printf '%s\n' "$record"; return 0 ;;
+    *)  # graphql-error, malformed-success (and any unknown): fail closed.
+      printf '%s\n' "$record" >&2; return 1 ;;
+  esac
 }
 
 # normalize_deps_read <response-json>: project a raw blockedByIssues GraphQL
@@ -483,12 +515,14 @@ cmd_deps_add() {
 
   if is_offline; then
     if [ -n "$response_file" ]; then
+      # Propagate surface_dep_response's exit code — a fail-closed (non-cycle)
+      # error must surface as nonzero on the offline seam too, not be masked.
       surface_dep_response "$(read_injected "$response_file")"
-    else
-      [ -n "$issue_id" ] && [ -n "$blocked_by_id" ] \
-        || die "offline deps-add requires --issue-id and --blocked-by-id (or --response-file)" 2
-      build_deps_add_payload "$issue_id" "$blocked_by_id"
+      return "$?"
     fi
+    [ -n "$issue_id" ] && [ -n "$blocked_by_id" ] \
+      || die "offline deps-add requires --issue-id and --blocked-by-id (or --response-file)" 2
+    build_deps_add_payload "$issue_id" "$blocked_by_id"
     return 0
   fi
 

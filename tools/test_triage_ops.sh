@@ -102,6 +102,25 @@ run_exit0_case() {
   fi
 }
 
+# run_exit1_case <case> -- <ops-arg...>
+# Asserts the script exited NONZERO (fail-closed). Used to lock the deps-add
+# fail-closed invariant: a non-cycle GraphQL error, an empty/non-JSON transport
+# error, or a malformed-success response MUST surface as nonzero so the caller
+# never proceeds as if a dependency edge were written. Captures status WITHOUT a
+# pipe so the exit code is the script's own, not jq's.
+run_exit1_case() {
+  local case_name="$1"; shift
+  [ "$1" = "--" ] && shift
+  local out status
+  out="$(TRIAGE_OPS_OFFLINE=1 bash "$OPS" "$@" 2>/dev/null)"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    pass "$case_name" "exit=$status (args: $*)"
+  else
+    failed "$case_name" "expected nonzero exit, got 0 (args: $*; stdout: $out)"
+  fi
+}
+
 # ── Palette shape + idempotence ───────────────────────────────────────────────────
 # ensure-labels offline emits the baked palette JSON. Assert the family/value census (36 labels:
 # readiness 9, type 8, effort 5, moscow 4, priority/risk/difficulty 3 each, control 1) so a label
@@ -177,6 +196,16 @@ else
   failed "mutex:foreign-never-removed" "a foreign or triage:locked label leaked into remove (delta: $FOREIGN_DELTA)"
 fi
 
+# ── Foreign label sharing a MANAGED family prefix is never removed ────────────────
+# Regression for the palette-bounded remove set: a non-palette label that shares a
+# managed family prefix (priority:customer under target priority:high, and
+# type:legal-hold) must NOT be scheduled for removal. Only the palette-managed
+# stale value (priority:low) is removed. Removing on prefix alone would clobber
+# human/project labels — the contract says foreign labels are invisible.
+run_case "mutex:foreign-prefix-not-removed" "$EXPECTED_DIR/delta-priority-foreign-prefix.json" -- \
+  apply-labels 9 --targets '{"priority":"high"}' \
+  --current-labels-file "$TB_DIR/current-priority-foreign-prefix.json"
+
 # ── deps-add GraphQL payload shape ────────────────────────────────────────────────
 # Offline deps-add WITHOUT --response-file builds the GraphQL variables payload. Assert the exact
 # variable keys (issueId, blockedByIssueId) with node ids passed through as DATA.
@@ -200,6 +229,18 @@ run_case "deps-add:cycle-surface" "$EXPECTED_DIR/deps-add-cycle.json" -- \
   deps-add --response-file "$TB_DIR/deps-add-cycle-response.json"
 run_exit0_case "deps-add:cycle-exit0" -- \
   deps-add --response-file "$TB_DIR/deps-add-cycle-response.json"
+
+# ── deps-add FAIL-CLOSED on non-cycle / transport / malformed responses ───────────
+# A non-cycle GraphQL error (auth/permission), an empty/non-JSON transport error, and
+# a malformed-success body each MUST surface as a NONZERO exit so the caller never
+# treats a failed dependency write as handled. Only the cycle rejection above is the
+# recoverable exit-0 warning.
+run_exit1_case "deps-add:noncycle-error-exit1" -- \
+  deps-add --response-file "$TB_DIR/deps-add-noncycle-error-response.json"
+run_exit1_case "deps-add:empty-transport-exit1" -- \
+  deps-add --response-file "$TB_DIR/deps-add-empty-response.json"
+run_exit1_case "deps-add:malformed-success-exit1" -- \
+  deps-add --response-file "$TB_DIR/deps-add-malformed-success-response.json"
 
 # ── deps-read normalize + list-issues identity ────────────────────────────────────
 # A canned blockedByIssues GraphQL response normalizes into the stable deps-read schema.
