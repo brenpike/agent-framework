@@ -12,11 +12,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [2.27.0] - 2026-06-05
+### Deferred
+
+- Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
+- Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
+
+## [2.26.2] - 2026-06-05
+
+### Added
+
+- **`plugin/skills/github-review-loop/scripts/loop-state.sh` — deterministic watch-loop bookkeeping extracted from `github-review-loop` SKILL.md (#207, initiative #201).** New thin entrypoint single-sources the loop's own mechanics (cycle-count increment, cycle ceiling, terminal-vs-cycle classification, guard-token→`exit_reason` mapping, same-finding-repeat oscillation guard) and delegates multi-token precedence ordering to the sibling `exit-precedence.sh` rather than re-encoding the ladder. Covered by `tools/test_loop_state.sh` CI suite, registered FAIL-CLOSED in `tools/validate.sh`.
 
 ### Changed
 
-- **`plugin/skills/github-review-loop/scripts/loop-state.sh` — deterministic watch-loop bookkeeping extracted from `SKILL.md` (#207, initiative #201).** New thin entrypoint single-sources the github-review-loop's own loop mechanics (cycle-count increment, cycle ceiling, terminal-vs-cycle classification, guard-token→`exit_reason` mapping, same-finding-repeat oscillation guard) and delegates multi-token precedence ordering to the sibling `exit-precedence.sh` rather than re-encoding the ladder. `SKILL.md` is slimmed 302→125 lines to describe intent (Monitor wiring, dispatch, reviewer-return semantics, terminal report, safety) while the deterministic arithmetic lives in the unit-tested script. Behavior-preserving: terminal vocabulary tokens unchanged. Covered by `tools/test_loop_state.sh` (41 assertions), registered FAIL-CLOSED in `tools/validate.sh`.
+- **`github-review-loop` SKILL.md slimmed 302→~125 lines; behavior-preserving (#207).** The skill now describes intent (Monitor wiring, dispatch, reviewer-return semantics, terminal report, safety) while the deterministic arithmetic is delegated to `loop-state.sh` plus the existing `exit-precedence.sh`. Terminal vocabulary tokens unchanged.
+
+## [2.26.1] - 2026-06-05
+
+### Added
+
+- **`reply-resolve.sh` — shared script owning the github-reviewer reply-then-resolve mutation sequence; `test_reply_resolve.sh` CI suite (#205).** Extracts the reply-then-resolve mutation sequence that was previously inline prose in `github-reviewer` into a committed, independently-tested script; behavior-preserving.
+
+### Changed
+
+- **`github-reviewer` agent slimmed to a judgment narrative over the shared review substrate (preflight.sh / fetch-normalize.sh / injection-scan / exit-precedence.sh); duplicated fetch/normalize/classify and reply/resolve mechanism prose removed (#205).** Behavior-preserving refactor: all removed prose delegated to the shared substrate scripts and skills already exercised by the agent; no exit-reason contract or observable behavior changed.
+
+### Fixed
+
+- **`fetch-normalize.sh` hygiene: EXIT trap + `pwd -P` (#205).** Ensures the shared fetch-normalize substrate cleans up reliably on early exit and resolves its working directory without symlink ambiguity; behavior-preserving.
 
 ## [2.26.0] - 2026-06-05
 
