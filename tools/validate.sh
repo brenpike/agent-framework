@@ -39,6 +39,7 @@ SUITE_TEST_EXIT_PRECEDENCE='test_exit_precedence.sh'
 SUITE_TEST_LOOP_STATE='test_loop_state.sh'
 SUITE_TEST_REPLY_RESOLVE='test_reply_resolve.sh'
 SUITE_TEST_LEDGER_RECONSTRUCT='test_ledger_reconstruct.sh'
+SUITE_TEST_TRIAGE_OPS='test_triage_ops.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -56,6 +57,7 @@ ALL_SUITES=(
   "$SUITE_TEST_LOOP_STATE"
   "$SUITE_TEST_REPLY_RESOLVE"
   "$SUITE_TEST_LEDGER_RECONSTRUCT"
+  "$SUITE_TEST_TRIAGE_OPS"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -74,6 +76,7 @@ KNOWN_SUITES=(
   test_loop_state.sh
   test_reply_resolve.sh
   test_ledger_reconstruct.sh
+  test_triage_ops.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -348,6 +351,17 @@ map_path() {
     matched=1
   fi
 
+  # test_triage_ops: the triage-backlog ops script(s) (.sh) + its fixture dir. The script is ALSO a
+  # plugin/* file (policy_check prose-lints it via the wholesale rule below), but policy_check NEVER
+  # EXECUTES bash — so without this rule a triage-ops edit would only be prose-linted, never
+  # behaviorally exercised. Route both the script glob and its fixture dir to the behavioral suite.
+  # (tools/test_triage_ops.sh itself is covered by the tools/** full-suite leg.)
+  if [[ "$p" == plugin/skills/triage-backlog/scripts/*.sh \
+     || "$p" == tests/triage-backlog/* ]]; then
+    add_selected "$SUITE_TEST_TRIAGE_OPS" "$p (triage-ops script/fixture)"
+    matched=1
+  fi
+
   # policy_check: all plugin/.claude-plugin runtime + policy/plugin/workflows fixtures.
   if [[ "$p" == plugin/* \
      || "$p" == .claude-plugin/* \
@@ -540,6 +554,7 @@ self_test() {
     ["test_loop_state.sh"]="plugin/skills/github-review-loop/scripts/loop-state.sh"
     ["test_reply_resolve.sh"]="tests/reply-resolve/README.md"
     ["test_ledger_reconstruct.sh"]="tests/ledger-reconstruct/README.md"
+    ["test_triage_ops.sh"]="tests/triage-backlog/case-x.json"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do

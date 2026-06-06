@@ -251,6 +251,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:create-handoff` | Generate an optional session-resumption handoff doc from a plan |
 | `hivemind:plan-to-prd` | Turn an interrogated plan into a committed WHAT-only PRD |
 | `hivemind:prd-to-issues` | Slice a PRD into vertically-sliced, brood-ready GitHub issues |
+| `hivemind:triage-backlog` | Judgment-driven triage of the entire open GitHub issue backlog across 7 mutually-exclusive label families (readiness/type/effort/moscow/priority/risk/difficulty) plus native GitHub issue dependencies; renders a delta table and applies labels behind a confirm gate; honors the human-only `triage:locked` control label |
 | `hivemind:seed-hive` | One-time project setup: write required `.claude/settings.json` keys (enabledPlugins + default agent) and add `.hivemind/` to `.gitignore` |
 | `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke only in a context that can modify source and test files |
 | `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
