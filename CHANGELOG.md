@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.27.0] - 2026-06-06
+
+### Added
+
+- **`plugin/skills/github-review-loop/scripts/ledger-reconstruct.sh` — single-source fix-ledger reconstruction (#222, initiative #201).** Consolidates git-log parsing and normalized thread/finding state into a canonical fix-ledger shape consumed by `github-reviewer` at both pre-fix and post-fix call sites, replacing duplicated reconstruction prose that previously lived independently in each call site. Reconstructed ledger feeds `detect-remediation-signals` for mutation-decay, diminishing-returns, and root-cluster detection.
+
 ## [2.26.3] - 2026-06-06
 
 ### Fixed
