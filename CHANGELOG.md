@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.27.0] - 2026-06-05
+
+### Changed
+
+- **`plugin/skills/github-review-loop/scripts/loop-state.sh` — deterministic watch-loop bookkeeping extracted from `SKILL.md` (#207, initiative #201).** New thin entrypoint single-sources the github-review-loop's own loop mechanics (cycle-count increment, cycle ceiling, terminal-vs-cycle classification, guard-token→`exit_reason` mapping, same-finding-repeat oscillation guard) and delegates multi-token precedence ordering to the sibling `exit-precedence.sh` rather than re-encoding the ladder. `SKILL.md` is slimmed 302→125 lines to describe intent (Monitor wiring, dispatch, reviewer-return semantics, terminal report, safety) while the deterministic arithmetic lives in the unit-tested script. Behavior-preserving: terminal vocabulary tokens unchanged. Covered by `tools/test_loop_state.sh` (41 assertions), registered FAIL-CLOSED in `tools/validate.sh`.
+
 ## [2.26.0] - 2026-06-05
 
 ### Added
