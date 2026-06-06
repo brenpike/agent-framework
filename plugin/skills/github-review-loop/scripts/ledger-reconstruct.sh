@@ -253,7 +253,16 @@ live_git_log_preflight() {
 # headers with exact NEW-file line ranges; --find-renames classifies renames
 # (R-status emits old+new paths); --no-color keeps the payload machine-parseable.
 # RETURNS git's own exit status. All diff/path text is DATA.
+#
+# LIVE TEST SEAM: if LEDGERRECON_TEST_LIVE_PAYLOAD_FILE is set to a readable file,
+# stream its contents instead of running git (mirrors FETCHNORM_LIVE_* pattern).
+# Seam is LIVE-branch only: --git-log-file (INJECTED=1) bypasses this function
+# entirely, so the seam cannot interfere with the injected fail-open path.
 stream_git_log() {
+  if [ -n "${LEDGERRECON_TEST_LIVE_PAYLOAD_FILE:-}" ]; then
+    cat "$LEDGERRECON_TEST_LIVE_PAYLOAD_FILE"
+    return 0
+  fi
   git log --no-color --unified=0 -z --raw -p --find-renames \
     --format="$GIT_LOG_FORMAT" "${BASE}..HEAD" 2>/dev/null
 }

@@ -239,6 +239,97 @@ run_failopen_case "malformed:git-log-fail-open" \
   "$LR_DIR/git-log-malformed.txt" - \
   "$EXPECTED_DIR/empty-findings.json"
 
+# ── F1 regression lock — C0 byte in commit subject ───────────────────────────────────────────
+# git-log-c0-subject.txt contains a commit subject with a C0 control byte (0x08 backspace),
+# a double-quote, and a backslash. Old code (awk hand-rolled JSON) collapsed to empty findings
+# and exit 0 when a C0 byte appeared (F1 repro). New code: jq owns ALL JSON-string emission
+# so C0 bytes are escaped (→ \b / \uXXXX) and the finding is NON-empty. This case LOCKS that:
+# the output must be valid JSON, findings NON-empty, and the title correctly escaped.
+run_case "c0-subject:whole-object" \
+  "$LR_DIR/git-log-c0-subject.txt" - \
+  "$EXPECTED_DIR/c0-subject.json"
+
+c0_ledger="$(bash "$SCRIPT_UNDER_TEST" \
+  --git-log-file "$LR_DIR/git-log-c0-subject.txt" 2>/dev/null)"
+
+# Title must round-trip with the C0 byte correctly escaped (jq encodes 0x08 as \b).
+assert_finding_field "c0-subject:title-escaped" "$c0_ledger" \
+  "fix:dddddddddddddddddddddddddddddddddddddddd:src/fix.py:1" "title" \
+  '"Fix\b\"bad\\path\""'
+
+# File and line range correct.
+assert_finding_field "c0-subject:file" "$c0_ledger" \
+  "fix:dddddddddddddddddddddddddddddddddddddddd:src/fix.py:1" "file" '"src/fix.py"'
+assert_finding_field "c0-subject:line-start" "$c0_ledger" \
+  "fix:dddddddddddddddddddddddddddddddddddddddd:src/fix.py:1" "line_start" "1"
+assert_finding_field "c0-subject:line-end" "$c0_ledger" \
+  "fix:dddddddddddddddddddddddddddddddddddddddd:src/fix.py:1" "line_end" "3"
+
+# findings[] MUST be non-empty (old code collapsed to []).
+c0_count="$(printf '%s' "$c0_ledger" | jq '.iterations[0].findings | length' 2>/dev/null)"
+if [ "$c0_count" = "1" ]; then
+  pass "c0-subject:findings-non-empty" "(count=$c0_count; old code would emit [])"
+else
+  failed "c0-subject:findings-non-empty" "expected 1 finding, got $c0_count"
+fi
+
+# ── F2 regression lock — path containing ' b/' and a rename ──────────────────────────────────
+# git-log-tricky-path.txt has two raw entries:
+#   (1) modified file "foo b/bar.txt" — the path contains the literal " b/" substring
+#       that old in-band ` b/` splitting would have corrupted to "bar.txt".
+#   (2) rename "old name.txt" → "new dir/new name.txt" (R100 status, two NUL-delimited paths;
+#       script must take the DESTINATION — the last path).
+# Assert the file fields are the FULL correct paths from git's machine channel.
+run_case "tricky-path:whole-object" \
+  "$LR_DIR/git-log-tricky-path.txt" - \
+  "$EXPECTED_DIR/tricky-path.json"
+
+tricky_ledger="$(bash "$SCRIPT_UNDER_TEST" \
+  --git-log-file "$LR_DIR/git-log-tricky-path.txt" 2>/dev/null)"
+
+# The path containing " b/" must be the FULL path, not a " b/"-split fragment.
+assert_finding_field "tricky-path:space-b-path" "$tricky_ledger" \
+  "fix:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:foo b/bar.txt:5" "file" '"foo b/bar.txt"'
+
+# The rename destination must be the NEW path (second NUL token), not the old path.
+assert_finding_field "tricky-path:rename-destination" "$tricky_ledger" \
+  "fix:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:new dir/new name.txt:1" "file" \
+  '"new dir/new name.txt"'
+
+# ── Live-parse-failed fail-CLOSED regression lock ────────────────────────────────────────────
+# Lock the RS-001 live fail-closed rule: a NON-EMPTY live payload with no \x1eCOMMIT\x1f
+# record marker (structurally-broken git output) must emit LEDGERRECON_ERROR=live-parse-failed
+# on stderr and exit non-zero — never silently degrade to an empty "no prior fixes" ledger.
+#
+# Seam: LEDGERRECON_TEST_LIVE_PAYLOAD_FILE feeds a file into the LIVE branch's stream_git_log
+# (the env var replaces `git log` with `cat <file>`) — mirrors FETCHNORM_LIVE_* pattern.
+# This reaches the live-parse-failed gate in ledger-reconstruct.sh (§4), which the injected
+# --git-log-file path (INJECTED=1) never reaches (it is fail-open by design).
+# The malformed fixture is non-empty and carries no \x1eCOMMIT\x1f marker — exact repro.
+live_pf_stderr="$(LEDGERRECON_TEST_LIVE_PAYLOAD_FILE="$LR_DIR/git-log-malformed.txt" \
+  bash "$SCRIPT_UNDER_TEST" origin/main 2>&1 >/dev/null)"
+live_pf_status=$?
+if [ "$live_pf_status" -ne 0 ] && \
+   printf '%s' "$live_pf_stderr" | grep -qF "LEDGERRECON_ERROR=live-parse-failed"; then
+  pass "live-parse-failed:exit-nonzero-and-marker" \
+    "(exit=$live_pf_status marker=LEDGERRECON_ERROR=live-parse-failed)"
+else
+  failed "live-parse-failed:exit-nonzero-and-marker" \
+    "(exit=$live_pf_status stderr=$live_pf_stderr)"
+fi
+
+# Contrast: injected --git-log-file with the same malformed payload is FAIL-OPEN (exit 0).
+# This confirms the two paths are distinct: live=fail-closed, injected=fail-open.
+inj_raw="$(bash "$SCRIPT_UNDER_TEST" --git-log-file "$LR_DIR/git-log-malformed.txt" 2>/dev/null)"
+inj_status=$?
+if [ "$inj_status" -eq 0 ]; then
+  pass "live-parse-failed:injected-contrast-exit0" \
+    "(injected path stays fail-open, exit=$inj_status)"
+else
+  failed "live-parse-failed:injected-contrast-exit0" \
+    "(expected exit 0 for injected fail-open, got $inj_status)"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────────────────────
 echo
 echo "ledger-reconstruct: $PASS_COUNT passed, $FAIL_COUNT failed"
