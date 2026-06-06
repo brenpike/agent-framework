@@ -5,22 +5,26 @@
 #
 # 1. PURPOSE
 # ----------
-# Single source of truth for the fix-ledger RECONSTRUCTION that github-reviewer.md
-# performed inline, in dense prose, at TWO sites: step 5 (pre-fix root-cause
-# clustering) and step 9 (post-fix advisory). Both sites reconstructed the same
-# ephemeral fix-ledger shape from ground truth (git log <base>..HEAD + the
-# resolved-thread state from fetch-normalize.sh) so `hivemind:detect-remediation-signals`
-# could reason over it. This script OWNS that reconstruction; the two call sites
-# become thin `bash ledger-reconstruct.sh ...` invocations (P1 single-source, P5
-# bash callers, P2 contract header, P3 offline-testable core).
+# A DE-SCOPED DETERMINISTIC SKELETON for the fix-ledger structure the
+# github-reviewer agent feeds to `hivemind:detect-remediation-signals`. It emits
+# ONLY facts mechanically derivable from ground truth (git log <base>..HEAD + the
+# resolved-thread state from fetch-normalize.sh). ALL JUDGMENT — cycling /
+# oscillation interpretation, review-iteration grouping, N-2 recurrence,
+# diminishing-returns trend, prior-fix qualification REFINEMENT, and the
+# `fix_framing` cluster key — is owned by github-reviewer IN-AGENT (P7), NOT by this
+# script. An earlier design extracted that judgment as lossy git-history heuristics
+# (cycling-via-commit-count, iteration boundaries from commits), which produced
+# recurring review findings; the skeleton deliberately returns that judgment to the
+# agent and keeps only deterministic facts here.
 #
-# It is DELIBERATELY a deterministic SKELETON. The PRIMARY cluster key
-# `fix_framing` requires LLM judgment to infer from commit/thread prose; a script
-# cannot infer it reliably, so this script leaves `fix_framing` null on every
-# finding (INERT/schema-safe per the schema — detect-remediation-signals falls
-# back to the SECONDARY file:line cluster key). The agent retains any framing
-# judgment in-agent (P7). This script populates only what is mechanically
-# derivable from ground truth.
+# The script OWNS the deterministic reconstruction; the call sites become thin
+# `bash ledger-reconstruct.sh ...` invocations (P1 single-source, P5 bash callers,
+# P2 contract header, P3 offline-testable core).
+#
+# `fix_framing` is ALWAYS null on every finding: the PRIMARY cluster key requires
+# LLM judgment to infer from commit/thread prose; a script cannot infer it reliably
+# (INERT/schema-safe — detect-remediation-signals falls back to the SECONDARY
+# file:line cluster key, and the agent retains framing judgment in-agent, P7).
 #
 # 2. INPUT CONTRACT
 # -----------------
@@ -65,16 +69,16 @@
 # REVIEW-LOOP REMEDIATION commit becomes a git-log fix-surface finding. A positive
 # allowlist in the tokenizer (closed-by-construction) admits a commit ONLY when its
 # subject contains the literal phrase `address review feedback` — the DETERMINISTIC
-# subject both reviewers emit: github-reviewer step 7 commits `fix(<scope>): address
-# review feedback`; local-reviewer molt remediation checkpoints carry the same phrase.
-# The bare conventional type alone is NOT sufficient: an ordinary `fix:`/`hotfix:`
-# bug-fix an engineer makes BEFORE the review loop runs (e.g. `fix(parser): correct
-# off-by-one`) is normal development, not review remediation, and must NOT enter the
-# reconstructed ledger — admitting it would let ordinary commits drive false
-# mutation-decay / root-cluster signals. Keying ONLY on the reviewer-owned phrase
-# excludes ordinary feat/test/refactor AND ordinary fix/hotfix dev commits by
-# construction, so a non-remediation commit can never become a false
-# cycling/oscillation or cluster signal.
+# subject github-reviewer step 7 emits (`fix(<scope>): address review feedback`).
+# That step is the SOLE emitter of this phrase; local-reviewer molt checkpoints do
+# NOT carry it. The bare conventional type alone is NOT sufficient: an ordinary
+# `fix:`/`hotfix:` bug-fix an engineer makes BEFORE the review loop runs (e.g.
+# `fix(parser): correct off-by-one`) is normal development, not review remediation,
+# and must NOT enter the reconstructed ledger — admitting it would let ordinary
+# commits drive false mutation-decay / root-cluster signals. Keying ONLY on the
+# reviewer-owned phrase excludes ordinary feat/test/refactor AND ordinary fix/hotfix
+# dev commits by construction, so a non-remediation commit can never become a false
+# prior-fix or cluster signal.
 #
 # 3. OUTPUT SCHEMA — a single fix-ledger-shaped JSON object on stdout
 # ------------------------------------------------------------------
@@ -92,8 +96,15 @@
 #     "exit_reason": null,
 #     "exit_iteration": null
 #   }
-# All reconstructed findings live in iterations[0].findings[] (this is a single
-# reconstructed snapshot, not a persisted multi-iteration history).
+#
+# THIS SKELETON CARRIES NO REVIEW-ITERATION GROUPING. The single `iterations[0]`
+# wrapper is a SCHEMA-CONFORMANCE CONTAINER ONLY (the detector Input Contract
+# expects `ledger.iterations[]`); it is NOT an iteration boundary. Iteration
+# boundaries, N-2 recurrence, and the diminishing-returns trend are AGENT JUDGMENT
+# and are NOT reconstructable from git history — git commits are NOT review
+# iterations (a single review iteration may emit zero or many commits, and a single
+# commit may address many iterations' worth of feedback). The snapshot is one flat
+# bag of deterministic facts; the agent reconstructs any iteration structure.
 #
 # Each finding carries the deterministic skeleton fields:
 #   {
@@ -105,8 +116,10 @@
 #     "file":        <path | null>,
 #     "line_start":  <int | null>,
 #     "line_end":    <int | null>,
-#     "status":      "open" | "fixed" | "cycling",
-#     "introduced_iteration": 1,
+#     "status":      "open" | "fixed"   # FACTUAL only. No "cycling": cycling is
+#                                       # agent judgment, NOT a script label.
+#     "introduced_iteration": 1,        # SCHEMA-REQUIRED PLACEHOLDER, constant 1.
+#                                       # NOT an asserted iteration boundary.
 #     "fixed_iteration":      null,
 #     "fix_commit":  <sha | null>,
 #     "fix_framing": null,            # PRIMARY key — LLM-only; ALWAYS null here
@@ -116,14 +129,16 @@
 #
 # Two finding families populate findings[]:
 #   (a) git-log fix surfaces (one per commit/file/hunk) — ONLY for REMEDIATION
-#       commits that pass the prior-fix qualification gate (subject matches
-#       `^(fix|hotfix)(\(...\))?!?: ` case-sensitive, OR contains `address review
-#       feedback`; the reviewer-emitted remediation subject is the discriminator).
-#       Non-remediation commits (feat/test/refactor) contribute ZERO findings, so a
-#       multi-commit feature branch cannot synthesize false fix surfaces. For a
-#       qualifying commit: file/line_start/line_end/fix_commit/status from git; the
-#       matched-prior-surface OSCILLATION rule (see §4) assigns status `cycling` to
-#       a surface that re-appears across >=2 commits, else `fixed`. fix_framing null.
+#       commits that pass the prior-fix qualification gate (subject contains the
+#       literal phrase `address review feedback`; the reviewer-emitted remediation
+#       subject is the discriminator). Non-remediation commits (feat/test/refactor,
+#       ordinary fix/hotfix) contribute ZERO findings, so a multi-commit feature
+#       branch cannot synthesize false fix surfaces. For a qualifying commit:
+#       file/line_start/line_end/fix_commit from git; status is FACTUAL `fixed`
+#       (the surface was touched by a qualifying remediation commit). The script
+#       NEVER labels a surface `cycling` — re-appearance of a surface across commits
+#       is observable to the agent from the per-finding file/line/fix_commit facts,
+#       and the cycling INTERPRETATION is agent judgment (P7). fix_framing null.
 #   (b) thread/finding records folded from --normalized-file: id from the node id,
 #       title from `classification`, thread_resolved from `thread_resolved`,
 #       status derived PER SURFACE: thread surface from `thread_resolved`
@@ -145,36 +160,37 @@
 #
 # 4. BEHAVIOR-PRESERVING INVARIANTS
 # ---------------------------------
-#   - LIVE FAIL-CLOSED: on the LIVE path (--git-log-file NOT set) a `git log`
-#     failure (bad base, not-a-repo) emits a stable LEDGERRECON_ERROR marker on
-#     stderr and exits non-zero, so the caller returns `blocked`. ADDITIONALLY, if
-#     a NON-EMPTY live payload cannot be parsed into the expected record structure
-#     (no recognizable \x1eCOMMIT\x1f record marker present), the script emits
-#     LEDGERRECON_ERROR=live-parse-failed + exit non-zero rather than degrading to
-#     a silent empty "no prior fixes" ledger (which would mask a real error as
-#     "nothing to cluster"). A LEGITIMATELY EMPTY live log (no commits in
+#   - LIVE GIT-LOG FAIL-CLOSED: on the LIVE path (--git-log-file NOT set) a
+#     `git log` failure (bad base, not-a-repo) emits a stable LEDGERRECON_ERROR
+#     marker on stderr and exits non-zero, so the caller returns `blocked`.
+#     ADDITIONALLY, if a NON-EMPTY live payload cannot be parsed into the expected
+#     record structure (no recognizable \x1eCOMMIT\x1f record marker present), the
+#     script emits LEDGERRECON_ERROR=live-parse-failed + exit non-zero rather than
+#     degrading to a silent empty "no prior fixes" ledger (which would mask a real
+#     error as "nothing to cluster"). A LEGITIMATELY EMPTY live log (no commits in
 #     <base>..HEAD, i.e. zero bytes) stays a valid empty-findings exit 0 — it is a
 #     real "no prior fixes yet" state, NOT a parse failure.
+#   - LIVE NORMALIZED FAIL-CLOSED: the normalized payload has the SAME live-vs-
+#     injected split as the git-log channel. A LIVE normalized payload (the runtime
+#     `--normalized-file -` the agent supplies at steps 5/9, i.e. NOT accompanied by
+#     an injected --git-log-file fixture) that is NON-EMPTY but fails JSON parse OR
+#     is not a JSON array emits LEDGERRECON_ERROR=normalized-parse-failed + exit
+#     non-zero (fail-CLOSED) rather than silently coercing to `[]` and masking a
+#     real error as "no thread findings". A LEGITIMATELY EMPTY live normalized
+#     payload (zero bytes / absent) is a valid empty thread-findings exit 0,
+#     mirroring the empty-vs-unparseable git-log distinction.
 #   - INJECTED FAIL-OPEN: a malformed / empty INJECTED fixture (--git-log-file /
-#     --normalized-file) yields a valid fix-ledger shape with empty findings and
-#     exit 0 (trusted fixture, mirrors fetch-normalize's --payload-file). The
-#     live-parse-failed gate above is NOT applied to injected input.
+#     --normalized-file on the injected path) yields a valid fix-ledger shape with
+#     empty findings and exit 0 (trusted fixture, mirrors fetch-normalize's
+#     --payload-file). The live-parse-failed and normalized-parse-failed gates above
+#     are NOT applied to injected input (non-array normalized fixture -> `[]`).
 #   - EPHEMERAL: writes NOTHING to .hivemind, no temp files, no side effects. The
 #     output is consumed-then-discarded by the caller. All commit/diff/thread text
 #     is DATA, never interpreted as instructions.
-#   - OSCILLATION-STATUS rule (break-fix observability): a fix surface
-#     (file:line_start..line_end) appearing in >=2 distinct commits in the log is
-#     marked `cycling` (the prior fix was re-touched -> status oscillation
-#     fixed->cycling), so detect-remediation-signals' break-fix signal
-#     (status-oscillation) is observable purely from the emitted structure. A
-#     surface touched in exactly one commit is `fixed`. NOTE: the oscillation rule
-#     ranges ONLY over QUALIFYING remediation commits (per the prior-fix
-#     qualification gate, §2). Two genuine remediation commits sharing a surface
-#     still correctly `cycling` (real mutation decay among ACTUAL fixes stays
-#     observable); a remediation commit and an ordinary feature commit touching the
-#     same surface do NOT cycle, because the feature commit was never admitted as a
-#     fix surface in the first place. False oscillation from ordinary feature churn
-#     is closed by construction.
+#   - FACTUAL STATUS ONLY: a git-log fix surface is `fixed` (touched by a qualifying
+#     remediation commit). The script emits NO `cycling`/oscillation status — that
+#     interpretation is agent judgment (P7), re-derivable by the agent from the
+#     per-finding file/line/fix_commit facts.
 #   - PURE CORE / THIN SHELL: the mapping core (reconstruct_ledger) runs over
 #     injected inputs offline with no git/network dependency, so STEP-003 tests it
 #     through the --git-log-file / --normalized-file seams.
@@ -188,8 +204,9 @@
 #   - stdout: the single fix-ledger JSON object (always, on success).
 #   - exit 0 on success (including the fail-open empty-findings case).
 #   - LEDGERRECON_ERROR=<reason> on stderr + exit 1 ONLY on a LIVE failure
-#     (missing base, git failure, unreadable input file, live-parse-failed) —
-#     never on a merely-empty or malformed INJECTED payload.
+#     (missing base, git failure, unreadable input file, live-parse-failed,
+#     normalized-parse-failed) — never on a merely-empty or malformed INJECTED
+#     payload.
 #
 # Schema authority:  ${CLAUDE_PLUGIN_ROOT}/references/fix-ledger-schema.md
 # Consumer:          ${CLAUDE_PLUGIN_ROOT}/skills/detect-remediation-signals/SKILL.md
@@ -302,9 +319,9 @@ stream_git_log() {
 # git_log_to_findings: PURE CORE (offline). Read a git-log payload on STDIN (live
 # OR injected — identical bytes, streamed so NUL delimiters survive) and emit a
 # JSON array of git-log fix-surface findings on stdout. One finding per
-# (commit, file, hunk). The OSCILLATION rule (a surface in >=2 commits -> cycling)
-# is applied in a second jq pass. A malformed / empty payload yields `[]`
-# (INJECTED FAIL-OPEN). No git/network here.
+# (commit, file, hunk), each with FACTUAL status `fixed` (no cycling/oscillation
+# interpretation — that is agent judgment, P7). A malformed / empty payload yields
+# `[]` (INJECTED FAIL-OPEN). No git/network here.
 #
 # Stage 1 = awk TOKENIZER: parses the -z --raw -p stream and emits NUL-FREE,
 # 0x1f-field-delimited RAW records (sha, subject, path, line_start, line_end). It
@@ -437,42 +454,45 @@ git_log_to_findings() {
           line_start: (.[3] | tonumber), line_end: (.[4] | tonumber) }
     ' 2>/dev/null \
   | jq -c -s '
-      # Stage 2b: dedupe per (sha,file,line_start,line_end), then apply the
-      # OSCILLATION rule across DISTINCT commits per surface (file:line range).
-      # A surface touched in >=2 distinct commits -> cycling; else fixed.
-      ( [ .[] | {key: ("\(.file):\(.line_start):\(.line_end)"), sha: .sha} ]
-        | group_by(.key)
-        | map({ (.[0].key): ([ .[].sha ] | unique | length) }) | add // {}
-      ) as $commits_per_surface
-      | [ .[]
-          | . as $rec
-          | ("\(.file):\(.line_start):\(.line_end)") as $surface
-          | {
-              id: ("fix:\(.sha):\(.file):\(.line_start)"),
-              severity: null,
-              title: .subject,
-              body: null,
-              recommendation: null,
-              file: .file,
-              line_start: .line_start,
-              line_end: .line_end,
-              status: (if (($commits_per_surface[$surface] // 1) >= 2) then "cycling" else "fixed" end),
-              introduced_iteration: 1,
-              fixed_iteration: null,
-              fix_commit: .sha,
-              fix_framing: null,
-              root_class: null,
-              thread_resolved: null
-            }
-        ]
+      # Stage 2b: build one finding per git-log fix surface. Status is FACTUAL
+      # `fixed` (the surface was touched by a qualifying remediation commit). NO
+      # cycling/oscillation interpretation — surface re-appearance is observable to
+      # the agent from the per-finding file/line/fix_commit facts (P7 judgment).
+      [ .[]
+        | {
+            id: ("fix:\(.sha):\(.file):\(.line_start)"),
+            severity: null,
+            title: .subject,
+            body: null,
+            recommendation: null,
+            file: .file,
+            line_start: .line_start,
+            line_end: .line_end,
+            status: "fixed",
+            introduced_iteration: 1,
+            fixed_iteration: null,
+            fix_commit: .sha,
+            fix_framing: null,
+            root_class: null,
+            thread_resolved: null
+          }
+      ]
     ' 2>/dev/null
 }
 
-# normalized_to_findings <normalized-array-json>: PURE CORE (offline). Fold the
+# normalized_to_findings <normalized-payload>: PURE CORE (offline). Fold the
 # fetch-normalize.sh output array (thread/finding state) into fix-ledger findings.
 # Only REVIEW records (item_source=="review") carry thread identity; CI-check
-# records are not prior fixes and are skipped. A malformed / empty payload yields
-# `[]` (INJECTED FAIL-OPEN). No git/network here.
+# records are not prior fixes and are skipped. No git/network here.
+#
+# INJECTED FAIL-OPEN coercion: a non-array (or unparseable) payload yields `[]`
+# (`type=="array" else []`). This fail-open is correct ONLY for the INJECTED
+# (trusted fixture) path; the LIVE path is fenced by normalized_live_parse_gate
+# (below), which fails CLOSED on a non-empty/non-array live payload BEFORE this core
+# ever runs. So when control reaches here on a live run the payload is already a
+# validated array and the coercion is a no-op; on an injected run the coercion is
+# the intended fail-open. Mirrors the git-log live-parse-failed gate + injected
+# fail-open split.
 normalized_to_findings() {
   printf '%s' "$1" | jq -c '
     if type == "array" then . else [] end
@@ -502,6 +522,30 @@ normalized_to_findings() {
           }
       ]
   ' 2>/dev/null
+}
+
+# normalized_live_parse_gate <normalized-payload>: LIVE FAIL-CLOSED fence for the
+# normalized channel (mirrors the git-log live-parse-failed gate). Applied ONLY on
+# the LIVE path (INJECTED != 1). RETURNS:
+#   0 — payload is a legitimately-EMPTY live normalized payload (zero bytes), a real
+#       "no thread findings" state -> valid empty exit 0 downstream.
+#   0 — payload is a NON-EMPTY, parseable JSON ARRAY (valid live thread findings).
+#   non-zero (emits LEDGERRECON_ERROR=normalized-parse-failed) — payload is NON-EMPTY
+#       but fails JSON parse OR is not a JSON array. Fail CLOSED rather than coerce to
+#       `[]` and mask a real error as "no thread findings".
+# INVARIANT: runs in the live branch BEFORE normalized_to_findings, so the pure core
+# only ever sees a validated array on the live path. The injected path bypasses this
+# gate entirely (trusted fixture, fail-open).
+normalized_live_parse_gate() {
+  local payload="$1"
+  # LEGITIMATELY EMPTY live payload (zero bytes) -> valid empty, exit 0.
+  [ -n "$payload" ] || return 0
+  # NON-EMPTY: must parse AND be a JSON array, else fail CLOSED.
+  if ! printf '%s' "$payload" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    echo "LEDGERRECON_ERROR=normalized-parse-failed" >&2
+    return 1
+  fi
+  return 0
 }
 
 # reconstruct_ledger <git-findings-json> <thread-findings-json>: PURE CORE. Wrap
@@ -582,12 +626,23 @@ else
 fi
 case "$git_findings" in '') git_findings='[]' ;; esac
 
-# --- Resolve the normalized payload (injected fixture; optional) -------------
+# --- Resolve the normalized payload (live `-` OR injected fixture; optional) --
 # The normalized payload is JSON (NUL-free), so a variable capture is safe here.
+# LIVE-vs-INJECTED split mirrors the git-log channel: the run-level INJECTED flag
+# (set above iff --git-log-file is present) classifies the whole invocation. On a
+# LIVE run (INJECTED != 1) the normalized payload is the runtime `--normalized-file -`
+# the agent supplies and is fenced by normalized_live_parse_gate (FAIL-CLOSED on a
+# non-empty/non-array payload). On an INJECTED run the payload is a trusted fixture
+# and skips the gate (FAIL-OPEN: non-array -> [] in the pure core).
 normalized_payload=""
 if [ -n "$NORMALIZED_FILE" ]; then
   if ! normalized_payload="$(read_source "$NORMALIZED_FILE")"; then
     exit 1
+  fi
+  if [ "$INJECTED" -ne 1 ]; then
+    if ! normalized_live_parse_gate "$normalized_payload"; then
+      exit 1
+    fi
   fi
 fi
 
