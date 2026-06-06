@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+### Deferred
+
+- Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
+- Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
+
 ## [2.26.1] - 2026-06-05
 
 ### Added
