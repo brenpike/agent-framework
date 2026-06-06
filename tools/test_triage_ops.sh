@@ -222,6 +222,43 @@ else
   failed "apply-labels:live-current-labels-file-rejected" "expected nonzero exit, got 0 (live path must reject --current-labels-file)"
 fi
 
+# ── list-issues: live path rejects --response-file (security regression) ──────
+# STEP-S001 shared guard: a LIVE (non-offline) invocation supplying --response-file
+# MUST be rejected fail-closed (exit 2) BEFORE any gh call — the flag is a test seam
+# only. No TRIAGE_OPS_OFFLINE — runs in live mode; die fires before require_gh.
+LIVE_STATUS=0
+bash "$OPS" list-issues \
+  --response-file "$TB_DIR/list-issues-response.json" >/dev/null 2>&1 || LIVE_STATUS=$?
+if [ "$LIVE_STATUS" -ne 0 ]; then
+  pass "list-issues:live-response-file-rejected" "exit=$LIVE_STATUS (expected nonzero)"
+else
+  failed "list-issues:live-response-file-rejected" "expected nonzero exit, got 0 (live path must reject --response-file)"
+fi
+
+# ── deps-read: live path rejects --response-file (security regression) ────────
+# STEP-S001 shared guard: a LIVE invocation supplying --response-file MUST be
+# rejected fail-closed (exit 2) BEFORE any gh call.
+LIVE_STATUS=0
+bash "$OPS" deps-read 5 \
+  --response-file "$TB_DIR/deps-read-response.json" >/dev/null 2>&1 || LIVE_STATUS=$?
+if [ "$LIVE_STATUS" -ne 0 ]; then
+  pass "deps-read:live-response-file-rejected" "exit=$LIVE_STATUS (expected nonzero)"
+else
+  failed "deps-read:live-response-file-rejected" "expected nonzero exit, got 0 (live path must reject --response-file)"
+fi
+
+# ── deps-add: live path rejects --response-file (security regression) ─────────
+# STEP-S001 shared guard: a LIVE invocation supplying --response-file MUST be
+# rejected fail-closed (exit 2) BEFORE the live addBlockedBy mutation.
+LIVE_STATUS=0
+bash "$OPS" deps-add --issue-id I_a --blocked-by-id I_b \
+  --response-file "$TB_DIR/deps-add-cycle-response.json" >/dev/null 2>&1 || LIVE_STATUS=$?
+if [ "$LIVE_STATUS" -ne 0 ]; then
+  pass "deps-add:live-response-file-rejected" "exit=$LIVE_STATUS (expected nonzero)"
+else
+  failed "deps-add:live-response-file-rejected" "expected nonzero exit, got 0 (live path must reject --response-file)"
+fi
+
 # ── deps-add GraphQL payload shape ────────────────────────────────────────────────
 # Offline deps-add WITHOUT --response-file builds the GraphQL variables payload. Assert the exact
 # variable keys (issueId, blockedByIssueId) with node ids passed through as DATA.
