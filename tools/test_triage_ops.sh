@@ -400,6 +400,126 @@ else
   failed "deps-add:live-issue-labels-file-rejected" "expected nonzero exit, got 0 (live path must reject --issue-labels-file)"
 fi
 
+# ── deps-add: lock-read FAIL-CLOSED via --issue-labels-response (N004) ───────────
+# The --issue-labels-response seam injects the RAW node(id:) labels GraphQL response
+# and routes it through validate_response_shape (the shared kernel). Every malformed
+# or error body MUST fail closed: nonzero exit AND no {issueId,...} payload on stdout.
+# This proves the kernel guard is closed at the lock-read site in deps-add.
+
+# Case 1: .errors envelope → kernel rejects, nonzero exit, no payload.
+LABELS_RESP_ERR_TMP="$TMPDIR_TEST/labels-raw-errors.json"
+cp "$TB_DIR/labels-raw-errors.json" "$LABELS_RESP_ERR_TMP"
+
+run_exit1_case "deps-add:lock-read-errors-exit1" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_ERR_TMP"
+
+LOCK_ERR_OUT="$(TRIAGE_OPS_OFFLINE=1 bash "$OPS" deps-add \
+  --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_ERR_TMP" 2>/dev/null)" || true
+if printf '%s' "$LOCK_ERR_OUT" | grep -qF '"issueId"'; then
+  failed "deps-add:lock-read-errors-no-payload" "errors body emitted a payload (stdout: $LOCK_ERR_OUT)"
+else
+  pass "deps-add:lock-read-errors-no-payload" "no {issueId} payload on .errors response"
+fi
+
+# Case 2: null .data.node → kernel rejects (malformed-read), nonzero exit, no payload.
+LABELS_RESP_NULL_TMP="$TMPDIR_TEST/labels-raw-null-data.json"
+cp "$TB_DIR/labels-raw-null-data.json" "$LABELS_RESP_NULL_TMP"
+
+run_exit1_case "deps-add:lock-read-null-node-exit1" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_NULL_TMP"
+
+LOCK_NULL_OUT="$(TRIAGE_OPS_OFFLINE=1 bash "$OPS" deps-add \
+  --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_NULL_TMP" 2>/dev/null)" || true
+if printf '%s' "$LOCK_NULL_OUT" | grep -qF '"issueId"'; then
+  failed "deps-add:lock-read-null-node-no-payload" "null-node body emitted a payload (stdout: $LOCK_NULL_OUT)"
+else
+  pass "deps-add:lock-read-null-node-no-payload" "no {issueId} payload on null-node response"
+fi
+
+# Case 3: null label name element → kernel elem_pred fails, nonzero exit, no payload.
+LABELS_RESP_NULLELEM_TMP="$TMPDIR_TEST/labels-raw-null-elem.json"
+cp "$TB_DIR/labels-raw-null-elem.json" "$LABELS_RESP_NULLELEM_TMP"
+
+run_exit1_case "deps-add:lock-read-null-elem-exit1" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_NULLELEM_TMP"
+
+LOCK_NULLELEM_OUT="$(TRIAGE_OPS_OFFLINE=1 bash "$OPS" deps-add \
+  --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_NULLELEM_TMP" 2>/dev/null)" || true
+if printf '%s' "$LOCK_NULLELEM_OUT" | grep -qF '"issueId"'; then
+  failed "deps-add:lock-read-null-elem-no-payload" "null-elem body emitted a payload (stdout: $LOCK_NULLELEM_OUT)"
+else
+  pass "deps-add:lock-read-null-elem-no-payload" "no {issueId} payload on null-elem response"
+fi
+
+# ── deps-add: lock-read CLEAN via --issue-labels-response (N004) ─────────────────
+# Proves the kernel passes clean bodies through to the lock gate correctly.
+
+# Case 4: clean raw body WITH triage:locked → skipped-locked record, exit 0, no payload.
+LABELS_RESP_LOCKED_TMP="$TMPDIR_TEST/labels-raw-locked.json"
+cp "$TB_DIR/labels-raw-locked.json" "$LABELS_RESP_LOCKED_TMP"
+
+run_case "deps-add:lock-read-locked-skipped" "$EXPECTED_DIR/deps-add-skipped-locked.json" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_LOCKED_TMP"
+
+run_exit0_case "deps-add:lock-read-locked-exit0" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_LOCKED_TMP"
+
+LOCK_LOCKED_OUT="$(TRIAGE_OPS_OFFLINE=1 bash "$OPS" deps-add \
+  --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_LOCKED_TMP" 2>/dev/null)"
+if printf '%s' "$LOCK_LOCKED_OUT" | grep -qF '"issueId"'; then
+  failed "deps-add:lock-read-locked-no-payload" "locked raw response emitted a payload (stdout: $LOCK_LOCKED_OUT)"
+else
+  pass "deps-add:lock-read-locked-no-payload" "no {issueId} payload when raw response carries triage:locked"
+fi
+
+# Case 5: clean raw body WITHOUT triage:locked → proceeds to {issueId,blockedByIssueId} payload.
+LABELS_RESP_UNLOCKED_TMP="$TMPDIR_TEST/labels-raw-unlocked.json"
+cp "$TB_DIR/labels-raw-unlocked.json" "$LABELS_RESP_UNLOCKED_TMP"
+
+run_case "deps-add:lock-read-unlocked-payload" "$EXPECTED_DIR/deps-add-payload.json" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_UNLOCKED_TMP"
+
+# ── list-issues: FAIL-CLOSED on error-envelope and null-element row (N004) ───────
+# The shared kernel validates produced rows before the cap check and before emitting
+# the backlog. Neither an error envelope nor a row with null identifiers may be
+# passed through as the backlog.
+
+# Case 6: error envelope body → .errors present, kernel fails closed, nonzero exit.
+LIST_ERR_TMP="$TMPDIR_TEST/list-issues-error-response.json"
+cp "$TB_DIR/list-issues-error-response.json" "$LIST_ERR_TMP"
+
+LIST_STATUS=0
+TRIAGE_OPS_OFFLINE=1 bash "$OPS" list-issues \
+  --limit 500 --response-file "$LIST_ERR_TMP" >/dev/null 2>&1 || LIST_STATUS=$?
+if [ "$LIST_STATUS" -ne 0 ]; then
+  pass "list-issues:error-envelope-fail-closed" "exit=$LIST_STATUS (error envelope rejected by kernel)"
+else
+  failed "list-issues:error-envelope-fail-closed" "expected nonzero exit on error envelope, got 0"
+fi
+
+# Case 7: null-element row (null number field) → elem_pred fails, kernel rejects, nonzero exit.
+LIST_NULLELEM_TMP="$TMPDIR_TEST/list-issues-null-elem-response.json"
+cp "$TB_DIR/list-issues-null-elem-response.json" "$LIST_NULLELEM_TMP"
+
+LIST_STATUS=0
+TRIAGE_OPS_OFFLINE=1 bash "$OPS" list-issues \
+  --limit 500 --response-file "$LIST_NULLELEM_TMP" >/dev/null 2>&1 || LIST_STATUS=$?
+if [ "$LIST_STATUS" -ne 0 ]; then
+  pass "list-issues:null-elem-row-fail-closed" "exit=$LIST_STATUS (null-number row rejected by kernel)"
+else
+  failed "list-issues:null-elem-row-fail-closed" "expected nonzero exit on null-elem row, got 0"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────────
 echo
 echo "triage-ops: $PASS_COUNT passed, $FAIL_COUNT failed"
