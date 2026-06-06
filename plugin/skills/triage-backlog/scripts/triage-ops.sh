@@ -40,9 +40,13 @@
 #     Only the families PRESENT in the object are reconciled; absent families are
 #     left untouched. Every "<family>:<value>" MUST be a managed palette label
 #     (validated against the palette — an unknown family/value fails CLOSED).
-#     online:  reads current labels via `gh issue view`; if triage:locked is
-#              present it emits a skipped-locked record and mutates NOTHING;
-#              otherwise applies the computed delta via one `gh issue edit`.
+#     online:  derives current labels UNCONDITIONALLY from `gh issue view` (ground
+#              truth); if triage:locked is present it emits a skipped-locked record
+#              and mutates NOTHING; otherwise applies the computed delta via one
+#              `gh issue edit`. --current-labels-file is a TEST SEAM and is honored
+#              ONLY when TRIAGE_OPS_OFFLINE is set — supplying it in the live path
+#              is REJECTED fail-closed (it could spoof label state, incl. omitting
+#              triage:locked to bypass the human-only lock).
 #     offline: reads current labels from --current-labels-file (a JSON array of
 #              label-name strings) and emits the computed delta JSON; no gh.
 #
@@ -119,8 +123,10 @@
 # emitting the deterministic artifact (palette / delta / payload / surfaced
 # record / normalized deps) to stdout. Input that would normally come from gh is
 # injected via flags: --current-labels-file (apply-labels), --response-file
-# (deps-read, deps-add, list-issues). Use `-` for stdin on any *-file flag. The
-# pure transforms are factored as functions reading from injected input
+# (deps-read, deps-add, list-issues). --current-labels-file is honored ONLY when
+# TRIAGE_OPS_OFFLINE is set; a live invocation supplying it is REJECTED fail-closed
+# (it is a test seam, not a live caller payload). Use `-` for stdin on any *-file
+# flag. The pure transforms are factored as functions reading from injected input
 # (compute_mutex_delta, build_deps_add_payload, surface_dep_response,
 # normalize_deps_read, triage_palette) so the test can drive each directly via
 # the offline CLI with only jq + bash, no `gh`. Mirrors fetch-normalize.sh's
@@ -439,13 +445,15 @@ cmd_apply_labels() {
     return 0
   fi
 
+  # --current-labels-file is a TEST SEAM (offline only). In the LIVE path it would
+  # let a caller spoof the label set — including omitting triage:locked to bypass
+  # the human-only lock. Reject it fail-closed BEFORE any gh call so the live path
+  # derives ground truth UNCONDITIONALLY from `gh issue view`.
+  [ -z "$current_file" ] \
+    || die "apply-labels: --current-labels-file is valid only with TRIAGE_OPS_OFFLINE set" 2
   require_gh "apply-labels"
-  if [ -n "$current_file" ]; then
-    current_json="$(read_injected "$current_file")"
-  else
-    current_json="$(gh issue view "$issue" --json labels --jq '[.labels[].name]')" \
-      || die "apply-labels: failed to read current labels for issue #$issue" 1
-  fi
+  current_json="$(gh issue view "$issue" --json labels --jq '[.labels[].name]')" \
+    || die "apply-labels: failed to read current labels for issue #$issue" 1
   # Honor the human-only lock: a locked issue is reported and mutated NOT at all.
   if printf '%s' "$current_json" | jq -e 'index("triage:locked") != null' >/dev/null 2>&1; then
     jq -c -n --argjson issue "$issue" '{ issue: $issue, status: "skipped-locked" }'
