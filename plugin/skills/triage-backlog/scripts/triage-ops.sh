@@ -33,6 +33,9 @@
 #                --json number,title,labels,body,id   (id = GraphQL node id)
 #     offline: re-emits the injected --response-file verbatim (identity), no gh.
 #     N defaults to 500. PRs are excluded by `gh issue list` default.
+#     --response-file is a TEST SEAM honored ONLY when TRIAGE_OPS_OFFLINE is set;
+#     a live invocation supplying it is REJECTED fail-closed via the shared guard
+#     (see §5) BEFORE any gh call.
 #
 #   apply-labels <issue-number> --targets <json> | --targets-file <path>
 #                                [--current-labels-file <path|->]
@@ -45,14 +48,18 @@
 #              and mutates NOTHING; otherwise applies the computed delta via one
 #              `gh issue edit`. --current-labels-file is a TEST SEAM and is honored
 #              ONLY when TRIAGE_OPS_OFFLINE is set — supplying it in the live path
-#              is REJECTED fail-closed (it could spoof label state, incl. omitting
-#              triage:locked to bypass the human-only lock).
+#              is REJECTED fail-closed via the shared guard (see §5) BEFORE any gh
+#              call (it could spoof label state, incl. omitting triage:locked to
+#              bypass the human-only lock).
 #     offline: reads current labels from --current-labels-file (a JSON array of
 #              label-name strings) and emits the computed delta JSON; no gh.
 #
 #   deps-read <issue-number> [--response-file <path|->]
 #     online:  gh api graphql — repository.issue(number).blockedByIssues.
 #     offline: normalizes the injected --response-file (a raw GraphQL response).
+#     --response-file is a TEST SEAM honored ONLY when TRIAGE_OPS_OFFLINE is set;
+#     a live invocation supplying it is REJECTED fail-closed via the shared guard
+#     (see §5) BEFORE any gh call.
 #
 #   deps-add --issue-id <NODE_ID> --blocked-by-id <NODE_ID> [--response-file <path|->]
 #     Operates on GraphQL NODE IDs (from list-issues' `id` field), not numbers —
@@ -62,6 +69,9 @@
 #     offline: with --response-file -> surfaces that injected response (exercises
 #              the cycle/error/success records); without it -> emits the
 #              constructed GraphQL variables payload (exercises payload build).
+#     --response-file is a TEST SEAM honored ONLY when TRIAGE_OPS_OFFLINE is set;
+#              a live invocation supplying it is REJECTED fail-closed via the shared
+#              guard (see §5) BEFORE the live addBlockedBy mutation.
 #
 # 3. OUTPUT SCHEMA — JSON on stdout (compact)
 # -------------------------------------------
@@ -123,9 +133,13 @@
 # emitting the deterministic artifact (palette / delta / payload / surfaced
 # record / normalized deps) to stdout. Input that would normally come from gh is
 # injected via flags: --current-labels-file (apply-labels), --response-file
-# (deps-read, deps-add, list-issues). --current-labels-file is honored ONLY when
-# TRIAGE_OPS_OFFLINE is set; a live invocation supplying it is REJECTED fail-closed
-# (it is a test seam, not a live caller payload). Use `-` for stdin on any *-file
+# (deps-read, deps-add, list-issues). EVERY fixture/injection flag is honored ONLY
+# when TRIAGE_OPS_OFFLINE is set; a live invocation supplying ANY of them is
+# REJECTED fail-closed (exit 2) BEFORE any gh call — they are test seams, not live
+# caller payloads, and would otherwise spoof state or silently no-op a real
+# mutation. This offline-only invariant is enforced UNIFORMLY for all four
+# subcommands by the single shared guard reject_fixture_flags_in_live_mode (one
+# mechanism, no per-subcommand divergence). Use `-` for stdin on any *-file
 # flag. The pure transforms are factored as functions reading from injected input
 # (compute_mutex_delta, build_deps_add_payload, surface_dep_response,
 # normalize_deps_read, triage_palette) so the test can drive each directly via
@@ -149,6 +163,29 @@ require_gh() {
 
 is_offline() {
   [ -n "${TRIAGE_OPS_OFFLINE:-}" ]
+}
+
+# reject_fixture_flags_in_live_mode <subcommand> <flag-name>=<value> [<flag-name>=<value> ...]
+# UNIFIED offline-test-seam gate. Fixture/injection flags (--current-labels-file,
+# --response-file) are honored ONLY when TRIAGE_OPS_OFFLINE is set; supplying one
+# on a LIVE invocation could spoof state (e.g. omit triage:locked to bypass the
+# human-only lock) or silently no-op a real mutation (the live deps-add path).
+# So: when NOT offline, any passed flag whose value is non-empty fails CLOSED with
+# exit 2 BEFORE any require_gh/gh/graphql call (so STEP-S002's live-reject tests
+# run with no gh on PATH). Receives the ALREADY-PARSED flag value(s) as arguments —
+# it does NOT re-parse argv (P9: the shared kernel is the offline-gate check only,
+# not arg parsing). Each arg is "<flag-name>=<value>"; only the value is tested,
+# the name is used solely for the diagnostic message.
+reject_fixture_flags_in_live_mode() {
+  local subcmd="$1"; shift
+  is_offline && return 0
+  local pair flag value
+  for pair in "$@"; do
+    flag="${pair%%=*}"
+    value="${pair#*=}"
+    [ -z "$value" ] \
+      || die "$subcmd: $flag is valid only with TRIAGE_OPS_OFFLINE set" 2
+  done
 }
 
 # read_injected <path>: read an injected fixture from a file or stdin (`-`).
@@ -469,6 +506,7 @@ cmd_list_issues() {
     read_injected "$response_file" | jq -c .
     return 0
   fi
+  reject_fixture_flags_in_live_mode "list-issues" "--response-file=$response_file"
   require_gh "list-issues"
   gh issue list --state open --limit "$limit" \
     --json number,title,labels,body,id
@@ -510,10 +548,9 @@ cmd_apply_labels() {
 
   # --current-labels-file is a TEST SEAM (offline only). In the LIVE path it would
   # let a caller spoof the label set — including omitting triage:locked to bypass
-  # the human-only lock. Reject it fail-closed BEFORE any gh call so the live path
-  # derives ground truth UNCONDITIONALLY from `gh issue view`.
-  [ -z "$current_file" ] \
-    || die "apply-labels: --current-labels-file is valid only with TRIAGE_OPS_OFFLINE set" 2
+  # the human-only lock. The UNIFIED guard rejects it fail-closed BEFORE any gh
+  # call so the live path derives ground truth UNCONDITIONALLY from `gh issue view`.
+  reject_fixture_flags_in_live_mode "apply-labels" "--current-labels-file=$current_file"
   require_gh "apply-labels"
   current_json="$(gh issue view "$issue" --json labels --jq '[.labels[].name]')" \
     || die "apply-labels: failed to read current labels for issue #$issue" 1
@@ -562,6 +599,7 @@ cmd_deps_read() {
     normalize_deps_read "$(read_injected "$response_file")"
     return
   fi
+  reject_fixture_flags_in_live_mode "deps-read" "--response-file=$response_file"
   require_gh "deps-read"
   local owner_repo owner repo resp
   owner_repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \
@@ -600,6 +638,7 @@ cmd_deps_add() {
     return 0
   fi
 
+  reject_fixture_flags_in_live_mode "deps-add" "--response-file=$response_file"
   [ -n "$issue_id" ] && [ -n "$blocked_by_id" ] \
     || die "deps-add requires --issue-id and --blocked-by-id" 2
   require_gh "deps-add"
