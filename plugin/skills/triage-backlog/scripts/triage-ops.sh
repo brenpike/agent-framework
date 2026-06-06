@@ -61,7 +61,7 @@
 #              label-name strings) and emits the computed delta JSON; no gh.
 #
 #   deps-read <issue-number> [--response-file <path|->]
-#     online:  gh api graphql — repository.issue(number).blockedByIssues.
+#     online:  gh api graphql — repository.issue(number).blockedBy.
 #     offline: normalizes the injected --response-file (a raw GraphQL response).
 #     --response-file is a TEST SEAM honored ONLY when TRIAGE_OPS_OFFLINE is set;
 #     a live invocation supplying it is REJECTED fail-closed via the shared guard
@@ -113,7 +113,7 @@
 #       "blocked_by": [ { "number": <int>, "id": <node-id>, "title": <str> }, ... ] }
 #
 #   deps-add payload (offline, no --response-file):
-#     { "issueId": <node-id>, "blockedByIssueId": <node-id> }
+#     { "issueId": <node-id>, "blockingIssueId": <node-id> }
 #   deps-add surfaced response (online, or offline with --response-file):
 #     added:   { "status": "added",   "issue": <int>, "blocked_by": <int> }
 #     warning: { "status": "warning", "kind": "cycle-rejected"|"error"|"transport-error",
@@ -128,7 +128,7 @@
 #     envelope, null/missing entity at the expected root path, non-array collection,
 #     or a null/wrong-typed field on any element — FAILS CLOSED (nonzero, structured
 #     kind record to stderr) before any gate, decision, or mutation. Covered reads:
-#     deps-read's blockedByIssues response (via normalize_deps_read), deps-add's
+#     deps-read's blockedBy response (via normalize_deps_read), deps-add's
 #     lock-label node(id:) read (before the addBlockedBy mutation — never mutate on
 #     unverifiable lock state), list-issues' gh issue list output (before the cap
 #     check and before emitting the backlog), and apply-labels' label read (before
@@ -393,8 +393,8 @@ compute_mutex_delta() {
 # build_deps_add_payload <issue-id> <blocked-by-id>: the GraphQL variables for
 # the addBlockedBy mutation. Pure jq construction — node ids pass through as DATA.
 build_deps_add_payload() {
-  jq -c -n --arg issueId "$1" --arg blockedById "$2" \
-    '{ issueId: $issueId, blockedByIssueId: $blockedById }'
+  jq -c -n --arg issueId "$1" --arg blockingId "$2" \
+    '{ issueId: $issueId, blockingIssueId: $blockingId }'
 }
 
 # surface_dep_response <response-json>: classify a raw addBlockedBy GraphQL
@@ -438,10 +438,10 @@ surface_dep_response() {
             else { status: "error", kind: "graphql-error",
                    message: ($msgs | map(select(test("cycl|circular"; "i") | not)))[0] } end
         elif (.data.addBlockedBy.issue.number != null
-              and .data.addBlockedBy.blockedBy.number != null)
+              and .data.addBlockedBy.blockingIssue.number != null)
         then { status: "added",
                issue: (.data.addBlockedBy.issue.number),
-               blocked_by: (.data.addBlockedBy.blockedBy.number) }
+               blocked_by: (.data.addBlockedBy.blockingIssue.number) }
         else { status: "error", kind: "malformed-success",
                message: "addBlockedBy response missing expected issue numbers" }
         end')"
@@ -475,7 +475,7 @@ surface_dep_response() {
 #   <root_pred>   jq boolean over that entity bound as `.` (field-completeness on
 #                 the root, e.g. numeric number + nonempty string id).
 #   <coll_path>   jq path FROM the root entity to the node collection (e.g.
-#                 `.blockedByIssues.nodes`); fail-closed when not an array.
+#                 `.blockedBy.nodes`); fail-closed when not an array.
 #   <elem_pred>   jq boolean over each element bound as `.` (per-element field
 #                 completeness); must hold for EVERY element.
 #   <projection>  jq program over the FULL response that yields the clean value.
@@ -512,15 +512,15 @@ validate_response_shape() {
   printf '%s' "$resp" | jq -c "$projection"
 }
 
-# normalize_deps_read <response-json>: project a raw blockedByIssues GraphQL
+# normalize_deps_read <response-json>: project a raw blockedBy GraphQL
 # response into the stable deps-read schema (§3) — FAIL-CLOSED, mirroring
-# surface_dep_response. A blockedByIssues read carries NO recoverable failure
+# surface_dep_response. A blockedBy read carries NO recoverable failure
 # (unlike deps-add's cycle rejection): EVERY failure exits nonzero so the caller
 # never makes triage/dependency decisions from a corrupted-into-"no blockers"
 # state. Fail-closed on: empty/non-JSON transport errors, any non-empty
 # `.errors` (auth, rate-limit, 4xx, schema), a missing/null `.data.repository.issue`
 # (issue absent or 200-with-error body), a missing/non-array
-# `blockedByIssues.nodes`, and any null/wrong-typed identifier FIELD on the issue
+# `blockedBy.nodes`, and any null/wrong-typed identifier FIELD on the issue
 # or a blocker node (null issue id/number, or a blocker missing its number/id/title).
 # A 200 body satisfying the outer shape but carrying null identifiers would
 # normalize into dependency records that cannot be safely matched for later
@@ -530,8 +530,8 @@ validate_response_shape() {
 normalize_deps_read() {
   local resp="$1"
   # SINGLE MECHANISM: delegate every shape gate to the shared validator (P1). The
-  # projection spec encodes the blockedByIssues-specific contract as author-static
-  # jq fragments — root = the issue node, collection = its blockedByIssues.nodes,
+  # projection spec encodes the blockedBy-specific contract as author-static
+  # jq fragments — root = the issue node, collection = its blockedBy.nodes,
   # field-completeness on the issue (numeric number + nonempty string id) and on
   # every blocker (numeric number + nonempty string id + title). A null identifier
   # would normalize into a record that cannot be matched for later deps-add/removal,
@@ -542,21 +542,21 @@ normalize_deps_read() {
     '.data.repository.issue' \
     '(.number | type == "number")
      and (.id | type == "string" and length > 0)' \
-    '.blockedByIssues.nodes' \
+    '.blockedBy.nodes' \
     '(.number | type == "number")
      and (.id | type == "string" and length > 0)
      and (.title | type == "string" and length > 0)' \
     '.data.repository.issue as $i
      | { issue: ($i.number // null),
          id: ($i.id // null),
-         blocked_by: [ ($i.blockedByIssues.nodes)[] | { number, id, title } ] }'
+         blocked_by: [ ($i.blockedBy.nodes)[] | { number, id, title } ] }'
 }
 
 # --- Baked GraphQL operations (live path only) -------------------------------
 # Native GitHub issue dependencies (blocked-by), GA 2025-08-21. Spec citation:
 # https://github.blog/changelog/2025-08-21-dependencies-on-issues/ — mutation
-# `addBlockedBy(input: AddBlockedByInput!)` with issueId + blockedByIssueId; the
-# Issue.blockedByIssues connection reads the blocked-by set. Variables are passed
+# `addBlockedBy(input: AddBlockedByInput!)` with issueId + blockingIssueId; the
+# Issue.blockedBy connection reads the blocked-by set. Variables are passed
 # via -f/-F (never interpolated). External issue text is never read into source.
 DEPS_READ_QUERY='
 query($owner: String!, $repo: String!, $number: Int!) {
@@ -564,7 +564,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
     issue(number: $number) {
       id
       number
-      blockedByIssues(first: 50) {
+      blockedBy(first: 50) {
         nodes { id number title }
       }
     }
@@ -587,10 +587,10 @@ query($id: ID!) {
 }'
 
 DEPS_ADD_MUTATION='
-mutation($issueId: ID!, $blockedByIssueId: ID!) {
-  addBlockedBy(input: { issueId: $issueId, blockedByIssueId: $blockedByIssueId }) {
+mutation($issueId: ID!, $blockingIssueId: ID!) {
+  addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
     issue { id number }
-    blockedBy { id number }
+    blockingIssue { id number }
   }
 }'
 
@@ -880,7 +880,7 @@ cmd_deps_add() {
   # nonzero. The surfacing function is the single decision point — never crash.
   local resp
   resp="$(gh api graphql -f query="$DEPS_ADD_MUTATION" \
-            -f issueId="$issue_id" -f blockedByIssueId="$blocked_by_id" 2>/dev/null)" || true
+            -f issueId="$issue_id" -f blockingIssueId="$blocked_by_id" 2>/dev/null)" || true
   surface_dep_response "$resp"
 }
 

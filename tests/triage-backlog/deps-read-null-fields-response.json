@@ -1,1 +1,1 @@
-{"data":{"repository":{"issue":{"id":null,"number":5,"blockedByIssues":{"nodes":[{"id":null,"number":null,"title":null}]}}}}}
+{"data":{"repository":{"issue":{"id":null,"number":5,"blockedBy":{"nodes":[{"id":null,"number":null,"title":null}]}}}}}

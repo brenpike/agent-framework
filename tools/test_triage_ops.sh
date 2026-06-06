@@ -261,15 +261,15 @@ fi
 
 # ── deps-add GraphQL payload shape ────────────────────────────────────────────────
 # Offline deps-add WITHOUT --response-file builds the GraphQL variables payload. Assert the exact
-# variable keys (issueId, blockedByIssueId) with node ids passed through as DATA.
+# variable keys (issueId, blockingIssueId) with node ids passed through as DATA.
 run_case "deps-add:payload-shape" "$EXPECTED_DIR/deps-add-payload.json" -- \
   deps-add --issue-id I_aaa --blocked-by-id I_bbb
 
-# Direct key-set assertion: the payload has EXACTLY {issueId, blockedByIssueId} — no extra/missing
+# Direct key-set assertion: the payload has EXACTLY {issueId, blockingIssueId} — no extra/missing
 # variable keys (a drift in the mutation variable contract is caught).
 PAYLOAD="$(TRIAGE_OPS_OFFLINE=1 bash "$OPS" deps-add --issue-id I_aaa --blocked-by-id I_bbb 2>/dev/null)"
-if printf '%s' "$PAYLOAD" | jq -e '(keys | sort) == ["blockedByIssueId","issueId"]' >/dev/null 2>&1; then
-  pass "deps-add:payload-key-set" "keys == issueId + blockedByIssueId"
+if printf '%s' "$PAYLOAD" | jq -e '(keys | sort) == ["blockingIssueId","issueId"]' >/dev/null 2>&1; then
+  pass "deps-add:payload-key-set" "keys == issueId + blockingIssueId"
 else
   failed "deps-add:payload-key-set" "unexpected payload key set (payload: $PAYLOAD)"
 fi
@@ -302,12 +302,12 @@ run_exit1_case "deps-add:mixed-cycle-noncycle-exit1" -- \
   deps-add --response-file "$TB_DIR/deps-add-mixed-error-response.json"
 
 # ── deps-read normalize + list-issues identity ────────────────────────────────────
-# A canned blockedByIssues GraphQL response normalizes into the stable deps-read schema.
+# A canned blockedBy GraphQL response normalizes into the stable deps-read schema.
 run_case "deps-read:normalize" "$EXPECTED_DIR/deps-read-normalized.json" -- \
   deps-read 5 --response-file "$TB_DIR/deps-read-response.json"
 
 # ── deps-read FAIL-CLOSED on GraphQL error / null-issue responses ──────────────────
-# A blockedByIssues read has NO recoverable failure variant: a 200-with-`.errors`
+# A blockedBy read has NO recoverable failure variant: a 200-with-`.errors`
 # body (auth/rate-limit/schema) and a null `.data.repository.issue` each MUST surface
 # as a NONZERO exit so the caller never demotes a failed read into an empty "no
 # blockers" dependency set and makes triage decisions from corrupted state.
@@ -379,7 +379,7 @@ fi
 
 # ── deps-add: offline unlocked labels → payload emitted ───────────────────────────
 # STEP-L001: gate only fires on locked sets. An unlocked --issue-labels-file must
-# let the flow reach build_deps_add_payload and emit the {issueId,blockedByIssueId} line.
+# let the flow reach build_deps_add_payload and emit the {issueId,blockingIssueId} line.
 UNLOCKED_FILE="$TMPDIR_TEST/labels-unlocked.json"
 cp "$TB_DIR/labels-unlocked.json" "$UNLOCKED_FILE"
 
@@ -481,7 +481,7 @@ else
   pass "deps-add:lock-read-locked-no-payload" "no {issueId} payload when raw response carries triage:locked"
 fi
 
-# Case 5: clean raw body WITHOUT triage:locked → proceeds to {issueId,blockedByIssueId} payload.
+# Case 5: clean raw body WITHOUT triage:locked → proceeds to {issueId,blockingIssueId} payload.
 LABELS_RESP_UNLOCKED_TMP="$TMPDIR_TEST/labels-raw-unlocked.json"
 cp "$TB_DIR/labels-raw-unlocked.json" "$LABELS_RESP_UNLOCKED_TMP"
 

@@ -1,1 +1,1 @@
-{"data":{"addBlockedBy":{"issue":{"id":"I_x"},"blockedBy":{"id":"I_y"}}}}
+{"data":{"addBlockedBy":{"issue":{"id":"I_x"},"blockingIssue":{"id":"I_y"}}}}
