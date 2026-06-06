@@ -21,8 +21,30 @@ tests/ledger-reconstruct/
 
 ## Git-log byte format
 
-Commit header: `\x1eCOMMIT\x1f<sha>\x1f<subject>` followed by `git log --unified=0 -p` diff body.
-Hunk `@@ -a,b +c,d @@` maps to `line_start=c`, `line_end=c+d-1` (d defaults to 1; d==0 → end=start).
+Fixtures mirror the LIVE format the script emits and parses:
+`git log <base>..HEAD --no-color --unified=0 -z --raw -p --find-renames --format=$'\x1eCOMMIT\x1f%H\x1f%s'`.
+
+Per-commit byte layout (NUL = `\0`, US = `\x1e`, RS = `\x1f`):
+
+```
+\x1eCOMMIT\x1f<sha>\x1f<subject>\0      format record; -z appends a NUL terminator
+\n:<m> <m> <b> <b> <STATUS>\0           one --raw entry per changed file
+<path1>\0[<path2>\0]                    R/C status emits two paths (old,new); else one
+\0                                      empty token: raw-block terminator
+<patch>                                 the -p unified-diff body
+```
+
+PATHS come from the `--raw` machine channel (NUL-delimited, never quoted, space-/rename-safe);
+the destination (new-file) path is the LAST path of each entry. The `-p` hunks are correlated to
+files BY ORDER (Nth `diff --git` = Nth raw entry); the diff line's path text is ignored. Only the
+hunk arithmetic is read from `-p`: `@@ -a,b +c,d @@` maps to `line_start=c`, `line_end=c+d-1`
+(d defaults to 1; d==0 → end=start).
+
+Because the fixtures carry NUL delimiters, they are generated/edited as raw bytes (not plain text)
+and the script streams them straight into the tokenizer — never through a shell-variable capture
+(bash strips NUL). `git-log-empty.txt` is zero bytes (a legitimate "no commits" log);
+`git-log-malformed.txt` is non-empty text with no `\x1eCOMMIT\x1f` record marker (injected fail-open
+→ empty findings, exit 0).
 
 ## Canonicalization
 

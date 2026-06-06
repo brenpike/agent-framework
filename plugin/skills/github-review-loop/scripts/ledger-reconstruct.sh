@@ -40,14 +40,26 @@
 #              live call and the injected text routes through the SAME pure mapping
 #              core as live output. `-` = stdin.
 #
-# The git-log payload (live OR injected) is the STABLE machine format this script
-# emits and parses (see GIT_LOG_FORMAT below): `git log <base>..HEAD --no-color
-# --unified=0 -p` with a per-commit header line
-#   <US>COMMIT<RS><sha><RS><subject>
-# (US = 0x1e record-start, RS = 0x1f field-sep), followed by the unified diff.
-# The pure core reads `diff --git a/<f> b/<f>` for the file path (b-side) and the
-# hunk headers `@@ -a,b +c,d @@` for the NEW-file line range (start=c, count=d,
-# d defaulting to 1) — yielding one fix surface per (commit, file, hunk).
+# The git-log payload (live OR injected) is a MACHINE-DELIMITED stream produced by
+#   git log <base>..HEAD --no-color --unified=0 -z --raw -p --find-renames \
+#           --format=$'\x1eCOMMIT\x1f%H\x1f%s'
+# Per-commit byte layout (empirically verified against real git output in this
+# repo; the tokenizer parses to THIS actual layout):
+#   \x1eCOMMIT\x1f<sha>\x1f<subject>\0      format record; -z appends a NUL
+#   \n:<m> <m> <b> <b> <STATUS>\0           one --raw entry per changed file
+#   <path1>\0[<path2>\0]                    R/C status -> two paths (old,new); else one
+#   \0                                      empty token: raw-block terminator
+#   <patch>                                 the -p unified-diff text (next commit's
+#                                           \x1eCOMMIT record may be glued to its tail)
+# (US=0x1e record start, RS=0x1f field sep.)
+#
+# PATHS COME FROM GIT'S MACHINE CHANNEL, never an in-band ` b/` substring split.
+# The --raw entries carry NUL-delimited, NEVER-quoted, space-/rename-safe paths;
+# the destination (new-file) path is the LAST path of each entry. The -p hunks are
+# correlated to files BY ORDER: the Nth `diff --git` in a commit's patch is the
+# Nth --raw entry. We read ONLY the hunk `@@ -a,b +c,d @@` arithmetic from -p
+# (NEW-file range: start=c, count=d, d defaulting to 1, d==0 -> end=start) — the
+# diff line's path text is IGNORED. This yields one fix surface per (commit,file,hunk).
 #
 # 3. OUTPUT SCHEMA — a single fix-ledger-shaped JSON object on stdout
 # ------------------------------------------------------------------
@@ -97,18 +109,31 @@
 #       status derived (thread_resolved:true -> fixed; else open). file/line null
 #       (the normalized surface carries no line range). fix_framing null.
 #
+# JSON-STRING EMISSION IS OWNED ENTIRELY BY jq. The awk stage is a pure TOKENIZER:
+# it emits NUL-FREE, 0x1f-field-delimited RAW records (sha, subject, path,
+# line_start, line_end) and NO JSON. jq assembles every finding object and escapes
+# every string (it correctly escapes U+0000–U+001F C0 control bytes as well as
+# quotes/backslashes), so a C0 byte (e.g. backspace 0x08) in a subject or path is
+# INERT data jq escapes into valid JSON — it can never break the JSON or collapse
+# the output to []. This dissolves the former in-awk hand-rolled escaper by
+# construction.
+#
 # 4. BEHAVIOR-PRESERVING INVARIANTS
 # ---------------------------------
-#   - LIVE FAIL-CLOSED: a live `git log` failure (bad base, not-a-repo) emits a
-#     stable LEDGERRECON_ERROR marker on stderr and exits non-zero, so the caller
-#     returns `blocked`. It NEVER degrades to a silent empty "no prior fixes"
-#     ledger (that would mask a real error as "nothing to cluster"). Mirrors
-#     fetch-normalize.sh's live fail-CLOSED posture.
+#   - LIVE FAIL-CLOSED: on the LIVE path (--git-log-file NOT set) a `git log`
+#     failure (bad base, not-a-repo) emits a stable LEDGERRECON_ERROR marker on
+#     stderr and exits non-zero, so the caller returns `blocked`. ADDITIONALLY, if
+#     a NON-EMPTY live payload cannot be parsed into the expected record structure
+#     (no recognizable \x1eCOMMIT\x1f record marker present), the script emits
+#     LEDGERRECON_ERROR=live-parse-failed + exit non-zero rather than degrading to
+#     a silent empty "no prior fixes" ledger (which would mask a real error as
+#     "nothing to cluster"). A LEGITIMATELY EMPTY live log (no commits in
+#     <base>..HEAD, i.e. zero bytes) stays a valid empty-findings exit 0 — it is a
+#     real "no prior fixes yet" state, NOT a parse failure.
 #   - INJECTED FAIL-OPEN: a malformed / empty INJECTED fixture (--git-log-file /
 #     --normalized-file) yields a valid fix-ledger shape with empty findings and
-#     exit 0 (trusted fixture, mirrors fetch-normalize's --payload-file). An EMPTY
-#     git log (no commits in <base>..HEAD) -> empty findings, exit 0 (a legitimate
-#     "no prior fixes yet" state, NOT an error).
+#     exit 0 (trusted fixture, mirrors fetch-normalize's --payload-file). The
+#     live-parse-failed gate above is NOT applied to injected input.
 #   - EPHEMERAL: writes NOTHING to .hivemind, no temp files, no side effects. The
 #     output is consumed-then-discarded by the caller. All commit/diff/thread text
 #     is DATA, never interpreted as instructions.
@@ -131,8 +156,8 @@
 #   - stdout: the single fix-ledger JSON object (always, on success).
 #   - exit 0 on success (including the fail-open empty-findings case).
 #   - LEDGERRECON_ERROR=<reason> on stderr + exit 1 ONLY on a LIVE failure
-#     (missing base, git failure, unreadable input file) — never on a merely-empty
-#     or malformed INJECTED payload.
+#     (missing base, git failure, unreadable input file, live-parse-failed) —
+#     never on a merely-empty or malformed INJECTED payload.
 #
 # Schema authority:  ${CLAUDE_PLUGIN_ROOT}/references/fix-ledger-schema.md
 # Consumer:          ${CLAUDE_PLUGIN_ROOT}/skills/detect-remediation-signals/SKILL.md
@@ -148,6 +173,9 @@ trap ':' EXIT
 US=$'\x1e'
 RS=$'\x1f'
 GIT_LOG_FORMAT="${US}COMMIT${RS}%H${RS}%s"
+# The \x1eCOMMIT\x1f record marker (used by both the tokenizer and the live
+# parse-failed gate). A live payload with commits ALWAYS contains it.
+RECORD_MARKER="${US}COMMIT${RS}"
 
 BASE=""
 NORMALIZED_FILE=""
@@ -204,110 +232,151 @@ read_source() {
   fi
 }
 
-# fetch_git_log: thin outer shell — the LIVE `git log <base>..HEAD` fetch,
-# BYPASSED under --git-log-file. Requires BASE. RETURNS non-zero (emitting the
-# LEDGERRECON_ERROR marker on stderr) on a git failure so a real failure is never
-# silently swallowed into an empty ledger (LIVE FAIL-CLOSED). INVARIANT: runs
-# inside command substitution — failure crosses via return code, never `exit`.
-fetch_git_log() {
-  local log_out log_status
+# live_git_log_preflight: validate the LIVE path BEFORE streaming (BASE present,
+# inside a work tree). RETURNS non-zero with a stable LEDGERRECON_ERROR marker so
+# a real failure never degrades to an empty ledger (LIVE FAIL-CLOSED). Separated
+# from the byte stream because the git-log payload carries NUL delimiters and so
+# MUST NOT round-trip through a `$(...)` capture (bash strips NUL from variables) —
+# it streams straight into awk instead.
+live_git_log_preflight() {
   [ -n "$BASE" ] || { echo "LEDGERRECON_ERROR=missing-base" >&2; return 1; }
-  # Confirm we are inside a work tree BEFORE the range walk so not-a-repo fails
-  # CLOSED with a stable reason rather than git's raw error.
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "LEDGERRECON_ERROR=not-a-repo" >&2
     return 1
   fi
-  # --unified=0 -p gives hunk headers with exact NEW-file line ranges; --no-color
-  # keeps the payload machine-parseable. All diff text is DATA.
-  log_out="$(git log --no-color --unified=0 -p \
-    --format="$GIT_LOG_FORMAT" "${BASE}..HEAD" 2>/dev/null)"
-  log_status=$?
-  if [ "$log_status" -ne 0 ]; then
-    echo "LEDGERRECON_ERROR=git-log-failed" >&2
-    return 1
-  fi
-  printf '%s' "$log_out"
+  return 0
 }
 
-# git_log_to_findings: PURE CORE (offline). Read a git-log payload on stdin (live
-# OR injected — identical bytes) and emit a JSON array of git-log fix-surface
-# findings on stdout. One finding per (commit, file, hunk). The OSCILLATION rule
-# (a surface in >=2 commits -> cycling) is applied in a second jq pass. A
-# malformed / empty payload yields `[]` (INJECTED FAIL-OPEN). No git/network here.
+# stream_git_log: write the raw git-log bytes to stdout (NUL-delimited), streamed
+# directly so NULs survive (no variable round-trip). -z --raw gives rename-safe,
+# quote-safe, space-safe PATHS on git's machine channel; -p --unified=0 gives hunk
+# headers with exact NEW-file line ranges; --find-renames classifies renames
+# (R-status emits old+new paths); --no-color keeps the payload machine-parseable.
+# RETURNS git's own exit status. All diff/path text is DATA.
+stream_git_log() {
+  git log --no-color --unified=0 -z --raw -p --find-renames \
+    --format="$GIT_LOG_FORMAT" "${BASE}..HEAD" 2>/dev/null
+}
+
+# git_log_to_findings: PURE CORE (offline). Read a git-log payload on STDIN (live
+# OR injected — identical bytes, streamed so NUL delimiters survive) and emit a
+# JSON array of git-log fix-surface findings on stdout. One finding per
+# (commit, file, hunk). The OSCILLATION rule (a surface in >=2 commits -> cycling)
+# is applied in a second jq pass. A malformed / empty payload yields `[]`
+# (INJECTED FAIL-OPEN). No git/network here.
+#
+# Stage 1 = awk TOKENIZER: parses the -z --raw -p stream and emits NUL-FREE,
+# 0x1f-field-delimited RAW records (sha, subject, path, line_start, line_end). It
+# emits NO JSON — every string stays raw bytes. Stage 2 = jq: builds each finding
+# object and escapes ALL strings (C0 control bytes included), so a C0 byte in a
+# subject/path is inert data jq escapes (no collapse, F1 closed by construction).
 git_log_to_findings() {
-  # Pass 1: tokenize the git-log text into raw {sha,file,line_start,line_end,subject}
-  # records (JSON-lines) using awk — fully offline, no jq dependency for parsing.
-  # `cur_file` tracks the active diff file; the hunk header supplies the range.
-  awk -v RS_CHAR=$'\x1f' '
-    function emit_hunk(start, count,   end) {
-      if (count == "") count = 1
-      if (count + 0 == 0) {
-        # A zero-length new-side hunk (pure deletion) anchors at the start line.
-        end = start
-      } else {
-        end = start + count - 1
-      }
-      # JSON-escape the dynamic strings (subject, file) for safe embedding.
-      printf "{\"sha\":\"%s\",\"subject\":%s,\"file\":%s,\"line_start\":%d,\"line_end\":%d}\n", \
-        cur_sha, jstr(cur_subject), jstr(start_file), start + 0, end + 0
-    }
-    function jstr(s,   r) {
-      r = s
-      gsub(/\\/, "\\\\", r)
-      gsub(/"/, "\\\"", r)
-      gsub(/\t/, "\\t", r)
-      gsub(/\r/, "\\r", r)
-      gsub(/\n/, "\\n", r)
-      return "\"" r "\""
-    }
+  awk -v US="$US" -v RS_FIELD="$RS" '
+    # RS=US: each record begins at a \x1e boundary. $0 (US stripped by RS) is
+    # "COMMIT\x1f<sha>\x1f<subj>\0\n<raw block>\0<patch>" for a commit record, or
+    # empty/garbage for the leading preamble.
+    BEGIN { RS = US }
     {
-      line = $0
-      # Commit header: starts with 0x1e then literal COMMIT then 0x1f-delimited fields.
-      if (substr(line, 1, 1) == "\x1e") {
-        rest = substr(line, 2)
-        # split on 0x1f: [COMMIT, sha, subject]
-        n = split(rest, parts, "\x1f")
-        if (n >= 2 && parts[1] == "COMMIT") {
-          cur_sha = parts[2]
-          cur_subject = (n >= 3 ? parts[3] : "")
-          cur_file = ""
-        }
-        next
+      rec = $0
+      if (substr(rec, 1, 7) != "COMMIT" RS_FIELD) next   # not a commit record
+      body = substr(rec, 8)                              # "<sha>\x1f<subj>\0\n<raw>\0\0<patch>"
+
+      # Header ends at the first NUL (the -z format terminator).
+      nul = index(body, "\x00")
+      if (nul == 0) next                                 # malformed: no -z terminator
+      header = substr(body, 1, nul - 1)                  # "<sha>\x1f<subj>"
+      remainder = substr(body, nul + 1)                  # "\n<raw block>\0\0<patch>"
+
+      hn = split(header, hf, RS_FIELD)
+      sha = (hn >= 1 ? hf[1] : "")
+      subject = (hn >= 2 ? hf[2] : "")
+      if (sha == "") next
+
+      # Drop the single leading "\n" the format adds before the raw block.
+      if (substr(remainder, 1, 1) == "\n") remainder = substr(remainder, 2)
+
+      # The raw block and the patch are separated by an EMPTY NUL field, i.e. a
+      # literal "\0\0". Before it = raw block (NUL-delimited status/path tokens);
+      # after it = the -p patch text.
+      sep = index(remainder, "\x00\x00")
+      if (sep > 0) {
+        rawblock = substr(remainder, 1, sep - 1)
+        patch = substr(remainder, sep + 2)
+      } else {
+        rawblock = ""
+        patch = remainder
+        if (substr(patch, 1, 1) == "\x00") patch = substr(patch, 2)
       }
-      if (substr(line, 1, 11) == "diff --git ") {
-        # diff --git a/<path> b/<path> ; take the b-side path (post-image).
-        # Strip the "diff --git a/" prefix, then split at " b/".
-        body = substr(line, 12)            # "a/<path> b/<path>"
-        idx = index(body, " b/")
-        if (idx > 0) {
-          cur_file = substr(body, idx + 3)
-        } else {
-          cur_file = ""
+
+      # Parse the raw block into an ORDERED destination-path list (one per file).
+      # Tokens NUL-delimited: STATUS line, then 1 path (M/A/D/T) or 2 paths (R/C).
+      # Keep the NEW-file path = the LAST path of the entry (rename-safe).
+      n_paths = 0
+      delete paths
+      if (rawblock != "") {
+        tn = split(rawblock, toks, "\x00")
+        i = 1
+        while (i <= tn) {
+          stat_line = toks[i]
+          if (stat_line == "") { i++; continue }
+          sc = split(stat_line, sf, " ")          # STATUS = last space field
+          status = sf[sc]
+          i++
+          first_char = substr(status, 1, 1)
+          if (first_char == "R" || first_char == "C") {
+            i++                                    # skip old path
+            new_p = (i <= tn ? toks[i] : ""); i++
+          } else {
+            new_p = (i <= tn ? toks[i] : ""); i++
+          }
+          n_paths++; paths[n_paths] = new_p
         }
-        next
       }
-      if (substr(line, 1, 3) == "@@ " && cur_sha != "" && cur_file != "") {
-        # @@ -a,b +c,d @@  -> new-side is the +c,d token.
-        # Find the "+" token.
-        plus = ""
-        m = split(line, toks, " ")
-        for (i = 1; i <= m; i++) {
-          if (substr(toks[i], 1, 1) == "+") { plus = substr(toks[i], 2); break }
+
+      # Walk the -p patch; correlate hunks to files BY ORDER. The Nth `diff --git`
+      # selects the Nth raw path (from the machine channel — the diff line text is
+      # IGNORED). @@ headers under it supply the NEW-file range.
+      file_idx = 0
+      cur_path = ""
+      pn = split(patch, plines, "\n")
+      for (p = 1; p <= pn; p++) {
+        pline = plines[p]
+        if (substr(pline, 1, 11) == "diff --git ") {
+          file_idx++
+          cur_path = (file_idx <= n_paths ? paths[file_idx] : "")
+          continue
         }
-        if (plus != "") {
-          c = plus; d = ""
-          ci = index(plus, ",")
-          if (ci > 0) { c = substr(plus, 1, ci - 1); d = substr(plus, ci + 1) }
-          start_file = cur_file
-          emit_hunk(c + 0, d)
+        if (substr(pline, 1, 3) == "@@ " && cur_path != "") {
+          # @@ -a,b +c,d @@ -> new-side is the +c,d token.
+          plus = ""
+          m = split(pline, hk, " ")
+          for (j = 1; j <= m; j++) {
+            if (substr(hk[j], 1, 1) == "+") { plus = substr(hk[j], 2); break }
+          }
+          if (plus != "") {
+            c = plus; d = ""
+            ci = index(plus, ",")
+            if (ci > 0) { c = substr(plus, 1, ci - 1); d = substr(plus, ci + 1) }
+            if (d == "") d = 1
+            if (d + 0 == 0) { end = c + 0 } else { end = c + d - 1 }
+            # NUL-FREE, 0x1f-field, newline-terminated RAW record. NO JSON.
+            printf "%s%s%s%s%s%s%d%s%d\n", \
+              sha, RS_FIELD, subject, RS_FIELD, cur_path, RS_FIELD, c + 0, RS_FIELD, end
+          }
         }
-        next
       }
     }
   ' 2>/dev/null \
+  | jq -R -c --arg sep "$RS" '
+      # Stage 2a: each line is a 0x1f-delimited RAW record. split($sep) -> fields;
+      # jq escapes every string (C0 control bytes + quotes/backslashes) -> valid JSON.
+      split($sep)
+      | select(length >= 5)
+      | { sha: .[0], subject: .[1], file: .[2],
+          line_start: (.[3] | tonumber), line_end: (.[4] | tonumber) }
+    ' 2>/dev/null \
   | jq -c -s '
-      # Pass 2: dedupe per (sha,file,line_start,line_end), then apply the
+      # Stage 2b: dedupe per (sha,file,line_start,line_end), then apply the
       # OSCILLATION rule across DISTINCT commits per surface (file:line range).
       # A surface touched in >=2 distinct commits -> cycling; else fixed.
       ( [ .[] | {key: ("\(.file):\(.line_start):\(.line_end)"), sha: .sha} ]
@@ -402,29 +471,59 @@ reconstruct_ledger() {
   '
 }
 
-# --- Resolve the git-log payload (live fetch OR injected fixture) ------------
+# --- Resolve the git-log findings (live fetch OR injected fixture) -----------
+# The git-log payload carries NUL delimiters, so it is STREAMED straight into the
+# tokenizer — never captured into a shell variable (bash strips NUL). Only the
+# resulting JSON (NUL-free) is captured. INJECTED FAIL-OPEN: a malformed/empty
+# payload degrades to `[]`.
+INJECTED=0
 if [ -n "$GIT_LOG_FILE" ]; then
-  if ! git_log_payload="$(read_source "$GIT_LOG_FILE")"; then
-    exit 1
+  INJECTED=1
+  if [ "$GIT_LOG_FILE" = "-" ]; then
+    git_findings="$(git_log_to_findings)"          # stdin streams into the tokenizer
+  else
+    if [ ! -f "$GIT_LOG_FILE" ]; then
+      ledgerrecon_fail "input-file-not-found"
+    fi
+    git_findings="$(git_log_to_findings < "$GIT_LOG_FILE")"
   fi
 else
-  if ! git_log_payload="$(fetch_git_log)"; then
+  # LIVE FAIL-CLOSED preflight: bad base / not-a-repo fails closed BEFORE the walk.
+  if ! live_git_log_preflight; then
     exit 1
   fi
+  # LIVE FAIL-CLOSED parse gate (§4): a NON-EMPTY git output that carries no
+  # \x1eCOMMIT\x1f record marker is structurally-broken git output, NOT a real
+  # empty log — fail closed rather than mask it as "no prior fixes". An EMPTY
+  # output (no commits in <base>..HEAD) is a legitimate "no prior fixes yet" state
+  # and stays exit 0. The marker probe streams git once (NUL-safe, no capture);
+  # the findings stream git a second time. The injected path is exempt (trusted
+  # fixture, fail-open). git's own failure on either stream fails closed.
+  # grep -a: the -z stream carries NUL, so force text matching; -F: the marker's
+  # \x1e/\x1f bytes are a literal fixed string, never a regex.
+  if ! stream_git_log | grep -aqF "$RECORD_MARKER" 2>/dev/null; then
+    probe_status="${PIPESTATUS[0]}"
+    # grep exit 1 = marker absent. Distinguish empty-log (exit 0, no bytes) from a
+    # non-empty unparseable payload: re-probe for ANY byte.
+    if [ "$probe_status" -ne 0 ]; then
+      ledgerrecon_fail "git-log-failed"
+    fi
+    if stream_git_log | read -r -n 1 _ 2>/dev/null; then
+      ledgerrecon_fail "live-parse-failed"
+    fi
+  fi
+  git_findings="$(stream_git_log | git_log_to_findings)"
 fi
+case "$git_findings" in '') git_findings='[]' ;; esac
 
 # --- Resolve the normalized payload (injected fixture; optional) -------------
+# The normalized payload is JSON (NUL-free), so a variable capture is safe here.
 normalized_payload=""
 if [ -n "$NORMALIZED_FILE" ]; then
   if ! normalized_payload="$(read_source "$NORMALIZED_FILE")"; then
     exit 1
   fi
 fi
-
-# --- Pure mapping core (offline over the resolved payloads) ------------------
-# INJECTED FAIL-OPEN: each helper degrades a malformed/empty payload to `[]`.
-git_findings="$(printf '%s' "$git_log_payload" | git_log_to_findings)"
-case "$git_findings" in '') git_findings='[]' ;; esac
 
 thread_findings="$(normalized_to_findings "$normalized_payload")"
 case "$thread_findings" in '') thread_findings='[]' ;; esac
