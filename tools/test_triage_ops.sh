@@ -206,6 +206,22 @@ run_case "mutex:foreign-prefix-not-removed" "$EXPECTED_DIR/delta-priority-foreig
   apply-labels 9 --targets '{"priority":"high"}' \
   --current-labels-file "$TB_DIR/current-priority-foreign-prefix.json"
 
+# ── apply-labels: live path rejects --current-labels-file (security regression) ──
+# STEP-R001 fix: a LIVE (non-offline) invocation supplying --current-labels-file MUST
+# be rejected fail-closed (exit 2) BEFORE any gh call — the flag is a test seam only.
+# Supplying it live would let a caller spoof the label set and bypass triage:locked.
+# No TRIAGE_OPS_OFFLINE — this runs in live mode. The die fires before require_gh,
+# so no gh dependency and the result is deterministic.
+LIVE_STATUS=0
+bash "$OPS" apply-labels 9 \
+  --current-labels-file "$TB_DIR/current-priority-foreign-prefix.json" \
+  --targets '{"priority":"high"}' >/dev/null 2>&1 || LIVE_STATUS=$?
+if [ "$LIVE_STATUS" -ne 0 ]; then
+  pass "apply-labels:live-current-labels-file-rejected" "exit=$LIVE_STATUS (expected nonzero)"
+else
+  failed "apply-labels:live-current-labels-file-rejected" "expected nonzero exit, got 0 (live path must reject --current-labels-file)"
+fi
+
 # ── deps-add GraphQL payload shape ────────────────────────────────────────────────
 # Offline deps-add WITHOUT --response-file builds the GraphQL variables payload. Assert the exact
 # variable keys (issueId, blockedByIssueId) with node ids passed through as DATA.
