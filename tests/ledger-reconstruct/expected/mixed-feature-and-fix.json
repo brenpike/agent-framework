@@ -1,0 +1,34 @@
+{
+  "base": null,
+  "branch": null,
+  "exit_iteration": null,
+  "exit_reason": null,
+  "iterations": [
+    {
+      "exit_reason": null,
+      "findings": [
+        {
+          "body": null,
+          "file": "src/api.py",
+          "fix_commit": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2:src/api.py:20",
+          "introduced_iteration": 1,
+          "line_end": 22,
+          "line_start": 20,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": null,
+          "title": "fix(scope): address review feedback"
+        }
+      ],
+      "iteration": 1,
+      "review_base_ref": null,
+      "verdict": "needs-attention"
+    }
+  ],
+  "max_iterations": 10
+}

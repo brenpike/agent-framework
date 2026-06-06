@@ -1,0 +1,85 @@
+{
+  "base": null,
+  "branch": null,
+  "exit_iteration": null,
+  "exit_reason": null,
+  "iterations": [
+    {
+      "exit_reason": null,
+      "findings": [
+        {
+          "body": null,
+          "file": null,
+          "fix_commit": null,
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "IC_toplevel001handled",
+          "introduced_iteration": 1,
+          "line_end": null,
+          "line_start": null,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": null,
+          "title": "handled"
+        },
+        {
+          "body": null,
+          "file": null,
+          "fix_commit": null,
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "PRRT_thread001resolved",
+          "introduced_iteration": 1,
+          "line_end": null,
+          "line_start": null,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": true,
+          "title": "handled"
+        },
+        {
+          "body": null,
+          "file": null,
+          "fix_commit": null,
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "PRRT_thread002open",
+          "introduced_iteration": 1,
+          "line_end": null,
+          "line_start": null,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "open",
+          "thread_resolved": null,
+          "title": "actionable"
+        },
+        {
+          "body": null,
+          "file": null,
+          "fix_commit": null,
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "PRR_review001actionable",
+          "introduced_iteration": 1,
+          "line_end": null,
+          "line_start": null,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "open",
+          "thread_resolved": null,
+          "title": "actionable"
+        }
+      ],
+      "iteration": 1,
+      "review_base_ref": null,
+      "verdict": "needs-attention"
+    }
+  ],
+  "max_iterations": 10
+}

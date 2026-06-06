@@ -1,0 +1,51 @@
+{
+  "base": null,
+  "branch": null,
+  "exit_iteration": null,
+  "exit_reason": null,
+  "iterations": [
+    {
+      "exit_reason": null,
+      "findings": [
+        {
+          "body": null,
+          "file": "foo b/bar.txt",
+          "fix_commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:foo b/bar.txt:5",
+          "introduced_iteration": 1,
+          "line_end": 6,
+          "line_start": 5,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": null,
+          "title": "fix(paths): address review feedback"
+        },
+        {
+          "body": null,
+          "file": "new dir/new name.txt",
+          "fix_commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:new dir/new name.txt:1",
+          "introduced_iteration": 1,
+          "line_end": 4,
+          "line_start": 1,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": null,
+          "title": "fix(paths): address review feedback"
+        }
+      ],
+      "iteration": 1,
+      "review_base_ref": null,
+      "verdict": "needs-attention"
+    }
+  ],
+  "max_iterations": 10
+}

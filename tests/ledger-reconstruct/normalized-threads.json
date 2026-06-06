@@ -1,0 +1,43 @@
+[
+  {
+    "id": "PRRT_thread001resolved",
+    "thread_id": "PRRT_thread001resolved",
+    "item_source": "review",
+    "classification": "handled",
+    "thread_resolved": true,
+    "surface": "thread"
+  },
+  {
+    "id": "PRRT_thread002open",
+    "thread_id": "PRRT_thread002open",
+    "item_source": "review",
+    "classification": "actionable",
+    "thread_resolved": false,
+    "surface": "thread"
+  },
+  {
+    "id": "IC_toplevel001handled",
+    "thread_id": null,
+    "item_source": "review",
+    "classification": "handled",
+    "thread_resolved": false,
+    "surface": "toplevel"
+  },
+  {
+    "id": "PRR_review001actionable",
+    "thread_id": null,
+    "item_source": "review",
+    "classification": "actionable",
+    "thread_resolved": false,
+    "surface": "review"
+  },
+  {
+    "id": null,
+    "item_source": "ci-check-failure",
+    "name": "policy-check",
+    "state": "FAILURE",
+    "description": "validate.sh failed",
+    "link": "https://github.com/o/r/runs/42",
+    "workflow": "CI"
+  }
+]

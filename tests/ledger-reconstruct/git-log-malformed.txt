@@ -1,0 +1,4 @@
+this is not a valid git log payload
+no commit headers here
+just garbage text
+@@not-a-real-hunk-header

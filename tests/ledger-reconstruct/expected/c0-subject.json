@@ -1,0 +1,34 @@
+{
+  "base": null,
+  "branch": null,
+  "exit_iteration": null,
+  "exit_reason": null,
+  "iterations": [
+    {
+      "exit_reason": null,
+      "findings": [
+        {
+          "body": null,
+          "file": "src/fix.py",
+          "fix_commit": "dddddddddddddddddddddddddddddddddddddddd",
+          "fix_framing": null,
+          "fixed_iteration": null,
+          "id": "fix:dddddddddddddddddddddddddddddddddddddddd:src/fix.py:1",
+          "introduced_iteration": 1,
+          "line_end": 3,
+          "line_start": 1,
+          "recommendation": null,
+          "root_class": null,
+          "severity": null,
+          "status": "fixed",
+          "thread_resolved": null,
+          "title": "fix(x): address review feedback Fix\b\"bad\\path\""
+        }
+      ],
+      "iteration": 1,
+      "review_base_ref": null,
+      "verdict": "needs-attention"
+    }
+  ],
+  "max_iterations": 10
+}
