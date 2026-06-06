@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.26.2] - 2026-06-05
+
+### Added
+
+- **`plugin/skills/github-review-loop/scripts/loop-state.sh` — deterministic watch-loop bookkeeping extracted from `github-review-loop` SKILL.md (#207, initiative #201).** New thin entrypoint single-sources the loop's own mechanics (cycle-count increment, cycle ceiling, terminal-vs-cycle classification, guard-token→`exit_reason` mapping, same-finding-repeat oscillation guard) and delegates multi-token precedence ordering to the sibling `exit-precedence.sh` rather than re-encoding the ladder. Covered by `tools/test_loop_state.sh` CI suite, registered FAIL-CLOSED in `tools/validate.sh`.
+
+### Changed
+
+- **`github-review-loop` SKILL.md slimmed 302→~125 lines; behavior-preserving (#207).** The skill now describes intent (Monitor wiring, dispatch, reviewer-return semantics, terminal report, safety) while the deterministic arithmetic is delegated to `loop-state.sh` plus the existing `exit-precedence.sh`. Terminal vocabulary tokens unchanged.
+
 ## [2.26.1] - 2026-06-05
 
 ### Added
