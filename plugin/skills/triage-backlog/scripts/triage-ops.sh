@@ -629,6 +629,21 @@ cmd_list_issues() {
               --json number,title,labels,body,id)" \
       || die "list-issues: gh issue list failed" 1
   fi
+  # Shape-validate the produced rows through the SHARED kernel IN ADDITION TO the
+  # cap check (both run; neither replaces the other), in BOTH offline and live
+  # paths, so an error/malformed body is never emitted as the backlog. Root = the
+  # whole response, collection = the rows themselves, per-row field-completeness
+  # (numeric number + nonempty string id/title). Well-formed rows pass through
+  # byte-identically (projection is the identity over the row array).
+  rows="$(validate_response_shape "$rows" \
+    '.' \
+    'true' \
+    '.' \
+    '(.number | type == "number")
+     and (.id | type == "string" and length > 0)
+     and (.title | type == "string" and length > 0)' \
+    '.')" \
+    || die "list-issues: produced rows are not a clean array of well-formed issue rows" 1
   row_count="$(printf '%s' "$rows" | jq 'length')"
   [ "$row_count" -lt "$limit" ] \
     || die "list-issues: returned exactly --limit ($limit) rows — the cap may have truncated the backlog; raise --limit and re-run" 1
@@ -675,8 +690,20 @@ cmd_apply_labels() {
   # call so the live path derives ground truth UNCONDITIONALLY from `gh issue view`.
   reject_fixture_flags_in_live_mode "apply-labels" "--current-labels-file=$current_file"
   require_gh "apply-labels"
-  current_json="$(gh issue view "$issue" --json labels --jq '[.labels[].name]')" \
+  # Route the lock-bearing label read through the SHARED kernel so it is uniformly
+  # fail-closed: a `.errors`/null/non-array/null-element body dies BEFORE the lock
+  # gate, never spoofing an unlocked set. Read the raw labels object (not pre-
+  # projected) so the kernel can validate shape, then project the clean name array.
+  local labels_resp
+  labels_resp="$(gh issue view "$issue" --json labels)" \
     || die "apply-labels: failed to read current labels for issue #$issue" 1
+  current_json="$(validate_response_shape "$labels_resp" \
+    '.' \
+    'true' \
+    '.labels' \
+    '(.name | type == "string" and length > 0)' \
+    '[ .labels[].name ]')" \
+    || die "apply-labels: cannot verify lock state for issue #$issue (unreadable/malformed label response)" 1
   # Honor the human-only lock via the SHARED gate (single decision point; mirrors
   # reject_fixture_flags_in_live_mode). A locked issue emits the byte-identical
   # skipped-locked record (return 10) and mutates NOTHING — caller exits 0.
@@ -734,7 +761,7 @@ cmd_deps_read() {
 }
 
 cmd_deps_add() {
-  local issue_id="" blocked_by_id="" response_file="" issue_labels_file=""
+  local issue_id="" blocked_by_id="" response_file="" issue_labels_file="" issue_labels_response=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --issue-id) [ "$#" -ge 2 ] || die "missing value for --issue-id" 2
@@ -745,6 +772,14 @@ cmd_deps_add() {
                response_file="$2"; shift 2 ;;
       --issue-labels-file) [ "$#" -ge 2 ] || die "missing value for --issue-labels-file" 2
                issue_labels_file="$2"; shift 2 ;;
+      # NEW SEAM (STEP-N004 drives the security-critical lock-read fail-closed path
+      # offline): inject the RAW node(id:) labels GraphQL response — exactly what
+      # the live path feeds to validate_response_shape — so the kernel guard
+      # (.errors/null-node/non-array/null-element => fail closed) is offline-
+      # exercisable. Distinct from --issue-labels-file, which injects a PRE-
+      # PROJECTED label array and thus bypasses the raw-response kernel guard.
+      --issue-labels-response) [ "$#" -ge 2 ] || die "missing value for --issue-labels-response" 2
+               issue_labels_response="$2"; shift 2 ;;
       *) die "deps-add: unexpected argument '$1'" 2 ;;
     esac
   done
@@ -758,6 +793,27 @@ cmd_deps_add() {
     fi
     [ -n "$issue_id" ] && [ -n "$blocked_by_id" ] \
       || die "offline deps-add requires --issue-id and --blocked-by-id (or --response-file)" 2
+    # Offline RAW-response lock seam: drive the SECURITY-CRITICAL live lock-read
+    # path — the SHARED kernel guard + the lock gate — over an injected RAW
+    # node(id:) labels response (mirrors the live deps-add lock read exactly). A
+    # malformed/error body FAILS CLOSED before any gate; a clean body projects to
+    # the label array and feeds assert_unlocked_live (locked => skipped-locked, no
+    # payload; unlocked => payload). Distinct from --issue-labels-file below, which
+    # injects the already-projected array and bypasses the raw-response guard.
+    if [ -n "$issue_labels_response" ]; then
+      local raw_labels_resp injected_labels_json
+      raw_labels_resp="$(read_injected "$issue_labels_response")"
+      injected_labels_json="$(validate_response_shape "$raw_labels_resp" \
+        '.data.node' \
+        'true' \
+        '.labels.nodes' \
+        '(.name | type == "string" and length > 0)' \
+        '[ .data.node.labels.nodes[].name ]')" \
+        || die "deps-add: cannot verify lock state for issue id '$issue_id' (unreadable/malformed label response)" 1
+      assert_unlocked_live "deps-add" "$injected_labels_json" "$issue_id" || return 0
+      build_deps_add_payload "$issue_id" "$blocked_by_id"
+      return 0
+    fi
     # Offline lock seam: drive the SHARED gate over injected labels. A locked set
     # emits the byte-identical skipped-locked record and short-circuits with NO
     # payload (mirrors the live skip); an unlocked set proceeds to payload build.
@@ -773,7 +829,8 @@ cmd_deps_add() {
   fi
 
   reject_fixture_flags_in_live_mode "deps-add" \
-    "--response-file=$response_file" "--issue-labels-file=$issue_labels_file"
+    "--response-file=$response_file" "--issue-labels-file=$issue_labels_file" \
+    "--issue-labels-response=$issue_labels_response"
   [ -n "$issue_id" ] && [ -n "$blocked_by_id" ] \
     || die "deps-add requires --issue-id and --blocked-by-id" 2
   require_gh "deps-add"
@@ -781,16 +838,21 @@ cmd_deps_add() {
   # addBlockedBy write, via the SAME shared gate apply-labels uses. Resolve
   # ground-truth labels by node id ($id passed via -f, never interpolated). Only
   # the issue GAINING the dependency is gated — a locked BLOCKER does not block the
-  # edge. FAIL CLOSED on an unreadable/malformed label set: never mutate on an
-  # unverifiable lock state (mirrors normalize_deps_read's fail-closed posture).
+  # edge. SECURITY-CRITICAL: route the raw label response through the SHARED kernel
+  # validate_response_shape so a `.errors`/null-node/non-array/null-element body
+  # FAILS CLOSED (nonzero) BEFORE assert_unlocked_live and BEFORE the mutation —
+  # NEVER mutate on an unverifiable lock state. The kernel projects the node's
+  # labels into a clean string array; that array feeds the lock gate.
   local labels_resp current_json
   labels_resp="$(gh api graphql -f query="$DEPS_ISSUE_LABELS_QUERY" \
-                   -f id="$issue_id" 2>/dev/null)" \
-    || die "deps-add: failed to read labels for issue id '$issue_id' (cannot verify lock state)" 1
-  current_json="$(printf '%s' "$labels_resp" | jq -c '[.data.node.labels.nodes[].name]' 2>/dev/null)" \
-    || die "deps-add: malformed label response for issue id '$issue_id' (cannot verify lock state)" 1
-  printf '%s' "$current_json" | jq -e 'type == "array"' >/dev/null 2>&1 \
-    || die "deps-add: label response did not yield a label array for issue id '$issue_id' (cannot verify lock state)" 1
+                   -f id="$issue_id" 2>/dev/null)" || true
+  current_json="$(validate_response_shape "$labels_resp" \
+    '.data.node' \
+    'true' \
+    '.labels.nodes' \
+    '(.name | type == "string" and length > 0)' \
+    '[ .data.node.labels.nodes[].name ]')" \
+    || die "deps-add: cannot verify lock state for issue id '$issue_id' (unreadable/malformed label response)" 1
   assert_unlocked_live "deps-add" "$current_json" "$issue_id" || return 0
 
   # Capture stdout regardless of gh's exit status: a GraphQL cycle rejection
