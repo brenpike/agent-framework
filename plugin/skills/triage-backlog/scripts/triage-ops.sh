@@ -520,8 +520,13 @@ validate_response_shape() {
 # state. Fail-closed on: empty/non-JSON transport errors, any non-empty
 # `.errors` (auth, rate-limit, 4xx, schema), a missing/null `.data.repository.issue`
 # (issue absent or 200-with-error body), a missing/non-array
-# `blockedBy.nodes`, and any null/wrong-typed identifier FIELD on the issue
-# or a blocker node (null issue id/number, or a blocker missing its number/id/title).
+# `blockedBy.nodes`, any null/wrong-typed identifier FIELD on the issue
+# or a blocker node (null issue id/number, or a blocker missing its number/id/title),
+# and a CONTINUED blockedBy connection (`pageInfo.hasNextPage == true`): the query
+# requests only the first 50 blockers, so an issue with more than one page would
+# normalize as if the unfetched blockers do not exist, letting a re-triage table
+# propose bogus dependency removals or re-add an already-existing edge outside the
+# first page. That partial read is failed closed rather than emitted.
 # A 200 body satisfying the outer shape but carrying null identifiers would
 # normalize into dependency records that cannot be safely matched for later
 # deps-add/removal, so the field-completeness gate fails it closed too. Only a
@@ -541,7 +546,8 @@ normalize_deps_read() {
   validate_response_shape "$resp" \
     '.data.repository.issue' \
     '(.number | type == "number")
-     and (.id | type == "string" and length > 0)' \
+     and (.id | type == "string" and length > 0)
+     and ((.blockedBy.pageInfo.hasNextPage // false) == false)' \
     '.blockedBy.nodes' \
     '(.number | type == "number")
      and (.id | type == "string" and length > 0)
@@ -565,6 +571,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
       id
       number
       blockedBy(first: 50) {
+        pageInfo { hasNextPage }
         nodes { id number title }
       }
     }

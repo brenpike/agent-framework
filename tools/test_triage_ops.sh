@@ -321,6 +321,13 @@ run_exit1_case "deps-read:null-issue-exit1" -- \
 # record that cannot be matched for later deps-add/removal.
 run_exit1_case "deps-read:null-fields-exit1" -- \
   deps-read 5 --response-file "$TB_DIR/deps-read-null-fields-response.json"
+# Pagination fail-close: the query requests only the first 50 blockers, so a
+# response whose blockedBy connection reports `pageInfo.hasNextPage == true` has
+# unfetched blockers. Emitting it would normalize as if those blockers do not
+# exist (driving bogus re-triage removals / re-adds), so a continued page MUST
+# fail closed rather than surface a partial blocker set.
+run_exit1_case "deps-read:paginated-exit1" -- \
+  deps-read 5 --response-file "$TB_DIR/deps-read-paginated-response.json"
 
 # list-issues offline re-emits the injected response verbatim (identity pass-through).
 run_case "list-issues:identity" "$EXPECTED_DIR/list-issues-identity.json" -- \
