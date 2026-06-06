@@ -154,18 +154,14 @@ Initiative grouping (migration to native parent/sub-issues) is tracked separatel
 
 ## Flow
 
-### 1. Preflight
+### 1. Preflight (NON-MUTATING ONLY)
 
 Confirm `gh` is present and authenticated. If not, this is a HARD BLOCKER — report it and
-perform NO mutation whatsoever. Then ensure the label families and `triage:locked` exist
-(idempotent, fixed palette):
-
-```
-${CLAUDE_PLUGIN_ROOT}/skills/triage-backlog/scripts/triage-ops.sh ensure-labels
-```
-
-`ensure-labels` is create-or-update only (`--force`); it self-heals drifted colors and NEVER
-deletes any label, so foreign labels and any `triage:locked` content are untouched.
+perform NO mutation whatsoever. Preflight is READ-ONLY: it makes NO repository changes. In
+particular, do NOT run `ensure-labels` here — it calls `gh label create --force` (creates or
+recolors labels), a real repository mutation, and the skill's contract is mutate-NOTHING before
+the confirm gate (a user who only inspects or later cancels must leave zero repo changes behind).
+Palette creation is deferred to step 6, applied only after the user confirms.
 
 ### 2. Fetch the backlog
 
@@ -215,7 +211,17 @@ The DEFAULT is dry-run: if the user does not explicitly confirm, apply NOTHING.
 
 ### 6. Apply (on confirm only)
 
-For each unlocked, non-excluded issue, apply the label delta with per-family mutual exclusion:
+FIRST, now that the user has confirmed, ensure the label families and `triage:locked` exist
+(idempotent, fixed palette) — this is the FIRST repository mutation and happens ONLY post-confirm:
+
+```
+${CLAUDE_PLUGIN_ROOT}/skills/triage-backlog/scripts/triage-ops.sh ensure-labels
+```
+
+`ensure-labels` is create-or-update only (`--force`); it self-heals drifted colors and NEVER
+deletes any label, so foreign labels and any `triage:locked` content are untouched.
+
+Then, for each unlocked, non-excluded issue, apply the label delta with per-family mutual exclusion:
 
 ```
 ${CLAUDE_PLUGIN_ROOT}/skills/triage-backlog/scripts/triage-ops.sh apply-labels <issue-number> --targets '<family-to-value-json>'
