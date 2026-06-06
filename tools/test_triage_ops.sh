@@ -326,6 +326,80 @@ run_exit1_case "deps-read:null-fields-exit1" -- \
 run_case "list-issues:identity" "$EXPECTED_DIR/list-issues-identity.json" -- \
   list-issues --response-file "$TB_DIR/list-issues-response.json"
 
+# ── list-issues: cap-hit fail-closed ──────────────────────────────────────────────
+# STEP-L001: the cap check runs uniformly in BOTH offline and live paths. When the
+# injected fixture has EXACTLY --limit rows the subcommand MUST fail closed (nonzero)
+# — the cap may have silently truncated the backlog.
+# list-issues-response.json has 2 rows; --limit 2 triggers the cap check.
+LIST_RESPONSE_TMP="$TMPDIR_TEST/list-response-tmp.json"
+cp "$TB_DIR/list-issues-response.json" "$LIST_RESPONSE_TMP"
+
+LIST_STATUS=0
+TRIAGE_OPS_OFFLINE=1 bash "$OPS" list-issues \
+  --limit 2 --response-file "$LIST_RESPONSE_TMP" >/dev/null 2>&1 || LIST_STATUS=$?
+if [ "$LIST_STATUS" -ne 0 ]; then
+  pass "list-issues:cap-hit-fail-closed" "exit=$LIST_STATUS (2 rows, --limit 2 triggers cap)"
+else
+  failed "list-issues:cap-hit-fail-closed" "expected nonzero exit when row_count == limit, got 0"
+fi
+
+# ── list-issues: under-cap passthrough ────────────────────────────────────────────
+# Fewer rows than --limit: row_count (2) -lt limit (3) → exit 0 passthrough.
+LIST_STATUS=0
+TRIAGE_OPS_OFFLINE=1 bash "$OPS" list-issues \
+  --limit 3 --response-file "$LIST_RESPONSE_TMP" >/dev/null 2>&1 || LIST_STATUS=$?
+if [ "$LIST_STATUS" -eq 0 ]; then
+  pass "list-issues:under-cap-ok" "exit=0 (2 rows, --limit 3 is under cap)"
+else
+  failed "list-issues:under-cap-ok" "expected exit 0 when row_count < limit, got $LIST_STATUS"
+fi
+
+# ── deps-add: offline locked labels → skipped-locked record, exit 0, no payload ──
+# STEP-L001 lock gate: --issue-labels-file with triage:locked present → emits
+# {"id":<issue_id>,"status":"skipped-locked"}, exit 0, and NO {issueId,...} payload.
+LOCKED_FILE="$TMPDIR_TEST/labels-locked.json"
+cp "$TB_DIR/labels-locked.json" "$LOCKED_FILE"
+
+run_case "deps-add:offline-locked-skipped" "$EXPECTED_DIR/deps-add-skipped-locked.json" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb --issue-labels-file "$LOCKED_FILE"
+
+# Lock exit-0 invariant: a locked issue emits the record AND exits 0 (same as apply-labels
+# skipped-locked — the batch must keep going, the skip is not an error).
+run_exit0_case "deps-add:offline-locked-exit0" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb --issue-labels-file "$LOCKED_FILE"
+
+# No payload emitted when locked: stdout must NOT contain the {issueId,...} payload line.
+LOCKED_OUT="$(TRIAGE_OPS_OFFLINE=1 bash "$OPS" deps-add \
+  --issue-id I_aaa --blocked-by-id I_bbb --issue-labels-file "$LOCKED_FILE" 2>/dev/null)"
+if printf '%s' "$LOCKED_OUT" | jq -e 'has("issueId") | not' >/dev/null 2>&1; then
+  pass "deps-add:offline-locked-no-payload" "no {issueId} payload emitted when locked"
+else
+  failed "deps-add:offline-locked-no-payload" "locked path emitted a payload (stdout: $LOCKED_OUT)"
+fi
+
+# ── deps-add: offline unlocked labels → payload emitted ───────────────────────────
+# STEP-L001: gate only fires on locked sets. An unlocked --issue-labels-file must
+# let the flow reach build_deps_add_payload and emit the {issueId,blockedByIssueId} line.
+UNLOCKED_FILE="$TMPDIR_TEST/labels-unlocked.json"
+cp "$TB_DIR/labels-unlocked.json" "$UNLOCKED_FILE"
+
+run_case "deps-add:offline-unlocked-proceeds" "$EXPECTED_DIR/deps-add-payload.json" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb --issue-labels-file "$UNLOCKED_FILE"
+
+# ── deps-add: live path rejects --issue-labels-file (security regression) ─────────
+# STEP-L001: in the LIVE path, --issue-labels-file is a test seam and MUST be rejected
+# fail-closed (exit 2) BEFORE any gh call — it could spoof the label set and bypass
+# triage:locked on the addBlockedBy mutation path.
+LIVE_STATUS=0
+bash "$OPS" deps-add \
+  --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-file "$TB_DIR/labels-locked.json" >/dev/null 2>&1 || LIVE_STATUS=$?
+if [ "$LIVE_STATUS" -ne 0 ]; then
+  pass "deps-add:live-issue-labels-file-rejected" "exit=$LIVE_STATUS (expected nonzero)"
+else
+  failed "deps-add:live-issue-labels-file-rejected" "expected nonzero exit, got 0 (live path must reject --issue-labels-file)"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────────
 echo
 echo "triage-ops: $PASS_COUNT passed, $FAIL_COUNT failed"
