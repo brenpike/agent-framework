@@ -61,12 +61,17 @@ functional pipe.
 `PREFILTER_SKIP` → keep Monitor armed, no dispatch, no cycle/`Routed` increment.
 `PREFILTER_DISPATCH` or `PREFILTER_ERROR=<reason>` → dispatch reviewer fix mode
 (no `target`); `PREFILTER_ERROR` is fail-open. Handle return per Reviewer-return
-handling. `CODEX_APPROVED` → confirmation pass (no `target`); terminal `clean`
-ONLY if reviewer finds nothing actionable; use only the latest poll's approval —
-a stale prior 👍 must never short-circuit later pushback. `STATE=MERGED` →
-`pr-merged`. `STATE=CLOSED` → `pr-closed`. `WATCH_TIMEOUT` →
-`max-cycles-reached`. `POLL_ERROR` → stop Monitor; `blocked`. For the last four,
-use `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/loop-state.sh token-map <signal>`.
+handling. `CODEX_APPROVED` → confirmation pass (no `target`); use only the latest
+poll's approval — a stale prior 👍 must never short-circuit later pushback. If the
+reviewer finds nothing actionable, this is terminal `clean`: map it via
+`loop-state.sh cycle-decision <current_count> <max_cycles> 0 approval-clean`
+(the `approval-clean` token emits `EXIT_REASON=clean`, distinguishing the approval
+terminal from a plain keep-watching `clean`). If actionable items remain, the
+reviewer processes them and returns a normal fix-mode exit_reason handled per
+Reviewer-return handling. `STATE=MERGED` → `pr-merged`. `STATE=CLOSED` →
+`pr-closed`. `WATCH_TIMEOUT` → `max-cycles-reached`. `POLL_ERROR` → stop Monitor;
+`blocked`. For the last four, use
+`${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/loop-state.sh token-map <signal>`.
 
 **5. Reviewer-return handling.** `clean` → keep watching. `planner-escalation` |
 `blocked` | `injection-suspect` | `high-severity-rejection` | `user-input-required`
@@ -75,8 +80,13 @@ fields. `root-cluster-suspected` → HARD-STOP; ONE terminal with reviewer's clu
 payload; overlord routes to cerebrate zoom-out (classification-free — loop
 propagates only). `merge-advised` → HARD-STOP; ONE `merge-advised` terminal with
 `advisory_reason` + `recommendation_text`; ADVISORY ONLY — loop NEVER merges
-(classification-free). Use `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/loop-state.sh cycle-decision`
-for cycle increments, ceiling, `same-finding-repeat`, and terminal-vs-cycle. When
+(classification-free). Pass EVERY reviewer return (including the escalation
+terminals above) through
+`${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/loop-state.sh cycle-decision <current_count> <max_cycles> <findings_resolved> <exit_reason>`
+for cycle increments, ceiling, `same-finding-repeat`, and terminal-vs-cycle: it
+counts a completed remediation round (`findings_resolved ≥ 1`) even on an
+escalation hard-stop — a mixed fix+escalate pass IS a cycle — while keeping
+`root-cluster-suspected` and `merge-advised` no-increment. When
 multiple tokens fire, delegate to `loop-state.sh resolve-precedence` (→
 `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/exit-precedence.sh`).
 When any guard fires, stop Monitor and emit ONE terminal report.

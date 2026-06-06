@@ -30,7 +30,9 @@
 #     max_cycles           positive integer — max_remediation_cycles ceiling.
 #     findings_resolved    non-negative integer — findings the reviewer resolved THIS return.
 #     reviewer_exit_reason one reviewer fix-mode exit_reason token (see token set below),
-#                          or the literal `same-finding-repeat` for the oscillation guard.
+#                          the literal `same-finding-repeat` for the oscillation guard,
+#                          or the literal `approval-clean` for the CODEX_APPROVED
+#                          confirmation pass where the reviewer found nothing actionable.
 #
 #   loop-state.sh token-map <signal>
 #     signal one deterministic loop-input signal the loop itself observes:
@@ -63,18 +65,36 @@
 #
 # 4. ENCODED DECISIONS (SKILL.md sections 4/5/6 + Termination guard set)
 # ---------------------------------------------------------------------
-#   (a) cycle-increment: increment IFF findings_resolved >= 1 (section 6).
+#   (a) cycle-increment: increment IFF findings_resolved >= 1 (section 6). This
+#       is UNCONDITIONAL on the exit_reason — a real remediation round
+#       (findings_resolved >= 1) is counted whether the reviewer then kept the
+#       loop going (`clean`) OR hard-stopped on an escalation terminal. A mixed
+#       fix+escalate pass (e.g. simple items fixed, then `planner-escalation`)
+#       is a completed round and MUST be counted, or `Cycles` under-reports and
+#       the loop's cost accounting is lost.
 #   (b) cycle-ceiling: when the resulting count reaches max_cycles, emit
-#       `max-cycles-reached` (section 6).
+#       `max-cycles-reached` (section 6). On an escalation terminal the terminal
+#       exit_reason itself still wins — the increment is for accounting only and
+#       does NOT convert the terminal into `max-cycles-reached`.
 #   (c) terminal-vs-cycle: `root-cluster-suspected` and `merge-advised` are
-#       TERMINALS, never cycle increments — do NOT increment on them (section 5).
-#       The other reviewer escalation terminals (planner-escalation, blocked,
-#       injection-suspect, high-severity-rejection, user-input-required) likewise
-#       hard-stop without incrementing.
+#       TERMINALS that are NOT remediation cycles — never increment on them
+#       (section 5), even when findings_resolved >= 1. The OTHER reviewer
+#       escalation terminals (planner-escalation, blocked, injection-suspect,
+#       high-severity-rejection, user-input-required) hard-stop too, but DO
+#       increment when findings_resolved >= 1 per (a): they can carry a completed
+#       remediation round (the reviewer fixed simple items, then escalated the
+#       complex remainder).
 #   (d) same-finding-repeat: oscillation guard maps to `max-cycles-reached`
 #       (Termination guard set), no increment.
 #   (e) `clean`: the keep-watching case — increment per (a)/(b), emit `none`
 #       unless the ceiling is hit.
+#   (f) `approval-clean`: the CODEX_APPROVED confirmation pass found nothing
+#       actionable — TERMINAL `clean` (SKILL.md section 4 CODEX_APPROVED path).
+#       Distinct from `clean`: a plain `clean` keeps watching, but an approved PR
+#       with nothing actionable remaining is a successful terminal and must emit
+#       `EXIT_REASON=clean` rather than keep watching to timeout. No increment
+#       (a confirmation pass that finds nothing is not a remediation round,
+#       section 6).
 #
 # 5. PRECEDENCE DELEGATION
 # ------------------------
@@ -113,13 +133,27 @@ require_uint() {
   esac
 }
 
-# Reviewer fix-mode exit_reason tokens that HARD-STOP without a cycle increment.
-# root-cluster-suspected and merge-advised are propagated reviewer terminals;
-# the rest are reviewer escalations. (SKILL.md section 5 + Termination guard set.)
+# Reviewer fix-mode TERMINAL tokens that hard-stop the loop. Split by cycle-count
+# semantics (encoded decision 4c):
+#
+#   is_terminal_no_increment — root-cluster-suspected and merge-advised are
+#   propagated reviewer terminals that are NOT remediation cycles; never count
+#   them, even when findings_resolved >= 1.
+#
+#   is_terminal_increment_on_resolved — the reviewer escalations hard-stop too,
+#   but can carry a completed remediation round (simple items fixed, complex
+#   remainder escalated), so they DO increment when findings_resolved >= 1.
 is_terminal_no_increment() {
   case "$1" in
-    planner-escalation|blocked|injection-suspect|high-severity-rejection|\
-user-input-required|root-cluster-suspected|merge-advised) return 0 ;;
+    root-cluster-suspected|merge-advised) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_terminal_increment_on_resolved() {
+  case "$1" in
+    planner-escalation|blocked|injection-suspect|\
+high-severity-rejection|user-input-required) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -140,9 +174,35 @@ cmd_cycle_decision() {
     return 0
   fi
 
-  # Terminal reviewer returns hard-stop WITHOUT incrementing the cycle count.
+  # approval-clean: CODEX_APPROVED confirmation pass found nothing actionable →
+  # TERMINAL `clean` (decision 4f). No increment — a confirmation pass that finds
+  # nothing is not a remediation round. Distinct from plain `clean`, which keeps
+  # watching; this is the successful approval terminal an approved PR must emit
+  # rather than keep watching until timeout.
+  if [ "$reviewer_exit_reason" = "approval-clean" ]; then
+    printf 'NEXT_COUNT=%s\n' "$current_count"
+    printf 'EXIT_REASON=clean\n'
+    return 0
+  fi
+
+  # root-cluster-suspected / merge-advised: TERMINALS that are NOT remediation
+  # cycles — hard-stop WITHOUT incrementing, even when findings_resolved >= 1.
   if is_terminal_no_increment "$reviewer_exit_reason"; then
     printf 'NEXT_COUNT=%s\n' "$current_count"
+    printf 'EXIT_REASON=%s\n' "$reviewer_exit_reason"
+    return 0
+  fi
+
+  # Reviewer escalation terminals hard-stop, but DO count a completed remediation
+  # round: increment IFF findings_resolved >= 1 (decision 4a/4c). The terminal
+  # exit_reason still wins — the increment is accounting only and does NOT convert
+  # the terminal into max-cycles-reached.
+  if is_terminal_increment_on_resolved "$reviewer_exit_reason"; then
+    local esc_count="$current_count"
+    if [ "$findings_resolved" -ge 1 ]; then
+      esc_count=$((current_count + 1))
+    fi
+    printf 'NEXT_COUNT=%s\n' "$esc_count"
     printf 'EXIT_REASON=%s\n' "$reviewer_exit_reason"
     return 0
   fi

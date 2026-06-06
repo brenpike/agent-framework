@@ -146,43 +146,73 @@ assert_stdout "ceiling:no-increment-stays-below" \
   cycle-decision 2 3 0 clean
 
 # ============================================================================
-# SECTION 3: cycle-decision — terminal reviewer tokens: NO increment, count held
+# SECTION 3: cycle-decision — terminal reviewer tokens
+#
+# Two terminal classes (loop-state.sh encoded decision 4c):
+#   - root-cluster-suspected / merge-advised: NOT remediation cycles — NEVER
+#     increment, even with findings_resolved >= 1.
+#   - escalation terminals (planner-escalation / blocked / injection-suspect /
+#     high-severity-rejection / user-input-required): hard-stop but DO count a
+#     completed remediation round — increment IFF findings_resolved >= 1. The
+#     terminal exit_reason still wins (NOT converted to max-cycles-reached).
 # ============================================================================
+
+# --- no-increment terminals (root-cluster / merge-advised) ------------------
 
 # root-cluster-suspected: terminal, NEXT_COUNT unchanged, even with resolved>=1.
 assert_stdout "terminal:root-cluster-suspected" \
   "$(printf 'NEXT_COUNT=1\nEXIT_REASON=root-cluster-suspected')" \
   cycle-decision 1 5 3 root-cluster-suspected
 
-# merge-advised: terminal, NEXT_COUNT unchanged.
+# merge-advised: terminal, NEXT_COUNT unchanged, even with resolved>=1.
 assert_stdout "terminal:merge-advised" \
   "$(printf 'NEXT_COUNT=2\nEXIT_REASON=merge-advised')" \
   cycle-decision 2 5 4 merge-advised
 
-# planner-escalation: terminal, no increment.
-assert_stdout "terminal:planner-escalation" \
-  "$(printf 'NEXT_COUNT=0\nEXIT_REASON=planner-escalation')" \
+# --- escalation terminals: increment WHEN findings_resolved >= 1 ------------
+
+# planner-escalation with resolved>=1: mixed fix+escalate pass IS a cycle → +1.
+assert_stdout "terminal:planner-escalation-resolved-increments" \
+  "$(printf 'NEXT_COUNT=1\nEXIT_REASON=planner-escalation')" \
   cycle-decision 0 5 1 planner-escalation
 
-# blocked: terminal, no increment.
-assert_stdout "terminal:blocked" \
-  "$(printf 'NEXT_COUNT=1\nEXIT_REASON=blocked')" \
+# blocked with resolved>=1: increments.
+assert_stdout "terminal:blocked-resolved-increments" \
+  "$(printf 'NEXT_COUNT=2\nEXIT_REASON=blocked')" \
   cycle-decision 1 5 2 blocked
 
-# injection-suspect: terminal, no increment.
-assert_stdout "terminal:injection-suspect" \
-  "$(printf 'NEXT_COUNT=3\nEXIT_REASON=injection-suspect')" \
+# injection-suspect with resolved>=1: increments.
+assert_stdout "terminal:injection-suspect-resolved-increments" \
+  "$(printf 'NEXT_COUNT=4\nEXIT_REASON=injection-suspect')" \
   cycle-decision 3 5 1 injection-suspect
 
-# high-severity-rejection: terminal, no increment.
-assert_stdout "terminal:high-severity-rejection" \
-  "$(printf 'NEXT_COUNT=0\nEXIT_REASON=high-severity-rejection')" \
+# high-severity-rejection with resolved>=1: increments.
+assert_stdout "terminal:high-severity-rejection-resolved-increments" \
+  "$(printf 'NEXT_COUNT=1\nEXIT_REASON=high-severity-rejection')" \
   cycle-decision 0 5 9 high-severity-rejection
 
-# user-input-required: terminal, no increment.
-assert_stdout "terminal:user-input-required" \
-  "$(printf 'NEXT_COUNT=2\nEXIT_REASON=user-input-required')" \
+# user-input-required with resolved>=1: increments.
+assert_stdout "terminal:user-input-required-resolved-increments" \
+  "$(printf 'NEXT_COUNT=3\nEXIT_REASON=user-input-required')" \
   cycle-decision 2 5 1 user-input-required
+
+# --- escalation terminals: NO increment when findings_resolved == 0 --------
+
+# planner-escalation with resolved==0: pure escalation, no completed round → held.
+assert_stdout "terminal:planner-escalation-zero-resolved-held" \
+  "$(printf 'NEXT_COUNT=0\nEXIT_REASON=planner-escalation')" \
+  cycle-decision 0 5 0 planner-escalation
+
+# blocked with resolved==0: held.
+assert_stdout "terminal:blocked-zero-resolved-held" \
+  "$(printf 'NEXT_COUNT=1\nEXIT_REASON=blocked')" \
+  cycle-decision 1 5 0 blocked
+
+# Escalation terminal increment does NOT convert to max-cycles-reached even when
+# it reaches the ceiling — the escalation exit_reason wins.
+assert_stdout "terminal:escalation-increment-at-ceiling-keeps-reason" \
+  "$(printf 'NEXT_COUNT=3\nEXIT_REASON=planner-escalation')" \
+  cycle-decision 2 3 1 planner-escalation
 
 # ============================================================================
 # SECTION 4: cycle-decision — same-finding-repeat → max-cycles-reached, no incr
@@ -196,6 +226,32 @@ assert_stdout "oscillation:same-finding-repeat" \
 assert_stdout "oscillation:same-finding-repeat-zero" \
   "$(printf 'NEXT_COUNT=0\nEXIT_REASON=max-cycles-reached')" \
   cycle-decision 0 5 0 same-finding-repeat
+
+# ============================================================================
+# SECTION 4b: cycle-decision — approval-clean → TERMINAL clean, no increment
+#
+# The CODEX_APPROVED confirmation pass found nothing actionable. Unlike a plain
+# `clean` (keep watching → EXIT_REASON=none), approval-clean is the successful
+# approval terminal and MUST emit EXIT_REASON=clean. No increment (a confirmation
+# pass that finds nothing is not a remediation round).
+# ============================================================================
+
+# approval-clean mid-loop: TERMINAL clean, count held, regardless of headroom.
+assert_stdout "approval-clean:terminal-clean" \
+  "$(printf 'NEXT_COUNT=2\nEXIT_REASON=clean')" \
+  cycle-decision 2 5 0 approval-clean
+
+# approval-clean at count 0: still terminal clean, count held.
+assert_stdout "approval-clean:terminal-clean-zero" \
+  "$(printf 'NEXT_COUNT=0\nEXIT_REASON=clean')" \
+  cycle-decision 0 3 0 approval-clean
+
+# Contrast: plain `clean` with resolved==0 keeps watching (EXIT_REASON=none),
+# proving approval-clean is a DISTINCT terminal mapping (already asserted in
+# SECTION 1 cycle:no-increment-on-zero-resolved; restated for adjacency).
+assert_stdout "approval-clean:plain-clean-keeps-watching" \
+  "$(printf 'NEXT_COUNT=0\nEXIT_REASON=none')" \
+  cycle-decision 0 5 0 clean
 
 # ============================================================================
 # SECTION 5: token-map — each loop signal → its exit_reason
