@@ -61,6 +61,17 @@
 # (NEW-file range: start=c, count=d, d defaulting to 1, d==0 -> end=start) — the
 # diff line's path text is IGNORED. This yields one fix surface per (commit,file,hunk).
 #
+# PRIOR-FIX QUALIFICATION: NOT every commit in <base>..HEAD is a prior fix. Only a
+# REMEDIATION commit becomes a git-log fix-surface finding. A positive allowlist in
+# the tokenizer (closed-by-construction) admits a commit ONLY when its subject
+# matches the anchored conventional remediation type `^(fix|hotfix)(\(...\))?!?: `
+# (case-sensitive) OR contains the literal phrase `address review feedback`. The
+# discriminator is the reviewer-emitted subject: github-reviewer step 7 commits
+# `fix(<scope>): address review feedback`; local-reviewer molt remediation
+# checkpoints carry the same shape. Ordinary feat/test/refactor commits on a
+# multi-commit feature branch are EXCLUDED, so a non-remediation commit can never
+# become a false cycling/oscillation or cluster signal by construction.
+#
 # 3. OUTPUT SCHEMA — a single fix-ledger-shaped JSON object on stdout
 # ------------------------------------------------------------------
 # Conforms to ${CLAUDE_PLUGIN_ROOT}/references/fix-ledger-schema.md (the
@@ -100,10 +111,15 @@
 #   }
 #
 # Two finding families populate findings[]:
-#   (a) git-log fix surfaces (one per commit/file/hunk): file/line_start/line_end/
-#       fix_commit/status from git; the matched-prior-surface OSCILLATION rule
-#       (see §4) assigns status `cycling` to a surface that re-appears across >=2
-#       commits, else `fixed`. fix_framing null.
+#   (a) git-log fix surfaces (one per commit/file/hunk) — ONLY for REMEDIATION
+#       commits that pass the prior-fix qualification gate (subject matches
+#       `^(fix|hotfix)(\(...\))?!?: ` case-sensitive, OR contains `address review
+#       feedback`; the reviewer-emitted remediation subject is the discriminator).
+#       Non-remediation commits (feat/test/refactor) contribute ZERO findings, so a
+#       multi-commit feature branch cannot synthesize false fix surfaces. For a
+#       qualifying commit: file/line_start/line_end/fix_commit/status from git; the
+#       matched-prior-surface OSCILLATION rule (see §4) assigns status `cycling` to
+#       a surface that re-appears across >=2 commits, else `fixed`. fix_framing null.
 #   (b) thread/finding records folded from --normalized-file: id from the node id,
 #       title from `classification`, thread_resolved from `thread_resolved`,
 #       status derived PER SURFACE: thread surface from `thread_resolved`
@@ -147,7 +163,14 @@
 #     marked `cycling` (the prior fix was re-touched -> status oscillation
 #     fixed->cycling), so detect-remediation-signals' break-fix signal
 #     (status-oscillation) is observable purely from the emitted structure. A
-#     surface touched in exactly one commit is `fixed`.
+#     surface touched in exactly one commit is `fixed`. NOTE: the oscillation rule
+#     ranges ONLY over QUALIFYING remediation commits (per the prior-fix
+#     qualification gate, §2). Two genuine remediation commits sharing a surface
+#     still correctly `cycling` (real mutation decay among ACTUAL fixes stays
+#     observable); a remediation commit and an ordinary feature commit touching the
+#     same surface do NOT cycle, because the feature commit was never admitted as a
+#     fix surface in the first place. False oscillation from ordinary feature churn
+#     is closed by construction.
 #   - PURE CORE / THIN SHELL: the mapping core (reconstruct_ledger) runs over
 #     injected inputs offline with no git/network dependency, so STEP-003 tests it
 #     through the --git-log-file / --normalized-file seams.
@@ -305,6 +328,22 @@ git_log_to_findings() {
       sha = (hn >= 1 ? hf[1] : "")
       subject = (hn >= 2 ? hf[2] : "")
       if (sha == "") next
+
+      # PRIOR-FIX QUALIFICATION GATE (positive allowlist, closed-by-construction).
+      # Only a REMEDIATION commit may become a git-log prior-fix finding. The
+      # reviewers emit deterministic remediation subjects (github-reviewer step 7:
+      # "fix(<scope>): address review feedback"; local-reviewer molt remediation
+      # checkpoints), so this allowlist keys on EXACTLY those: an ordinary
+      # feat/test/refactor commit on a multi-commit feature branch can NEVER become
+      # a cycling/oscillation or cluster signal by construction. Evaluated on the
+      # parsed subject; non-qualifying commits emit zero findings.
+      #   - anchored conventional remediation type (case-sensitive: git/reviewer
+      #     subjects are lowercase-typed) ^(fix|hotfix)(\(scope\))?!?:<space>, OR
+      #   - the literal phrase "address review feedback" (fixed-substring index()
+      #     test — NO regex metachar handling).
+      is_remediation = (subject ~ /^(fix|hotfix)(\([^)]*\))?!?:[[:space:]]/) || \
+                       (index(subject, "address review feedback") > 0)
+      if (!is_remediation) next
 
       # Drop the single leading "\n" the format adds before the raw block.
       if (substr(remainder, 1, 1) == "\n") remainder = substr(remainder, 2)
