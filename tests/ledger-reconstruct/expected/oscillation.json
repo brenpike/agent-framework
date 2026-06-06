@@ -22,7 +22,7 @@
           "severity": null,
           "status": "cycling",
           "thread_resolved": null,
-          "title": "First fix of handler loop"
+          "title": "fix(handler): address review feedback"
         },
         {
           "body": null,
@@ -39,7 +39,7 @@
           "severity": null,
           "status": "fixed",
           "thread_resolved": null,
-          "title": "First fix of handler loop"
+          "title": "fix(handler): address review feedback"
         },
         {
           "body": null,
@@ -56,7 +56,7 @@
           "severity": null,
           "status": "cycling",
           "thread_resolved": null,
-          "title": "Second fix of handler loop"
+          "title": "fix(handler): correct loop again"
         }
       ],
       "iteration": 1,

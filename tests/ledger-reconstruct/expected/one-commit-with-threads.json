@@ -90,7 +90,7 @@
           "severity": null,
           "status": "fixed",
           "thread_resolved": null,
-          "title": "Fix null check in auth handler"
+          "title": "fix(auth): address review feedback"
         },
         {
           "body": null,
@@ -107,7 +107,7 @@
           "severity": null,
           "status": "fixed",
           "thread_resolved": null,
-          "title": "Fix null check in auth handler"
+          "title": "fix(auth): address review feedback"
         }
       ],
       "iteration": 1,

@@ -22,7 +22,7 @@
           "severity": null,
           "status": "fixed",
           "thread_resolved": null,
-          "title": "Add tricky paths"
+          "title": "fix(paths): address review feedback"
         },
         {
           "body": null,
@@ -39,7 +39,7 @@
           "severity": null,
           "status": "fixed",
           "thread_resolved": null,
-          "title": "Add tricky paths"
+          "title": "fix(paths): address review feedback"
         }
       ],
       "iteration": 1,

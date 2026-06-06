@@ -6,17 +6,21 @@ Offline behavioral fixtures for `tools/test_ledger_reconstruct.sh` (STEP-003, is
 
 ```
 tests/ledger-reconstruct/
-  git-log-one-commit.txt      git-log payload: 1 commit, 2 files, 2 hunks (commit-finding mapping)
-  git-log-oscillation.txt     git-log payload: 2 commits, same surface cycling + unique fixed
-  git-log-empty.txt           git-log payload: empty (no commits)
-  git-log-malformed.txt       git-log payload: malformed text (no valid headers/hunks)
-  normalized-threads.json     fetch-normalize output: review(resolved) + review(unresolved) + ci-check-failure
+  git-log-one-commit.txt           git-log payload: 1 remediation commit, 2 files, 2 hunks
+  git-log-oscillation.txt          git-log payload: 2 remediation commits, same surface cycling + unique fixed
+  git-log-empty.txt                git-log payload: empty (no commits)
+  git-log-malformed.txt            git-log payload: malformed text (no valid headers/hunks)
+  git-log-feature-churn.txt        git-log payload: 2 non-remediation commits (feat + test) sharing a surface
+  git-log-mixed-feature-and-fix.txt git-log payload: 1 feat (excluded) + 2 qualifying fix commits
+  normalized-threads.json          fetch-normalize output: review(resolved) + review(unresolved) + ci-check-failure
   expected/
     one-commit-git-only.json      commit findings, no thread records
     one-commit-with-threads.json  commit findings + thread records (ci record skipped)
     oscillation.json              cycling surfaces + fixed surface
     thread-state-merge.json       thread-only: resolved=fixed, unresolved=open, ci skipped
     empty-findings.json           canonical empty findings shape (reused for empty + malformed cases)
+    feature-churn-empty.json      empty findings: non-remediation commits excluded by qualification gate
+    mixed-feature-and-fix.json    2 findings: feat commit absent, both allowlist arms fire independently
 ```
 
 ## Git-log byte format
@@ -45,6 +49,20 @@ and the script streams them straight into the tokenizer — never through a shel
 (bash strips NUL). `git-log-empty.txt` is zero bytes (a legitimate "no commits" log);
 `git-log-malformed.txt` is non-empty text with no `\x1eCOMMIT\x1f` record marker (injected fail-open
 → empty findings, exit 0).
+
+## Prior-fix qualification gate
+
+Not every commit in `<base>..HEAD` becomes a git-log finding. The script admits a commit ONLY
+when its subject passes a POSITIVE ALLOWLIST (closed-by-construction):
+
+- anchored conventional remediation type: `^(fix|hotfix)(\([^)]*\))?!?:[[:space:]]` (case-sensitive), OR
+- literal phrase: `address review feedback` (fixed-substring match)
+
+Ordinary `feat/test/refactor` commits on a multi-commit feature branch contribute ZERO findings,
+so they can never produce a false `cycling` or oscillation signal. The `git-log-feature-churn.txt`
+and `git-log-mixed-feature-and-fix.txt` fixtures lock this boundary: the former produces empty
+findings; the latter produces findings only for the two qualifying fix commits (both allowlist
+arms exercised independently).
 
 ## Canonicalization
 

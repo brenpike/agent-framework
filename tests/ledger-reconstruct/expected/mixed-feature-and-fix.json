@@ -9,37 +9,37 @@
       "findings": [
         {
           "body": null,
-          "file": "src/auth.py",
-          "fix_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "file": "src/api.py",
+          "fix_commit": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
           "fix_framing": null,
           "fixed_iteration": null,
-          "id": "fix:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:src/auth.py:10",
+          "id": "fix:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2:src/api.py:20",
           "introduced_iteration": 1,
-          "line_end": 13,
-          "line_start": 10,
+          "line_end": 22,
+          "line_start": 20,
           "recommendation": null,
           "root_class": null,
           "severity": null,
           "status": "fixed",
           "thread_resolved": null,
-          "title": "fix(auth): address review feedback"
+          "title": "fix(scope): address review feedback"
         },
         {
           "body": null,
-          "file": "src/db.py",
-          "fix_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "file": "src/parser.py",
+          "fix_commit": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
           "fix_framing": null,
           "fixed_iteration": null,
-          "id": "fix:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:src/db.py:5",
+          "id": "fix:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3:src/parser.py:5",
           "introduced_iteration": 1,
-          "line_end": 6,
+          "line_end": 7,
           "line_start": 5,
           "recommendation": null,
           "root_class": null,
           "severity": null,
           "status": "fixed",
           "thread_resolved": null,
-          "title": "fix(auth): address review feedback"
+          "title": "fix(parser): correct off-by-one"
         }
       ],
       "iteration": 1,

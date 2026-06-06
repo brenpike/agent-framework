@@ -165,7 +165,7 @@ assert_finding_field "commit:auth-fix-commit" "$one_commit_ledger" \
   '"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
 assert_finding_field "commit:auth-title" "$one_commit_ledger" \
   "fix:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:src/auth.py:10" "title" \
-  '"Fix null check in auth handler"'
+  '"fix(auth): address review feedback"'
 assert_finding_field "commit:auth-status" "$one_commit_ledger" \
   "fix:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:src/auth.py:10" "status" '"fixed"'
 assert_finding_field "commit:auth-fix-framing-null" "$one_commit_ledger" \
@@ -267,7 +267,7 @@ c0_ledger="$(bash "$SCRIPT_UNDER_TEST" \
 # Title must round-trip with the C0 byte correctly escaped (jq encodes 0x08 as \b).
 assert_finding_field "c0-subject:title-escaped" "$c0_ledger" \
   "fix:dddddddddddddddddddddddddddddddddddddddd:src/fix.py:1" "title" \
-  '"Fix\b\"bad\\path\""'
+  '"fix(x): Fix\b\"bad\\path\""'
 
 # File and line range correct.
 assert_finding_field "c0-subject:file" "$c0_ledger" \
@@ -340,6 +340,59 @@ if [ "$inj_status" -eq 0 ]; then
 else
   failed "live-parse-failed:injected-contrast-exit0" \
     "(expected exit 0 for injected fail-open, got $inj_status)"
+fi
+
+# ── Prior-fix qualification gate regression locks ────────────────────────────────────────────
+# Lock A — non-remediation feature churn must NOT produce prior-fix findings (the false-cycling
+# P1 the positive-allowlist gate closes). Two non-remediation commits (feat + test) touch the
+# same file:line surface; expected: zero findings (the gate admits neither commit).
+run_case "qualify:feature-churn-not-prior-fix" \
+  "$LR_DIR/git-log-feature-churn.txt" - \
+  "$EXPECTED_DIR/feature-churn-empty.json"
+
+feature_churn_ledger="$(bash "$SCRIPT_UNDER_TEST" \
+  --git-log-file "$LR_DIR/git-log-feature-churn.txt" 2>/dev/null)"
+
+churn_count="$(printf '%s' "$feature_churn_ledger" | jq '.iterations[0].findings | length' 2>/dev/null)"
+if [ "$churn_count" = "0" ]; then
+  pass "qualify:feature-churn-findings-empty" "(findings|length=0; non-remediation commits excluded)"
+else
+  failed "qualify:feature-churn-findings-empty" "expected 0 findings, got $churn_count"
+fi
+
+# Lock B — mixed branch: feature commits excluded, genuine remediation commits produce findings.
+# Fixture has 3 commits: feat (excluded) + fix(scope): address review feedback (arm 1) +
+# fix(parser): correct off-by-one (arm 2). Both allowlist arms must fire independently.
+# The two fix commits touch DIFFERENT surfaces -> both status="fixed".
+run_case "qualify:genuine-fix-detected" \
+  "$LR_DIR/git-log-mixed-feature-and-fix.txt" - \
+  "$EXPECTED_DIR/mixed-feature-and-fix.json"
+
+mixed_ledger="$(bash "$SCRIPT_UNDER_TEST" \
+  --git-log-file "$LR_DIR/git-log-mixed-feature-and-fix.txt" 2>/dev/null)"
+
+# Both remediation surfaces present with correct fix_commit/file/status.
+assert_finding_field "qualify:fix-scope-present" "$mixed_ledger" \
+  "fix:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2:src/api.py:20" "fix_commit" \
+  '"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"'
+assert_finding_field "qualify:fix-scope-file" "$mixed_ledger" \
+  "fix:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2:src/api.py:20" "file" '"src/api.py"'
+assert_finding_field "qualify:fix-scope-status" "$mixed_ledger" \
+  "fix:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2:src/api.py:20" "status" '"fixed"'
+assert_finding_field "qualify:fix-parser-present" "$mixed_ledger" \
+  "fix:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3:src/parser.py:5" "fix_commit" \
+  '"c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"'
+assert_finding_field "qualify:fix-parser-file" "$mixed_ledger" \
+  "fix:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3:src/parser.py:5" "file" '"src/parser.py"'
+assert_finding_field "qualify:fix-parser-status" "$mixed_ledger" \
+  "fix:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3:src/parser.py:5" "status" '"fixed"'
+
+# Total: exactly 2 findings (feat commit absent, both fix commits present).
+mixed_count="$(printf '%s' "$mixed_ledger" | jq '.iterations[0].findings | length' 2>/dev/null)"
+if [ "$mixed_count" = "2" ]; then
+  pass "qualify:mixed-findings-count" "(findings|length=2; feat excluded, 2 fix commits present)"
+else
+  failed "qualify:mixed-findings-count" "expected 2 findings, got $mixed_count"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────────────────────
