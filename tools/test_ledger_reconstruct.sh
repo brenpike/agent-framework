@@ -193,8 +193,10 @@ assert_finding_field "oscillation:unique-surface-fixed" "$oscillation_ledger" \
   "fix:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:src/other.py:1" "status" '"fixed"'
 
 # ── thread-state merge ───────────────────────────────────────────────────────────────────────
-# Normalized fixture contains: review(resolved) → status="fixed" thread_resolved=true,
-# review(unresolved) → status="open", ci-check-failure → SKIPPED (item_source != "review").
+# Normalized fixture contains: thread(resolved) → status="fixed" thread_resolved=true,
+# thread(unresolved) → status="open"; toplevel(handled) → status="fixed" (NON-thread surfaces
+# cannot be GitHub-resolved, so status derives from classification, NOT thread_resolved);
+# review(actionable) → status="open"; ci-check-failure → SKIPPED (item_source != "review").
 # Use empty git-log so only thread records appear in findings (isolates the thread folding path).
 run_case "thread:state-merge" \
   "$LR_DIR/git-log-empty.txt" \
@@ -211,18 +213,28 @@ assert_finding_field "thread:resolved-thread-resolved-true" "$thread_ledger" \
   "PRRT_thread001resolved" "thread_resolved" "true"
 assert_finding_field "thread:unresolved-status-open" "$thread_ledger" \
   "PRRT_thread002open" "status" '"open"'
+# Non-thread surfaces (toplevel/review) carry thread_resolved:false even once addressed; status
+# MUST derive from classification (handled -> fixed) so an addressed top-level/review record is
+# not mis-reported "open" and does not suppress the POST-fix advisory (PR #223 P1).
+assert_finding_field "toplevel:handled-status-fixed-from-classification" "$thread_ledger" \
+  "IC_toplevel001handled" "status" '"fixed"'
+assert_finding_field "toplevel:handled-thread-resolved-null" "$thread_ledger" \
+  "IC_toplevel001handled" "thread_resolved" "null"
+assert_finding_field "review:actionable-status-open-from-classification" "$thread_ledger" \
+  "PRR_review001actionable" "status" '"open"'
 assert_finding_field "thread:file-null" "$thread_ledger" \
   "PRRT_thread001resolved" "file" "null"
 assert_finding_field "thread:line-start-null" "$thread_ledger" \
   "PRRT_thread001resolved" "line_start" "null"
 
-# Assert ci-check-failure record was skipped (findings count must be exactly 2).
+# Assert ci-check-failure record was skipped: the fixture holds 4 review records (2 thread +
+# 1 toplevel + 1 review) + 1 ci-check-failure; only the 4 review records fold in (findings == 4).
 thread_count="$(printf '%s' "$thread_ledger" | \
   jq '.iterations[0].findings | length' 2>/dev/null)"
-if [ "$thread_count" = "2" ]; then
+if [ "$thread_count" = "4" ]; then
   pass "thread:ci-record-skipped" "(findings count=$thread_count; ci-check-failure not folded)"
 else
-  failed "thread:ci-record-skipped" "expected 2 findings (ci skipped), got $thread_count"
+  failed "thread:ci-record-skipped" "expected 4 findings (4 review records, ci skipped), got $thread_count"
 fi
 
 # ── empty git-log → empty findings, exit 0 ───────────────────────────────────────────────────

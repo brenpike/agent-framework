@@ -16,6 +16,22 @@
     "surface": "thread"
   },
   {
+    "id": "IC_toplevel001handled",
+    "thread_id": null,
+    "item_source": "review",
+    "classification": "handled",
+    "thread_resolved": false,
+    "surface": "toplevel"
+  },
+  {
+    "id": "PRR_review001actionable",
+    "thread_id": null,
+    "item_source": "review",
+    "classification": "actionable",
+    "thread_resolved": false,
+    "surface": "review"
+  },
+  {
     "id": null,
     "item_source": "ci-check-failure",
     "name": "policy-check",

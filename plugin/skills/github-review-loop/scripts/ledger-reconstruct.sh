@@ -106,8 +106,13 @@
 #       commits, else `fixed`. fix_framing null.
 #   (b) thread/finding records folded from --normalized-file: id from the node id,
 #       title from `classification`, thread_resolved from `thread_resolved`,
-#       status derived (thread_resolved:true -> fixed; else open). file/line null
-#       (the normalized surface carries no line range). fix_framing null.
+#       status derived PER SURFACE: thread surface from `thread_resolved`
+#       (true -> fixed; else open); non-thread surfaces (toplevel / review) cannot
+#       be GitHub-resolved (they carry thread_resolved:false even once addressed),
+#       so their status derives from `classification` (handled -> fixed; else open)
+#       so an addressed top-level/review record is not mis-reported `open` and does
+#       not suppress the POST-fix advisory. file/line null (the normalized surface
+#       carries no line range). fix_framing null.
 #
 # JSON-STRING EMISSION IS OWNED ENTIRELY BY jq. The awk stage is a pure TOKENIZER:
 # it emits NUL-FREE, 0x1f-field-delimited RAW records (sha, subject, path,
@@ -435,7 +440,12 @@ normalized_to_findings() {
             file: null,
             line_start: null,
             line_end: null,
-            status: (if (.thread_resolved == true) then "fixed" else "open" end),
+            status: (
+              if (.surface == "thread")
+              then (if (.thread_resolved == true) then "fixed" else "open" end)
+              else (if (.classification == "handled") then "fixed" else "open" end)
+              end
+            ),
             introduced_iteration: 1,
             fixed_iteration: null,
             fix_commit: null,
