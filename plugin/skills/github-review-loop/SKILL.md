@@ -44,7 +44,9 @@ line or non-zero exit → terminal `blocked`. Confirm git state is not unsafe pe
 
 **2. Cycle 0.** Dispatch `hivemind:github-reviewer` fix mode (see Dispatch contract)
 over pre-existing PR feedback before arming the Monitor. NEVER prefiltered. Handle
-return per Reviewer-return handling. Arm Monitor only after a `clean` return.
+return per Reviewer-return handling. Pass the return through `loop-state.sh
+cycle-decision`; arm the Monitor ONLY when `EXIT_REASON=none`. Any other
+`EXIT_REASON` is terminal — emit the terminal report and stop; do NOT arm.
 
 **3. Arm Monitor.** Arm a Monitor in the main session on:
 

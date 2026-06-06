@@ -145,6 +145,18 @@ assert_stdout "ceiling:no-increment-stays-below" \
   "$(printf 'NEXT_COUNT=2\nEXIT_REASON=none')" \
   cycle-decision 2 3 0 clean
 
+# cycle-0, max=1, one finding resolved → NEXT_COUNT=1 hits ceiling → terminal.
+# P1 repro lock: arm-gate must NOT arm when EXIT_REASON != none.
+assert_stdout "ceiling:cycle0-max1-resolved-terminal" \
+  "$(printf 'NEXT_COUNT=1\nEXIT_REASON=max-cycles-reached')" \
+  cycle-decision 0 1 1 clean
+
+# cycle-0, max=3, one finding resolved → NEXT_COUNT=1 below ceiling → keep watching.
+# Positive side of the arm-gate: EXIT_REASON=none → skill arms the Monitor.
+assert_stdout "ceiling:cycle0-max3-resolved-headroom" \
+  "$(printf 'NEXT_COUNT=1\nEXIT_REASON=none')" \
+  cycle-decision 0 3 1 clean
+
 # ============================================================================
 # SECTION 3: cycle-decision — terminal reviewer tokens
 #
