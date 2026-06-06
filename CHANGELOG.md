@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.28.0] - 2026-06-06
+
+### Added
+
+- **`plugin/skills/triage-backlog/` — new `triage-backlog` skill + `triage-ops.sh` script.** Backward-compatible new capability; no existing skill or agent contract changed.
+
 ## [2.27.0] - 2026-06-06
 
 ### Added
