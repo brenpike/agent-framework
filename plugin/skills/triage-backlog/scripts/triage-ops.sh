@@ -68,26 +68,34 @@
 #     (see §5) BEFORE any gh call.
 #
 #   deps-add --issue-id <NODE_ID> --blocked-by-id <NODE_ID> [--response-file <path|->]
-#            [--issue-labels-file <path|->]
+#            [--issue-labels-file <path|->] [--issue-labels-response <path|->]
 #     Operates on GraphQL NODE IDs (from list-issues' `id` field), not numbers —
 #     no number->id resolution round-trip is needed because the skill already has
 #     the ids. ADD-ONLY: never removes an existing dependency.
 #     online:  resolves the GROUND-TRUTH labels of the issue being MUTATED
-#              (--issue-id) via a node(id:) GraphQL query, honors the human-only
-#              triage:locked lock through the SHARED gate assert_unlocked_live (a
-#              locked issue emits a skipped-locked record and mutates NOTHING,
-#              exit 0 — same gate apply-labels uses), then runs the addBlockedBy
-#              mutation and surfaces the response. FAILS CLOSED if the lock state
-#              cannot be verified (unreadable/malformed label read) — never mutate.
-#              Only --issue-id is gated; a locked BLOCKER does not block the edge.
+#              (--issue-id) via a node(id:) GraphQL query; routes the RAW response
+#              through validate_response_shape (the SHARED kernel — see §4) so a
+#              transport error, .errors envelope, null node, non-array label list,
+#              or null/wrong-typed label name FAILS CLOSED before assert_unlocked_live
+#              and BEFORE the addBlockedBy mutation — never mutate on unverifiable
+#              lock state. A locked issue emits a skipped-locked record and mutates
+#              NOTHING (exit 0 — same gate apply-labels uses). Only --issue-id is
+#              gated; a locked BLOCKER does not block the edge.
 #     offline: with --response-file -> surfaces that injected response (exercises
-#              the cycle/error/success records); else with --issue-labels-file ->
-#              drives the lock gate over the injected label array (skipped-locked
-#              for a locked set; else proceeds); without either -> emits the
-#              constructed GraphQL variables payload (exercises payload build).
-#     --response-file and --issue-labels-file are TEST SEAMS honored ONLY when
-#              TRIAGE_OPS_OFFLINE is set; a live invocation supplying EITHER is
-#              REJECTED fail-closed via the shared guard (see §5) BEFORE any gh call.
+#              the cycle/error/success records); else with --issue-labels-response ->
+#              injects the RAW node(id:) labels GraphQL response and drives the
+#              FULL live lock-read path (shared kernel shape gate + lock gate) offline
+#              (skipped-locked when locked, payload when unlocked, fail-closed on
+#              malformed/error body — exactly what the live path does); else with
+#              --issue-labels-file -> injects a PRE-PROJECTED label-name JSON array
+#              and drives the lock gate only (bypasses the raw-response kernel guard
+#              — use --issue-labels-response to test the kernel guard offline); else
+#              -> emits the constructed GraphQL variables payload (exercises payload
+#              build).
+#     --response-file, --issue-labels-file, and --issue-labels-response are TEST
+#              SEAMS honored ONLY when TRIAGE_OPS_OFFLINE is set; a live invocation
+#              supplying ANY of them is REJECTED fail-closed via the shared guard
+#              (see §5) BEFORE any gh call.
 #
 # 3. OUTPUT SCHEMA — JSON on stdout (compact)
 # -------------------------------------------
@@ -113,6 +121,18 @@
 #
 # 4. INVARIANTS
 # -------------
+#   - SINGLE SHARED RESPONSE-SHAPE KERNEL: EVERY live gh/GraphQL read that informs
+#     a decision or mutation routes through validate_response_shape before any
+#     processing. No per-site hand-parsing of response shape is permitted. A
+#     non-clean response — transport error (empty/non-JSON), a non-empty `.errors`
+#     envelope, null/missing entity at the expected root path, non-array collection,
+#     or a null/wrong-typed field on any element — FAILS CLOSED (nonzero, structured
+#     kind record to stderr) before any gate, decision, or mutation. Covered reads:
+#     deps-read's blockedByIssues response (via normalize_deps_read), deps-add's
+#     lock-label node(id:) read (before the addBlockedBy mutation — never mutate on
+#     unverifiable lock state), list-issues' gh issue list output (before the cap
+#     check and before emitting the backlog), and apply-labels' label read (before
+#     the lock gate and before the delta). No subcommand bypasses this kernel.
 #   - PER-FAMILY MUTUAL EXCLUSION (clean reconcile): for each family in --targets,
 #     the delta REMOVES every existing "<family>:*" label that is not the chosen
 #     value and ADDS the chosen value if absent. End state: exactly the chosen
