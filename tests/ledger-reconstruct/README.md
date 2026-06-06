@@ -11,7 +11,7 @@ tests/ledger-reconstruct/
   git-log-empty.txt                git-log payload: empty (no commits)
   git-log-malformed.txt            git-log payload: malformed text (no valid headers/hunks)
   git-log-feature-churn.txt        git-log payload: 2 non-remediation commits (feat + test) sharing a surface
-  git-log-mixed-feature-and-fix.txt git-log payload: 1 feat (excluded) + 2 qualifying fix commits
+  git-log-mixed-feature-and-fix.txt git-log payload: 1 feat (excluded) + 1 review-loop fix (qualifies) + 1 ordinary dev fix (excluded)
   normalized-threads.json          fetch-normalize output: review(resolved) + review(unresolved) + ci-check-failure
   expected/
     one-commit-git-only.json      commit findings, no thread records
@@ -20,7 +20,7 @@ tests/ledger-reconstruct/
     thread-state-merge.json       thread-only: resolved=fixed, unresolved=open, ci skipped
     empty-findings.json           canonical empty findings shape (reused for empty + malformed cases)
     feature-churn-empty.json      empty findings: non-remediation commits excluded by qualification gate
-    mixed-feature-and-fix.json    2 findings: feat commit absent, both allowlist arms fire independently
+    mixed-feature-and-fix.json    1 finding: feat AND ordinary dev fix(parser) excluded; only the review-loop "address review feedback" commit qualifies
 ```
 
 ## Git-log byte format
@@ -55,14 +55,19 @@ and the script streams them straight into the tokenizer — never through a shel
 Not every commit in `<base>..HEAD` becomes a git-log finding. The script admits a commit ONLY
 when its subject passes a POSITIVE ALLOWLIST (closed-by-construction):
 
-- anchored conventional remediation type: `^(fix|hotfix)(\([^)]*\))?!?:[[:space:]]` (case-sensitive), OR
-- literal phrase: `address review feedback` (fixed-substring match)
+- literal phrase: `address review feedback` (fixed-substring match) — the DETERMINISTIC subject
+  both reviewers emit (github-reviewer step 7: `fix(<scope>): address review feedback`;
+  local-reviewer molt remediation checkpoints carry the same phrase).
 
-Ordinary `feat/test/refactor` commits on a multi-commit feature branch contribute ZERO findings,
-so they can never produce a false `cycling` or oscillation signal. The `git-log-feature-churn.txt`
-and `git-log-mixed-feature-and-fix.txt` fixtures lock this boundary: the former produces empty
-findings; the latter produces findings only for the two qualifying fix commits (both allowlist
-arms exercised independently).
+The bare conventional `fix:`/`hotfix:` type alone is NOT sufficient: an ordinary bug-fix an
+engineer makes BEFORE the review loop runs (e.g. `fix(parser): correct off-by-one`) is normal
+development, not review remediation, and admitting it would let ordinary commits drive false
+`cycling`/mutation-decay/cluster signals (PR #223 P1). So ordinary `feat/test/refactor` AND
+ordinary `fix/hotfix` dev commits on a multi-commit feature branch contribute ZERO findings.
+The `git-log-feature-churn.txt` and `git-log-mixed-feature-and-fix.txt` fixtures lock this
+boundary: the former (feat + test) produces empty findings; the latter (feat + a review-loop
+`address review feedback` fix + an ordinary `fix(parser)` dev commit) produces a finding ONLY
+for the review-loop remediation commit.
 
 ## Canonicalization
 

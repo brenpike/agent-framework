@@ -267,7 +267,7 @@ c0_ledger="$(bash "$SCRIPT_UNDER_TEST" \
 # Title must round-trip with the C0 byte correctly escaped (jq encodes 0x08 as \b).
 assert_finding_field "c0-subject:title-escaped" "$c0_ledger" \
   "fix:dddddddddddddddddddddddddddddddddddddddd:src/fix.py:1" "title" \
-  '"fix(x): Fix\b\"bad\\path\""'
+  '"fix(x): address review feedback Fix\b\"bad\\path\""'
 
 # File and line range correct.
 assert_finding_field "c0-subject:file" "$c0_ledger" \
@@ -360,10 +360,13 @@ else
   failed "qualify:feature-churn-findings-empty" "expected 0 findings, got $churn_count"
 fi
 
-# Lock B — mixed branch: feature commits excluded, genuine remediation commits produce findings.
-# Fixture has 3 commits: feat (excluded) + fix(scope): address review feedback (arm 1) +
-# fix(parser): correct off-by-one (arm 2). Both allowlist arms must fire independently.
-# The two fix commits touch DIFFERENT surfaces -> both status="fixed".
+# Lock B — mixed branch: ONLY a deterministic review-loop remediation commit (the literal
+# "address review feedback" subject) becomes a prior-fix finding. The gate keys on that phrase
+# ALONE, never on the bare conventional `fix:`/`hotfix:` type, so an ordinary engineer bug-fix
+# made BEFORE the review loop cannot drive false mutation-decay / cluster signals (PR #223 P1).
+# Fixture has 3 commits: feat (excluded) + fix(scope): address review feedback (QUALIFIES) +
+# fix(parser): correct off-by-one (an ordinary dev bug-fix — EXCLUDED, the regression this
+# lock guards). Expected: exactly ONE finding, for the review-loop commit only.
 run_case "qualify:genuine-fix-detected" \
   "$LR_DIR/git-log-mixed-feature-and-fix.txt" - \
   "$EXPECTED_DIR/mixed-feature-and-fix.json"
@@ -371,7 +374,7 @@ run_case "qualify:genuine-fix-detected" \
 mixed_ledger="$(bash "$SCRIPT_UNDER_TEST" \
   --git-log-file "$LR_DIR/git-log-mixed-feature-and-fix.txt" 2>/dev/null)"
 
-# Both remediation surfaces present with correct fix_commit/file/status.
+# The review-loop remediation surface is present with correct fix_commit/file/status.
 assert_finding_field "qualify:fix-scope-present" "$mixed_ledger" \
   "fix:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2:src/api.py:20" "fix_commit" \
   '"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"'
@@ -379,20 +382,23 @@ assert_finding_field "qualify:fix-scope-file" "$mixed_ledger" \
   "fix:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2:src/api.py:20" "file" '"src/api.py"'
 assert_finding_field "qualify:fix-scope-status" "$mixed_ledger" \
   "fix:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2:src/api.py:20" "status" '"fixed"'
-assert_finding_field "qualify:fix-parser-present" "$mixed_ledger" \
-  "fix:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3:src/parser.py:5" "fix_commit" \
-  '"c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"'
-assert_finding_field "qualify:fix-parser-file" "$mixed_ledger" \
-  "fix:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3:src/parser.py:5" "file" '"src/parser.py"'
-assert_finding_field "qualify:fix-parser-status" "$mixed_ledger" \
-  "fix:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3:src/parser.py:5" "status" '"fixed"'
 
-# Total: exactly 2 findings (feat commit absent, both fix commits present).
-mixed_count="$(printf '%s' "$mixed_ledger" | jq '.iterations[0].findings | length' 2>/dev/null)"
-if [ "$mixed_count" = "2" ]; then
-  pass "qualify:mixed-findings-count" "(findings|length=2; feat excluded, 2 fix commits present)"
+# The ordinary dev `fix(parser): correct off-by-one` commit MUST be absent — it carries no
+# "address review feedback" phrase, so the gate excludes it by construction.
+parser_present="$(printf '%s' "$mixed_ledger" | jq -c \
+  '[.iterations[0].findings[] | select(.fix_commit == "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3")] | length' 2>/dev/null)"
+if [ "$parser_present" = "0" ]; then
+  pass "qualify:ordinary-dev-fix-excluded" "(fix(parser) ordinary bug-fix excluded; no review-loop phrase)"
 else
-  failed "qualify:mixed-findings-count" "expected 2 findings, got $mixed_count"
+  failed "qualify:ordinary-dev-fix-excluded" "expected ordinary dev fix excluded, found $parser_present finding(s)"
+fi
+
+# Total: exactly 1 finding (feat excluded, ordinary dev fix excluded, only review-loop commit present).
+mixed_count="$(printf '%s' "$mixed_ledger" | jq '.iterations[0].findings | length' 2>/dev/null)"
+if [ "$mixed_count" = "1" ]; then
+  pass "qualify:mixed-findings-count" "(findings|length=1; only the review-loop remediation commit present)"
+else
+  failed "qualify:mixed-findings-count" "expected 1 finding, got $mixed_count"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────────────────────

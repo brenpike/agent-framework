@@ -62,15 +62,19 @@
 # diff line's path text is IGNORED. This yields one fix surface per (commit,file,hunk).
 #
 # PRIOR-FIX QUALIFICATION: NOT every commit in <base>..HEAD is a prior fix. Only a
-# REMEDIATION commit becomes a git-log fix-surface finding. A positive allowlist in
-# the tokenizer (closed-by-construction) admits a commit ONLY when its subject
-# matches the anchored conventional remediation type `^(fix|hotfix)(\(...\))?!?: `
-# (case-sensitive) OR contains the literal phrase `address review feedback`. The
-# discriminator is the reviewer-emitted subject: github-reviewer step 7 commits
-# `fix(<scope>): address review feedback`; local-reviewer molt remediation
-# checkpoints carry the same shape. Ordinary feat/test/refactor commits on a
-# multi-commit feature branch are EXCLUDED, so a non-remediation commit can never
-# become a false cycling/oscillation or cluster signal by construction.
+# REVIEW-LOOP REMEDIATION commit becomes a git-log fix-surface finding. A positive
+# allowlist in the tokenizer (closed-by-construction) admits a commit ONLY when its
+# subject contains the literal phrase `address review feedback` — the DETERMINISTIC
+# subject both reviewers emit: github-reviewer step 7 commits `fix(<scope>): address
+# review feedback`; local-reviewer molt remediation checkpoints carry the same phrase.
+# The bare conventional type alone is NOT sufficient: an ordinary `fix:`/`hotfix:`
+# bug-fix an engineer makes BEFORE the review loop runs (e.g. `fix(parser): correct
+# off-by-one`) is normal development, not review remediation, and must NOT enter the
+# reconstructed ledger — admitting it would let ordinary commits drive false
+# mutation-decay / root-cluster signals. Keying ONLY on the reviewer-owned phrase
+# excludes ordinary feat/test/refactor AND ordinary fix/hotfix dev commits by
+# construction, so a non-remediation commit can never become a false
+# cycling/oscillation or cluster signal.
 #
 # 3. OUTPUT SCHEMA — a single fix-ledger-shaped JSON object on stdout
 # ------------------------------------------------------------------
@@ -331,18 +335,22 @@ git_log_to_findings() {
 
       # PRIOR-FIX QUALIFICATION GATE (positive allowlist, closed-by-construction).
       # Only a REMEDIATION commit may become a git-log prior-fix finding. The
-      # reviewers emit deterministic remediation subjects (github-reviewer step 7:
+      # reviewers emit a DETERMINISTIC remediation subject (github-reviewer step 7:
       # "fix(<scope>): address review feedback"; local-reviewer molt remediation
-      # checkpoints), so this allowlist keys on EXACTLY those: an ordinary
-      # feat/test/refactor commit on a multi-commit feature branch can NEVER become
-      # a cycling/oscillation or cluster signal by construction. Evaluated on the
-      # parsed subject; non-qualifying commits emit zero findings.
-      #   - anchored conventional remediation type (case-sensitive: git/reviewer
-      #     subjects are lowercase-typed) ^(fix|hotfix)(\(scope\))?!?:<space>, OR
+      # checkpoints carry the same phrase), so this allowlist keys EXACTLY on that
+      # reviewer-owned phrase. An ordinary conventional `fix:`/`hotfix:` bug-fix an
+      # engineer makes BEFORE the review loop runs (e.g. "fix(parser): correct
+      # off-by-one") is NOT review remediation and must NOT enter the reconstructed
+      # ledger as a prior-fix/cycling surface — admitting the bare conventional type
+      # would let ordinary development drive false mutation-decay / root-cluster
+      # signals. So the gate keys ONLY on the literal review-loop phrase, never on
+      # the conventional commit type. Evaluated on the parsed subject; non-qualifying
+      # commits emit zero findings.
       #   - the literal phrase "address review feedback" (fixed-substring index()
-      #     test — NO regex metachar handling).
-      is_remediation = (subject ~ /^(fix|hotfix)(\([^)]*\))?!?:[[:space:]]/) || \
-                       (index(subject, "address review feedback") > 0)
+      #     test — NO regex metachar handling), the deterministic subject both
+      #     reviewers emit. By construction an ordinary fix/hotfix dev commit cannot
+      #     qualify.
+      is_remediation = (index(subject, "address review feedback") > 0)
       if (!is_remediation) next
 
       # Drop the single leading "\n" the format adds before the raw block.
