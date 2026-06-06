@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.26.3] - 2026-06-06
+
+### Fixed
+
+- **`github-review-loop` cycle-0 Monitor-arm gate: arm only when `EXIT_REASON=none` (#207, #217).** A budget-exhausted cycle 0 now terminates at `max-cycles-reached` instead of falling through to arm a Monitor watch that runs to timeout. Previously, the arm decision was made unconditionally after cycle-0 dispatch regardless of the reviewer's returned `exit_reason`; the gate now checks `EXIT_REASON=none` before arming, so any non-none terminal from cycle 0 (including `max-cycles-reached`) short-circuits correctly.
+
 ## [2.26.2] - 2026-06-05
 
 ### Added
