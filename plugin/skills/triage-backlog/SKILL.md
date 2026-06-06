@@ -117,6 +117,10 @@ Infer `depends-on` (blocked-by) by judgment: which open issue must land before t
 start. A `readiness:blocked` issue should usually name what blocks it as a dependency.
 
 - **Add-only is automatic.** A newly-inferred dependency is added on confirm via `deps-add`.
+- **`deps-add` honors `triage:locked`.** Before writing the blocked-by edge, the script
+  resolves the ground-truth labels of the issue being mutated and runs the same shared lock
+  gate as `apply-labels`. A locked issue emits `skipped-locked` and mutates NOTHING — the
+  dependency is NOT added. Fails closed if the lock state cannot be verified.
 - **Removing an existing dependency requires explicit user confirmation** — a human may have
   set it deliberately. Never auto-remove; surface a proposed removal and wait.
 - **Cycles surface as a warning, never a crash.** GitHub rejects a dependency cycle; the
@@ -136,8 +140,9 @@ Re-runs must be low-churn. Four mechanisms together keep them stable:
 ## `triage:locked` — human-only control label
 
 `triage:locked` is a HUMAN-ONLY control label. The skill ENSURES it exists (`ensure-labels`)
-and HONORS it (a locked issue's proposed changes are displayed but never applied — the script
-returns `skipped-locked` and mutates nothing). The skill NEVER applies or removes
+and HONORS it on EVERY mutation path — labels AND dependencies: a locked issue's proposed
+changes are displayed but never applied (the script returns `skipped-locked` and mutates
+nothing for both `apply-labels` and `deps-add`). The skill NEVER applies or removes
 `triage:locked` itself. It is not a rating family.
 
 ## Chat-table-only columns
@@ -176,6 +181,11 @@ This returns `number`, `title`, `labels`, `body`, and `id` (the GraphQL node id 
 `deps-add` needs node ids, not numbers). Read existing native dependencies for issues where
 it matters via `deps-read <issue-number>` (minimal calls — only where you need the prior dep
 set, e.g. to detect a proposed removal).
+
+**No silent truncation.** `gh issue list --limit N` caps at N with no overflow signal. When
+the returned row count equals the requested `--limit`, the subcommand FAILS CLOSED with a
+clear diagnostic telling the caller to raise `--limit` and re-run. The entire-backlog promise
+is preserved by surfacing the cap, not by silently dropping issues.
 
 ### 3. Rate each issue
 
@@ -240,9 +250,13 @@ from `list-issues`:
 ${CLAUDE_PLUGIN_ROOT}/skills/triage-backlog/scripts/triage-ops.sh deps-add --issue-id <NODE_ID> --blocked-by-id <NODE_ID>
 ```
 
+`deps-add` honors `triage:locked` on the issue gaining the dependency (the `--issue-id`
+side). A locked issue emits `skipped-locked` and the edge is NOT written — the same gate
+`apply-labels` uses. A locked BLOCKER does not prevent the edge.
+
 Each issue is INDEPENDENT: on a per-issue failure (a failed `apply-labels`, a `deps-add`
-warning such as `cycle-rejected`), collect it and CONTINUE the batch — never abort the whole
-run. At the end, emit a summary: **applied / skipped-locked / excluded / failed**.
+warning such as `cycle-rejected` or `skipped-locked`), collect it and CONTINUE the batch —
+never abort the whole run. At the end, emit a summary: **applied / skipped-locked / excluded / failed**.
 
 ## Scope (v1)
 
@@ -261,7 +275,7 @@ delta table + confirm-gated apply.
 ## Do Not
 
 - mutate anything before the confirm gate — the default is dry-run.
-- apply or remove `triage:locked` — it is human-only; the skill only ensures + honors it.
+- apply or remove `triage:locked` — it is human-only; the skill only ensures + honors it on every mutation path (labels AND dependencies).
 - auto-remove an existing native dependency — removal needs explicit user confirmation.
 - read or write `initiative:*` or any grouping construct — this skill is grouping-agnostic.
 - persist Description or Notes — they are chat-table-only, regenerated each run.
