@@ -175,9 +175,11 @@ assert_finding_field "commit:db-line-start" "$one_commit_ledger" \
 assert_finding_field "commit:db-line-end" "$one_commit_ledger" \
   "fix:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:src/db.py:5" "line_end" "6"
 
-# ── oscillation status ───────────────────────────────────────────────────────────────────────
-# Two commits touch the same surface (src/handler.py:20..24) → both findings "cycling".
-# One commit touches a unique surface (src/other.py:1..4) → "fixed".
+# ── multi-commit same-surface: all findings "fixed" ─────────────────────────────────────────
+# Two commits touch the same surface (src/handler.py:20..24); both emit `status: "fixed"`.
+# The script NEVER labels "cycling" — re-appearance of a surface is observable to the agent
+# from the per-finding file/line/fix_commit facts; cycling INTERPRETATION is agent judgment (P7).
+# One commit also touches a unique surface (src/other.py:1..4) → also "fixed".
 run_case "oscillation:whole-object" \
   "$LR_DIR/git-log-oscillation.txt" - \
   "$EXPECTED_DIR/oscillation.json"
@@ -185,10 +187,10 @@ run_case "oscillation:whole-object" \
 oscillation_ledger="$(bash "$SCRIPT_UNDER_TEST" \
   --git-log-file "$LR_DIR/git-log-oscillation.txt" 2>/dev/null)"
 
-assert_finding_field "oscillation:first-commit-cycling" "$oscillation_ledger" \
-  "fix:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:src/handler.py:20" "status" '"cycling"'
-assert_finding_field "oscillation:second-commit-cycling" "$oscillation_ledger" \
-  "fix:cccccccccccccccccccccccccccccccccccccccc:src/handler.py:20" "status" '"cycling"'
+assert_finding_field "oscillation:first-commit-fixed" "$oscillation_ledger" \
+  "fix:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:src/handler.py:20" "status" '"fixed"'
+assert_finding_field "oscillation:second-commit-fixed" "$oscillation_ledger" \
+  "fix:cccccccccccccccccccccccccccccccccccccccc:src/handler.py:20" "status" '"fixed"'
 assert_finding_field "oscillation:unique-surface-fixed" "$oscillation_ledger" \
   "fix:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:src/other.py:1" "status" '"fixed"'
 
@@ -340,6 +342,59 @@ if [ "$inj_status" -eq 0 ]; then
 else
   failed "live-parse-failed:injected-contrast-exit0" \
     "(expected exit 0 for injected fail-open, got $inj_status)"
+fi
+
+# ── Live-normalized fail-CLOSED regression lock ──────────────────────────────────────────────
+# Lock the normalized-parse-failed rule (§4 LIVE NORMALIZED FAIL-CLOSED): a NON-EMPTY live
+# normalized payload that fails JSON parse OR is not a JSON array must emit
+# LEDGERRECON_ERROR=normalized-parse-failed on stderr and exit non-zero rather than coercing
+# to [] and masking a real error as "no thread findings".
+#
+# Seam: LEDGERRECON_TEST_LIVE_PAYLOAD_FILE=<empty-file> suppresses live git log (empty bytes →
+# legitimate empty-log exit 0), leaving INJECTED=0 so the normalized channel is on the LIVE
+# path. --normalized-file points at git-log-malformed.txt (non-empty, non-JSON text) — this is
+# the garbage payload that must trigger normalized-parse-failed. No --git-log-file → INJECTED=0.
+live_norm_stderr="$(LEDGERRECON_TEST_LIVE_PAYLOAD_FILE="$LR_DIR/git-log-empty.txt" \
+  bash "$SCRIPT_UNDER_TEST" origin/main \
+  --normalized-file "$LR_DIR/git-log-malformed.txt" 2>&1 >/dev/null)"
+live_norm_status=$?
+if [ "$live_norm_status" -ne 0 ] && \
+   printf '%s' "$live_norm_stderr" | grep -qF "LEDGERRECON_ERROR=normalized-parse-failed"; then
+  pass "normalized-parse-failed:exit-nonzero-and-marker" \
+    "(exit=$live_norm_status marker=LEDGERRECON_ERROR=normalized-parse-failed)"
+else
+  failed "normalized-parse-failed:exit-nonzero-and-marker" \
+    "(exit=$live_norm_status stderr=$live_norm_stderr)"
+fi
+
+# Contrast: injected path (--git-log-file present → INJECTED=1) with the same garbage
+# normalized payload is FAIL-OPEN (exit 0, empty findings). The gate is bypassed and
+# normalized_to_findings coerces the non-array to [].
+inj_norm_raw="$(bash "$SCRIPT_UNDER_TEST" \
+  --git-log-file "$LR_DIR/git-log-empty.txt" \
+  --normalized-file "$LR_DIR/git-log-malformed.txt" 2>/dev/null)"
+inj_norm_status=$?
+if [ "$inj_norm_status" -eq 0 ]; then
+  pass "normalized-parse-failed:injected-contrast-exit0" \
+    "(injected normalized path stays fail-open, exit=$inj_norm_status)"
+else
+  failed "normalized-parse-failed:injected-contrast-exit0" \
+    "(expected exit 0 for injected fail-open, got $inj_norm_status)"
+fi
+
+# Empty live normalized payload → exit 0 (legitimate "no thread findings" state, NOT a parse
+# failure). Mirrors the empty-vs-unparseable git-log distinction. Seam: empty git-log file +
+# empty normalized file (git-log-empty.txt is zero bytes; re-used as the normalized payload).
+live_norm_empty_raw="$(LEDGERRECON_TEST_LIVE_PAYLOAD_FILE="$LR_DIR/git-log-empty.txt" \
+  bash "$SCRIPT_UNDER_TEST" origin/main \
+  --normalized-file "$LR_DIR/git-log-empty.txt" 2>/dev/null)"
+live_norm_empty_status=$?
+if [ "$live_norm_empty_status" -eq 0 ]; then
+  pass "normalized-parse-failed:empty-live-exit0" \
+    "(empty live normalized payload → exit 0, exit=$live_norm_empty_status)"
+else
+  failed "normalized-parse-failed:empty-live-exit0" \
+    "(expected exit 0 for empty live normalized, got $live_norm_empty_status)"
 fi
 
 # ── Prior-fix qualification gate regression locks ────────────────────────────────────────────

@@ -20,7 +20,7 @@
           "recommendation": null,
           "root_class": null,
           "severity": null,
-          "status": "cycling",
+          "status": "fixed",
           "thread_resolved": null,
           "title": "fix(handler): address review feedback"
         },
@@ -54,7 +54,7 @@
           "recommendation": null,
           "root_class": null,
           "severity": null,
-          "status": "cycling",
+          "status": "fixed",
           "thread_resolved": null,
           "title": "fix(handler): address review feedback"
         }

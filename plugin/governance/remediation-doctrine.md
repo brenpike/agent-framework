@@ -70,6 +70,59 @@ cerebrate — MUST read the inner fired field (`break_fix.verdict == "break-fix"
 authority for the exact block keys and inner field names is the
 `hivemind:detect-remediation-signals` Output Contract.
 
+## Skeleton-Enrichment Judgment Criteria
+
+Applies whenever a `github-reviewer` step reconstructs an ephemeral fix-ledger via
+`ledger-reconstruct.sh` and then invokes `hivemind:detect-remediation-signals`. Both
+qualifying steps — pre-fix reconstruction (step 5) and post-fix reconstruction (step 9) —
+apply these criteria. They are defined here once; neither step restates them.
+
+### (a) What the reconstructed skeleton provides — deterministic facts only
+
+The skeleton emits exactly the facts mechanically derivable from ground truth:
+
+- per-finding qualifying-remediation fix surface: `file`, `line_start`, `line_end`,
+  `fix_commit`, and `status` (`fixed` or `open`) derived from the thread/finding resolved state
+- thread resolved state (folded from `fetch-normalize.sh` output)
+
+The skeleton DOES NOT emit: a `cycling` or `regressed` label, iteration grouping, a
+`fix_framing` value (always `null`), or a `root_class`. These require judgment a deterministic
+script cannot supply reliably.
+
+### (b) What the agent MUST judge before invoking the detector
+
+The `hivemind:detect-remediation-signals` skill READS `cycling`/`regressed` status,
+iteration grouping, `fix_framing`, and `root_class` from the ledger — it does not compute
+them. The agent must supply this interpretation overlay ON TOP of the skeleton before the
+detector call:
+
+- **Cycling / oscillation interpretation.** A re-touched surface — the same `file:line` range
+  appearing across two or more qualifying-remediation commits, which is derivable from the
+  skeleton facts — is not automatically a regression. The agent judges whether the re-touch is
+  genuine mutation-decay (`status: cycling` or `regressed`) or ordinary forward iteration.
+  Set `cycling` / `regressed` only on a judged genuine re-break.
+
+- **Iteration / cycle grouping.** Git commits are not review iterations. Where N-2 recurrence
+  detection is relevant, the agent judges iteration boundaries rather than equating commits
+  to iterations. The skeleton's placeholder grouping is a starting point, not a binding
+  boundary.
+
+- **`fix_framing`.** The detector's PRIMARY cluster key is `null` in every skeleton finding
+  (null-inert: two null-framing findings never cluster on the primary axis). The agent assigns
+  a non-null `fix_framing` where it can holistically judge a shared fix shape/intent from
+  commit and thread prose. When no reliable framing can be inferred, leave `null`; the
+  detector falls back to the secondary `file:line` key.
+
+- **`root_class`.** Assigned by agent judgment when the agent identifies a shared root cause
+  across clustered findings.
+
+### (c) Binding rule — single-source
+
+The skeleton is a lossless set of deterministic facts. The interpretation overlay (cycling
+label, iteration grouping, `fix_framing`, `root_class`) is agent judgment supplied on top
+before the detector call. This section is the single source of these criteria; neither
+github-reviewer step 5 nor step 9 restates them — both reference this section by name.
+
 ## Relationship to Existing Detectors
 
 Two review-loop detectors predate this doctrine and remain its companions; their policy meaning is unified here so both review loops share one vocabulary.
