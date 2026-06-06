@@ -329,13 +329,45 @@ surface_dep_response() {
 }
 
 # normalize_deps_read <response-json>: project a raw blockedByIssues GraphQL
-# response into the stable deps-read schema (§3).
+# response into the stable deps-read schema (§3) — FAIL-CLOSED, mirroring
+# surface_dep_response. A blockedByIssues read carries NO recoverable failure
+# (unlike deps-add's cycle rejection): EVERY failure exits nonzero so the caller
+# never makes triage/dependency decisions from a corrupted-into-"no blockers"
+# state. Fail-closed on: empty/non-JSON transport errors, any non-empty
+# `.errors` (auth, rate-limit, 4xx, schema), a missing/null `.data.repository.issue`
+# (issue absent or 200-with-error body), and a missing/non-array
+# `blockedByIssues.nodes`. Only a well-formed issue node is normalized and emitted
+# on stdout with exit 0. See INVARIANT §3/§4. Exit codes: 0 = normalized; 1 = fail-closed.
 normalize_deps_read() {
-  printf '%s' "$1" | jq -c '
+  local resp="$1"
+  # Empty / non-JSON => transport error. Fail closed.
+  if ! printf '%s' "$resp" | jq -e . >/dev/null 2>&1; then
+    jq -c -n '{ status:"error", kind:"transport-error",
+                message:"empty or non-JSON response from blockedByIssues read" }' >&2
+    return 1
+  fi
+  # Any GraphQL `.errors` (no recoverable variant for a read) => fail closed.
+  if printf '%s' "$resp" | jq -e '((.errors // []) | length) > 0' >/dev/null 2>&1; then
+    printf '%s' "$resp" | jq -c \
+      '{ status:"error", kind:"graphql-error",
+         message: ((.errors[0].message) // "blockedByIssues read rejected") }' >&2
+    return 1
+  fi
+  # Missing/null issue node, or a non-array nodes list => corrupted/unexpected
+  # shape; fail closed rather than projecting an empty "no blockers" set.
+  if ! printf '%s' "$resp" | jq -e \
+        '(.data.repository.issue) != null
+         and ((.data.repository.issue.blockedByIssues.nodes) | type == "array")' \
+        >/dev/null 2>&1; then
+    jq -c -n '{ status:"error", kind:"malformed-read",
+                message:"blockedByIssues response missing issue or nodes array" }' >&2
+    return 1
+  fi
+  printf '%s' "$resp" | jq -c '
     .data.repository.issue as $i
     | { issue: ($i.number // null),
         id: ($i.id // null),
-        blocked_by: [ (($i.blockedByIssues.nodes) // [])[] | { number, id, title } ] }'
+        blocked_by: [ ($i.blockedByIssues.nodes)[] | { number, id, title } ] }'
 }
 
 # --- Baked GraphQL operations (live path only) -------------------------------
@@ -493,8 +525,11 @@ cmd_deps_read() {
   done
   if is_offline; then
     [ -n "$response_file" ] || die "offline deps-read requires --response-file" 2
+    # Propagate normalize_deps_read's fail-closed exit code — do NOT mask with
+    # `return 0` (mirrors the cmd_deps_add fix): a GraphQL error / null-issue /
+    # malformed read must surface as nonzero through the offline seam too.
     normalize_deps_read "$(read_injected "$response_file")"
-    return 0
+    return
   fi
   require_gh "deps-read"
   local owner_repo owner repo resp

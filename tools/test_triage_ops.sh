@@ -263,6 +263,16 @@ run_exit1_case "deps-add:malformed-success-exit1" -- \
 run_case "deps-read:normalize" "$EXPECTED_DIR/deps-read-normalized.json" -- \
   deps-read 5 --response-file "$TB_DIR/deps-read-response.json"
 
+# ── deps-read FAIL-CLOSED on GraphQL error / null-issue responses ──────────────────
+# A blockedByIssues read has NO recoverable failure variant: a 200-with-`.errors`
+# body (auth/rate-limit/schema) and a null `.data.repository.issue` each MUST surface
+# as a NONZERO exit so the caller never demotes a failed read into an empty "no
+# blockers" dependency set and makes triage decisions from corrupted state.
+run_exit1_case "deps-read:graphql-error-exit1" -- \
+  deps-read 5 --response-file "$TB_DIR/deps-read-graphql-error-response.json"
+run_exit1_case "deps-read:null-issue-exit1" -- \
+  deps-read 5 --response-file "$TB_DIR/deps-read-null-issue-response.json"
+
 # list-issues offline re-emits the injected response verbatim (identity pass-through).
 run_case "list-issues:identity" "$EXPECTED_DIR/list-issues-identity.json" -- \
   list-issues --response-file "$TB_DIR/list-issues-response.json"
