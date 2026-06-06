@@ -36,6 +36,7 @@ SUITE_TEST_BROOD='test_brood_compat.sh'
 SUITE_TEST_FIX_HISTORY='test_fix_history_classify.sh'
 SUITE_TEST_FETCH_NORMALIZE='test_fetch_normalize.sh'
 SUITE_TEST_EXIT_PRECEDENCE='test_exit_precedence.sh'
+SUITE_TEST_REPLY_RESOLVE='test_reply_resolve.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -50,6 +51,7 @@ ALL_SUITES=(
   "$SUITE_TEST_FIX_HISTORY"
   "$SUITE_TEST_FETCH_NORMALIZE"
   "$SUITE_TEST_EXIT_PRECEDENCE"
+  "$SUITE_TEST_REPLY_RESOLVE"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -65,6 +67,7 @@ KNOWN_SUITES=(
   test_fix_history_classify.sh
   test_fetch_normalize.sh
   test_exit_precedence.sh
+  test_reply_resolve.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -304,6 +307,18 @@ map_path() {
     matched=1
   fi
 
+  # test_reply_resolve: the reply + resolve script (.sh) + its fixture dir. The script is ALSO a
+  # plugin/* file (policy_check prose-lints it via the wholesale rule below), but policy_check NEVER
+  # EXECUTES bash — so without this rule a reply-resolve edit would only be prose-linted, never
+  # behaviorally exercised. Route both the script and its fixture dir to the behavioral suite.
+  # (tools/test_reply_resolve.sh itself is covered by the tools/** full-suite leg.)
+  if [[ "$p" == plugin/skills/github-review-loop/scripts/reply-resolve.sh \
+     || "$p" == tools/test_reply_resolve.sh \
+     || "$p" == tests/reply-resolve/* ]]; then
+    add_selected "$SUITE_TEST_REPLY_RESOLVE" "$p (reply-resolve script/fixture)"
+    matched=1
+  fi
+
   # policy_check: all plugin/.claude-plugin runtime + policy/plugin/workflows fixtures.
   if [[ "$p" == plugin/* \
      || "$p" == .claude-plugin/* \
@@ -493,6 +508,7 @@ self_test() {
     ["test_fix_history_classify.sh"]="tests/fix-history/case01-x.json"
     ["test_fetch_normalize.sh"]="tests/fetch-normalize/case-x.json"
     ["test_exit_precedence.sh"]="plugin/skills/github-review-loop/scripts/exit-precedence.sh"
+    ["test_reply_resolve.sh"]="tests/reply-resolve/README.md"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do

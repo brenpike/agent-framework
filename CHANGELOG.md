@@ -12,6 +12,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+### Deferred
+
+- Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
+- Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
+
+## [2.26.1] - 2026-06-05
+
+### Added
+
+- **`reply-resolve.sh` — shared script owning the github-reviewer reply-then-resolve mutation sequence; `test_reply_resolve.sh` CI suite (#205).** Extracts the reply-then-resolve mutation sequence that was previously inline prose in `github-reviewer` into a committed, independently-tested script; behavior-preserving.
+
+### Changed
+
+- **`github-reviewer` agent slimmed to a judgment narrative over the shared review substrate (preflight.sh / fetch-normalize.sh / injection-scan / exit-precedence.sh); duplicated fetch/normalize/classify and reply/resolve mechanism prose removed (#205).** Behavior-preserving refactor: all removed prose delegated to the shared substrate scripts and skills already exercised by the agent; no exit-reason contract or observable behavior changed.
+
+### Fixed
+
+- **`fetch-normalize.sh` hygiene: EXIT trap + `pwd -P` (#205).** Ensures the shared fetch-normalize substrate cleans up reliably on early exit and resolves its working directory without symlink ambiguity; behavior-preserving.
+
 ## [2.26.0] - 2026-06-05
 
 ### Added

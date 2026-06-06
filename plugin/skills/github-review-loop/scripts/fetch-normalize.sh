@@ -238,6 +238,11 @@
 # live helpers, which the --payload-file path never reaches.
 
 set -u
+# INVARIANT: trap body ends with guaranteed-zero `:` so a failing rm never clobbers the
+# script's own exit code under set -e (mirrors ADR-0020 thin-entrypoint convention).
+# No temp files are created today; the trap is here for explicit hygiene so future
+# additions cannot accidentally leak.
+trap ':' EXIT
 
 OWNER=""
 REPO=""
@@ -299,7 +304,7 @@ SELF_LOGIN="${positionals[4]:-}"
 # Resolve the shared classifier filter RELATIVE to this script's own location,
 # matching prefilter.sh: this script runs as a sibling of fix-history-classify.jq
 # so ${BASH_SOURCE[0]}'s dir is the correct resolution, NOT ${CLAUDE_PLUGIN_ROOT}.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CLASSIFY_FILTER="$SCRIPT_DIR/fix-history-classify.jq"
 [ -f "$CLASSIFY_FILTER" ] || fetchnorm_fail "missing-filter"
 
