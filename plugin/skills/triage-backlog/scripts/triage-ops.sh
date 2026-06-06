@@ -434,6 +434,64 @@ surface_dep_response() {
   esac
 }
 
+# validate_response_shape <resp> <root_path> <root_pred> <coll_path> <elem_pred> <projection>:
+# the SINGLE SOURCE fail-closed GraphQL/response-shape validator+normalizer (P1).
+# Pure jq+bash, no gh — offline-exercisable. Given a RAW response string and a
+# PROJECTION SPEC (author-static jq fragments passed as the 2nd..6th args), it
+# REJECTS fail-closed (nonzero, structured kind record to stderr) any of:
+#   - empty / non-JSON transport body            => kind transport-error
+#   - a non-empty `.errors` array                => kind graphql-error
+#   - null/missing entity at <root_path>, or a
+#     non-array collection at <coll_path>, or the
+#     <root_pred>/<elem_pred> field-completeness
+#     predicates failing on any element           => kind malformed-read
+# On a clean response it runs <projection> and emits the projected value (exit 0).
+#
+# PROJECTION SPEC (all jq program fragments — AUTHOR-STATIC, never caller/untrusted
+# text; the untrusted RESPONSE is the only value flowing through as DATA, piped on
+# stdin and never interpolated, satisfying the §4 no-interpolation invariant):
+#   <root_path>   jq path to the entity that holds the collection (e.g.
+#                 `.data.repository.issue`); fail-closed when it is null/missing.
+#   <root_pred>   jq boolean over that entity bound as `.` (field-completeness on
+#                 the root, e.g. numeric number + nonempty string id).
+#   <coll_path>   jq path FROM the root entity to the node collection (e.g.
+#                 `.blockedByIssues.nodes`); fail-closed when not an array.
+#   <elem_pred>   jq boolean over each element bound as `.` (per-element field
+#                 completeness); must hold for EVERY element.
+#   <projection>  jq program over the FULL response that yields the clean value.
+# Exit codes: 0 = projected; 1 = fail-closed.
+validate_response_shape() {
+  local resp="$1" root_path="$2" root_pred="$3" coll_path="$4" elem_pred="$5" projection="$6"
+  # Empty / non-JSON => transport error. Fail closed (cannot be checked in-jq).
+  if ! printf '%s' "$resp" | jq -e . >/dev/null 2>&1; then
+    jq -c -n '{ status:"error", kind:"transport-error",
+                message:"empty or non-JSON response" }' >&2
+    return 1
+  fi
+  # Any GraphQL `.errors` (no recoverable variant for a read) => fail closed.
+  if printf '%s' "$resp" | jq -e '((.errors // []) | length) > 0' >/dev/null 2>&1; then
+    printf '%s' "$resp" | jq -c \
+      '{ status:"error", kind:"graphql-error",
+         message: ((.errors[0].message) // "response rejected") }' >&2
+    return 1
+  fi
+  # Shape + field-completeness gate (root non-null, collection is an array, the
+  # root and EVERY element satisfy their completeness predicate). The fragments
+  # are spliced into the jq PROGRAM (author-static), never into the DATA.
+  if ! printf '%s' "$resp" | jq -e "
+        ($root_path) as \$root
+        | \$root != null
+          and (((\$root | $coll_path) | type) == \"array\")
+          and (\$root | ($root_pred))
+          and ((\$root | $coll_path) | all($elem_pred))" \
+        >/dev/null 2>&1; then
+    jq -c -n '{ status:"error", kind:"malformed-read",
+                message:"response missing root entity, collection array, or required fields" }' >&2
+    return 1
+  fi
+  printf '%s' "$resp" | jq -c "$projection"
+}
+
 # normalize_deps_read <response-json>: project a raw blockedByIssues GraphQL
 # response into the stable deps-read schema (§3) — FAIL-CLOSED, mirroring
 # surface_dep_response. A blockedByIssues read carries NO recoverable failure
@@ -451,52 +509,27 @@ surface_dep_response() {
 # on stdout with exit 0. See INVARIANT §3/§4. Exit codes: 0 = normalized; 1 = fail-closed.
 normalize_deps_read() {
   local resp="$1"
-  # Empty / non-JSON => transport error. Fail closed.
-  if ! printf '%s' "$resp" | jq -e . >/dev/null 2>&1; then
-    jq -c -n '{ status:"error", kind:"transport-error",
-                message:"empty or non-JSON response from blockedByIssues read" }' >&2
-    return 1
-  fi
-  # Any GraphQL `.errors` (no recoverable variant for a read) => fail closed.
-  if printf '%s' "$resp" | jq -e '((.errors // []) | length) > 0' >/dev/null 2>&1; then
-    printf '%s' "$resp" | jq -c \
-      '{ status:"error", kind:"graphql-error",
-         message: ((.errors[0].message) // "blockedByIssues read rejected") }' >&2
-    return 1
-  fi
-  # Missing/null issue node, or a non-array nodes list => corrupted/unexpected
-  # shape; fail closed rather than projecting an empty "no blockers" set.
-  if ! printf '%s' "$resp" | jq -e \
-        '(.data.repository.issue) != null
-         and ((.data.repository.issue.blockedByIssues.nodes) | type == "array")' \
-        >/dev/null 2>&1; then
-    jq -c -n '{ status:"error", kind:"malformed-read",
-                message:"blockedByIssues response missing issue or nodes array" }' >&2
-    return 1
-  fi
-  # Field-completeness gate: the outer shape can be satisfied while a key
-  # identifier is null/wrong-typed. Require a numeric issue number, a nonempty
-  # string issue id, and — for EVERY blocker node — a numeric number plus nonempty
-  # string id and title. A null id/number would normalize into a record that
-  # cannot be matched for later deps-add/removal, so fail it closed here.
-  if ! printf '%s' "$resp" | jq -e \
-        '(.data.repository.issue) as $i
-         | ($i.number | type == "number")
-         and ($i.id | type == "string" and length > 0)
-         and (($i.blockedByIssues.nodes) | all(
-               (.number | type == "number")
-               and (.id | type == "string" and length > 0)
-               and (.title | type == "string" and length > 0)))' \
-        >/dev/null 2>&1; then
-    jq -c -n '{ status:"error", kind:"malformed-read",
-                message:"blockedByIssues response has null/invalid issue or blocker identifier fields" }' >&2
-    return 1
-  fi
-  printf '%s' "$resp" | jq -c '
-    .data.repository.issue as $i
-    | { issue: ($i.number // null),
-        id: ($i.id // null),
-        blocked_by: [ ($i.blockedByIssues.nodes)[] | { number, id, title } ] }'
+  # SINGLE MECHANISM: delegate every shape gate to the shared validator (P1). The
+  # projection spec encodes the blockedByIssues-specific contract as author-static
+  # jq fragments — root = the issue node, collection = its blockedByIssues.nodes,
+  # field-completeness on the issue (numeric number + nonempty string id) and on
+  # every blocker (numeric number + nonempty string id + title). A null identifier
+  # would normalize into a record that cannot be matched for later deps-add/removal,
+  # so the field gate fails it closed. Behavior is byte-identical to the prior
+  # hand-rolled gates: same kinds (transport-error / graphql-error / malformed-read)
+  # and the same exit-1-on-failure / exit-0-on-success contract.
+  validate_response_shape "$resp" \
+    '.data.repository.issue' \
+    '(.number | type == "number")
+     and (.id | type == "string" and length > 0)' \
+    '.blockedByIssues.nodes' \
+    '(.number | type == "number")
+     and (.id | type == "string" and length > 0)
+     and (.title | type == "string" and length > 0)' \
+    '.data.repository.issue as $i
+     | { issue: ($i.number // null),
+         id: ($i.id // null),
+         blocked_by: [ ($i.blockedByIssues.nodes)[] | { number, id, title } ] }'
 }
 
 # --- Baked GraphQL operations (live path only) -------------------------------
