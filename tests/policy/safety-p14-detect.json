@@ -1,0 +1,11 @@
+{
+  "rule": "P14-DETECT",
+  "description": "CHECK 11 core detection: the bioform leak token in body prose is captured, while the KEEP-phrase line (overlord instance / RUN-OWNERSHIP-01) and frontmatter mentions are not. Capture group 1 isolates a bare calling-bioform name acting as a leaked subject in prose.",
+  "set_check": {
+    "extract_regex": "\\b(overlord|drone|changeling)\\b (?:implements|executes|runs)\\b",
+    "expected_set": ["drone"],
+    "files": [
+      { "path": "tests/policy/fixtures/p14-sample.md", "mode": "equal" }
+    ]
+  }
+}
