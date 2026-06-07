@@ -73,7 +73,7 @@ Ledger schema version. Distinct from `run.workflow_version`, which tracks the wo
 
 ### `parent.*`
 
-Identifies the run's relationship to a brood. The `kind` field selects the variant; see [Parent-block variants](#parent-block-variants). For a `brood` child, `brood_id` holds the brood id — now the machine-generated GUID `brood-<uuidv4>` (issue #168), persisted verbatim so the child ledger reconciles 1:1 with the coordinator manifest's `brood_id`. The `parent.brood_id` field of the INIT inputs JSON object accepts this value and the init engine derives the filesystem-safe run id as `<brood-id>--<strain-id>`. The GUID carries NO colons (the prior brood-id was a colon-bearing ISO-8601 timestamp), so the colon-to-dash sanitization the init engine previously applied to derive a filesystem-safe stem is now INERT/no-op — a uuidv4 is already a safe path component, and `.parent.brood_id` and the run-path stem are identical.
+Identifies the run's relationship to a brood. The `kind` field selects the variant; see [Parent-block variants](#parent-block-variants). For a `brood` child, `brood_id` holds the brood id — the machine-generated GUID `brood-<uuidv4>` (ADR-0021), persisted verbatim so the child ledger reconciles 1:1 with the coordinator manifest's `brood_id`. The `parent.brood_id` field of the INIT inputs JSON object accepts this value and the init engine derives the filesystem-safe run id as `<brood-id>--<strain-id>`. The GUID carries NO colons (the prior brood-id was a colon-bearing ISO-8601 timestamp), so the colon-to-dash sanitization the init engine previously applied to derive a filesystem-safe stem is now INERT/no-op — a uuidv4 is already a safe path component, and `.parent.brood_id` and the run-path stem are identical.
 
 ### `request.*`
 
