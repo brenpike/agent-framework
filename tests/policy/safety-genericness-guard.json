@@ -1,0 +1,20 @@
+{
+  "rule": "check12-genericness-denylist-pinned",
+  "description": "P3 consumer-assertion: CHECK 12 (No bare validation-tool/manifest token in governance/agents prose) in tools/policy_check.sh is load-bearing genericness doctrine. This fixture pins its CHECK12_DENYLIST token literals so deleting a guarded validation-tool/manifest token silently weakens the guard. extract_regex captures each pipe-delimited alternation token from the denylist string; superset mode fails if any required token is removed (extras from other DENYLIST assignments are ignored).",
+  "set_check": {
+    "extract_regex": "(?:DENYLIST='|\\|)([^'|\\n]+)",
+    "expected_set": [
+      "tools/validate\\.sh",
+      "bash -n",
+      "python3 -m json\\.tool",
+      "package\\.json",
+      "pyproject\\.toml",
+      "Cargo\\.toml",
+      "plugin\\.json",
+      "marketplace\\.json"
+    ],
+    "files": [
+      { "path": "tools/policy_check.sh", "mode": "superset" }
+    ]
+  }
+}
