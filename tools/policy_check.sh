@@ -723,11 +723,13 @@ while IFS= read -r -d '' skill_file; do
     # excluding YAML frontmatter, fenced code blocks, and markdown table rows.
     while IFS=$'\t' read -r line_num textline; do
         [[ -z "$line_num" ]] && continue
-        # Body line must hit the denylist (word-boundaried, case-insensitive)
-        # and must NOT be a legitimate KEEP-phrase mention.
-        if echo "$textline" | grep -qiwE "($BIOFORM_DENYLIST)" \
-           && ! echo "$textline" | grep -qiE "$CHECK11_KEEP_REGEX"; then
-            bare_word="$(echo "$textline" | grep -oiwE "($BIOFORM_DENYLIST)" | head -n1)"
+        # Strip legitimate KEEP-phrase spans first (mirrors CHECK 8's
+        # ${CLAUDE_PLUGIN_ROOT} strip at line ~504), so a real leak sharing a
+        # line with a legit mention is still caught instead of the whole line
+        # being exempted.
+        residual="$(echo "$textline" | sed -E "s/(${CHECK11_KEEP_REGEX})//Ig")"
+        if echo "$residual" | grep -qiwE "($BIOFORM_DENYLIST)"; then
+            bare_word="$(echo "$residual" | grep -oiwE "($BIOFORM_DENYLIST)" | head -n1)"
             check11_found=true
             add_finding 'CHECK11' "$skill_file" "$line_num" \
                 "bare calling-bioform name '$bare_word' in skill body prose -- reference the caller by role/intent (P14); see engineering-principles.md P14"

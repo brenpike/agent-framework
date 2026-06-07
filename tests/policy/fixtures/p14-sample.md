@@ -8,3 +8,5 @@ description: Frontmatter mentioning the overlord must be structurally excluded.
 The drone implements the change.
 
 This work is owned by exactly one overlord instance (RUN-OWNERSHIP-01).
+
+The caller owns one overlord instance (RUN-OWNERSHIP-01), then the drone implements the change.
