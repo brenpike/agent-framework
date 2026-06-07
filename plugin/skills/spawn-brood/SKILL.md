@@ -40,6 +40,9 @@ After:
       `<brood-id>-<short>` running claude, and its injected `task.md` — which
       emits the data-boundary preamble FIRST, THEN the YAML child-task metadata
       block (`parent`, `strain`, `run`, `instructions`), THEN the description.
+      The engine performs a deferred submit (settle after the bracketed paste
+      closes) plus a bounded post-inject verification poll; a strain that never
+      starts a turn within the bound is marked `failed`, not `running`.
 - [ ] `.claude/worktrees/` is excluded from git (the script self-guards).
 - [ ] Final action is the Bash script call (exit 0 = spawned, exit 1 = blocked).
 

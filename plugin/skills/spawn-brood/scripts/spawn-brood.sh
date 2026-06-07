@@ -88,6 +88,15 @@ blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 # pre-accepted at launch via --settings, so no gate is ever screen-scraped.
 READY_TIMEOUT=90
 POLL_INTERVAL=2
+# INJECT_SETTLE: seconds to wait after tmux paste-buffer -p before sending the submit
+# keystroke. paste-buffer delivers the bracketed-paste sequence (ESC[200~…ESC[201~)
+# asynchronously to the pty; a zero-delay send-keys races the closing bracket and lands
+# inside the bracketed-paste window as an in-composer newline rather than a submit.
+INJECT_SETTLE=0.2
+# INJECT_VERIFY_ATTEMPTS: maximum send-keys retries in inject_strain()'s bounded
+# post-inject verification poll. Each retry waits POLL_INTERVAL seconds before
+# re-polling; a strain that never starts a turn within this bound is marked failed.
+INJECT_VERIFY_ATTEMPTS=5
 
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
@@ -749,12 +758,14 @@ for idx in $(seq 0 $((strain_count - 1))); do
   cur_session=""
 done
 
-# inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted
-# on paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE
-# bounded prompt; send-keys Enter submits it once. Best-effort delete the buffer on
-# EVERY inject-failure path so an untrusted task never persists in the shared tmux
-# buffer. Marks the strain failed and returns 1 on any tmux failure; returns 0 on a
-# clean inject. Behavior is byte-identical to the prior inline 4b block.
+# inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted on
+# paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE bounded
+# prompt. After the paste a short settle (INJECT_SETTLE) allows the closing ESC[201~ to
+# reach the TUI before the submit keystroke arrives; then a bounded retry loop
+# (INJECT_VERIFY_ATTEMPTS × POLL_INTERVAL) sends Enter and polls capture-pane until the
+# idle ready-prompt (READY_SUBSTRING) is no longer visible — confirming the child began a
+# turn. Best-effort delete the buffer on EVERY failure path so an untrusted task never
+# persists in the shared tmux buffer. Returns 0 on confirmed turn start; 1 on failure.
 inject_strain() {
   local idx="$1"
   local tmux_session="${S_TMUX[$idx]}"
@@ -774,13 +785,48 @@ inject_strain() {
     mark_failed "$idx"
     return 1
   fi
-  if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
-    printf 'warning: tmux send-keys Enter failed for strain %s\n' "${S_NAME[$idx]}" >&2
+  # INVARIANT: paste-buffer -d deleted the named buffer on success above; best-effort
+  # delete-buffer calls on the paths below are defensive for any race on that flag.
+
+  # Settle: allow the bracketed-paste sequence (ESC[200~…content…ESC[201~) to close at
+  # the TUI before sending the submit keystroke. paste-buffer -p delivers asynchronously
+  # to the pty; a zero-wait send-keys races the closing ESC[201~ and is absorbed inside
+  # the bracketed-paste window as an in-composer newline rather than a submit.
+  sleep "$INJECT_SETTLE"
+
+  # Bounded submit + turn-start verification. Each iteration sends Enter, waits
+  # POLL_INTERVAL seconds, then polls capture-pane. A child that began a turn will no
+  # longer show the idle ready-prompt (READY_SUBSTRING) in its pane output. Retry up to
+  # INJECT_VERIFY_ATTEMPTS times: an Enter that landed inside the bracketed-paste window
+  # was absorbed as a newline, and a subsequent Enter is needed to actually submit. On
+  # exhaustion: mark the strain failed and return 1.
+  local attempt=0
+  local turn_started=false
+  while [ "$attempt" -lt "$INJECT_VERIFY_ATTEMPTS" ]; do
+    if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
+      printf 'warning: tmux send-keys Enter failed for strain %s (attempt %d)\n' \
+        "${S_NAME[$idx]}" "$((attempt + 1))" >&2
+      tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
+      mark_failed "$idx"
+      return 1
+    fi
+    sleep "$POLL_INTERVAL"
+    if ! tmux capture-pane -t "$tmux_session" -p 2>/dev/null | grep -qF "$READY_SUBSTRING"; then
+      turn_started=true
+      break
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  if [ "$turn_started" = false ]; then
+    printf 'warning: strain %s did not start a turn after %d submit attempt(s); marking failed\n' \
+      "${S_NAME[$idx]}" "$INJECT_VERIFY_ATTEMPTS" >&2
     tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
     mark_failed "$idx"
     return 1
   fi
-  # On success paste-buffer -d already deleted the buffer; strain stays running.
+
+  # Turn confirmed started; buffer already deleted by paste-buffer -d; strain stays running.
   return 0
 }
 
