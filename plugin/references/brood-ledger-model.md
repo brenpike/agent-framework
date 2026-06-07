@@ -147,7 +147,7 @@ When deriving a strain's status, prefer sources in this order:
 
 External observables win because they reflect ground truth. Manifest static fields are the fallback. The child run ledger (tier 3, live as of #161) populates the `Workflow State` and `run.status` display columns via `brood-status-project.sh`'s bounded projection, but it is strictly informational — a hostile child cannot hide a runaway session or alter the observable-derived `Status` through its ledger. The leaf symlink-swap micro-TOCTOU on the child-ledger read is an ACCEPTED BOUNDED RESIDUAL (not structurally closed by #168 — per-brood namespacing isolates broods from each other, not the hatchery from its children): it is bounded by a post-read containment re-assert, never-echo-raw projection, and the informational-only contract (ADR-0021 §10; ADR-0019 #168 amendment).
 
-#### Running gating on started-evidence (issue #213)
+#### Running gating on started-evidence
 
 An alive tmux session alone is NOT proof a child started its workflow: a child can have its task pasted into a live session but never submit it, so the session is alive while no run ledger exists yet. To prevent that idle-but-unsubmitted child from masquerading as a healthy `running` strain, the running derivation is GATED on RUN-LEDGER EVIDENCE. The ground-truth started signal is a present, non-`MISSING`/non-`MALFORMED` `state.current` (the child wrote its run ledger). The rule table the derivation library ports is:
 

@@ -61,7 +61,7 @@ The entire deterministic collection loop — multi-brood discovery, per-strain e
      - `Session` ← `session` (`alive`/`dead`).
      - `PR` ← `#<pr.number>` when `pr.number` is non-null; otherwise `—`. When `pr.state` is `unknown`, render `unknown`.
      - `Workflow State` ← `workflow_state`; `run.status` ← `run_status`. Render `MISSING` → `—`, `MALFORMED` → the literal `MALFORMED`.
-     - `Status` ← `derived_status` verbatim. The entrypoint emits one of a small closed set: `running`, `running (PR #N open)`, `starting (session alive, workflow not yet started)`, `complete`, `blocked (session ended, PR #N still open)`, `failed (session ended, no PR)`, or `failed (injection failed; session alive for debug)`. The `starting (...)` value (issue #213) is a TRANSIENT non-running, non-complete state: the strain's tmux session is alive but its child has not yet written a run ledger (no started-evidence), so it is not yet genuinely `running`. Render it verbatim like any other; the navigator adds no logic.
+     - `Status` ← `derived_status` verbatim. The entrypoint emits one of a small closed set: `running`, `running (PR #N open)`, `starting (session alive, workflow not yet started)`, `complete`, `blocked (session ended, PR #N still open)`, `failed (session ended, no PR)`, or `failed (injection failed; session alive for debug)`. The `starting (...)` value is a TRANSIENT non-running, non-complete state: the strain's tmux session is alive but its child has not yet written a run ledger (no started-evidence), so it is not yet genuinely `running`. Render it verbatim like any other; the navigator adds no logic.
 
      After the table, for each strain with `session == "alive"`, emit one attach line so the operator can re-enter the live tmux session:
      ```

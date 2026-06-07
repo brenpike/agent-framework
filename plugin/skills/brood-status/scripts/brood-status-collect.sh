@@ -222,7 +222,7 @@ for manifest in "${manifests[@]}"; do
     pr_number="${pr_pair#*$TAB}"
 
     # f_state (state.current) and f_run (run.status) are the child-ledger started-evidence tokens
-    # already projected at the loop head. Threaded inert ("$var") into derivation per issue #213: an
+    # already projected at the loop head. Threaded inert ("$var") into derivation: an
     # alive session with no started-evidence (MISSING/MALFORMED state.current) demotes to `starting`
     # rather than masking as `running`. No new probe, no new I/O.
     derived="$(hivemind_derive_strain_status "$f_status" "$session_alive" "$pr_state" "$pr_number" "$f_state" "$f_run")"

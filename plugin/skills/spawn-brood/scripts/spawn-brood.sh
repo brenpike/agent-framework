@@ -763,7 +763,7 @@ done
 # paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE bounded
 # prompt. After the paste a short settle (INJECT_SETTLE) allows the closing ESC[201~ to
 # reach the TUI before the SINGLE submit keystroke, so Enter no longer races the paste and
-# is not absorbed inside the bracketed-paste window (the #213 fix). Enter is sent ONCE and
+# is not absorbed inside the bracketed-paste window. Enter is sent ONCE and
 # the function returns success — spawn-brood does NOT verify turn-start by screen-scraping
 # the TUI. Whether the child actually began a turn is observed LATER by hivemind:brood-status
 # from run-ledger ground truth (child run state.current present => running, absent =>

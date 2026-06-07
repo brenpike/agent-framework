@@ -53,7 +53,7 @@ set -u
 # never overrides observable status — ADR-0007): they only DEMOTE an alive-but-unstarted child
 # away from `running`, never promote to complete and never hide a dead session.
 #
-# STARTED-EVIDENCE GATE (issue #213, secondary fix): an alive session is NOT proof the child
+# STARTED-EVIDENCE GATE: an alive session is NOT proof the child
 # started its workflow — a pasted-but-never-submitted child has an alive tmux session and no run
 # ledger. The ground-truth started signal is RUN-LEDGER EVIDENCE: a present, non-MISSING/
 # non-MALFORMED state.current. An alive session WITHOUT that evidence derives the DISTINCT,
@@ -80,7 +80,7 @@ hivemind_derive_strain_status() {
   if [ "$session_alive" -eq 1 ]; then
     # Started-evidence gate: a present, non-MISSING/non-MALFORMED state.current is ground-truth
     # proof the child wrote its run ledger and started its workflow. Absent that, an alive session
-    # is demoted from `running` to the transient `starting` status (issue #213).
+    # is demoted from `running` to the transient `starting` status.
     if [ -z "$state_current" ] || [ "$state_current" = "MISSING" ] || [ "$state_current" = "MALFORMED" ]; then
       printf '%s' "starting (session alive, workflow not yet started)"
       return 0
@@ -109,7 +109,7 @@ hivemind_derive_strain_status() {
 #   complete                                          -> complete
 #   running, running (PR #N open)                     -> running
 #   starting (...), blocked (...), failed (...)       -> blocked_failed
-# The `starting` status (alive session with no started-evidence, issue #213) buckets OUT of
+# The `starting` status (alive session with no started-evidence) buckets OUT of
 # running and is NOT counted complete: it falls into blocked_failed alongside blocked/failed so the
 # three-bucket summary keeps summing to total with no strain dropped. (A `starting` strain has not
 # made forward progress, so counting it against completion is the conservative, sum-preserving
