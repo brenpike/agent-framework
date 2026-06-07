@@ -4,6 +4,7 @@
   "set_check": {
     "extract_regex": "\\b(overlord|drone|changeling)\\b (?:implements|executes|runs)\\b",
     "expected_set": ["drone"],
+    "expected_counts": { "drone": 2 },
     "files": [
       { "path": "tests/policy/fixtures/p14-sample.md", "mode": "equal" }
     ]
