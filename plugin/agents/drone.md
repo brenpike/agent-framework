@@ -90,7 +90,7 @@ Before completion:
 - LSP diagnostics on every touched file when available; report new Error or Warning
 - run worker self-check per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Worker Self-Check)
 - confirm every edge case from the delegation `Edge cases:` list is addressed
-- when assigned a version bump, confirm artifact versions match per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — `jq` parse the canonical version file(s) NAMED IN THE DELEGATION (the target project's canonical version artifact(s) per its versioning docs / Bump Execution) and assert each one's version key equals the assigned value; do not infer artifact files and do not invoke any validation suite
+- when assigned a version bump, confirm artifact versions match per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — verify each canonical version artifact NAMED IN THE DELEGATION using the verification command / parser / version key the delegation (or the target project's versioning docs / Bump Execution) specifies for that artifact's format, and assert each one's resolved version equals the assigned value; this self-check is format-agnostic (JSON, TOML, YAML, plain text, or any other canonical version source are all valid). Do not infer artifact files and do not invoke any validation suite
 
 ## Reporting
 

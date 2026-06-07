@@ -2,7 +2,7 @@
   "rule": "Worker Self-Check contract",
   "source": {
     "file": "plugin/governance/definitions.md",
-    "pattern": "The artifact-scoped check a worker (drone/changeling) runs over ONLY its own edited artifacts"
+    "pattern": "## Worker Self-Check"
   },
   "consumers": [
     {
