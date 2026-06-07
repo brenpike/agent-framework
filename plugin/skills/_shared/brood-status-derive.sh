@@ -21,7 +21,8 @@
 set -u
 
 # ── hivemind_derive_strain_status ─────────────────────────────────────────────────
-# hivemind_derive_strain_status <manifest_status> <session_alive:0|1> <pr_state> <pr_number>
+# hivemind_derive_strain_status <manifest_status> <session_alive:0|1> <pr_state> <pr_number> \
+#                               <state_current> <run_status>
 #   -> prints the derived Status string to stdout.
 #
 # Ports the SKILL.md rule table EXACTLY. Priority (highest first):
@@ -31,20 +32,36 @@ set -u
 #        alive -> "failed (injection failed; session alive for debug)"
 #        dead  -> "failed (session ended, no PR)"
 #   2. otherwise the tmux x PR observable table:
-#        | tmux  | PR     | Status                                            |
-#        | alive | none   | running                                           |
-#        | alive | open   | running (PR #N open)                              |
-#        | dead  | merged | complete                                          |
-#        | dead  | open   | blocked (session ended, PR #N still open)         |
-#        | dead  | none   | failed (session ended, no PR)                     |
+#        | tmux  | PR     | started-evidence | Status                                    |
+#        | alive | none   | yes              | running                                   |
+#        | alive | open   | yes              | running (PR #N open)                       |
+#        | alive | *      | NO               | starting (session alive, workflow not …)  |
+#        | dead  | merged | -                | complete                                  |
+#        | dead  | open   | -                | blocked (session ended, PR #N still open) |
+#        | dead  | none   | -                | failed (session ended, no PR)             |
 #
 # <pr_state> is one of: open | merged | none | unknown. `unknown` means the gh probe failed (not
 # authenticated / rate-limited). PRESERVE current behavior: an unknown PR is treated like `none`
 # for liveness/status derivation (the PR CELL itself is shown as unknown by the renderer; the
 # Status derives from tmux + best-known PR). Any unrecognized tmux/PR combination falls through to
 # the dead+none "failed" terminal, the conservative default.
+#
+# <state_current> is the child ledger's `state.current` token as projected by
+# brood-status-project.sh — a real workflow-state token, or the fixed sentinels MISSING (absent) or
+# MALFORMED (rejected). <run_status> is the projected `run.status` token (informational; not part
+# of the started-evidence gate below). These are tier-3 child-ledger evidence (informational,
+# never overrides observable status — ADR-0007): they only DEMOTE an alive-but-unstarted child
+# away from `running`, never promote to complete and never hide a dead session.
+#
+# STARTED-EVIDENCE GATE (issue #213, secondary fix): an alive session is NOT proof the child
+# started its workflow — a pasted-but-never-submitted child has an alive tmux session and no run
+# ledger. The ground-truth started signal is RUN-LEDGER EVIDENCE: a present, non-MISSING/
+# non-MALFORMED state.current. An alive session WITHOUT that evidence derives the DISTINCT,
+# TRANSIENT (non-terminal), non-running, non-complete status below instead of a bare `running`.
+# MALFORMED state.current is fail-closed (NOT started-evidence -> demote to starting, not running).
 hivemind_derive_strain_status() {
   local manifest_status="$1" session_alive="$2" pr_state="$3" pr_number="$4"
+  local state_current="$5" run_status="$6"
 
   # 1. failed-precedence (manifest static field beats the alive-session inference).
   if [ "$manifest_status" = "failed" ]; then
@@ -61,6 +78,13 @@ hivemind_derive_strain_status() {
   [ "$pr_for_derive" = "unknown" ] && pr_for_derive="none"
 
   if [ "$session_alive" -eq 1 ]; then
+    # Started-evidence gate: a present, non-MISSING/non-MALFORMED state.current is ground-truth
+    # proof the child wrote its run ledger and started its workflow. Absent that, an alive session
+    # is demoted from `running` to the transient `starting` status (issue #213).
+    if [ -z "$state_current" ] || [ "$state_current" = "MISSING" ] || [ "$state_current" = "MALFORMED" ]; then
+      printf '%s' "starting (session alive, workflow not yet started)"
+      return 0
+    fi
     case "$pr_for_derive" in
       open) printf 'running (PR #%s open)' "$pr_number" ;;
       *)    printf 'running' ;;
@@ -84,9 +108,14 @@ hivemind_derive_strain_status() {
 # string's leading word, which the derivation above fixes to a small closed set:
 #   complete                                          -> complete
 #   running, running (PR #N open)                     -> running
-#   blocked (...), failed (...)                       -> blocked_failed
-# Any unexpected string falls to blocked_failed (conservative — a strain we cannot classify as
-# running or complete is counted against completion, never silently dropped).
+#   starting (...), blocked (...), failed (...)       -> blocked_failed
+# The `starting` status (alive session with no started-evidence, issue #213) buckets OUT of
+# running and is NOT counted complete: it falls into blocked_failed alongside blocked/failed so the
+# three-bucket summary keeps summing to total with no strain dropped. (A `starting` strain has not
+# made forward progress, so counting it against completion is the conservative, sum-preserving
+# choice — distinct from `running`, which the started-evidence gate now reserves for genuinely
+# started children.) Any unexpected string also falls to blocked_failed (conservative — a strain
+# we cannot classify as running or complete is counted against completion, never silently dropped).
 hivemind_classify_status_bucket() {
   local status="$1"
   case "$status" in

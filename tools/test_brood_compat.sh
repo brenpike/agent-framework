@@ -2516,6 +2516,133 @@ assert_collect_broodid_mismatch_empty_blocker() {
     fi
 }
 
+# ── COLLECT-STARTED-RUNNING: alive session + GT ledger with started workflow → running ──
+# issue #213 (secondary fix), positive control. A real alive tmux session matching the strain's
+# tmux_session, PLUS a GT-derived ledger carrying a present state.current (started evidence). The
+# collector's derivation MUST keep this strain running-equivalent (derived_status begins with
+# `running`), NOT demoted to `starting`. tmux-gated (skips when tmux is unavailable; we never drive
+# claude submit — we only create an inert tmux session to make the liveness probe observe `alive`).
+assert_collect_started_running() {
+    local name="COLLECT-STARTED-RUNNING:alive-session-with-started-ledger-stays-running"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    if ! command -v tmux >/dev/null 2>&1; then
+        skip "$name" "collect started-running case needs a real tmux session to observe alive; skipping (no tmux)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    local branch="strain/$COLLECT_BROOD_ID/api" sid="$COLLECT_BROOD_ID--api"
+    local sess="$COLLECT_BROOD_ID-api"
+    local wt="$root/wt-api"
+    git -C "$root" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    # Started evidence: a present state.current.
+    jq -n '{run:{status:"running"}, state:{current:"implement_step"}}' > "$wt/.hivemind/runs/$sid/state.json"
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" --arg wt "$wt" --arg branch "$branch" --arg sid "$sid" --arg sess "$sess" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", worktree_path:$wt, branch:$branch,
+                     tmux_session:$sess, status:"running",
+                     run:{suggested_id:$sid, workflow_hint:"standard-delivery"}}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+    # An inert alive tmux session matching the strain's tmux_session (NO claude submit driven).
+    local made_session=no
+    if tmux new-session -d -s "$sess" 2>/dev/null; then made_session=yes; fi
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local ok=no
+    if [[ "$made_session" == "yes" ]] && printf '%s' "$out" | jq -e \
+        --arg id "$COLLECT_BROOD_ID" \
+        '.schema=="brood-status-collect/1"
+         and .broods[0].strains[0].session=="alive"
+         and (.broods[0].strains[0].derived_status|startswith("running"))' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    [[ "$made_session" == "yes" ]] && tmux kill-session -t "$sess" 2>/dev/null || true
+    git -C "$root" worktree remove --force "$wt" 2>/dev/null || true
+    rm -rf "$tmp"
+    if [[ "$made_session" != "yes" ]]; then
+        skip "$name" "could not create a tmux session (no tmux server); skipping"
+        return
+    fi
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; alive session + started ledger -> derived_status running (not demoted to starting)"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
+# ── COLLECT-ALIVE-UNSTARTED: alive session + NO ledger on disk → starting (not running) ──
+# issue #213 (secondary fix), the core regression. A live worktree on the strain branch but NO
+# state.json (the child pasted its task and never submitted — no run ledger written). The projector
+# emits state.current=MISSING; with a real alive tmux session, the OLD rule masked this as bare
+# `running`. The collector now derives the DISTINCT transient `starting` status (non-running,
+# non-complete). tmux-gated (skips when tmux is unavailable; no claude submit is ever driven).
+assert_collect_alive_unstarted_starting() {
+    local name="COLLECT-ALIVE-UNSTARTED:alive-session-no-ledger-derives-starting"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    if ! command -v tmux >/dev/null 2>&1; then
+        skip "$name" "collect alive-unstarted case needs a real tmux session to observe alive; skipping (no tmux)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    local branch="strain/$COLLECT_BROOD_ID/api" sid="$COLLECT_BROOD_ID--api"
+    local sess="$COLLECT_BROOD_ID-api"
+    local wt="$root/wt-api"
+    git -C "$root" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null
+    # GT worktree exists, but NO state.json is written (child never started its workflow).
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" --arg wt "$wt" --arg branch "$branch" --arg sid "$sid" --arg sess "$sess" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", worktree_path:$wt, branch:$branch,
+                     tmux_session:$sess, status:"running",
+                     run:{suggested_id:$sid, workflow_hint:"standard-delivery"}}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+    local made_session=no
+    if tmux new-session -d -s "$sess" 2>/dev/null; then made_session=yes; fi
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local ok=no
+    # session=alive, workflow_state MISSING (no ledger), derived_status begins with `starting`, and
+    # the strain buckets OUT of running (summary.running==0) — the regression assertion.
+    if [[ "$made_session" == "yes" ]] && printf '%s' "$out" | jq -e \
+        --arg id "$COLLECT_BROOD_ID" \
+        '.schema=="brood-status-collect/1"
+         and .broods[0].strains[0].session=="alive"
+         and .broods[0].strains[0].workflow_state=="MISSING"
+         and (.broods[0].strains[0].derived_status|startswith("starting"))
+         and .broods[0].summary.running==0' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    [[ "$made_session" == "yes" ]] && tmux kill-session -t "$sess" 2>/dev/null || true
+    git -C "$root" worktree remove --force "$wt" 2>/dev/null || true
+    rm -rf "$tmp"
+    if [[ "$made_session" != "yes" ]]; then
+        skip "$name" "could not create a tmux session (no tmux server); skipping"
+        return
+    fi
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; alive session + no ledger -> derived_status starting (NOT running); running bucket excludes it"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
 echo ''
 echo '=== brood-status-collect.sh collection-loop entrypoint tests (#186, ADR-0020) ==='
 assert_collect_empty
@@ -2524,6 +2651,8 @@ assert_collect_unreadable_isolated
 assert_collect_missing_sentinel_not_probed
 assert_collect_broodid_mismatch_blocker
 assert_collect_broodid_mismatch_empty_blocker
+assert_collect_started_running
+assert_collect_alive_unstarted_starting
 
 echo ''
 echo '=== Summary ==='

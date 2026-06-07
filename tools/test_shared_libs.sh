@@ -662,33 +662,63 @@ echo '=== brood-status-derive.sh: status derivation, bucket classification, aggr
 # row of the failed-precedence + tmux x PR table, the bucket classifier, and both aggregators.
 
 # ── 6a. hivemind_derive_strain_status — the FULL rule table ──
-# failed-precedence (manifest_status=failed beats tmux): alive vs dead.
+# SIGNATURE (issue #213, 6-arity): <manifest_status> <session_alive> <pr_state> <pr_number>
+#   <state_current> <run_status>. The last two are tier-3 child-ledger started-evidence tokens; an
+# alive session derives `running` ONLY with a present, non-MISSING/non-MALFORMED state.current,
+# otherwise it demotes to the transient `starting` status. The dead/failed rows ignore them.
+STARTED="implement_step"   # a present, non-sentinel state.current = ground-truth started evidence.
+
+# failed-precedence (manifest_status=failed beats tmux): alive vs dead. Ledger tokens are ignored
+# under failed-precedence (use MISSING to prove they cannot resurrect a failed strain to starting).
 assert_eq "derive:failed-alive" "failed (injection failed; session alive for debug)" \
-  "$(hivemind_derive_strain_status failed 1 none "")" "failed + alive -> injection-failed debug"
+  "$(hivemind_derive_strain_status failed 1 none "" MISSING MISSING)" "failed + alive -> injection-failed debug"
 assert_eq "derive:failed-dead" "failed (session ended, no PR)" \
-  "$(hivemind_derive_strain_status failed 0 none "")" "failed + dead -> session ended"
+  "$(hivemind_derive_strain_status failed 0 none "" MISSING MISSING)" "failed + dead -> session ended"
 # failed-precedence holds even when a PR is open (manifest failed wins over the table).
 assert_eq "derive:failed-alive-pr-open" "failed (injection failed; session alive for debug)" \
-  "$(hivemind_derive_strain_status failed 1 open 7)" "failed + alive ignores PR state"
+  "$(hivemind_derive_strain_status failed 1 open 7 MISSING MISSING)" "failed + alive ignores PR state"
 
 # tmux x PR observable table (manifest_status NOT failed; use the literal status spawn-brood writes).
+# Alive rows carry started-evidence (STARTED) so they derive `running` (not the demoted `starting`).
 assert_eq "derive:alive-none" "running" \
-  "$(hivemind_derive_strain_status running 1 none "")" "alive + none -> running"
+  "$(hivemind_derive_strain_status running 1 none "" "$STARTED" running)" "alive + started + none -> running"
 assert_eq "derive:alive-open" "running (PR #42 open)" \
-  "$(hivemind_derive_strain_status running 1 open 42)" "alive + open -> running (PR #N open)"
+  "$(hivemind_derive_strain_status running 1 open 42 "$STARTED" running)" "alive + started + open -> running (PR #N open)"
 assert_eq "derive:dead-merged" "complete" \
-  "$(hivemind_derive_strain_status running 0 merged 13)" "dead + merged -> complete"
+  "$(hivemind_derive_strain_status running 0 merged 13 "$STARTED" complete)" "dead + merged -> complete"
 assert_eq "derive:dead-open" "blocked (session ended, PR #99 still open)" \
-  "$(hivemind_derive_strain_status running 0 open 99)" "dead + open -> blocked"
+  "$(hivemind_derive_strain_status running 0 open 99 "$STARTED" running)" "dead + open -> blocked"
 assert_eq "derive:dead-none" "failed (session ended, no PR)" \
-  "$(hivemind_derive_strain_status running 0 none "")" "dead + none -> failed"
+  "$(hivemind_derive_strain_status running 0 none "" "$STARTED" running)" "dead + none -> failed"
 
 # unknown-PR handling: gh failed. Treated like none for derivation (the cell shows unknown via the
 # renderer; status derives from tmux + best-known PR). alive+unknown -> running; dead+unknown -> failed.
 assert_eq "derive:alive-unknown" "running" \
-  "$(hivemind_derive_strain_status running 1 unknown "")" "alive + unknown PR -> running (unknown ~ none)"
+  "$(hivemind_derive_strain_status running 1 unknown "" "$STARTED" running)" "alive + started + unknown PR -> running (unknown ~ none)"
 assert_eq "derive:dead-unknown" "failed (session ended, no PR)" \
-  "$(hivemind_derive_strain_status running 0 unknown "")" "dead + unknown PR -> failed (unknown ~ none)"
+  "$(hivemind_derive_strain_status running 0 unknown "" "$STARTED" running)" "dead + unknown PR -> failed (unknown ~ none)"
+
+# ── 6a-bis. started-evidence gate (issue #213): alive session demotes to `starting` without it ──
+STARTING="starting (session alive, workflow not yet started)"
+# alive + started-evidence-present -> running (the positive control; mirrors derive:alive-none).
+assert_eq "derive:alive-started-running" "running" \
+  "$(hivemind_derive_strain_status running 1 none "" "$STARTED" running)" "alive + present state.current -> running"
+# alive + MISSING state.current (child pasted but never submitted; no ledger) -> starting, NOT running.
+assert_eq "derive:alive-missing-starting" "$STARTING" \
+  "$(hivemind_derive_strain_status running 1 none "" MISSING MISSING)" "alive + MISSING state.current -> starting (not running)"
+# alive + MALFORMED state.current (fail-closed) -> starting, NOT running.
+assert_eq "derive:alive-malformed-starting" "$STARTING" \
+  "$(hivemind_derive_strain_status running 1 none "" MALFORMED MISSING)" "alive + MALFORMED state.current -> starting (fail-closed, not running)"
+# alive + empty state.current -> starting (defensive: empty is treated as no started-evidence).
+assert_eq "derive:alive-empty-starting" "$STARTING" \
+  "$(hivemind_derive_strain_status running 1 none "" "" "")" "alive + empty state.current -> starting"
+# The started-evidence gate does NOT promote a DEAD session: dead+merged stays complete even with no
+# state.current (the gate only DEMOTES alive sessions; it never touches the dead branch).
+assert_eq "derive:dead-merged-no-evidence" "complete" \
+  "$(hivemind_derive_strain_status running 0 merged 13 MISSING MISSING)" "dead + merged + MISSING -> complete (gate never touches dead branch)"
+# alive + started-evidence + open PR -> running (PR #N open), NOT starting (evidence present).
+assert_eq "derive:alive-started-open" "running (PR #7 open)" \
+  "$(hivemind_derive_strain_status running 1 open 7 "$STARTED" running)" "alive + started + open -> running (PR #N open)"
 
 # ── 6b. hivemind_classify_status_bucket — every derived status maps to a bucket ──
 assert_eq "bucket:complete" "complete" \
@@ -703,6 +733,10 @@ assert_eq "bucket:failed" "blocked_failed" \
   "$(hivemind_classify_status_bucket "failed (session ended, no PR)")" "failed -> blocked_failed"
 assert_eq "bucket:failed-debug" "blocked_failed" \
   "$(hivemind_classify_status_bucket "failed (injection failed; session alive for debug)")" "failed-debug -> blocked_failed"
+# issue #213: the new `starting` status buckets OUT of running and is NOT complete -> blocked_failed,
+# so the three-bucket summary keeps summing to total.
+assert_eq "bucket:starting" "blocked_failed" \
+  "$(hivemind_classify_status_bucket "starting (session alive, workflow not yet started)")" "starting -> blocked_failed (out of running, not complete)"
 # Conservative default: an unexpected string counts against completion, never silently dropped.
 assert_eq "bucket:unexpected" "blocked_failed" \
   "$(hivemind_classify_status_bucket "weird")" "unexpected status -> blocked_failed (conservative)"
@@ -720,6 +754,10 @@ assert_eq "brood-agg:all-complete" "3 0 0 3" \
 # An unrecognized bucket token counts into blocked_failed (never dropped from total).
 assert_eq "brood-agg:unknown-bucket" "1 0 1 2" \
   "$(hivemind_aggregate_brood_summary complete bogus)" "unknown bucket -> blocked_failed, still counted"
+# issue #213: a `starting` strain (classified blocked_failed) is counted in total, so the summary
+# still sums (1 complete + 1 running + 2 blocked_failed = 4). Proves no strain is dropped.
+assert_eq "brood-agg:with-starting" "1 1 2 4" \
+  "$(hivemind_aggregate_brood_summary complete running blocked_failed blocked_failed)" "starting bucketed blocked_failed -> summary sums to total"
 
 # ── 6d. hivemind_aggregate_global — {total_broods,unreadable,complete,total_strains} ──
 # Records are "<is_unreadable>:<complete>:<total>".
