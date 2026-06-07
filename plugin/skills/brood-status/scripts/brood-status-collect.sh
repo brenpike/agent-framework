@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 #
 # brood-status-collect — THIN executable entrypoint for the brood-status collection loop
-# (issue #186, ADR-0020). The read-side analog completion of the brood-status engine: discovery
-# (brood-discover.sh, #185) + single-manifest projection (brood-status-project.sh, #161/#168) were
+# (ADR-0020). The read-side analog completion of the brood-status engine: discovery
+# (brood-discover.sh) + single-manifest projection (brood-status-project.sh) were
 # already committed; THIS script owns the LOOP, the IMPURE per-strain observable probing, the
 # pure status-derivation (via _shared/brood-status-derive.sh), and aggregation, emitting ONE JSON
 # document the navigator renders. It replaces the prose loop/derivation that previously lived in
 # brood-status's SKILL.md steps 2..5 — exactly the "inline navigator-body logic" ADR-0020 rejects.
 #
-# STRUCTURAL SPLICE CLOSURE (the security point of #186): the navigator previously spliced each
+# STRUCTURAL SPLICE CLOSURE (the security point): the navigator previously spliced each
 # discovered manifest path AND the operator-controlled checkout root into an LLM-authored Bash
 # command (`bash brood-status-project.sh "<manifest_path>" "<checkout_root>"`). Per
 # security-policy.md / ADR-0019, double-quoting does NOT neutralize `$(...)`, backticks, or `${}`
 # in command SOURCE. This entrypoint runs the loop and invokes the projector with INERT shell
 # variables (`"$manifest"`, `"$root"`), so untrusted paths NEVER cross into LLM-authored command
-# source. Both residuals close BY CONSTRUCTION: the brood-id segment (already gated in #185) AND
-# the operator-controlled checkout-root (deferred from #185).
+# source. Both residuals close BY CONSTRUCTION: the brood-id segment (already gated) AND
+# the operator-controlled checkout-root (deferred).
 #
 # RUNTIME DEPS: jq is a hard dep (the projector output is consumed + a JSON document is built with
 # jq so all escaping is automatic). Unlike the PURE projector, tmux/gh/git ARE required here —

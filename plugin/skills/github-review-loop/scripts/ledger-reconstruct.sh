@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Deterministically reconstruct an EPHEMERAL fix-ledger-shaped structure for the
-# github-reviewer agent (issue #222, initiative #201).
+# github-reviewer agent.
 #
 # 1. PURPOSE
 # ----------

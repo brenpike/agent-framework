@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # mark-intent-fallback — sanctioned version-skew resume write-path for the
-# hivemind:mark-intent-fallback skill (issue #160).
+# hivemind:mark-intent-fallback skill.
 #
 # Provides the resume door that record-state-result.sh DELIBERATELY refuses: it appends an
 # intent-fallback event to the run ledger and (optionally) closes the run WITHOUT
@@ -11,7 +11,7 @@
 # resume-on-start gate's "proceed intent-driven" door has a deterministic ledger writer
 # instead of an unreachable rebind.
 #
-# WHAT IT DELIBERATELY SKIPS (this is the whole point — see issue #160):
+# WHAT IT DELIBERATELY SKIPS (this is the whole point):
 #   - NO workflow-definition derivation/read. The skewed run may reference a definition
 #     version no longer packaged; reading it is neither possible nor required here.
 #   - NO binding guard (definition.id / version vs ledger). Skew is the precondition, not a

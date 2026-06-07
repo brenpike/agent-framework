@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Fetch + normalize the PR review surface into ONE normalized candidate set for
-# the github-review-loop skill / github-reviewer agent (issue #203, I1).
+# the github-review-loop skill / github-reviewer agent.
 #
 # 1. PURPOSE
 # ----------
@@ -19,7 +19,7 @@
 # skip/order/overflow predicate) and (b) failed-CI-check candidates, every
 # record carrying an `item_source` tag.
 #
-# SCOPE NOTE (issue #203 boundary): this script is the DESIGNATED single source.
+# SCOPE NOTE: this script is the DESIGNATED single source.
 # The duplicate enumerations in prefilter.sh, the agent prose, and the ref doc
 # are NOT deleted here — that rewire is the dependent strains (#205 / #206).
 # Their continued existence after this step is EXPECTED.
@@ -139,7 +139,7 @@
 #   - CI candidates carry NO node id (`id: null`) — they are not review nodes and
 #     must never be routed to a `node(id:)` body refetch.
 #   - Missing `timeout` / `gtimeout` -> degrade gracefully with a loud stderr
-#     warning and run the gh calls UNGUARDED (mirrors prefilter.sh / issue #159).
+#     warning and run the gh calls UNGUARDED (mirrors prefilter.sh).
 #
 # 5. INVOCATION + TEST SEAM
 # -------------------------
@@ -308,7 +308,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CLASSIFY_FILTER="$SCRIPT_DIR/fix-history-classify.jq"
 [ -f "$CLASSIFY_FILTER" ] || fetchnorm_fail "missing-filter"
 
-# Timeout wrapper for gh API calls (issue #159). Prefer coreutils `timeout`;
+# Timeout wrapper for gh API calls. Prefer coreutils `timeout`;
 # fall back to macOS Homebrew `gtimeout`; degrade gracefully (run unguarded) when
 # neither exists, with a loud stderr warning. Verbatim posture from prefilter.sh.
 GH_CALL_TIMEOUT_SECONDS=45

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Reply + resolve the GitHub review mutation sequence for ONE fixed candidate, for
-# the github-review-loop skill / github-reviewer agent (issue #205).
+# the github-review-loop skill / github-reviewer agent.
 #
 # 1. PURPOSE
 # ----------
@@ -26,7 +26,7 @@
 # identical order, with the identical reply-body format and the identical
 # resolve-eligibility / question-skip / non-blocking-resolve rules.
 #
-# SCOPE NOTE (issue #205 boundary): this script is the DESIGNATED single source.
+# SCOPE NOTE: this script is the DESIGNATED single source.
 # The duplicate prose in github-reviewer.md step 12 is NOT collapsed here — that
 # rewire is a dependent step that edits the agent. Its continued existence after
 # this step is EXPECTED.
@@ -96,7 +96,7 @@
 #     the candidate — the fix is committed, pushed, and replied; an unresolved
 #     thread is a cosmetic GitHub-side state, not a remediation failure.
 #   - Missing `timeout` / `gtimeout` -> degrade gracefully with a loud stderr
-#     warning and run the gh calls UNGUARDED (mirrors fetch-normalize.sh / #159).
+#     warning and run the gh calls UNGUARDED (mirrors fetch-normalize.sh).
 #
 # 5. INVOCATION + TEST SEAM
 # -------------------------
@@ -183,7 +183,7 @@ case "$SURFACE" in
     [ -n "$CANDIDATE_URL" ] || replyresolve_fail "missing-candidate-url" ;;
 esac
 
-# Timeout wrapper for gh API calls (issue #159). Prefer coreutils `timeout`; fall
+# Timeout wrapper for gh API calls. Prefer coreutils `timeout`; fall
 # back to macOS Homebrew `gtimeout`; degrade gracefully (run unguarded) when
 # neither exists, with a loud stderr warning. Verbatim posture from
 # fetch-normalize.sh.

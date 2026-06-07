@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 #
-# ledger-project.sh — shared child run-ledger scalar projector (read side, issue #161).
+# ledger-project.sh — shared child run-ledger scalar projector (read side).
 #
 # THIS FILE IS SOURCED, NOT EXECUTED. No shebang: each caller sources it by absolute
 # path derived from its OWN script_dir (`. "$plugin_root/skills/_shared/ledger-project.sh"`).
@@ -45,9 +45,9 @@
 # Returns 0 (true) iff <file> contains at least one literal NUL byte. JSON never legitimately
 # contains a literal NUL, so its presence marks the file UNREADABLE/MALFORMED.
 #
-# WHY THIS EXISTS (root, Codex #172): bash command substitution `$(...)` SILENTLY STRIPS NUL
-# bytes from its captured output. A file read with `content="$(cat -- "$f")"` therefore yields
-# a value that DIFFERS from the on-disk bytes whenever a NUL is present — e.g. an on-disk
+# WHY THIS EXISTS: bash command substitution `$(...)` SILENTLY STRIPS NUL bytes from its
+# captured output. A file read with `content="$(cat -- "$f")"` therefore yields a value that
+# DIFFERS from the on-disk bytes whenever a NUL is present — e.g. an on-disk
 # `{"strains":<NUL>[]}` becomes the valid-looking `{"strains":[]}` and passes shape validation.
 # We must therefore reject a NUL-bearing file at the FILE level, BEFORE any `$(...)` read can
 # erase the NUL. `grep`/bash-string approaches cannot carry a NUL in the pattern (the NUL is
@@ -74,16 +74,16 @@ hivemind_path_has_nul() {
 # intact. jq emits ONLY a fixed token (MISSING / MALFORMED) or a value that is byte-for-byte
 # one of the four enum literals. This closes two distinct gaps that a post-extraction bash
 # `case` left open:
-#   1. NUL/control-byte stripping (Codex #172 P1): bash command substitution SILENTLY DROPS NUL
+#   1. NUL/control-byte stripping: bash command substitution SILENTLY DROPS NUL
 #      bytes, so a hostile `"run\u0000ning"` would, after extraction, become `running` and pass
 #      a bash enum check. Comparing inside jq (where the NUL is intact) rejects it as MALFORMED,
 #      and a value that DOES pass `IN(...)` is exactly an enum literal — it can carry no NUL.
-#   2. Falsy non-string values (Codex #172 P1): the prior `.run.status // empty` treated JSON
+#   2. Falsy non-string values: the prior `.run.status // empty` treated JSON
 #      `false` as absent (`//` is alternative-on-falsy), projecting a tamper value as MISSING.
 #      The explicit `type` gate reports a PRESENT non-string as MALFORMED; only an absent/null
 #      field or an explicit empty string is MISSING.
 #
-# SINGLE-DOCUMENT DISCIPLINE (#178 F1): jq accepts a STREAM of concatenated JSON documents, so a
+# SINGLE-DOCUMENT DISCIPLINE: jq accepts a STREAM of concatenated JSON documents, so a
 # non-slurped `jq -r` runs the program ONCE PER document and a child state.json holding TWO valid
 # objects would emit TWO output lines — the embedded newline corrupts the one-line STRAIN frame the
 # caller builds. We SLURP with `-s` and require `length==1` (exactly one top-level document); 0 or
@@ -121,7 +121,7 @@ hivemind_project_run_status_content() {
 # ALL run INSIDE jq, so the verdict is computed while the bytes are still intact, and jq emits
 # ONLY a fixed token (MISSING / MALFORMED) or a value that has already satisfied ^[a-z0-9_]+$.
 # This closes two gaps a post-extraction bash check left open:
-#   1. NUL/control-byte stripping (Codex #172 P1): bash command substitution SILENTLY DROPS NUL
+#   1. NUL/control-byte stripping: bash command substitution SILENTLY DROPS NUL
 #      bytes, so a hostile `"imp lement"` would, after extraction, become `implement` and pass
 #      a bash charset `case`. Testing inside jq (NUL intact) rejects it as MALFORMED, and a value
 #      that DOES pass `test("^[a-z0-9_]+$")` contains only [a-z0-9_] — it can carry no NUL.
@@ -129,7 +129,7 @@ hivemind_project_run_status_content() {
 #      etc.; a PRESENT non-string is a tamper indicator → MALFORMED. An ABSENT/null field or an
 #      explicit empty string is the intended "nothing to report" case → MISSING.
 #
-# SINGLE-DOCUMENT DISCIPLINE (#178 F1): same rationale as hivemind_project_run_status_content — a
+# SINGLE-DOCUMENT DISCIPLINE: same rationale as hivemind_project_run_status_content — a
 # non-slurped `jq -r` over a child state.json holding TWO concatenated valid objects would emit TWO
 # lines, and the embedded newline corrupts the one-line STRAIN frame. We SLURP with `-s` and require
 # `length==1`; 0 or >1 documents → MALFORMED. The scalar is projected from `.[0]`.
@@ -168,7 +168,7 @@ hivemind_project_run_status() {
     printf 'MISSING\n'
     return 0
   fi
-  # FILE-LEVEL NUL REJECTION (root, Codex #172): the `cat` below captures via `$(...)`, which
+  # FILE-LEVEL NUL REJECTION: the `cat` below captures via `$(...)`, which
   # SILENTLY STRIPS NUL bytes, so a NUL-bearing ledger would parse as a different document than
   # what is on disk. JSON never legitimately contains a literal NUL → "present but invalid" →
   # MALFORMED, checked at the FILE level before the `$(...)` read can erase the NUL.
@@ -206,7 +206,7 @@ hivemind_project_state_current() {
     printf 'MISSING\n'
     return 0
   fi
-  # FILE-LEVEL NUL REJECTION (root, Codex #172): see hivemind_project_run_status — a literal NUL in
+  # FILE-LEVEL NUL REJECTION: see hivemind_project_run_status — a literal NUL in
   # the ledger would be silently stripped by the `$(...)` read; a NUL-bearing ledger is MALFORMED.
   if hivemind_path_has_nul "$ledger_path"; then
     printf 'MALFORMED\n'
