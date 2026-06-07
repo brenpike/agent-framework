@@ -48,15 +48,11 @@ The OVERLORD / run-level gate, executed once at the `validate` workflow state. E
 
 ## Worker Self-Check
 
-The artifact-scoped check a worker (drone/changeling) runs over ONLY its own edited artifacts — never the whole run. For each file the worker edited:
+The artifact-scoped check a worker (drone/changeling) runs over ONLY its own edited artifacts — never the whole run. The worker validates each artifact at the smallest scope that confirms its own change, using the per-artifact checks the project documents (e.g. in `CLAUDE.md`) or the narrowest applicable subset of the project's validation commands scoped to the edited file.
 
-- shell script (`*.sh`) → `bash -n <file>`
-- a co-located `test_*.sh` exists for the edited artifact → run that test
-- JSON file (`*.json`) → `jq empty <file>` (or `python3 -m json.tool <file>`)
+A worker MUST NOT run the project's full run-level validation gate (the overlord's Validation Procedure) as a self-check — that gate runs once, at the `validate` state, owned by the overlord.
 
-A worker MUST NOT directly invoke `tools/validate.sh --changed` or `tools/validate.sh --all` — that is the overlord's single run-level Validation Procedure gate at the `validate` state. Running an artifact's own `test_*.sh` is allowed even if that test internally shells out to the validator.
-
-FAIL-CLOSED: a self-check command that CANNOT run → return Blocked naming the command and reason. A file with NO applicable self-check command (e.g. markdown-only edit, no shell/test/JSON) → record a clean "Not run (no applicable self-check)", NOT Blocked.
+FAIL-CLOSED: a self-check that CANNOT run → return Blocked naming it and the reason. An artifact with NO applicable self-check → record a clean "Not run (no applicable self-check)", NOT Blocked.
 
 ## Brood
 
