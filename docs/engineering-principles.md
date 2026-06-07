@@ -12,7 +12,12 @@ When procedure is extracted to a script, its spec moves WITH it as a contract-on
 
 ## P3 — Header without a test is decoration
 
-A header comment can drift from the code below it in the same file; nothing enforces it. Every extraction is therefore a triple: the script, the contract header, and a `test_*.sh` CI fixture. The test is the behavioral guarantee; the header is human-readable intent. (Precedent: #198's `fix-history-classify.jq` paired with `test_fix_history_classify.sh`.)
+A header comment can drift from the code below it in the same file; nothing enforces it. The same logic extends to governance: a section header naming specific consumers is an assertion about coupling, and nothing enforces it without a fixture. The general principle: any load-bearing contract — whether a script or a governance section with named consumers — is decoration until a CI fixture asserts the coupling.
+
+This produces two enforcement triples in this repo:
+
+1. **Script triple:** the script, the contract header, and a `test_*.sh` CI fixture. The test is the behavioral guarantee; the header is human-readable intent. (Precedent: #198's `fix-history-classify.jq` paired with `test_fix_history_classify.sh`.)
+2. **Governance triple:** the governance section, its named consumer list, and a `tests/policy/safety-*.json` consumer-assertion fixture. The fixture is the coupling guarantee; the section header is human-readable intent. (Precedent: during PR #229, a `## Worker Self-Check` governance section consumed by `drone.md` and `changeling.md` shipped WITHOUT a `tests/policy/safety-*.json` consumer-assertion fixture; Codex review caught the missing-fixture gap post-hoc — a P1-C finding — and the fixture was added as a follow-up within that same PR.)
 
 ## P4 — Extraction-home policy
 
