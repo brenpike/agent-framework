@@ -148,7 +148,7 @@ if command -v timeout >/dev/null 2>&1; then
 elif command -v gtimeout >/dev/null 2>&1; then
   GH_TIMEOUT=(gtimeout "$GH_CALL_TIMEOUT_SECONDS")
 else
-  echo "github-review-loop: WARNING neither 'timeout' nor 'gtimeout' found on PATH; gh API calls in the prefilter are running UNGUARDED and a hung call can stall this dispatch (issue #159). Install GNU coreutils (provides 'timeout'; 'gtimeout' on Homebrew) to restore the timeout guard." >&2
+  echo "github-review-loop: WARNING neither 'timeout' nor 'gtimeout' found on PATH; gh API calls in the prefilter are running UNGUARDED and a hung call can stall this dispatch. Install GNU coreutils (provides 'timeout'; 'gtimeout' on Homebrew) to restore the timeout guard." >&2
 fi
 
 # Single non-paginated GraphQL call. The query must fetch a payload CONFORMING

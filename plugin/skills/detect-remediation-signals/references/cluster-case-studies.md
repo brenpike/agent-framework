@@ -1,6 +1,6 @@
-# Cluster Case Studies — PR #172 Exemplars
+# Cluster Case Studies — Worked Exemplars
 
-Six worked examples from the PR #172 review spiral (~20 P1/P2 findings over multiple days).
+Six worked examples from a real multi-day review spiral (~20 P1/P2 findings).
 They are **few-shot exemplars that TEACH the judgment** in `detect-remediation-signals` —
 they are NOT test fixtures and NOT an exhaustive taxonomy. Each shows: the finding sequence
 (symptoms) → the shared root → the `fix_framing` / `root_class` label → which signal fires →
@@ -114,7 +114,7 @@ adds one more containment check.
 **Signal fired:** root-cluster (N≥3). This exemplar also teaches **Defer-with-Scope**: the
 structural fix (derive the worktree from `git worktree list` ground truth, stop trusting the
 manifest path — prefer **ground-truth derivation over validating untrusted input**) was
-deferred to tracked issue #168 WITH full root-cause scope, linked threads, and a
+deferred WITH full root-cause scope, linked threads, and a
 bounded-impact note. The cluster verdict still fires; the reviewer routes it to a structural
 fix that may be deferred, never to N more per-finding containment patches.
 

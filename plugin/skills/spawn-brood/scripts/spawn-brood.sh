@@ -48,7 +48,7 @@
 #     }
 #   The per-strain branch is NO LONGER caller-supplied — it is DERIVED as
 #   strain/<brood-id>/<strain-slug>, so two concurrent same-checkout broods reusing a strain
-#   name get disjoint branches (closes PR #154 F2-deep). Any caller-supplied `branch` is ignored.
+#   name get disjoint branches (closes the F2-deep same-name brood-collision class). Any caller-supplied `branch` is ignored.
 #
 # OUTPUT:
 #   - Writes per-strain task.md files under each worktree's gitignored .hivemind/.
@@ -323,7 +323,7 @@ for idx in $(seq 0 $((strain_count - 1))); do
 
   # ── brood-id-namespaced names ───────────────────────────
   # branch / worktree / tmux session ALL carry the brood-id so two concurrent same-checkout
-  # broods reusing a strain name get DISJOINT resources (closes PR #154 F2-deep). The branch is
+  # broods reusing a strain name get DISJOINT resources (closes the F2-deep same-name brood-collision class). The branch is
   # DERIVED here (no longer caller-supplied). brood_id is asserted ^brood-[0-9a-f-]+$ and short
   # is sanitized to [a-z0-9-], so the joins introduce no '..', '.lock', or doubled slash; each
   # branch is additionally git check-ref-format-validated by validate_ref below.

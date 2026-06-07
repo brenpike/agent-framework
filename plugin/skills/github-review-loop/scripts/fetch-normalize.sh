@@ -8,7 +8,7 @@
 # Single source of truth for the per-surface node-id / contract-field
 # ENUMERATION that the review loop fetches and the shape it normalizes that
 # fetch into. Before this script, that enumeration was smeared across three
-# sites that drift independently (the PR #200 node-id escalation chain):
+# sites that drift independently (the node-id escalation chain):
 #   - prefilter.sh's inline GraphQL query literal,
 #   - the github-reviewer agent prose (steps 3 / 4 / 13's field lists),
 #   - references/github-pr-review-graphql.md's query templates.
@@ -21,7 +21,7 @@
 #
 # SCOPE NOTE: this script is the DESIGNATED single source.
 # The duplicate enumerations in prefilter.sh, the agent prose, and the ref doc
-# are NOT deleted here — that rewire is the dependent strains (#205 / #206).
+# are NOT deleted here — that rewire is dependent follow-up work.
 # Their continued existence after this step is EXPECTED.
 #
 # 2. INPUT CONTRACT — exact per-surface GraphQL field enumeration
@@ -318,7 +318,7 @@ if command -v timeout >/dev/null 2>&1; then
 elif command -v gtimeout >/dev/null 2>&1; then
   GH_TIMEOUT=(gtimeout "$GH_CALL_TIMEOUT_SECONDS")
 else
-  echo "github-review-loop: WARNING neither 'timeout' nor 'gtimeout' found on PATH; gh API calls in fetch-normalize are running UNGUARDED and a hung call can stall this dispatch (issue #159). Install GNU coreutils (provides 'timeout'; 'gtimeout' on Homebrew) to restore the timeout guard." >&2
+  echo "github-review-loop: WARNING neither 'timeout' nor 'gtimeout' found on PATH; gh API calls in fetch-normalize are running UNGUARDED and a hung call can stall this dispatch. Install GNU coreutils (provides 'timeout'; 'gtimeout' on Homebrew) to restore the timeout guard." >&2
 fi
 
 # The canonical fetch query. Owned HERE as the single source. Conforming
@@ -588,7 +588,7 @@ case "$comments_total" in ''|*[!0-9]*) comments_total=0 ;; esac
 case "$reviews_total" in ''|*[!0-9]*) reviews_total=0 ;; esac
 
 if [ "$threads_total" -gt 50 ] || [ "$comments_total" -gt 50 ] || [ "$reviews_total" -gt 50 ]; then
-  echo "github-review-loop: OVERFLOW one or more connection totalCounts exceed 50 (reviewThreads=$threads_total comments=$comments_total reviews=$reviews_total); in-page classification is untrustworthy on the overflowed axis — the consumer must fail open (DISPATCH) per its >50 tripwire (issue #203 invariant)." >&2
+  echo "github-review-loop: OVERFLOW one or more connection totalCounts exceed 50 (reviewThreads=$threads_total comments=$comments_total reviews=$reviews_total); in-page classification is untrustworthy on the overflowed axis — the consumer must fail open (DISPATCH) per its >50 tripwire." >&2
 fi
 
 # --- Review-surface records: pipe the raw GraphQL payload through the shared
