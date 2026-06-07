@@ -36,7 +36,7 @@ This skill MUST run in the **main session**. It is overlord-invocable. The skill
 
 ## Path-agnostic — producing issues does NOT force a brood
 
-Per ADR-0012, this is a path-agnostic artifact transform. Producing a sliced issue set has zero bearing on the execution path. Whether the work later runs single-branch or as a brood is decided **downstream** at implementation time, solely by the cerebrate's overlap analysis (overlord step 3a/3b) or by explicit Overmind direction — independent of how the issues were sliced. Well-sliced, minimal-overlap issues *tend* to be good brood candidates, but nothing about this skill forces a brood. A PRD's issue set is an equally valid input to sequential single-branch work. Do NOT frame this skill, or the issues it writes, as "the brood path."
+This is a path-agnostic artifact transform. Producing a sliced issue set has zero bearing on the execution path. Whether the work later runs single-branch or as a brood is decided **downstream** at implementation time, solely by the cerebrate's overlap analysis (overlord step 3a/3b) or by explicit Overmind direction — independent of how the issues were sliced. Well-sliced, minimal-overlap issues *tend* to be good brood candidates, but nothing about this skill forces a brood. A PRD's issue set is an equally valid input to sequential single-branch work. Do NOT frame this skill, or the issues it writes, as "the brood path."
 
 ---
 

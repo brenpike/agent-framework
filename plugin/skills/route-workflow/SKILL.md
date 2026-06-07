@@ -10,7 +10,7 @@ shell: bash
 
 Classify the current non-Reflex request and select which workflow handles it. This
 skill is the **sole owner** of "which workflow" — no other skill or agent
-re-classifies across workflow boundaries (per ADR-0018 Decision 5). Classification is
+re-classifies across workflow boundaries. Classification is
 **by judgment, never a keyword lookup table** (§F): read the request and the context
 flags, reason about intent, and choose the single best-fitting concrete workflow.
 
