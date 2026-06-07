@@ -16,7 +16,7 @@ event, validate the transition against the workflow definition, and advance
 `${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh`; this
 body is a navigator that authors a single JSON inputs file and runs the script once. The
 allowed-result set is read DIRECTLY from the workflow definition by the script — the model
-NEVER supplies it (ADR-0018 §C).
+NEVER supplies it.
 
 Rules: ADR-0018 §C (engine is the committed script, reads the allowed-set); §A (ledger and
 definitions are JSON); §I (engine hard-rejects a non-binding id/version mismatch and exposes

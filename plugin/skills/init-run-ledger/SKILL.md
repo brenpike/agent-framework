@@ -15,7 +15,7 @@ committed script
 `${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh`; this body is a
 navigator that builds the inputs file and runs the script once. The
 ledger is JSON (`<checkout-root>/.hivemind/runs/<run-id>/state.json`, anchored to the git
-checkout root) per ADR-0018 §A and
+checkout root) per
 `${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md`.
 
 Rules: ADR-0018 §A (ledger is JSON); §C (engine is the committed script).
