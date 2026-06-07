@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "rule": "CHECK11",
+    "path": "plugin/skills/seed-hive/SKILL.md",
+    "line": 42
+  },
+  {
+    "rule": "CHECK11",
+    "path": "plugin/skills/injection-scan/SKILL.md",
+    "line": 102
+  }
+]

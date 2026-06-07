@@ -697,6 +697,66 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+# ── CHECK 11: No bare calling-bioform name in skill body prose (P14) ────────
+#
+# Reusable skills are role-agnostic and may be invoked by any agent. Naming a
+# specific calling bioform (overlord/drone/changeling) in skill BODY prose
+# couples the skill to one caller and violates engineering-principles.md P14:
+# reference the caller by role/intent, not by bioform name. Agents legitimately
+# own these names, so scope is skills/ only. Structural exclusions (YAML
+# frontmatter, fenced code blocks, table rows) and a KEEP-phrase allowlist for
+# legitimate architectural-invariant/topology mentions keep the scan tight.
+
+echo ''
+echo '=== CHECK 11: No bare calling-bioform name in skill body prose (P14) ==='
+
+# Denylist of calling-bioform names — single variable for trivial extension.
+# cerebrate is intentionally NOT in v1; it is deferred to issue #254.
+BIOFORM_DENYLIST='overlord|drone|changeling'
+# KEEP-phrase regex: legitimate architectural-invariant/topology mentions that
+# must NOT be flagged even though they contain a denylisted word.
+CHECK11_KEEP_REGEX='RUN-OWNERSHIP-01|overlord instance|overlord session|overlord-invocable|overlord resume|overlord step|hivemind:overlord|parallel overlord sessions'
+
+check11_found=false
+while IFS= read -r -d '' skill_file; do
+    # One-pass awk state machine emits surviving BODY lines as "line_num<TAB>line",
+    # excluding YAML frontmatter, fenced code blocks, and markdown table rows.
+    while IFS=$'\t' read -r line_num textline; do
+        [[ -z "$line_num" ]] && continue
+        # Strip legitimate KEEP-phrase spans first (mirrors CHECK 8's
+        # ${CLAUDE_PLUGIN_ROOT} strip at line ~504), so a real leak sharing a
+        # line with a legit mention is still caught instead of the whole line
+        # being exempted.
+        residual="$(echo "$textline" | sed -E "s/(${CHECK11_KEEP_REGEX})//Ig")"
+        if echo "$residual" | grep -qiwE "($BIOFORM_DENYLIST)"; then
+            bare_word="$(echo "$residual" | grep -oiwE "($BIOFORM_DENYLIST)" | head -n1)"
+            check11_found=true
+            add_finding 'CHECK11' "$skill_file" "$line_num" \
+                "bare calling-bioform name '$bare_word' in skill body prose -- reference the caller by role/intent (P14); see engineering-principles.md P14"
+        fi
+    done < <(awk '
+        BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
+        {
+            # YAML frontmatter: first line "---" opens, next "---" closes.
+            if (!fm_done && NR == 1 && $0 == "---") { in_fm = 1; next }
+            if (in_fm) { if ($0 == "---") { in_fm = 0; fm_done = 1 } next }
+            # Fenced code blocks toggle on lines starting with ```.
+            if ($0 ~ /^```/) { in_fence = !in_fence; next }
+            if (in_fence) next
+            # Markdown table rows.
+            if ($0 ~ /^[ \t]*\|/) next
+            print NR "\t" $0
+        }
+    ' "$skill_file")
+done < <(find "$PLUGIN_ROOT/skills" -name 'SKILL.md' -type f -print0)
+
+if [[ "$check11_found" == false ]]; then
+    echo '[PASS] Check 11: No bare calling-bioform name in skill body prose (P14)'
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''
