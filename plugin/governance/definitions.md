@@ -44,7 +44,15 @@ A failure is transient if and only if its root cause is: HTTP 5xx, HTTP 429, TCP
 
 ## Validation Procedure
 
-Execute every command listed in the project's `CLAUDE.md` validation section. No duration cap. If a command cannot run, return Blocked naming the command and reason. If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so.
+The OVERLORD / run-level gate, executed once at the `validate` workflow state. Execute every command listed in the project's `CLAUDE.md` validation section. No duration cap. If a command cannot run, return Blocked naming the command and reason. If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so.
+
+## Worker Self-Check
+
+The artifact-scoped check a worker (drone/changeling) runs over ONLY its own edited artifacts — never the whole run. The worker validates each artifact at the smallest scope that confirms its own change, using the per-artifact checks the project documents (e.g. in `CLAUDE.md`) or the narrowest applicable subset of the project's validation commands scoped to the edited file.
+
+A worker MUST NOT run the project's full run-level validation gate (the overlord's Validation Procedure) as a self-check — that gate runs once, at the `validate` state, owned by the overlord.
+
+FAIL-CLOSED: a self-check that CANNOT run → return Blocked naming it and the reason. An artifact with NO applicable self-check → record a clean "Not run (no applicable self-check)", NOT Blocked.
 
 ## Brood
 

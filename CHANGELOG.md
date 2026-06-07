@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.28.1] - 2026-06-06
+
+### Fixed
+
+- **Workers (drone/changeling) no longer run the run-level `tools/validate.sh` per artifact — they run the new artifact-scoped Worker Self-Check (`plugin/agents/drone.md`, `plugin/agents/changeling.md`, `plugin/governance/definitions.md`).** Per-artifact verification is now scoped to a worker's own edited files (shell `bash -n`, co-located `test_*.sh`, JSON `jq empty`); the overlord run-level Validation Procedure remains the single gate at the `validate` state. Also corrects the drone version-bump self-check to `jq`-parse the canonical version file(s) named in the delegation rather than the hard-coded plugin manifest, keeping the generic drone contract project-agnostic.
+
 ## [2.28.0] - 2026-06-06
 
 ### Added

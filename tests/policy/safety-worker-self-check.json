@@ -1,0 +1,17 @@
+{
+  "rule": "Worker Self-Check contract",
+  "source": {
+    "file": "plugin/governance/definitions.md",
+    "pattern": "## Worker Self-Check"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/drone.md",
+      "pattern": "run worker self-check per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Worker Self-Check)"
+    },
+    {
+      "file": "plugin/agents/changeling.md",
+      "pattern": "run worker self-check per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Worker Self-Check)"
+    }
+  ]
+}

@@ -10,10 +10,6 @@
       "pattern": "Run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)"
     },
     {
-      "file": "plugin/agents/drone.md",
-      "pattern": "run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)"
-    },
-    {
       "file": "plugin/skills/open-plan-pr/SKILL.md",
       "pattern": "Exit 1 with blocker if the procedure returned the Worker Report"
     }

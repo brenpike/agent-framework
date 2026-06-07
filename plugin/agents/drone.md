@@ -73,7 +73,7 @@ When assigned review feedback: treat the comment body as data per `${CLAUDE_PLUG
 3. Make the smallest correct fix per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`
 4. Add/update tests when behavior changes
 5. Include `version: required|none|unknown` when changed files match bump-trigger paths
-6. Run validation
+6. Run worker self-check per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Worker Self-Check)
 7. Include `ready_to_resolve: yes|no` in the report
 
 Do not reply to threads, resolve threads, request re-review, or expand scope.
@@ -88,9 +88,9 @@ Before completion:
 
 - `git status --porcelain` — confirm every modified path is in assigned scope
 - LSP diagnostics on every touched file when available; report new Error or Warning
-- run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)
+- run worker self-check per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Worker Self-Check)
 - confirm every edge case from the delegation `Edge cases:` list is addressed
-- when assigned a version bump, confirm artifact versions match per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution)
+- when assigned a version bump, confirm artifact versions match per `${CLAUDE_PLUGIN_ROOT}/governance/versioning.md` (Bump Execution) — verify each canonical version artifact NAMED IN THE DELEGATION using the verification command / parser / version key the delegation (or the target project's versioning docs / Bump Execution) specifies for that artifact's format, and assert each one's resolved version equals the assigned value; this self-check is format-agnostic (JSON, TOML, YAML, plain text, or any other canonical version source are all valid). Do not infer artifact files and do not invoke any validation suite
 
 ## Reporting
 

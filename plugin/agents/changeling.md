@@ -79,7 +79,7 @@ Before completion:
 - verify each Accessibility Rules item is satisfied or marked N/A
 - verify change works in every existing theme (or N/A)
 - LSP diagnostics on every touched file when available; report new Error or Warning
-- run validation per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Validation Procedure)
+- run worker self-check per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Worker Self-Check)
 
 ## Reporting
 
