@@ -53,15 +53,15 @@ The entire deterministic collection loop — multi-brood discovery, per-strain e
      ```
      ### Brood <brood_id>
 
-     | Strain | Branch | Session | PR | Workflow State | run.status | Status |
-     |--------|--------|---------|----|----------------|------------|--------|
+     | Strain | Branch | Session | PR | Strain State (claimed) | Strain Status (claimed) | Hatchery Status (observed) |
+     |--------|--------|---------|----|------------------------|-------------------------|----------------------------|
      | <name> | <branch> | <session> | <pr> | <workflow_state> | <run_status> | <derived_status> |
      ```
      Render each cell from the JSON fields:
      - `Session` ← `session` (`alive`/`dead`).
      - `PR` ← `#<pr.number>` when `pr.number` is non-null; otherwise `—`. When `pr.state` is `unknown`, render `unknown`.
-     - `Workflow State` ← `workflow_state`; `run.status` ← `run_status`. Render `MISSING` → `—`, `MALFORMED` → the literal `MALFORMED`, `NO_LEDGER_POINTER` → `—` (legacy manifest with no ledger pointer; the strain's Status still shows its observable `running`).
-     - `Status` ← `derived_status` verbatim. The entrypoint emits one of a small closed set: `running`, `running (PR #N open)`, `starting (session alive, workflow not yet started)`, `complete`, `blocked (session ended, PR #N still open)`, `failed (session ended, no PR)`, or `failed (injection failed; session alive for debug)`. The `starting (...)` value is a TRANSIENT non-running, non-complete state: the strain's tmux session is alive but its child has not yet written a run ledger (no started-evidence), so it is not yet genuinely `running`. Render it verbatim like any other; the navigator adds no logic.
+     - `Strain State (claimed)` ← `workflow_state`; `Strain Status (claimed)` ← `run_status`. Render `MISSING` → `—`, `MALFORMED` → the literal `MALFORMED`, `NO_LEDGER_POINTER` → `—` (legacy manifest with no ledger pointer; the strain's `Hatchery Status (observed)` still shows its observable `running`).
+     - `Hatchery Status (observed)` ← `derived_status` verbatim. The entrypoint emits one of a small closed set: `running`, `running (PR #N open)`, `starting (session alive, workflow not yet started)`, `complete`, `blocked (session ended, PR #N still open)`, `failed (session ended, no PR)`, or `failed (injection failed; session alive for debug)`. The `starting (...)` value is a TRANSIENT non-running, non-complete state: the strain's tmux session is alive but its child has not yet written a run ledger (no started-evidence), so it is not yet genuinely `running`. Render it verbatim like any other; the navigator adds no logic.
 
      After the table, for each strain with `session == "alive"`, emit one attach line so the operator can re-enter the live tmux session:
      ```
