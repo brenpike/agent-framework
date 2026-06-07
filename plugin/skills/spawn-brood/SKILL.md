@@ -40,9 +40,14 @@ After:
       `<brood-id>-<short>` running claude, and its injected `task.md` — which
       emits the data-boundary preamble FIRST, THEN the YAML child-task metadata
       block (`parent`, `strain`, `run`, `instructions`), THEN the description.
-      The engine performs a deferred submit (settle after the bracketed paste
-      closes) plus a bounded post-inject verification poll; a strain that never
-      starts a turn within the bound is marked `failed`, not `running`.
+      The engine submits ONCE (settle after the bracketed paste closes, then a
+      single Enter), then verifies KEYSTROKE-FREE: it polls capture-pane without
+      re-sending Enter and treats turn-start as a debounced ready-chrome absence
+      (ready-chrome presence is never proof the child has not submitted). At most
+      one bounded corrective resend is permitted, only while the child stays
+      continuously unsubmitted — so a worst case of two Enter keystrokes, never a
+      per-poll keystroke storm. A strain that never starts a turn within the bound
+      is marked `failed`, not `running`.
 - [ ] `.claude/worktrees/` is excluded from git (the script self-guards).
 - [ ] Final action is the Bash script call (exit 0 = spawned, exit 1 = blocked).
 
