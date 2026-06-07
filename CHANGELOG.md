@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.28.2] - 2026-06-06
+
+### Fixed
+
+- **spawn-brood: children now auto-submit their injected task. `inject_strain()` defers the submit keystroke until after the bracketed paste closes (settle) and runs a bounded post-inject verification poll; a strain that never starts a turn is marked `failed` instead of being left `running`.** (`plugin/skills/spawn-brood/scripts/spawn-brood.sh`) Fixes #213.
+- **brood-status: `running` is now gated on child-ledger started-evidence (a present, non-MISSING/non-MALFORMED `state.current`). An alive session whose child workflow has not started derives a transient `starting` status instead of masquerading as `running`; ledger evidence demotes only, never promotes (ADR-0007).** (`plugin/skills/_shared/brood-status-derive.sh`, `plugin/skills/brood-status/scripts/brood-status-collect.sh`) Fixes #213.
+
 ## [2.28.1] - 2026-06-06
 
 ### Fixed
