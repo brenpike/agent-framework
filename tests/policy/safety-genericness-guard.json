@@ -7,9 +7,12 @@
       "tools/validate\\.sh",
       "bash -n",
       "python3 -m json\\.tool",
+      "test_[a-z0-9_]+\\.sh",
       "package\\.json",
       "pyproject\\.toml",
       "Cargo\\.toml",
+      "go\\.mod",
+      "requirements\\.txt",
       "plugin\\.json",
       "marketplace\\.json"
     ],
