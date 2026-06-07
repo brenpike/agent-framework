@@ -1218,19 +1218,22 @@ assert_proj_happy_path() {
     fi
 }
 
-# ── Projection 2: v4 manifest with NO run block → ledger scalars MISSING ──────────
+# ── Projection 2: v4 manifest with NO run block → state.current NO_LEDGER_POINTER, run.status MISSING ──
 # A strain with no run block has no suggested_id, so the engine cannot derive a ledger path even
-# though a live worktree exists: both ledger scalars render MISSING (never read). Static manifest
-# fields still project; exit 0. Proves the MISSING gate is suggested_id absence, not worktree absence.
+# though a live worktree exists: state.current renders the distinct NO_LEDGER_POINTER token (no
+# ledger pointer exists, so started-evidence is structurally unavailable and the downstream
+# started-evidence gate does not apply), while run.status stays MISSING. Static manifest fields
+# still project; exit 0. Proves the no-pointer gate is suggested_id absence, not worktree absence.
 assert_proj_v1_no_run_block() {
-    local name="PROJ-NORUN:no-run-block-ledger-missing"
+    local name="PROJ-NORUN:no-run-block-state-nopointer-run-missing"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/norun"
     mkdir -p "$wd"
     local branch="strain/$GT_BROOD_ID/norun"
     local wt="$wd/wt"
     gt_add_worktree "" "$branch" "$wt"
     local manifest="$wd/manifest.json"
-    # No run block at all -> suggested_id absent -> ledger MISSING despite the live worktree.
+    # No run block at all -> suggested_id absent -> state.current NO_LEDGER_POINTER (run.status
+    # MISSING) despite the live worktree.
     jq -n --arg brood_id "$GT_BROOD_ID" --arg wt "$wt" --arg branch "$branch" \
         '{
             manifest_version: 4,
@@ -1250,9 +1253,9 @@ assert_proj_v1_no_run_block() {
     if [[ "$rc" -eq 0 \
           && "$(strain_field "$out" 3)" == "api" \
           && "$(strain_field "$out" 4)" == "$wt" \
-          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 8)" == "NO_LEDGER_POINTER" \
           && "$(strain_field "$out" 9)" == "MISSING" ]]; then
-        pass "$name" "exit 0; static fields project; ledger scalars MISSING (no run block -> no suggested_id)"
+        pass "$name" "exit 0; static fields project; state.current NO_LEDGER_POINTER, run.status MISSING (no run block -> no suggested_id)"
     else
         failed "$name" "rc=$rc name=$(strain_field "$out" 3) wt=$(strain_field "$out" 4) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
     fi
@@ -2643,6 +2646,67 @@ assert_collect_alive_unstarted_starting() {
     fi
 }
 
+# LEGACY no-pointer fall-through: a legacy manifest has NO run:{...} block, so the projector emits
+# state.current=NO_LEDGER_POINTER. Started-evidence is structurally unavailable, so the
+# started-evidence gate must NOT apply: an alive legacy strain keeps its observable `running` status
+# rather than being permanently demoted to `starting`. Mirrors the alive-unstarted sibling but DROPS
+# the run block from the fixture. tmux-gated (skips when tmux is unavailable).
+assert_collect_legacy_no_pointer_running() {
+    local name="COLLECT-LEGACY-NOPOINTER:legacy-manifest-no-run-block-derives-running"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    if ! command -v tmux >/dev/null 2>&1; then
+        skip "$name" "collect legacy no-pointer case needs a real tmux session to observe alive; skipping (no tmux)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    local branch="strain/$COLLECT_BROOD_ID/api"
+    local sess="$COLLECT_BROOD_ID-api"
+    local wt="$root/wt-api"
+    git -C "$root" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null
+    # LEGACY manifest: NO run:{...} block (no suggested_id), so no ledger pointer exists.
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" --arg wt "$wt" --arg branch "$branch" --arg sess "$sess" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", worktree_path:$wt, branch:$branch,
+                     tmux_session:$sess, status:"running"}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+    local made_session=no
+    if tmux new-session -d -s "$sess" 2>/dev/null; then made_session=yes; fi
+    local out rc=0
+    out="$( cd "$root" && bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local ok=no
+    # session=alive, workflow_state NO_LEDGER_POINTER, derived_status begins with `running` (NOT
+    # `starting`), and the running bucket counts it. startswith("running") passes with or without gh.
+    if [[ "$made_session" == "yes" ]] && printf '%s' "$out" | jq -e \
+        '.schema=="brood-status-collect/1"
+         and .broods[0].strains[0].session=="alive"
+         and .broods[0].strains[0].workflow_state=="NO_LEDGER_POINTER"
+         and (.broods[0].strains[0].derived_status|startswith("running"))
+         and .broods[0].summary.running>=1' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    [[ "$made_session" == "yes" ]] && tmux kill-session -t "$sess" 2>/dev/null || true
+    git -C "$root" worktree remove --force "$wt" 2>/dev/null || true
+    rm -rf "$tmp"
+    if [[ "$made_session" != "yes" ]]; then
+        skip "$name" "could not create a tmux session (no tmux server); skipping"
+        return
+    fi
+    if [[ "$rc" -eq 0 && "$ok" == "yes" ]]; then
+        pass "$name" "exit 0; legacy no-pointer manifest -> NO_LEDGER_POINTER -> derived_status running (NOT starting); counted running"
+    else
+        failed "$name" "rc=$rc ok=$ok out=[$out]"
+    fi
+}
+
 echo ''
 echo '=== brood-status-collect.sh collection-loop entrypoint tests (#186, ADR-0020) ==='
 assert_collect_empty
@@ -2653,6 +2717,7 @@ assert_collect_broodid_mismatch_blocker
 assert_collect_broodid_mismatch_empty_blocker
 assert_collect_started_running
 assert_collect_alive_unstarted_starting
+assert_collect_legacy_no_pointer_running
 
 echo ''
 echo '=== Summary ==='

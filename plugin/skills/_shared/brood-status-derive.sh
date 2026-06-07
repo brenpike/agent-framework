@@ -47,11 +47,18 @@ set -u
 # the dead+none "failed" terminal, the conservative default.
 #
 # <state_current> is the child ledger's `state.current` token as projected by
-# brood-status-project.sh — a real workflow-state token, or the fixed sentinels MISSING (absent) or
-# MALFORMED (rejected). <run_status> is the projected `run.status` token (informational; not part
-# of the started-evidence gate below). These are tier-3 child-ledger evidence (informational,
-# never overrides observable status — ADR-0007): they only DEMOTE an alive-but-unstarted child
-# away from `running`, never promote to complete and never hide a dead session.
+# brood-status-project.sh — a real workflow-state token, or the fixed sentinels MISSING (a ledger
+# pointer exists but the child has not yet written started-evidence), MALFORMED (a present-but-
+# rejected ledger), or NO_LEDGER_POINTER (the manifest carries no ledger pointer at all — a legacy
+# no-run-block manifest — so started-evidence is STRUCTURALLY unavailable). <run_status> is the
+# projected `run.status` token (informational; not part of the started-evidence gate below). These
+# are tier-3 child-ledger evidence (informational, never overrides observable status — ADR-0007):
+# they only DEMOTE an alive-but-unstarted child away from `running`, never promote to complete and
+# never hide a dead session. The demotion applies ONLY when a ledger pointer EXISTS but shows no
+# started-evidence (MISSING/MALFORMED/empty). NO_LEDGER_POINTER is the legacy no-pointer
+# fall-through: the gate does NOT apply, and the strain derives its observable status (running /
+# running (PR #N open)) — preserving ADR-0007's demote-only posture (we never withhold the
+# observable `running` claim from a strain that structurally cannot supply ledger evidence).
 #
 # STARTED-EVIDENCE GATE: an alive session is NOT proof the child
 # started its workflow — a pasted-but-never-submitted child has an alive tmux session and no run
@@ -59,6 +66,13 @@ set -u
 # non-MALFORMED state.current. An alive session WITHOUT that evidence derives the DISTINCT,
 # TRANSIENT (non-terminal), non-running, non-complete status below instead of a bare `running`.
 # MALFORMED state.current is fail-closed (NOT started-evidence -> demote to starting, not running).
+# The gate applies ONLY when a ledger pointer EXISTS but supplies no started-evidence (state.current
+# empty/MISSING/MALFORMED). A legacy manifest with NO ledger pointer projects state.current as
+# NO_LEDGER_POINTER, for which started-evidence is STRUCTURALLY unavailable: the gate does NOT apply
+# (legacy no-pointer fall-through) and an alive session derives its observable status exactly as it
+# did before the gate existed. NO_LEDGER_POINTER is DELIBERATELY excluded from the gate's sentinel
+# set and is NOT a real workflow-state token — it never leaks into the rendered Status (the non-gated
+# alive branch picks running vs running (PR #N open) from pr_for_derive, never from state_current).
 hivemind_derive_strain_status() {
   local manifest_status="$1" session_alive="$2" pr_state="$3" pr_number="$4"
   local state_current="$5" run_status="$6"
@@ -80,7 +94,11 @@ hivemind_derive_strain_status() {
   if [ "$session_alive" -eq 1 ]; then
     # Started-evidence gate: a present, non-MISSING/non-MALFORMED state.current is ground-truth
     # proof the child wrote its run ledger and started its workflow. Absent that, an alive session
-    # is demoted from `running` to the transient `starting` status.
+    # is demoted from `running` to the transient `starting` status. The gate fires ONLY for a ledger
+    # pointer that EXISTS but supplies no started-evidence (empty/MISSING/MALFORMED). NO_LEDGER_POINTER
+    # (legacy no-pointer manifest) is INTENTIONALLY absent from this set: started-evidence is
+    # structurally unavailable there, so the strain falls through to the observable table below and
+    # derives running / running (PR #N open) — the legacy no-pointer fall-through.
     if [ -z "$state_current" ] || [ "$state_current" = "MISSING" ] || [ "$state_current" = "MALFORMED" ]; then
       printf '%s' "starting (session alive, workflow not yet started)"
       return 0

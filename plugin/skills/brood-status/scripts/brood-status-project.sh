@@ -51,7 +51,13 @@
 #   this script remains a SINGLE-manifest projector and does NOT glob.)
 #
 #   Each remaining value is either an allowlist-clean token OR one of the fixed tokens
-#   MALFORMED / MISSING. A raw, un-validated scalar is NEVER emitted. Example (tabs shown as
+#   MALFORMED / MISSING / NO_LEDGER_POINTER. A raw, un-validated scalar is NEVER emitted.
+#   `state_current` carries a THIRD fixed token NO_LEDGER_POINTER, emitted ONLY at the
+#   legacy/no-run-block branch below: it means the manifest carries no ledger pointer (no
+#   `run.suggested_id`), so started-evidence is STRUCTURALLY unavailable and the downstream
+#   started-evidence gate does NOT apply (the strain falls back to its observable status).
+#   This is DISTINCT from MISSING (a ledger pointer exists but the child has not yet written
+#   started-evidence) and from MALFORMED (a present-but-rejected ledger). Example (tabs shown as
 #   <TAB>):
 #     STRAIN<TAB>brood-1a2b<TAB>auth<TAB>/abs/wt/auth<TAB>strain/brood-1a2b/auth<TAB>brood-1a2b-auth<TAB>spawned<TAB>implement_step<TAB>running
 #
@@ -452,8 +458,13 @@ $branch_out
     state_out="MISSING"
     run_out="MISSING"
   elif [ "$sid_rc" -eq 1 ]; then
-    # suggested_id absent (v1 manifest / no run block): MISSING, never read.
-    state_out="MISSING"
+    # suggested_id absent (legacy manifest / no run block): there is NO ledger pointer to anchor
+    # on, so started-evidence is STRUCTURALLY unavailable — never read. Emit the distinct token
+    # NO_LEDGER_POINTER (NOT MISSING) so the started-evidence gate downstream does NOT apply and
+    # the strain falls back to its observable status (legacy no-pointer fall-through). MISSING is
+    # reserved for the modern case where a pointer EXISTS but the child has not yet written
+    # started-evidence. run_status has no legacy token of its own: leave it MISSING.
+    state_out="NO_LEDGER_POINTER"
     run_out="MISSING"
   elif [ "$sid_rc" -eq 2 ] || [ "$sid_clean" -ne 1 ]; then
     # suggested_id present but rejected, or fails the strict single-component id charset: escape

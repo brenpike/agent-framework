@@ -720,6 +720,19 @@ assert_eq "derive:dead-merged-no-evidence" "complete" \
 assert_eq "derive:alive-started-open" "running (PR #7 open)" \
   "$(hivemind_derive_strain_status running 1 open 7 "$STARTED" running)" "alive + started + open -> running (PR #N open)"
 
+# ── legacy no-pointer fall-through: NO_LEDGER_POINTER bypasses the started-evidence gate ──
+# A legacy manifest has no run.suggested_id, so the projector emits NO_LEDGER_POINTER for
+# state.current. Started-evidence is structurally unavailable, so the gate must NOT apply: an alive
+# legacy strain keeps its observable status. This is the regression assertion.
+assert_eq "derive:alive-nopointer-running" "running" \
+  "$(hivemind_derive_strain_status running 1 none "" NO_LEDGER_POINTER MISSING)" "alive + NO_LEDGER_POINTER + no PR -> running (legacy fall-through, NOT starting)"
+# alive legacy strain + open PR -> running (PR #N open) (gate still bypassed; observable status kept).
+assert_eq "derive:alive-nopointer-open" "running (PR #7 open)" \
+  "$(hivemind_derive_strain_status running 1 open 7 NO_LEDGER_POINTER MISSING)" "alive + NO_LEDGER_POINTER + open PR -> running (PR #N open)"
+# dead legacy strain (session never resurrected) -> failed terminal; NO_LEDGER_POINTER never touches the dead branch.
+assert_eq "derive:dead-nopointer-failed" "failed (session ended, no PR)" \
+  "$(hivemind_derive_strain_status running 0 none "" NO_LEDGER_POINTER MISSING)" "dead + NO_LEDGER_POINTER + no PR -> failed (session ended, no PR)"
+
 # ── 6b. hivemind_classify_status_bucket — every derived status maps to a bucket ──
 assert_eq "bucket:complete" "complete" \
   "$(hivemind_classify_status_bucket "complete")" "complete -> complete bucket"

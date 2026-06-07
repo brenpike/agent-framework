@@ -29,6 +29,9 @@
 #         "strains":[ {"name","branch","session":"alive|dead","tmux_session",
 #           "pr":{"number":int|null,"state":"open|merged|none|unknown"},
 #           "workflow_state","run_status","derived_status"} ],
+#           workflow_state is a real workflow-state token or one of the fixed tokens MISSING /
+#           MALFORMED / NO_LEDGER_POINTER (legacy manifest with no ledger pointer); run_status is a
+#           real run.status token or MISSING / MALFORMED.
 #         "summary":{"complete","running","blocked_failed","total"} } ],
 #       "global":{"total_broods","unreadable","complete","total_strains"} }
 #   Broods in sorted discovery order; strains in projector/manifest order. PER-BROOD FAILURE
@@ -224,7 +227,9 @@ for manifest in "${manifests[@]}"; do
     # f_state (state.current) and f_run (run.status) are the child-ledger started-evidence tokens
     # already projected at the loop head. Threaded inert ("$var") into derivation: an
     # alive session with no started-evidence (MISSING/MALFORMED state.current) demotes to `starting`
-    # rather than masking as `running`. No new probe, no new I/O.
+    # rather than masking as `running`. A legacy manifest with no ledger pointer projects
+    # NO_LEDGER_POINTER, for which the started-evidence gate does not apply (observable status is
+    # kept). No new probe, no new I/O.
     derived="$(hivemind_derive_strain_status "$f_status" "$session_alive" "$pr_state" "$pr_number" "$f_state" "$f_run")"
     buckets+=( "$(hivemind_classify_status_bucket "$derived")" )
 
