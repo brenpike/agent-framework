@@ -141,10 +141,29 @@ When deriving a strain's status, prefer sources in this order:
 ```text
 1. external observables: tmux session, branch existence, PR state
 2. manifest static fields
-3. child run ledger: run.status / state.current (informational — never overrides tier 1 or 2 Status)
+3. child run ledger: run.status / state.current (informational — never overrides tier 1 or 2 Status;
+   MAY DEMOTE an alive child OUT of `running` to `starting`, but never promotes / never hides a dead session)
 ```
 
 External observables win because they reflect ground truth. Manifest static fields are the fallback. The child run ledger (tier 3, live as of #161) populates the `Workflow State` and `run.status` display columns via `brood-status-project.sh`'s bounded projection, but it is strictly informational — a hostile child cannot hide a runaway session or alter the observable-derived `Status` through its ledger. The leaf symlink-swap micro-TOCTOU on the child-ledger read is an ACCEPTED BOUNDED RESIDUAL (not structurally closed by #168 — per-brood namespacing isolates broods from each other, not the hatchery from its children): it is bounded by a post-read containment re-assert, never-echo-raw projection, and the informational-only contract (ADR-0021 §10; ADR-0019 #168 amendment).
+
+#### Running gating on started-evidence
+
+An alive tmux session alone is NOT proof a child started its workflow: a child can have its task pasted into a live session but never submit it, so the session is alive while no run ledger exists yet. To prevent that idle-but-unsubmitted child from masquerading as a healthy `running` strain, the running derivation is GATED on RUN-LEDGER EVIDENCE. The ground-truth started signal is a present, non-`MISSING`/non-`MALFORMED` `state.current` (the child wrote its run ledger). The rule table the derivation library ports is:
+
+```text
+| tmux  | PR     | started-evidence (state.current present & non-MISSING/non-MALFORMED) | Status                                            |
+| alive | none   | yes                                                                 | running                                           |
+| alive | open   | yes                                                                 | running (PR #N open)                              |
+| alive | *      | NO                                                                  | starting (session alive, workflow not yet started) |
+| dead  | merged | -                                                                  | complete                                          |
+| dead  | open   | -                                                                  | blocked (session ended, PR #N still open)         |
+| dead  | none   | -                                                                  | failed (session ended, no PR)                     |
+```
+
+`starting (session alive, workflow not yet started)` is a DISTINCT, TRANSIENT (non-terminal) status — non-`running`, non-`complete`, and distinct from `failed`. It buckets into `blocked/failed` for the per-brood summary line so the three-bucket count keeps summing to total (it has made no forward progress, so it is counted against completion, never silently dropped).
+
+This is tier-3 child-ledger evidence applied within its informational-only contract: it DEMOTES an alive-but-unstarted child away from `running`, but it NEVER promotes a strain to `complete` and NEVER hides a dead session (the started-evidence gate touches only the alive branch; the dead branch derives `complete`/`blocked`/`failed` from observables regardless of ledger content). A `MALFORMED` `state.current` is fail-closed — it does NOT count as started-evidence, so a corrupt ledger demotes to `starting`, never up to `running`. ADR-0007's invariant that the ledger never OVERRIDES observable status is preserved: an alive session is still observably alive; the ledger only refines whether that alive session reads as `running` or `starting`.
 
 ## Reconciliation concept
 

@@ -88,6 +88,16 @@ blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 # pre-accepted at launch via --settings, so no gate is ever screen-scraped.
 READY_TIMEOUT=90
 POLL_INTERVAL=2
+# INJECT_SETTLE: seconds to wait after tmux paste-buffer -p before sending the submit
+# keystroke. paste-buffer delivers the bracketed-paste sequence (ESC[200~…ESC[201~)
+# asynchronously to the pty; a zero-delay send-keys races the closing bracket and lands
+# inside the bracketed-paste window as an in-composer newline rather than a submit. The
+# submit model (inject_strain) is now a SINGLE send: paste, settle, send Enter ONCE,
+# return. spawn-brood does NOT verify turn-start by screen-scraping the TUI. A child that
+# fails to actually start a turn surfaces later through hivemind:brood-status, which judges
+# liveness from run-ledger ground truth (child run state.current present => running, absent
+# => starting) — not from capture-pane frames.
+INJECT_SETTLE=0.2
 
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
@@ -749,12 +759,17 @@ for idx in $(seq 0 $((strain_count - 1))); do
   cur_session=""
 done
 
-# inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted
-# on paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE
-# bounded prompt; send-keys Enter submits it once. Best-effort delete the buffer on
-# EVERY inject-failure path so an untrusted task never persists in the shared tmux
-# buffer. Marks the strain failed and returns 1 on any tmux failure; returns 0 on a
-# clean inject. Behavior is byte-identical to the prior inline 4b block.
+# inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted on
+# paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE bounded
+# prompt. After the paste a short settle (INJECT_SETTLE) allows the closing ESC[201~ to
+# reach the TUI before the SINGLE submit keystroke, so Enter no longer races the paste and
+# is not absorbed inside the bracketed-paste window. Enter is sent ONCE and
+# the function returns success — spawn-brood does NOT verify turn-start by screen-scraping
+# the TUI. Whether the child actually began a turn is observed LATER by hivemind:brood-status
+# from run-ledger ground truth (child run state.current present => running, absent =>
+# starting), not by this script. Best-effort delete the buffer on EVERY failure path so an
+# untrusted task never persists in the shared tmux buffer. Returns 0 once the submit
+# keystroke is sent; 1 only on a tmux command failure (dead pane / load / paste / send error).
 inject_strain() {
   local idx="$1"
   local tmux_session="${S_TMUX[$idx]}"
@@ -774,13 +789,28 @@ inject_strain() {
     mark_failed "$idx"
     return 1
   fi
+  # INVARIANT: paste-buffer -d deleted the named buffer on success above; best-effort
+  # delete-buffer calls on the paths below are defensive for any race on that flag.
+
+  # Settle: allow the bracketed-paste sequence (ESC[200~…content…ESC[201~) to close at
+  # the TUI before sending the submit keystroke. paste-buffer -p delivers asynchronously
+  # to the pty; a zero-wait send-keys races the closing ESC[201~ and is absorbed inside
+  # the bracketed-paste window as an in-composer newline rather than a submit.
+  sleep "$INJECT_SETTLE"
+
+  # Submit ONCE, after the settle. No turn-start verification, no corrective resend: the
+  # settle is what makes this single Enter land as a submit, and downstream liveness is
+  # judged by hivemind:brood-status from run-ledger evidence, not by capture-pane here. On a
+  # send-keys command failure (e.g. dead pane) clean up the buffer, mark the strain failed,
+  # and return 1.
   if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
     printf 'warning: tmux send-keys Enter failed for strain %s\n' "${S_NAME[$idx]}" >&2
     tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
     mark_failed "$idx"
     return 1
   fi
-  # On success paste-buffer -d already deleted the buffer; strain stays running.
+
+  # Submit keystroke sent; buffer already deleted by paste-buffer -d; strain stays running.
   return 0
 }
 

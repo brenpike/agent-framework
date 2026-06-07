@@ -40,6 +40,12 @@ After:
       `<brood-id>-<short>` running claude, and its injected `task.md` — which
       emits the data-boundary preamble FIRST, THEN the YAML child-task metadata
       block (`parent`, `strain`, `run`, `instructions`), THEN the description.
+      The engine submits the task ONCE (a settle after the bracketed paste closes,
+      then a single Enter) so the submit keystroke lands as a submit instead of
+      racing the paste. It does NOT verify turn-start — no capture-pane polling, no
+      corrective resend. Whether a child actually started a turn is observed later by
+      `hivemind:brood-status` from run-ledger ground truth (child run `state.current`
+      present => `running`, absent => `starting`), not by spawn-brood.
 - [ ] `.claude/worktrees/` is excluded from git (the script self-guards).
 - [ ] Final action is the Bash script call (exit 0 = spawned, exit 1 = blocked).
 

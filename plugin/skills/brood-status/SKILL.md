@@ -28,7 +28,7 @@ The entire deterministic collection loop — multi-brood discovery, per-strain e
      "broods": [ { "brood_id": "…", "status": "ok|empty|unreadable|blocker", "detail": "…|null",
        "strains": [ { "name": "…", "branch": "…", "session": "alive|dead", "tmux_session": "…|MISSING|MALFORMED",
          "pr": { "number": null, "state": "open|merged|none|unknown" },
-         "workflow_state": "…|MISSING|MALFORMED", "run_status": "…|MISSING|MALFORMED",
+         "workflow_state": "…|MISSING|MALFORMED|NO_LEDGER_POINTER", "run_status": "…|MISSING|MALFORMED",
          "derived_status": "…" } ],
        "summary": { "complete": 0, "running": 0, "blocked_failed": 0, "total": 0 } } ],
      "global": { "total_broods": 0, "unreadable": 0, "complete": 0, "total_strains": 0 } }
@@ -45,7 +45,7 @@ The entire deterministic collection loop — multi-brood discovery, per-strain e
    Notes preserved from prior discipline (now enforced in the entrypoint/projector, not in navigator prose):
    - **Discovery anchors on `git rev-parse --show-toplevel`** — the same anchor `spawn-brood.sh` writes against, so read and write agree by construction. From a linked worktree it yields THAT worktree's root, so nested/child-spawned broods are visible at each hatchery level (#182), with no tree-walk.
    - **No pruning.** Terminal broods (completed/cancelled/failed) remain on disk and are shown with their terminal Status (#179). Cleanup is a separate write-action tracked in #181 — do not delete or archive any directory from this skill.
-   - **Child-ledger projection is informational only.** `workflow_state` / `run.status` populate display columns but never override the observable-derived `derived_status` (ADR-0007: observables are ground truth). A `MALFORMED` ledger scalar is per-probe-scoped and never suppresses an observable probe.
+   - **Child-ledger projection is informational only, with ONE demotion-only exception.** `workflow_state` / `run.status` populate display columns and never PROMOTE an observable-derived `derived_status` (no ledger scalar can mark a strain `complete`, promote it past its observable state, or hide a dead session — ADR-0007: observables are ground truth). The single exception is the started-evidence gate: an alive-session strain with no run-ledger started-evidence (`state.current` MISSING/MALFORMED) is DEMOTED from `running` to the transient `starting` status. This is demotion-only — it withholds the `running` claim until the child proves it started; it never promotes. The gate applies ONLY when a ledger pointer EXISTS but supplies no started-evidence: a legacy manifest with no `run.suggested_id` projects `workflow_state` as `NO_LEDGER_POINTER` (started-evidence is structurally unavailable), the gate does NOT apply, and the strain keeps its observable status (running). A `MALFORMED` ledger scalar is per-probe-scoped and never suppresses an observable probe.
 
 2. **Render one section per brood**, in `broods` array order. For each brood object:
 
@@ -60,8 +60,8 @@ The entire deterministic collection loop — multi-brood discovery, per-strain e
      Render each cell from the JSON fields:
      - `Session` ← `session` (`alive`/`dead`).
      - `PR` ← `#<pr.number>` when `pr.number` is non-null; otherwise `—`. When `pr.state` is `unknown`, render `unknown`.
-     - `Workflow State` ← `workflow_state`; `run.status` ← `run_status`. Render `MISSING` → `—`, `MALFORMED` → the literal `MALFORMED`.
-     - `Status` ← `derived_status` verbatim.
+     - `Workflow State` ← `workflow_state`; `run.status` ← `run_status`. Render `MISSING` → `—`, `MALFORMED` → the literal `MALFORMED`, `NO_LEDGER_POINTER` → `—` (legacy manifest with no ledger pointer; the strain's Status still shows its observable `running`).
+     - `Status` ← `derived_status` verbatim. The entrypoint emits one of a small closed set: `running`, `running (PR #N open)`, `starting (session alive, workflow not yet started)`, `complete`, `blocked (session ended, PR #N still open)`, `failed (session ended, no PR)`, or `failed (injection failed; session alive for debug)`. The `starting (...)` value is a TRANSIENT non-running, non-complete state: the strain's tmux session is alive but its child has not yet written a run ledger (no started-evidence), so it is not yet genuinely `running`. Render it verbatim like any other; the navigator adds no logic.
 
      After the table, for each strain with `session == "alive"`, emit one attach line so the operator can re-enter the live tmux session:
      ```
