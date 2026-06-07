@@ -79,7 +79,7 @@ Reviewer-return handling. `STATE=MERGED` → `pr-merged`. `STATE=CLOSED` →
 `blocked` | `injection-suspect` | `high-severity-rejection` | `user-input-required`
 → HARD-STOP; ONE terminal with matching `exit_reason` + escalation-conditional
 fields. `root-cluster-suspected` → HARD-STOP; ONE terminal with reviewer's cluster
-payload; overlord routes to cerebrate zoom-out (classification-free — loop
+payload; the caller routes to cerebrate zoom-out (classification-free — loop
 propagates only). `merge-advised` → HARD-STOP; ONE `merge-advised` terminal with
 `advisory_reason` + `recommendation_text`; ADVISORY ONLY — loop NEVER merges
 (classification-free). Pass EVERY reviewer return (including the escalation

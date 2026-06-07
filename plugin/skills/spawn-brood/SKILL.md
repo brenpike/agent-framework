@@ -29,7 +29,7 @@ Before:
       so concurrent broods on the same checkout are supported).
 
 After:
-- [ ] Script printed `brood_id: <id>` on stdout — overlord captures the generated
+- [ ] Script printed `brood_id: <id>` on stdout — the coordinator captures the generated
       brood-id for monitoring (hatchery references its own brood-id).
 - [ ] Brood manifest written to `.hivemind/broods/<brood-id>/manifest.json` as
       `manifest_version: 4` (JSON integer) — carrying a top-level `hatchery`
@@ -57,7 +57,7 @@ creates a child or hatchery ledger. Full shape and status-derivation rules:
 
 ## Required Inputs
 
-The overlord resolves and passes these; the skill does not resolve them.
+The caller resolves and passes these; the skill does not resolve them.
 
 - `strains`: array of `{name, description}` — one element per cerebrate
   `Strains` plan-artifact entry. Each strain MAY also carry an optional
@@ -70,7 +70,7 @@ The overlord resolves and passes these; the skill does not resolve them.
 - `hatchery` (OPTIONAL): `{run_id, workflow}` for the coordinator's own run
   ledger. `run_id` defaults to `<brood_id>-hatchery`; `workflow` defaults to
   `hatchery-dispatch`. These only POINT at the hatchery ledger the coordinator
-  overlord owns — the script never creates it.
+  owns — the script never creates it.
 
 `brood_id` is NOT supplied — the script generates it internally as
 `brood-<uuidv4>` and prints it on stdout.
@@ -132,7 +132,7 @@ The overlord resolves and passes these; the skill does not resolve them.
 
 4. **Capture the generated brood-id** from stdout: on exit 0 the script prints
    `brood_id: <id>` then `manifest: <abs path>`. Capture `brood_id` — the
-   overlord needs it to monitor the brood (hatchery references its own brood-id).
+   coordinator needs it to monitor the brood (hatchery references its own brood-id).
    Exit 1: the script printed a `blocker: <reason>` (and, for partial failures,
    a `manifest: <abs path>` and `brood_id: <id>`) on stderr — surface it and stop.
 
@@ -148,7 +148,7 @@ This is a pipeline skill:
 - Produce zero chat text during execution. Outputs are tool calls only.
 - The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat
   text. The final action is the Bash script call (step 3).
-- Exit 0 = overlord proceeds; routing data (`brood_id:` and `manifest:` lines)
+- Exit 0 = caller proceeds; routing data (`brood_id:` and `manifest:` lines)
   is on stdout. Exit 1 = blocked; the reason is on stderr.
 
 ## Do Not

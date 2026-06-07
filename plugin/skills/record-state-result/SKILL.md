@@ -28,12 +28,12 @@ committed engine script; neither door is dangling.
 
 ## Required Inputs
 
-The overlord resolves and passes these; the skill does not invent them.
+The caller resolves and passes these; the skill does not invent them.
 
 - `run_id`: the run identifier (from `init-run-ledger`). The engine DERIVES the ledger
   from it — `<git-root>/.hivemind/runs/<run_id>/state.json` — and DERIVES the workflow
   definition from the ledger's own `run.workflow` against the script's self-located
-  packaged `workflows/` dir. The overlord passes NO ledger or workflow PATH; both are
+  packaged `workflows/` dir. The caller passes NO ledger or workflow PATH; both are
   derived from ground truth, so a caller can never point the engine at an arbitrary file.
 - `state`: the state the run is currently in (MUST equal `ledger.state.current`).
 - `result`: the named outcome to record (MUST be a legal transition key under that state).
@@ -48,8 +48,8 @@ The overlord resolves and passes these; the skill does not invent them.
 
 The ledger and workflow definitions are JSON; cerebrate's plan `steps` arrive as YAML in
 the plan block, with no maintained converter. The PRIMARY, live persistence path for
-`plan.steps` is **record-time, here**: the overlord inits the ledger BEFORE any cerebrate
-planning state runs, so an init-time seed would be empty at runtime. When the overlord
+`plan.steps` is **record-time, here**: the caller inits the ledger BEFORE any cerebrate
+planning state runs, so an init-time seed would be empty at runtime. When the caller
 records any cerebrate planning state result (`plan` / `review_remediation_plan` /
 `review_remediation_plan_postpr` / `brood_plan`, after cerebrate returns), it reformats
 cerebrate's YAML plan `steps` into a JSON array and includes `plan_steps` (and optionally
@@ -188,7 +188,7 @@ on-disk ledger is byte-unchanged.
    current_state: <next_state>
    ledger: <path>
    ```
-   the overlord advances ONLY to `current_state`. Exit 1: the script printed
+   the caller advances ONLY to `current_state`. Exit 1: the script printed
    `blocker: <reason>` on stderr and the ledger is byte-unchanged — surface it and stop.
 
 ## Pointers
@@ -205,7 +205,7 @@ This is a pipeline skill:
 - The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat text and
   authors ONLY the inputs file (`.hivemind/runs/.record-inputs-<token>.json`). The final
   action is the Bash script call (step 3), which performs every atomic ledger write.
-- Exit 0 = overlord advances to `current_state`; routing data is on stdout.
+- Exit 0 = caller advances to `current_state`; routing data is on stdout.
   Exit 1 = blocked; the reason is on stderr and the ledger is unchanged.
 
 ## Do Not

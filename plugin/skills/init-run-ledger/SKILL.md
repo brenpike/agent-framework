@@ -22,14 +22,14 @@ Rules: ADR-0018 §A (ledger is JSON); §C (engine is the committed script).
 
 ## Required Inputs
 
-The overlord resolves and passes these; the skill does not invent them.
+The caller resolves and passes these; the skill does not invent them.
 
 - `workflow`: the selected workflow id (matches an `<id>.json` under
   `${CLAUDE_PLUGIN_ROOT}/workflows/`).
 - `workflow_version`: the definition `version` at init time (non-negative integer).
 - `start_state`: the workflow's `start` state (becomes `state.current` at init).
 - `user_request`: the raw user request — UNTRUSTED data, serialized only.
-- `normalized`: the overlord's normalized summary of the request.
+- `normalized`: the caller's normalized summary of the request.
 
 Optional (brood child / id control):
 
@@ -49,9 +49,9 @@ Optional (brood child / id control):
 
 The ledger and workflow definitions are JSON; cerebrate's plan `steps` arrive as YAML in the
 plan block, with no maintained converter. `plan_steps` / `plan_path` here are the
-child/resume SEED path, NOT the primary live writer: the overlord inits the ledger BEFORE
+child/resume SEED path, NOT the primary live writer: the caller inits the ledger BEFORE
 the `plan` (cerebrate) state runs, so an init-time seed would be empty on a fresh root run.
-The PRIMARY, live persistence of `plan.steps` happens at record-time, when the overlord
+The PRIMARY, live persistence of `plan.steps` happens at record-time, when the caller
 records the `plan` state result via `hivemind:record-state-result --plan-steps` (see that
 skill's §A Plan-Steps Seam). Init-time `plan_steps` exists ONLY to seed `plan.steps` for a
 child/resume run that already has the steps in hand; absent the field it defaults to `[]`.
@@ -69,7 +69,7 @@ interpolates it into shell source or the jq program source. Shape:
   "workflow_version": 1,
   "start_state": "<required> the workflow's start state",
   "user_request": "<required> raw user request (UNTRUSTED, serialized only)",
-  "normalized": "<required> overlord's normalized summary",
+  "normalized": "<required> caller's normalized summary",
   "parent": {
     "kind": "none | brood",
     "run_id": "<required when kind=brood> parent run id",
@@ -143,7 +143,7 @@ canonical value); else a safe `suggested_run_id` verbatim; else derived
    ```
    the run dir is anchored to the git checkout root (`git rev-parse --show-toplevel`), not the
    CWD, so resume-on-start finds it regardless of which subdir init ran from; init requires being
-   inside a git checkout. the overlord proceeds with that ledger. Exit 1: the script printed `blocker: <reason>`
+   inside a git checkout. the caller proceeds with that ledger. Exit 1: the script printed `blocker: <reason>`
    on stderr and wrote no ledger — surface it and stop.
 
 ## Pointers
@@ -160,7 +160,7 @@ This is a pipeline skill:
 - The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat text and
   authors ONLY the inputs file (`.hivemind/runs/.init-inputs-<token>.json`). The final action
   is the Bash script call (step 3).
-- Exit 0 = overlord proceeds; routing data (`run_id:`, `ledger:`) is on stdout.
+- Exit 0 = caller proceeds; routing data (`run_id:`, `ledger:`) is on stdout.
   Exit 1 = blocked; the reason is on stderr.
 
 ## Do Not

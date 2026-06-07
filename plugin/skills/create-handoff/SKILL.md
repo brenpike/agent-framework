@@ -29,10 +29,10 @@ The handoff document should contain enough detail to bootstrap a new session wit
 
 ## When this runs
 
-The handoff offer is **overlord/human-driven**, never a prompt baked into this or any other skill. It runs when:
+The handoff offer is **caller/human-driven**, never a prompt baked into this or any other skill. It runs when:
 
 - the user explicitly asks for a handoff, OR
-- the overlord suggests one at a context-rich stage boundary and the user accepts.
+- the caller suggests one at a context-rich stage boundary and the user accepts.
 
 This skill never decides on its own to produce a handoff and never solicits one from inside another skill's flow.
 
@@ -129,4 +129,4 @@ Do not add, remove, rename, or reorder sections. The handoff is a pointer docume
 - duplicate the plan or PRD — the handoff points to them. (Not in tension with persisting the plan file: the handoff body still only POINTS to the plan, copying no plan prose; materializing the plan FILE when absent is a separate permitted action.)
 - overwrite an existing `.hivemind/plans/<slug>.md` — the persisted plan is authoritative; only create it when absent in the live-context path.
 - add, drop, rename, or reorder the output sections.
-- `git add`, commit, push, or open a PR — the overlord molts; the handoff is gitignored.
+- `git add`, commit, push, or open a PR — the caller handles the commit/push/PR lifecycle; the handoff is gitignored.
