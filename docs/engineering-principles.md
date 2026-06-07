@@ -17,7 +17,7 @@ A header comment can drift from the code below it in the same file; nothing enfo
 This produces two enforcement triples in this repo:
 
 1. **Script triple:** the script, the contract header, and a `test_*.sh` CI fixture. The test is the behavioral guarantee; the header is human-readable intent. (Precedent: #198's `fix-history-classify.jq` paired with `test_fix_history_classify.sh`.)
-2. **Governance triple:** the governance section, its named consumer list, and a `tests/policy/safety-*.json` consumer-assertion fixture. The fixture is the coupling guarantee; the section header is human-readable intent. (Precedent: #229's `## Worker Self-Check` section in `plugin/governance/definitions.md`, consumed by `drone.md` and `changeling.md`, shipped without a fixture and was caught post-hoc by Codex review — P1-C finding; the fixture `tests/policy/safety-worker-self-check.json` now exists.)
+2. **Governance triple:** the governance section, its named consumer list, and a `tests/policy/safety-*.json` consumer-assertion fixture. The fixture is the coupling guarantee; the section header is human-readable intent. (Precedent: during PR #229, a `## Worker Self-Check` governance section consumed by `drone.md` and `changeling.md` shipped WITHOUT a `tests/policy/safety-*.json` consumer-assertion fixture; Codex review caught the missing-fixture gap post-hoc — a P1-C finding — and the fixture was added as a follow-up within that same PR.)
 
 ## P4 — Extraction-home policy
 
