@@ -30,7 +30,7 @@ hard-reject half.
 
 ## Required Inputs
 
-The overlord resolves and passes these; the skill does not invent them.
+The caller resolves and passes these; the skill does not invent them.
 
 - `run_id`: the run identifier. The engine DERIVES the ledger from it —
   `<git-root>/.hivemind/runs/<run_id>/state.json` — and accepts NO ledger PATH; identity is
