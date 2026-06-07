@@ -62,3 +62,9 @@ Concretely:
 - No top-level side effects in sourced files: no variable mutations, no I/O, no subshell launches at source time.
 
 **Follow-up:** `spawn-brood.sh` adoption of `_shared/allowlist.sh` and `_shared/manifest.sh` (reuse of the safe-token gate and manifest-field extraction already present in those libs rather than maintaining parallel inline implementations) is tracked as a follow-up issue.
+
+## Amendment — 2026-06-07 (library renamed `manifest.sh` → `manifest-json.sh`)
+
+The Decision and Consequences above name the manifest-extraction library `_shared/manifest.sh`. That YAML hand-scraper (`sed`/`awk`) was superseded the SAME day by `_shared/manifest-json.sh` (pure-`jq` projections over a JSON manifest) under the ADR-0018 / ADR-0019 manifest-to-JSON amendments, and the `manifest.sh` file was DELETED — it does not exist in the tree. Read every `_shared/manifest.sh` reference above as the historical name of what is now `_shared/manifest-json.sh`. The single-responsibility / thin-entrypoint / source-safe-library decision recorded here is unchanged by the rename.
+
+This amendment is APPEND-ONLY; the original Decision and Consequences stand. Status remains accepted.

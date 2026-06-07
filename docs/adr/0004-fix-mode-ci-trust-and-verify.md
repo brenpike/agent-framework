@@ -1,5 +1,7 @@
 # Fix-mode reports clean without waiting for CI re-run
 
+**Status:** accepted — 2026-05-18
+
 Fix-mode processes all review candidates in a single pass, pushes fixes, and returns `exit_reason: clean` to the orchestrator. It does not poll CI or wait for required checks to re-run before reporting.
 
 The alternative — blocking until the pushed fix produces a green check — was prototyped as a `ci-verification-pending` exit reason (implemented in ed4c062, reverted in b23f37f). It created an unhandled terminal state: fix-mode is one-shot, so a pending-verification outcome had no path to resolution within that invocation. The agent would either block indefinitely (CI runs take minutes to hours) or surface a result the orchestrator couldn't act on. Neither is acceptable.
