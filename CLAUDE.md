@@ -103,6 +103,7 @@ CI runs via `.github/workflows/policy-check.yml` (job: `policy-check`), enforced
 - Adding a new skill but forgetting `${CLAUDE_PLUGIN_ROOT}/skills/_shared/...` ref when reusing shared helpers.
 - Editing `marketplace.json` `source` away from `./plugin` — breaks consumer installs.
 - Putting plugin content at repo root instead of under `plugin/` — `${CLAUDE_PLUGIN_ROOT}` will not resolve where authors expect.
+- Adding/renaming a load-bearing governance section with named consumers (or editing a `tests/policy/safety-*.json`) without adding the consumer-assertion fixture → unprotected coupling (P3).
 
 ## Companion plugins referenced
 
