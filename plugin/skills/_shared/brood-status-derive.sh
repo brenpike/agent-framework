@@ -15,8 +15,13 @@
 # in the thin entrypoint (`brood-status-collect.sh`). Keeping derivation pure makes it the primary
 # determinism coverage in `tools/test_shared_libs.sh` without standing up tmux/gh/git.
 #
-# set -u: every parameter is read explicitly; an unset variable is a programming error here. We do
-# NOT use `set -e` and there is NO EXIT trap — sourced libraries install neither (ADR-0020).
+# P18 FLOOR — DOCUMENTED EXCEPTION (ADR-0020): as a SOURCED library this file carries `set -u`
+# ONLY and deliberately OMITS the rest of the P18 shell-safety floor — `set -e`, `set -o pipefail`,
+# and any EXIT trap. A sourced file mutates the SOURCING shell's option state, so installing those
+# here would corrupt every caller's shell; the floor is therefore the documented exception, not the
+# full `set -euo pipefail`. `set -u` alone is safe to inherit (an unset variable is a programming
+# error here, and every parameter below is read explicitly). Allowlisted under CHECK13 as a P18
+# documented exception.
 
 set -u
 

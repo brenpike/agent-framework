@@ -7,6 +7,14 @@
 # It defines functions only; it runs no top-level statements and changes no caller state
 # beyond defining the functions below. `bash -n` validates it as a sourced fragment.
 #
+# P18 FLOOR — DOCUMENTED EXCEPTION (ADR-0020): as a SOURCED library this file deliberately
+# OMITS the P18 shell-safety floor `set -e` / `set -o pipefail` and any EXIT trap. A sourced
+# file mutates the SOURCING shell's option state, so installing those here would corrupt
+# every caller's shell; the floor is therefore the documented exception, not the full
+# `set -euo pipefail`. This file carries no top-level `set` at all (pure function
+# definitions); each caller owns its own `set -u` and error routing. Allowlisted under
+# CHECK13 as a P18 documented exception.
+#
 # SINGLE RESPONSIBILITY: project + validate the two workflow-state scalars (run.status and
 # state.current) from a CONFINED child run-ledger path. The ledger is JSON, parsed READ-ONLY
 # with jq. This file sources nothing and writes nothing — pure projection.
