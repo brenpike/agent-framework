@@ -7,7 +7,7 @@
 # per-brood manifest. This script OWNS every deterministic shell step; the skill
 # body is a navigator that authors the inputs file and calls this script once.
 #
-# STATE LAYOUT (per-brood namespacing, #168): each spawn generates its OWN brood-id
+# STATE LAYOUT (per-brood namespacing): each spawn generates its OWN brood-id
 # INTERNALLY (brood-<uuidv4>) and writes its state to a DISJOINT, per-brood directory —
 # .hivemind/broods/<brood-id>/{inputs.json,manifest.json} — anchored to the checkout root.
 # Worktrees and branches are likewise namespaced by brood-id (see below), so two concurrent
@@ -206,7 +206,7 @@ overlap_risk="$(jq -r '.overlap_risk // ""' "$INPUTS_FILE")"
 overlap_details="$(jq -r '.overlap_details // ""' "$INPUTS_FILE")"
 
 # ── manifest hatchery bridge fields (ADDITIVE; ledger-bridge) ────────────────────
-# manifest_version: 4 marks the per-brood-namespaced JSON manifest format (#168): top-level
+# manifest_version: 4 marks the per-brood-namespaced JSON manifest format: top-level
 # brood_id (the generated GUID) and created_at, brood-id-carrying per-strain branch/worktree,
 # and per-strain run.suggested_ledger DROPPED (the read side derives it now). No backwards-
 # compat with prior versions (single-user, unreleased): drain any running brood before upgrade.
@@ -275,7 +275,7 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" \
 [ -n "$repo_root" ] || { printf 'blocker: not inside a git repository\n' >&2; exit 1; }
 
 # ── Depth-complete canonical-containment guard (shared helper; refines ADR-0019) ──
-# spawn-brood is the THIRD writer derived from repo_root. Under per-brood namespacing (#168) it
+# spawn-brood is the THIRD writer derived from repo_root. Under per-brood namespacing it
 # mkdir's "$repo_root/.hivemind/broods/<brood-id>" (STATE) and adds worktrees under
 # "$repo_root/.claude/worktrees/<brood-id>/<short>". Both are derived TEXTUALLY, so a SYMLINKED
 # .hivemind, .hivemind/broods, .claude, or .claude/worktrees pointing outside the checkout would
@@ -321,7 +321,7 @@ for idx in $(seq 0 $((strain_count - 1))); do
   short="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
   [ -n "$short" ] || { printf 'blocker: strain name %s sanitizes to an empty short id\n' "$name" >&2; exit 1; }
 
-  # ── brood-id-namespaced names (#168 locked grammar) ───────────────────────────
+  # ── brood-id-namespaced names ───────────────────────────
   # branch / worktree / tmux session ALL carry the brood-id so two concurrent same-checkout
   # broods reusing a strain name get DISJOINT resources (closes PR #154 F2-deep). The branch is
   # DERIVED here (no longer caller-supplied). brood_id is asserted ^brood-[0-9a-f-]+$ and short
@@ -472,7 +472,7 @@ fi
 git rev-parse --verify --quiet "$base^{commit}" >/dev/null \
   || { printf 'blocker: base ref %s does not resolve to a commit\n' "$base" >&2; exit 1; }
 
-# ── Per-brood state directory (#168 namespacing; NO liveness guard) ──────────────
+# ── Per-brood state directory (NO liveness guard) ──────────────
 # Brood state lives in a DISJOINT per-brood directory: .hivemind/broods/<brood-id>/{inputs.json,
 # manifest.json}. <brood-id> is the internally-generated GUID (unique per invocation), so two
 # concurrent same-checkout spawns NEVER share a state dir — there is no singleton manifest to
@@ -952,7 +952,7 @@ manifest_json="$(printf '%s' "$strains_objects" | jq -s '.' \
   blocker "failed to construct brood manifest JSON; refusing to report success with no current manifest"
 }
 
-# ATOMIC WRITE (#168): write the manifest to a temp file IN $STATE then `mv` it into place. The
+# ATOMIC WRITE: write the manifest to a temp file IN $STATE then `mv` it into place. The
 # `mv` within the same filesystem (both under $STATE) is atomic, so a concurrent reader
 # (brood-status) observes either the OLD or the COMPLETE NEW manifest — never a truncated/partial
 # file. Per-brood namespacing already gives each brood its own disjoint manifest (no cross-brood

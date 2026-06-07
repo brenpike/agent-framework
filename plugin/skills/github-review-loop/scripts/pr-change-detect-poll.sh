@@ -127,7 +127,7 @@ POLL_INTERVAL_SECONDS=$((10#$POLL_INTERVAL_SECONDS))
 [ -n "$SELF_LOGIN" ] || poll_fail
 [ -n "$REVIEWER_FILTER" ] || REVIEWER_FILTER="codex-only"
 
-# Timeout wrapper for gh API calls (issue #159).
+# Timeout wrapper for gh API calls.
 # Normal gh graphql/reactions completes in 1-5s; 45s is generous against
 # transient slowness yet bounds a true hang far below Monitor's
 # max_watch_duration, so two consecutive timeouts surface POLL_ERROR well
@@ -137,7 +137,7 @@ GH_CALL_TIMEOUT_SECONDS=45
 # gracefully to no wrapper when neither exists (preserves current unguarded
 # behavior on a bare macOS). Using a bash array means an empty prefix expands
 # to zero words — clean prefix of the gh invocation with no extra quoting
-# gymnastics. (issue #159)
+# gymnastics.
 GH_TIMEOUT=()
 if command -v timeout >/dev/null 2>&1; then
   GH_TIMEOUT=(timeout "$GH_CALL_TIMEOUT_SECONDS")

@@ -299,7 +299,7 @@ ledger_path="$run_dir/state.json"
 
 [ -e "$ledger_path" ] && blocker "a ledger already exists at $ledger_path; refusing to overwrite"
 
-# ── Packaged-definition validation (#162) ─────────────────────────────────────
+# ── Packaged-definition validation ─────────────────────────────────────
 # Validate the supplied workflow id against the script's OWN packaged definition BEFORE
 # creating any directory (fail early, leave no orphan run dir). The workflow id must be a
 # safe single path component (the suggested-run-id / brood branches may not have guarded it)

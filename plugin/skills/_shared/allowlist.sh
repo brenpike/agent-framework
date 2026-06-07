@@ -39,8 +39,8 @@
 #       (`cd "$dir"`, jq `--arg`, `pwd -P` canonicalization) and are never re-parsed, so the
 #       floor IS the full security boundary. Arbitrary filesystem-path bytes that pass the
 #       floor — including spaces, `+ @ , %`, etc. — are ACCEPTED as quoted data. A per-byte
-#       charset enumeration here was the source of a recurring false-reject treadmill
-#       (#177 whack-a-mole doctrine); do NOT re-add per-byte charset rules to this class.
+#       charset enumeration here was the source of a recurring false-reject treadmill;
+#       do NOT re-add per-byte charset rules to this class.
 #   hivemind_assert_presentation FLOOR + positive display allowlist.
 #       FIELDS: strain `name` (display-only — emitted into the output field and used only as
 #       the quoted jq/awk `--arg`/`-v` lookup key, NEVER a shell-probe token). Markdown-cell
@@ -106,9 +106,9 @@ hivemind_assert_identifier() {
 # jq `--arg`, `pwd -P` canonicalization — and are NEVER re-parsed into a command word, so the
 # floor (which already forbids `$`/backtick command substitution, `..` traversal, leading
 # `-`, TAB/LF/CR framing, and empty) IS the complete security boundary for this class.
-# A per-byte charset enumeration here was the source of a recurring false-reject treadmill
-# (#177 whack-a-mole doctrine): every legitimate path byte the enumeration omitted produced a
-# spurious MALFORMED that suppressed ledger projection. Do NOT re-add per-byte charset rules.
+# A per-byte charset enumeration here was the source of a recurring false-reject treadmill:
+# every legitimate path byte the enumeration omitted produced a spurious MALFORMED that
+# suppressed ledger projection. Do NOT re-add per-byte charset rules.
 # Pure: no side effects, no exit.
 hivemind_assert_path() {
   local value="$1"

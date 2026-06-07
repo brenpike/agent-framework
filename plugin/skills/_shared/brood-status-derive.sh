@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 #
 # brood-status-derive.sh — PURE status-derivation + aggregation library for the brood-status
-# collection loop (issue #186, ADR-0020).
+# collection loop (ADR-0020).
 #
 # THIS FILE IS SOURCED, NOT EXECUTED. No shebang: each caller sources it by absolute path
 # derived from its OWN script_dir (`. "$plugin_root/skills/_shared/brood-status-derive.sh"`).
@@ -178,7 +178,7 @@ hivemind_aggregate_brood_summary() {
 #   strain_total   — the brood's strain count (0 for unreadable/empty broods).
 #
 # The global line is "Broods: T total. U unreadable. N of M strains complete across all broods."
-#   total_broods = number of records (every discovered brood counts, terminal or not, #179).
+#   total_broods = number of records (every discovered brood counts, terminal or not).
 #   unreadable   = count of records with is_unreadable == 1.
 #   complete     = sum of complete_count across all records.
 #   total_strains= sum of strain_total across all records.

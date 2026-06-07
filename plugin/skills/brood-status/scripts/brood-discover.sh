@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # brood-discover — deterministic brood-manifest discovery/enumeration for hivemind:brood-status
-# (issue #185, ADR-0020). Extracts the discovery glob that was previously inline navigator-body
+# (ADR-0020). Extracts the discovery glob that was previously inline navigator-body
 # prose in brood-status's SKILL.md (steps 1a–1c) into a committed, testable engine — the exact
 # "inline navigator-body logic" ADR-0020 rejects.
 #
@@ -16,7 +16,7 @@
 #       read side and the write side agree by construction. From the main checkout it equals the
 #       main checkout root (top-level behavior unchanged); from a linked worktree it correctly
 #       yields THAT worktree's root, so nested/child-spawned broods are visible at each hatchery
-#       level (issue #182, supported by construction — same anchor at every level, no tree-walk).
+#       level (supported by construction — same anchor at every level, no tree-walk).
 #       The glob PATTERN is HARDCODED; no untrusted/caller-supplied path is interpolated beyond
 #       this single root argument.
 #
@@ -60,7 +60,7 @@ if [ "${#manifests[@]}" -eq 0 ]; then
 fi
 
 # Positively validate the brood-id directory segment of each matched manifest before emitting it
-# (issue #185, ADR-0019 floor-at-input). The navigator splices each emitted path into an
+# (ADR-0019 floor-at-input). The navigator splices each emitted path into an
 # LLM-authored Bash command (`bash brood-status-project.sh "<manifest_path>" …`); per repo doctrine
 # (security-policy.md, ADR-0019) double-quoting does NOT neutralize `$(...)`, backticks, or `${}`
 # when untrusted bytes sit in command SOURCE. A directory literally named

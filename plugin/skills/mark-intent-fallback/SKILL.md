@@ -16,7 +16,7 @@ The deterministic engine is the committed script
 body is a navigator that authors a single JSON inputs file and runs the script once.
 
 This is the SANCTIONED ledger write-path for the version-skew intent-fallback resume door
-and the start-fresh stale-run closeout (issue #160). It DELIBERATELY bypasses
+and the start-fresh stale-run closeout. It DELIBERATELY bypasses
 transition-validation and the version-binding guard that `record-state-result.sh`
 hard-rejects: the skewed run no longer binds to a packaged workflow definition, so the
 "proceed intent-driven" door needs a deterministic ledger writer instead of an unreachable
@@ -103,7 +103,7 @@ The script validates, in order, ALL before any write:
    meaningless; ledger byte-unchanged). When `close_status` is ABSENT, this check is SKIPPED —
    the bare mode-flip path stays PERMISSIVE on a non-running skew ledger.
 
-The script DELIBERATELY SKIPS (this is the whole point of issue #160):
+The script DELIBERATELY SKIPS (this is the whole point of this sanctioned bypass path):
 - NO workflow-definition derivation or read — the skewed run may reference a definition
   version no longer packaged.
 - NO version-binding guard (`definition.id` / `version` vs ledger) — skew is the

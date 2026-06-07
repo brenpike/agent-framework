@@ -11,7 +11,7 @@
 # where the latest non-self thread comment already carries a self-authored
 # `Fixed in <SHA>.` reply but no thread resolution has been recorded yet.
 #
-# Architecture (since #198):
+# Architecture:
 #   The per-comment / per-thread "already handled by our own fix-reply?"
 #   classification is NO LONGER inlined here. It is DELEGATED to the shared,
 #   pure, offline jq filter:
@@ -133,7 +133,7 @@ CLASSIFY_FILTER="$SCRIPT_DIR/fix-history-classify.jq"
 # GraphQL-error posture: better to wake the reviewer than to silently skip.
 [ -f "$CLASSIFY_FILTER" ] || prefilter_fail "missing-filter"
 
-# Timeout wrapper for gh API calls (issue #159).
+# Timeout wrapper for gh API calls.
 # Normal gh graphql completes in 1-5s; 45s is generous against transient
 # slowness yet bounds a true hang far below Monitor's max_watch_duration.
 GH_CALL_TIMEOUT_SECONDS=45
@@ -141,7 +141,7 @@ GH_CALL_TIMEOUT_SECONDS=45
 # gracefully to no wrapper when neither exists (preserves current unguarded
 # behavior on a bare macOS). Using a bash array means an empty prefix expands
 # to zero words — clean prefix of the gh invocation with no extra quoting
-# gymnastics. (issue #159)
+# gymnastics.
 GH_TIMEOUT=()
 if command -v timeout >/dev/null 2>&1; then
   GH_TIMEOUT=(timeout "$GH_CALL_TIMEOUT_SECONDS")

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # brood-status-project — read-side child-ledger projection engine for hivemind:brood-status
-# (issue #161). The read-side analog of spawn-brood.sh's write-side injection closure
+#The read-side analog of spawn-brood.sh's write-side injection closure
 # (ADR-0017): spawn-brood WRITES the manifest + provisions child worktrees out-of-band; this
 # script READS the manifest + each child run-ledger out-of-band and emits a machine-parseable
 # per-strain projection line. The skill body (navigator) calls this once; this script OWNS the
@@ -10,15 +10,15 @@
 # INPUT (positional arguments):
 #   $1  Path (absolute or repo-relative) to a brood manifest JSON (default name
 #       `.hivemind/brood/manifest.json`). LAYOUT-AGNOSTIC: the caller passes the manifest path
-#       explicitly; this script does NOT hardcode `.hivemind/brood/` (issue #168 will pass
-#       per-brood paths). The manifest is UNTRUSTED data — see below.
+#       explicitly; this script does NOT hardcode `.hivemind/brood/`
+#       The manifest is UNTRUSTED data — see below.
 #   $2  OPTIONAL: the checkout root the manifest belongs to, used as the containment root for the
 #       manifest read-guard. DEFAULTS to `git rev-parse --show-toplevel` (the CURRENT checkout).
 #       The navigator MUST pass the MAIN-checkout root here when it selected the manifest via the
 #       documented main-checkout FALLBACK from a linked worktree (SKILL.md step 1c): in that case
 #       the manifest lives under the main checkout, NOT the current linked worktree, so confining
 #       it beneath `--show-toplevel` (the linked worktree) would falsely reject a valid
-#       main-checkout manifest and stop status reporting before any strain probe (Codex #172 P1).
+#       main-checkout manifest and stop status reporting before any strain probe.
 #       This argument bounds ONLY which checkout the manifest must sit under; it does NOT relax
 #       the symlinked-ancestor escape guard, and each strain's child ledger is still confined
 #       beneath that strain's OWN worktree (unchanged).
@@ -44,7 +44,7 @@
 #     STRAIN <TAB> brood_id <TAB> name <TAB> worktree_path <TAB> branch <TAB> tmux_session \
 #            <TAB> manifest_status <TAB> state_current <TAB> run_status
 #
-#   `brood_id` is the FIRST field of every STRAIN line (issue #168 grammar): a single value read
+#   `brood_id` is the FIRST field of every STRAIN line: a single value read
 #   from the manifest TOP-LEVEL `brood_id`, validated ONCE against ^brood-[0-9a-f-]+$ and emitted
 #   verbatim on every strain line so the STEP-005 navigator can attribute each strain to its brood
 #   when enumerating multiple manifests. (Enumeration across broods is the navigator's concern;
@@ -105,14 +105,14 @@ blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 #
 # This is the ENCODE-AT-OUTPUT half of the floor-at-input / encode-at-output model documented in
 # allowlist.sh (see its header: "MARKDOWN SAFETY LIVES AT THE RENDER BOUNDARY, NOT HERE"). The
-# `path` value-class is FLOOR-ONLY (issue #177 whack-a-mole doctrine): it deliberately admits any
+# `path` value-class is FLOOR-ONLY: it deliberately admits any
 # byte that survives the shared floor as inert quoted data — INCLUDING the Markdown table-cell
 # delimiter `|`. The floor rejects framing bytes (TAB/newline/CR) and command-substitution, but a
 # literal `|` is valid path/display data. The STEP-005 navigator lands `worktree_path` (and other
 # display columns) inside Markdown TABLE cells, where an un-encoded `|` would inject column
 # structure. That defense MUST be deterministic, so it lives HERE at the emit boundary — NOT in the
 # agent-driven SKILL.md. DO NOT "fix" a `|` leak by re-adding a charset carve-out to the `path`
-# value-class: per #177, charset whack-a-mole at the input floor is the wrong layer — the floor
+# value-class: charset whack-a-mole at the input floor is the wrong layer — the floor
 # stays permissive, this encoder owns cell safety.
 #
 # Transformation, applied UNIFORMLY to every display field (not per-class carve-outs):
@@ -143,7 +143,7 @@ plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 
 # ── Dependency check ────────────────────────────────────────────────────────────
 # jq is required (the child ledgers are JSON). tmux/claude/gh are NOT required — this read
-# path runs in CI with only jq (issue #169 dep-gate).
+# path runs in CI with only jq.
 command -v jq >/dev/null 2>&1 \
   || blocker "jq is required to project child run-ledgers but is not installed"
 
@@ -155,7 +155,7 @@ MANIFEST="${1:-}"
 # symlinks and would pass a symlink-to-regular-file). hivemind_assert_inputs_contained below
 # canonicalizes only the manifest's dirname and re-appends the basename textually, so a
 # symlinked manifest LEAF pointing at an external file would otherwise resolve outside and be
-# read as an attacker-controlled JSON manifest (Codex #172 P1). [ -L ] fires for a symlink leaf even when
+# read as an attacker-controlled JSON manifest. [ -L ] fires for a symlink leaf even when
 # its target is missing; checking it first closes the leaf-symlink escape the dirname-only
 # canonicalization leaves open. A symlinked ANCESTOR is still caught by the containment guard.
 [ -L "$MANIFEST" ] \
@@ -165,8 +165,8 @@ MANIFEST="${1:-}"
 
 # Determine the containment root the manifest must sit beneath. DEFAULT: the current checkout
 # (`git rev-parse --show-toplevel`). OVERRIDE: an explicit $2 supplied by the navigator when it
-# selected the manifest via the main-checkout fallback from a linked worktree (see header / Codex
-# #172 P1). The override must name an EXISTING DIRECTORY; an unreadable or non-directory override
+# selected the manifest via the main-checkout fallback from a linked worktree (see header
+# The override must name an EXISTING DIRECTORY; an unreadable or non-directory override
 # is a pre-flight blocker (we never silently fall back, which could hide a wrong root).
 CHECKOUT_ROOT="${2:-}"
 if [ -n "$CHECKOUT_ROOT" ]; then
@@ -205,7 +205,7 @@ hivemind_assert_inputs_contained "$CHECKOUT_ROOT" "$MANIFEST" >/dev/null \
 # fail-open-on-malformed behavior (a corrupt manifest must not wedge spawning).
 # The manifest is UNTRUSTED bytes; held only in a shell var passed to jq stdin, never eval'd.
 #
-# FILE-LEVEL NUL REJECTION (root, Codex #172): bash `$(...)` SILENTLY STRIPS NUL bytes, so a
+# FILE-LEVEL NUL REJECTION: bash `$(...)` SILENTLY STRIPS NUL bytes, so a
 # manifest whose on-disk bytes are e.g. `{"strains":<NUL>[]}` would, after the `$(...)` read below,
 # become the valid-looking `{"strains":[]}` — it would pass shape validation and project as an empty
 # brood, emitting no MANIFEST_UNREADABLE and exiting 0 (live children hidden). JSON never legitimately
@@ -225,7 +225,7 @@ if ! hivemind_manifest_validate_shape "$manifest_content"; then
 fi
 
 # Canonical containment anchor for the per-strain GROUND-TRUTH worktree-containment chain below.
-# Issue #168 (locked OQ3): the per-strain ledger anchor is NO LONGER the manifest's UNTRUSTED
+# (locked OQ3): the per-strain ledger anchor is NO LONGER the manifest's UNTRUSTED
 # `worktree_path` (display-only now). It is the REAL worktree git itself reports for the strain's
 # branch (ground-truth discovery, below). The full containment chain is
 # CHECKOUT_ROOT ⊇ git-worktree ⊇ ledger: the git-derived worktree must still canonically sit
@@ -237,7 +237,7 @@ canon_checkout="$(hivemind_canon_root "$CHECKOUT_ROOT")"
   || blocker "failed to canonicalize checkout root $CHECKOUT_ROOT for worktree containment"
 
 # ── Top-level brood_id (single read, validated once) ──────────────────────────────
-# The brood_id is the FIRST field of every STRAIN line (issue #168 grammar). It is read ONCE from
+# The brood_id is the FIRST field of every STRAIN line. It is read ONCE from
 # the manifest TOP-LEVEL `brood_id` and validated against ^brood-[0-9a-f-]+$ (the exact shape
 # spawn-brood.sh generates: brood-<uuidv4>). The manifest is UNTRUSTED, so a tampered/absent
 # brood_id renders the fixed token MALFORMED (never a raw byte) — it is still emitted on every
@@ -330,13 +330,13 @@ strain_count="$(hivemind_manifest_strain_count_snapshot "$manifest_content")"
 idx=0
 while [ "$idx" -lt "$strain_count" ]; do
   # 1. Extract the strain NAME + static fields + the run.suggested_id out-of-band, all selected by
-  #    INDEX against the single in-memory snapshot. EXIT-CODE CONTRACT (#178 F2/F3): every field
+  #    INDEX against the single in-memory snapshot. EXIT-CODE CONTRACT (F2/F3): every field
   #    below comes from hivemind_manifest_field_at, which signals presence-vs-rejection OUT-OF-BAND
   #    via exit code: 0 = present+valid (value on stdout), 1 = ABSENT -> MISSING, 2 = present-but-
   #    INVALID (non-string scalar / C0-control byte / multi-document) -> MALFORMED. We capture each
   #    field's value AND its exit code, then branch on the code below; a rejected (exit 2) value is
   #    NEVER collapsed into MISSING.
-  # The name is resolved with the SAME in-jq C0-control rejection (root, Codex #172): bash $(...)
+  # The name is resolved with the SAME in-jq C0-control rejection: bash $(...)
   # strips NUL, so a JSON \u00NN control escape that jq -r would decode to a real control byte must
   # be rejected INSIDE jq (bytes intact), else the post-cmd-subst presentation gate would validate a
   # control-stripped name. A control-bearing name resolves to empty here -> name_out MALFORMED.
@@ -351,7 +351,7 @@ while [ "$idx" -lt "$strain_count" ]; do
   suggested_id="$(hivemind_manifest_field_at "$manifest_content" "$idx" "run.suggested_id")"; sid_rc=$?
 
   # 2. Re-gate every value via the allowlist value-class matching its field. The exit-code from
-  #    hivemind_manifest_field_at (#178 F2/F3) ALREADY distinguishes ABSENT (rc 1 -> MISSING) from
+  #    hivemind_manifest_field_at (F2/F3) ALREADY distinguishes ABSENT (rc 1 -> MISSING) from
   #    present-but-INVALID (rc 2 -> MALFORMED) for the string fields; we honor that code FIRST and
   #    never collapse a rejected (rc 2) value into MISSING. A returned value (rc 0) still passes its
   #    value-class floor before it is emitted.
@@ -359,11 +359,11 @@ while [ "$idx" -lt "$strain_count" ]; do
   #    The strain NAME is DISPLAY-ONLY — emitted in the output field; selection is by INDEX, so it
   #    never reaches a shell probe token. spawn-brood derives names containing SPACES, so a valid
   #    `api worker` strain must not be rendered MALFORMED (which would make the navigator lose its
-  #    status — Codex #172 P1). Gate the name with the broadest PRESENTATION class.
+  #    status — Gate the name with the broadest PRESENTATION class.
   name_out="MALFORMED"
   hivemind_assert_presentation "$strain_name" && name_out="$strain_name"
 
-  # worktree_path is now DISPLAY-ONLY (issue #168, locked OQ3): it is NEVER a ledger anchor. The
+  # worktree_path is now DISPLAY-ONLY (locked OQ3): it is NEVER a ledger anchor. The
   # ground-truth worktree (below) comes from `git worktree list`, keyed by the strain's branch —
   # a tampered manifest path can no longer redirect the bounded ledger reader. We still gate the
   # manifest value for safe RENDERING with the PATH class (rejects the shared floor: '..', leading
@@ -516,14 +516,14 @@ $branch_out
             # `cat`. It is BOUNDED to near-zero impact: only the validated run.status enum +
             # state.current charset ever surface — never raw bytes; projection is informational-
             # only and never overrides observable status. The STRUCTURAL closure (no cross-worktree
-            # reads of hostile-child files) is per-brood isolation tracked in #168. Re-assert the
+            # reads of hostile-child files) is per-brood isolation. Re-assert the
             # leaf is not a symlink as close to the read as possible to narrow (not fully close)
             # the window.
             if [ -L "$canon_ledger" ]; then
               state_out="MALFORMED"
               run_out="MALFORMED"
             elif hivemind_path_has_nul "$canon_ledger"; then
-              # FILE-LEVEL NUL REJECTION (root, Codex #172): the `cat` read below uses `$(...)`,
+              # FILE-LEVEL NUL REJECTION: the `cat` read below uses `$(...)`,
               # which SILENTLY STRIPS NUL bytes — so a ledger whose on-disk bytes carry a literal
               # NUL (e.g. NUL-padding around otherwise-valid JSON) would, after capture, parse as a
               # different document than what is on disk. JSON never legitimately contains a literal
@@ -538,13 +538,13 @@ $branch_out
             elif ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"; then
               # READ SUCCEEDED. Attempt the read IMMEDIATELY after the [ -L ] re-check — NO
               # intervening filesystem stat — to keep the irreducible single-open micro-TOCTOU
-              # window (documented above, #168-homed) as NARROW as possible. An earlier draft
+              # window (documented above) as NARROW as possible. An earlier draft
               # inserted a `[ -e ]` existence probe BETWEEN the [ -L ] check and the read, which
               # added an extra syscall to that window; ordering the `cat` first removes it and
               # mirrors the safe ordering already used by the path-based wrappers in
               # ledger-project.sh.
               #
-              # ITEM-4 DEFENSE-IN-DEPTH (locked, issue #168): after the read, resolve the ACTUAL
+              # ITEM-4 DEFENSE-IN-DEPTH (locked): after the read, resolve the ACTUAL
               # read target — canonicalize the leaf's PARENT (cd && pwd -P resolves every symlink
               # component) and re-append the basename — and RE-ASSERT it is STILL contained under the
               # git-worktree (and, transitively, CHECKOUT_ROOT). Project the scalars ONLY if still
@@ -599,7 +599,7 @@ $branch_out
     fi
   fi
 
-  # 5. Emit exactly one TAB-delimited STRAIN line. Field order (issue #168):
+  # 5. Emit exactly one TAB-delimited STRAIN line. Field order:
   #    brood_id, name, worktree_path, branch, tmux_session, manifest_status, state_current,
   #    run_status. brood_id is the single top-level value validated ONCE before the loop and
   #    emitted verbatim on every strain line.

@@ -4,7 +4,7 @@
 # ----------
 # Single source of truth for the "already-handled by our own fix-reply?"
 # per-comment classification predicate. Both consumers MUST reference this one
-# filter so the skip/order semantics never drift between them again (#198):
+# filter so the skip/order semantics never drift between them again:
 #   - ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/prefilter.sh
 #     (collapses the labels into its binary PREFILTER_SKIP / PREFILTER_DISPATCH)
 #   - ${CLAUDE_PLUGIN_ROOT}/agents/github-reviewer.md
