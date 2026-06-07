@@ -132,6 +132,7 @@ Seen comments | New actionable comments); `Routed: github-reviewer: <count>`;
 - Never merge, close, or approve PRs.
 - Never request external review or re-review.
 - Do not start a second Monitor.
+- Do NOT wrap the poll in an additional `until`/`while`/`grep -q EXIT=` loop — the Monitor IS the wait primitive; read its emitted lines directly.
 - Never claim the watch is still active in a returned report — a returned run is no
   longer monitoring (`Monitoring: stopped`).
 - Single PR per invocation.

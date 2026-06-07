@@ -44,7 +44,19 @@ A failure is transient if and only if its root cause is: HTTP 5xx, HTTP 429, TCP
 
 ## Validation Procedure
 
-Execute every command listed in the project's `CLAUDE.md` validation section. No duration cap. If a command cannot run, return Blocked naming the command and reason. If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so.
+The OVERLORD / run-level gate, executed once at the `validate` workflow state. Execute every command listed in the project's `CLAUDE.md` validation section. No duration cap. If a command cannot run, return Blocked naming the command and reason. If `CLAUDE.md` lists no validation commands, validation is "Not run" and the report must say so.
+
+## Worker Self-Check
+
+The artifact-scoped check a worker (drone/changeling) runs over ONLY its own edited artifacts — never the whole run. For each file the worker edited:
+
+- shell script (`*.sh`) → `bash -n <file>`
+- a co-located `test_*.sh` exists for the edited artifact → run that test
+- JSON file (`*.json`) → `jq empty <file>` (or `python3 -m json.tool <file>`)
+
+A worker MUST NOT directly invoke `tools/validate.sh --changed` or `tools/validate.sh --all` — that is the overlord's single run-level Validation Procedure gate at the `validate` state. Running an artifact's own `test_*.sh` is allowed even if that test internally shells out to the validator.
+
+FAIL-CLOSED: a self-check command that CANNOT run → return Blocked naming the command and reason. A file with NO applicable self-check command (e.g. markdown-only edit, no shell/test/JSON) → record a clean "Not run (no applicable self-check)", NOT Blocked.
 
 ## Brood
 
