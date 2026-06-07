@@ -91,31 +91,13 @@ POLL_INTERVAL=2
 # INJECT_SETTLE: seconds to wait after tmux paste-buffer -p before sending the submit
 # keystroke. paste-buffer delivers the bracketed-paste sequence (ESC[200~…ESC[201~)
 # asynchronously to the pty; a zero-delay send-keys races the closing bracket and lands
-# inside the bracketed-paste window as an in-composer newline rather than a submit.
+# inside the bracketed-paste window as an in-composer newline rather than a submit. The
+# submit model (inject_strain) is now a SINGLE send: paste, settle, send Enter ONCE,
+# return. spawn-brood does NOT verify turn-start by screen-scraping the TUI. A child that
+# fails to actually start a turn surfaces later through hivemind:brood-status, which judges
+# liveness from run-ledger ground truth (child run state.current present => running, absent
+# => starting) — not from capture-pane frames.
 INJECT_SETTLE=0.2
-# Submit-verification model (inject_strain): the submit Enter is sent ONCE after
-# INJECT_SETTLE, then verification is KEYSTROKE-FREE — capture-pane is polled WITHOUT
-# sending any further Enter between polls. ready-chrome presence (READY_SUBSTRING) is
-# NEVER treated as proof the child has-not-submitted: a transient pre-busy frame, a
-# sticky header, or a blank pane can all redisplay or omit it while a turn is already
-# live. Turn-start is therefore judged by a DEBOUNCED positive signal: READY_SUBSTRING
-# absent across INJECT_DEBOUNCE_POLLS consecutive keystroke-free polls. Only if the
-# child remains CONTINUOUSLY unsubmitted (ready chrome on EVERY poll, no transition
-# ever seen) through the poll bound do we permit AT MOST ONE corrective resend — the
-# rescue for an Enter absorbed inside the bracketed-paste window (the original #213
-# fix). Worst case is TWO Enter keystrokes total, never one-per-poll.
-# INJECT_VERIFY_ATTEMPTS: maximum KEYSTROKE-FREE capture-pane polls per verification
-# pass. Each poll waits POLL_INTERVAL seconds. No Enter is sent between polls. Worst-case
-# total verification time = INJECT_VERIFY_ATTEMPTS × POLL_INTERVAL × (1 + INJECT_RESEND_MAX)
-# + INJECT_SETTLE ≈ 12s, kept comparable to the prior 5×POLL_INTERVAL budget so Pass-2's
-# shared deadline accounting is unaffected.
-INJECT_VERIFY_ATTEMPTS=3
-# INJECT_DEBOUNCE_POLLS: consecutive ready-absent polls required to DEBOUNCE a turn
-# start, so a single transient ready-absent frame cannot be misread as submitted.
-INJECT_DEBOUNCE_POLLS=2
-# INJECT_RESEND_MAX: maximum corrective Enter resends after the first submit. Bounds
-# total Enters to (1 initial + INJECT_RESEND_MAX) = 2 worst case.
-INJECT_RESEND_MAX=1
 
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
@@ -780,23 +762,14 @@ done
 # inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted on
 # paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE bounded
 # prompt. After the paste a short settle (INJECT_SETTLE) allows the closing ESC[201~ to
-# reach the TUI before the SINGLE submit keystroke arrives. Submit and verification are
-# DECOUPLED: Enter is sent ONCE, then verification is KEYSTROKE-FREE — capture-pane is
-# polled (INJECT_VERIFY_ATTEMPTS × POLL_INTERVAL) WITHOUT sending any further Enter.
-# Ready-chrome presence (READY_SUBSTRING) is NOT proof the child has-not-submitted: a
-# transient pre-busy frame, sticky header, or blank pane can redisplay/omit it while a
-# turn is already live. Turn-start is therefore judged by a DEBOUNCED positive signal —
-# READY_SUBSTRING absent across INJECT_DEBOUNCE_POLLS consecutive polls. Only if the
-# child stayed CONTINUOUSLY unsubmitted (ready chrome on EVERY poll, no transition ever
-# observed) is AT MOST ONE corrective resend (INJECT_RESEND_MAX) permitted after a
-# longer settle — the rescue for an Enter absorbed inside the bracketed-paste window
-# (the original #213 fix). Worst case is TWO Enter keystrokes total, never one-per-poll.
-# LIMITATION: if the live claude-CLI TUI keeps READY_SUBSTRING permanently visible in a
-# sticky header DURING an active turn, the absence signal cannot fire; that would force a
-# (single) corrective resend and then a failed mark — acceptable degradation, never an
-# unbounded keystroke storm. Best-effort delete the buffer on EVERY failure path so an
-# untrusted task never persists in the shared tmux buffer. Returns 0 on confirmed turn
-# start; 1 on failure.
+# reach the TUI before the SINGLE submit keystroke, so Enter no longer races the paste and
+# is not absorbed inside the bracketed-paste window (the #213 fix). Enter is sent ONCE and
+# the function returns success — spawn-brood does NOT verify turn-start by screen-scraping
+# the TUI. Whether the child actually began a turn is observed LATER by hivemind:brood-status
+# from run-ledger ground truth (child run state.current present => running, absent =>
+# starting), not by this script. Best-effort delete the buffer on EVERY failure path so an
+# untrusted task never persists in the shared tmux buffer. Returns 0 once the submit
+# keystroke is sent; 1 only on a tmux command failure (dead pane / load / paste / send error).
 inject_strain() {
   local idx="$1"
   local tmux_session="${S_TMUX[$idx]}"
@@ -825,96 +798,19 @@ inject_strain() {
   # the bracketed-paste window as an in-composer newline rather than a submit.
   sleep "$INJECT_SETTLE"
 
-  # Submit ONCE. An Enter absorbed inside the bracketed-paste window is rescued later by
-  # the single bounded corrective resend, NOT by per-poll re-sending.
+  # Submit ONCE, after the settle. No turn-start verification, no corrective resend: the
+  # settle is what makes this single Enter land as a submit, and downstream liveness is
+  # judged by hivemind:brood-status from run-ledger evidence, not by capture-pane here. On a
+  # send-keys command failure (e.g. dead pane) clean up the buffer, mark the strain failed,
+  # and return 1.
   if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
-    printf 'warning: tmux send-keys Enter failed for strain %s (initial submit)\n' \
-      "${S_NAME[$idx]}" >&2
+    printf 'warning: tmux send-keys Enter failed for strain %s\n' "${S_NAME[$idx]}" >&2
     tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
     mark_failed "$idx"
     return 1
   fi
 
-  # verify_turn_started: KEYSTROKE-FREE debounced verification pass. Polls capture-pane
-  # INJECT_VERIFY_ATTEMPTS times (POLL_INTERVAL apart) WITHOUT sending Enter. Sets two
-  # outer vars: turn_started=true once READY_SUBSTRING is absent FROM A LIVE CAPTURE across
-  # INJECT_DEBOUNCE_POLLS consecutive polls (debounced positive signal); and
-  # continuously_unsubmitted=true ONLY if ready chrome was CONFIRMED PRESENT on EVERY poll —
-  # the gate that authorizes a corrective resend. It is cleared by ANY poll that fails to
-  # confirm ready chrome: a live ready-absent capture (a transition was observed) OR a
-  # capture-pane FAILURE (dead/unavailable pane proved nothing). A capture failure is never
-  # read as a turn start (no keystroke is ever sent on it) and now also cannot keep the resend
-  # gate open, so an all-captures-failed pass falls through poll exhaustion to mark_failed with
-  # NO corrective Enter rather than firing a stray Enter into a possibly-already-submitted child.
-  verify_turn_started() {
-    turn_started=false
-    continuously_unsubmitted=true
-    local poll=0
-    local consecutive_absent=0
-    local pane=""
-    while [ "$poll" -lt "$INJECT_VERIFY_ATTEMPTS" ]; do
-      sleep "$POLL_INTERVAL"
-      if ! pane="$(tmux capture-pane -t "$tmux_session" -p 2>/dev/null)"; then
-        # Capture failed (likely a dead pane): NOT a live ready-present poll, so it CANNOT
-        # keep the resend gate open. continuously_unsubmitted means "ready chrome confirmed
-        # present on EVERY live poll"; a failed capture proved nothing, so it disqualifies a
-        # corrective resend exactly as an absence would (without counting toward turn-start).
-        # Reset the debounce run and clear the gate so an all-captures-failed pass falls
-        # through poll exhaustion to mark_failed with NO second Enter into a possibly-already-
-        # submitted child.
-        continuously_unsubmitted=false
-        consecutive_absent=0
-        poll=$((poll + 1))
-        continue
-      fi
-      if printf '%s' "$pane" | grep -qF "$READY_SUBSTRING"; then
-        consecutive_absent=0
-      else
-        # ready chrome NOT visible in a LIVE capture this poll: a transition was observed,
-        # so the child is not continuously-unsubmitted and no corrective resend is warranted.
-        continuously_unsubmitted=false
-        consecutive_absent=$((consecutive_absent + 1))
-        if [ "$consecutive_absent" -ge "$INJECT_DEBOUNCE_POLLS" ]; then
-          turn_started=true
-          return 0
-        fi
-      fi
-      poll=$((poll + 1))
-    done
-    return 1
-  }
-
-  local turn_started=false
-  local continuously_unsubmitted=true
-  verify_turn_started
-
-  # At most ONE corrective resend, gated on the child remaining CONTINUOUSLY unsubmitted
-  # (ready chrome on every poll, no transition observed) — the bracketed-paste-window
-  # rescue. A longer settle (INJECT_SETTLE) precedes the resend, then a second
-  # keystroke-free debounced pass confirms or fails.
-  local resends=0
-  while [ "$turn_started" = false ] \
-    && [ "$continuously_unsubmitted" = true ] \
-    && [ "$resends" -lt "$INJECT_RESEND_MAX" ]; do
-    sleep "$INJECT_SETTLE"
-    if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
-      printf 'warning: tmux send-keys Enter failed for strain %s (corrective resend)\n' \
-        "${S_NAME[$idx]}" >&2
-      break
-    fi
-    resends=$((resends + 1))
-    verify_turn_started
-  done
-
-  if [ "$turn_started" = false ]; then
-    printf 'warning: strain %s did not start a turn after submit + %d corrective resend(s); marking failed\n' \
-      "${S_NAME[$idx]}" "$resends" >&2
-    tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
-    mark_failed "$idx"
-    return 1
-  fi
-
-  # Turn confirmed started; buffer already deleted by paste-buffer -d; strain stays running.
+  # Submit keystroke sent; buffer already deleted by paste-buffer -d; strain stays running.
   return 0
 }
 
