@@ -162,8 +162,7 @@ on-disk ledger is byte-unchanged.
    see ADR-0019). Note: the token makes the TRANSPORT FILE invocation-unique — it does NOT make
    concurrent mutation of ONE run's ledger safe. A run ledger is owned and mutated by exactly one
    overlord instance (RUN-OWNERSHIP-01, worktree isolation); concurrent same-run ledger mutation
-   is outside the design envelope. Serializing same-run ledger writes (a per-run lock) is tracked
-   as deferred in issue #167, not implemented here. `file_path` =
+   is outside the design envelope. Serializing same-run ledger writes (a per-run lock) is deferred, not implemented here. `file_path` =
    `.hivemind/runs/.record-inputs-<token>.json`, `content` = the JSON object from step 1. The
    leading-dot `.record-inputs-*` name is a SIBLING of the run dirs (`runs/<run-id>/`), not one of
    them, so it stays OUT of the `runs/<run-id>/` glob — it never collides with `state.json` or the

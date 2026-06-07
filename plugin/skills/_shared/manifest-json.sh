@@ -119,7 +119,7 @@ hivemind_manifest_field() {
 # that IS an object but lacks `name` still passes shape validation — per-strain field degradation
 # (MALFORMED/MISSING tokens) is the existing per-strain contract, not a whole-manifest verdict.
 # Emits nothing; pure (no side effects, no exit).
-# SINGLE-DOCUMENT REQUIREMENT (root, Codex #172): jq accepts a STREAM of concatenated JSON
+# SINGLE-DOCUMENT REQUIREMENT (root cause): jq accepts a STREAM of concatenated JSON
 # documents, so a non-slurped `jq -e '(.strains|type=="array") ...'` runs the predicate ONCE PER
 # document and a file holding TWO valid manifest objects would pass shape validation. The downstream
 # count would then emit one length per document (`1\n1`), the loop's `[ "$idx" -lt "$count" ]`
@@ -148,7 +148,7 @@ hivemind_manifest_validate_shape() {
 # an extra iteration before validation. Pure (no side effects, no exit).
 hivemind_manifest_strain_count_snapshot() {
   local content="$1"
-  # SLURP + index .[0] (root, Codex #172): match hivemind_manifest_validate_shape's single-document
+  # SLURP + index .[0] (root cause): match hivemind_manifest_validate_shape's single-document
   # discipline so this can never emit one length per document for a multi-document file (which would
   # break the engine's integer loop test). validate_shape has already required exactly one document
   # before this is reached; slurping here keeps the count projection on that same single document.
@@ -163,7 +163,7 @@ hivemind_manifest_strain_count_snapshot() {
 # delimiter. The field selector is a fixed literal from the closed case below — never attacker
 # content.
 #
-# EXIT-CODE CONTRACT (#178 F2, locked OQ1 resolution — consumed by brood-status-project.sh, STEP-004):
+# EXIT-CODE CONTRACT (F2, locked OQ1 resolution — consumed by brood-status-project.sh, STEP-004):
 # This helper distinguishes ABSENT from REJECTED via the EXIT CODE, NOT via an in-band sentinel
 # string (an in-band sentinel could collide with a legit field value). The caller MUST branch on
 # the exit code, not on stdout emptiness alone:
@@ -179,13 +179,13 @@ hivemind_manifest_strain_count_snapshot() {
 # An UNRECOGNIZED field selector exits 1 (treated as absent — it is a fixed caller-supplied literal,
 # never attacker content, so a typo degrades to MISSING rather than MALFORMED).
 #
-# TYPE==STRING GATE (#178 F3): every supported field is a STRING in a well-formed manifest. The
+# TYPE==STRING GATE (F3): every supported field is a STRING in a well-formed manifest. The
 # value MUST be type=="string" BEFORE any extraction/coercion. Without this, jq -r would coerce a
 # non-string scalar (branch:123 -> "123", tmux_session:true -> "true") into a trusted-LOOKING token
 # that flows past the caller as if it were a real string field. A PRESENT non-string is a tamper
 # indicator -> exit 2 (MALFORMED), never coerced and never emitted.
 #
-# CONTROL-BYTE REJECTION INSIDE jq (root, Codex #172): the caller consumes stdout via $(...) command
+# CONTROL-BYTE REJECTION INSIDE jq (root cause): the caller consumes stdout via $(...) command
 # substitution, which SILENTLY STRIPS NUL bytes — so a value validated AFTER the $(...) round-trip
 # differs from what jq produced. A JSON   escape is VALID JSON; jq -r decodes it to a real NUL
 # that $(...) would erase. jq is the integrity point: it sees the decoded bytes intact, so a value
@@ -196,7 +196,7 @@ hivemind_manifest_strain_count_snapshot() {
 # (next line retains the original illustrative bytes; the active gate uses [[:cntrl:]] below.)
 # carrying ANY C0 control byte ( -) is rejected -> exit 2 (MALFORMED), never emitted.
 #
-# SLURP + index .[0] (root, Codex #172): same single-document discipline as
+# SLURP + index .[0] (root cause): same single-document discipline as
 # hivemind_manifest_validate_shape / _strain_count_snapshot — select the strain at $index from the
 # ONE top-level document, never from a concatenated stream; a multi-document snapshot exits 2.
 #
@@ -223,7 +223,7 @@ hivemind_manifest_field_at() {
       return 1 ;;
   esac
 
-  # CONTROL-BYTE REJECTION INSIDE jq (root, Codex #172): the extracted value is consumed by the
+  # CONTROL-BYTE REJECTION INSIDE jq (root cause): the extracted value is consumed by the
   # caller via `$(...)` command substitution, which SILENTLY STRIPS NUL bytes — so a value the
   # caller validates AFTER the `$(...)` round-trip differs from what jq produced. A JSON ` `
   # escape is VALID JSON; `jq -r` decodes it to a real NUL that `$(...)` would erase, turning a
@@ -233,7 +233,7 @@ hivemind_manifest_field_at() {
   # as for an absent field. The caller never receives a control-bearing value to strip, and an
   # empty value is rendered MALFORMED by its value-class gate. (` ` is `\u0000`; `` is the
   # last C0 control byte. jq's regex engine matches the decoded codepoints, not the escapes.)
-  # SLURP + index .[0] (root, Codex #172): same single-document discipline as
+  # SLURP + index .[0] (root cause): same single-document discipline as
   # hivemind_manifest_validate_shape / _strain_count_snapshot — select the strain at $index from the
   # ONE top-level document, never from a concatenated stream.
   # jq emits a class-tagged value: "0"+raw (present+valid), "1" (absent: null/empty string),

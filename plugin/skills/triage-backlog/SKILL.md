@@ -154,8 +154,7 @@ as labels, not as comments, not as body edits.
 ## Grouping-agnostic
 
 This skill never reads or writes `initiative:<slug>` labels or any grouping construct.
-Initiative grouping (migration to native parent/sub-issues) is tracked separately as issue
-#226 and is out of scope here. Foreign labels of every kind are invisible to the reconcile.
+Initiative grouping (migration to native parent/sub-issues) is tracked separately and is out of scope here. Foreign labels of every kind are invisible to the reconcile.
 
 ## Flow
 
@@ -267,7 +266,7 @@ delta table + confirm-gated apply.
 
 - clustering / dedup of issues — out of scope; a separate clustering capability owns it
 - auto-execution of any issue — picking an issue → build is standard delivery, not this skill
-- initiative grouping — tracked as #226; this skill stays grouping-agnostic
+- initiative grouping — tracked separately; this skill stays grouping-agnostic
 - per-field locking — v1 lock is whole-issue via `triage:locked`
 - interactive per-issue approval — v1 is `apply` / `apply-except` / `cancel`; per-issue
   approval is a v2 concern
