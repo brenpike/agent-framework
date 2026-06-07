@@ -757,6 +757,67 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+# ── CHECK 12: No bare validation-tool/manifest token in governance/agents prose ─
+#
+# Governance and agent docs are runtime-loaded instructions. Naming a concrete
+# validation-tool or manifest filename in prose (e.g. a validate script, a
+# syntax-check invocation, a language manifest) hard-codes a project-specific
+# toolchain detail into role-agnostic doctrine — the same coupling class CHECK 8
+# guards for path refs. Scope is governance/ and agents/ only (maxdepth 1, NOT
+# skills — skills are covered by their own checks). The denylist names whole
+# concrete tool/manifest tokens, never bare generics like jq, json, or version.
+#
+# Structural exclusions mirror CHECK 11: YAML frontmatter, fenced code blocks,
+# and >=4-space indented (code) lines are skipped via a per-file in_fence
+# toggle, and backtick inline-code spans are stripped before matching so a
+# token shown as inline code is not flagged.
+
+echo ''
+echo '=== CHECK 12: No bare validation-tool/manifest token in governance/agents prose ==='
+
+# Denylist of concrete validation-tool / manifest tokens. Whole tokens only —
+# deliberately excludes bare generics (jq, json, version) to avoid false hits.
+CHECK12_DENYLIST='tools/validate\.sh|bash -n|python3 -m json\.tool|test_[a-z0-9_]+\.sh|package\.json|pyproject\.toml|Cargo\.toml|go\.mod|requirements\.txt|plugin\.json|marketplace\.json'
+
+check12_found=false
+while IFS= read -r -d '' doc_file; do
+    # One-pass awk state machine emits surviving BODY lines as "line_num<TAB>line",
+    # excluding YAML frontmatter, fenced code blocks, and >=4-space indented lines.
+    while IFS=$'\t' read -r line_num textline; do
+        [[ -z "$line_num" ]] && continue
+        # Strip backtick inline-code spans first (mirrors CHECK 11's KEEP-phrase
+        # strip at line ~730), so a token shown as inline code is exempt while a
+        # real bare occurrence sharing a line with inline code is still caught.
+        residual="$(echo "$textline" | sed -E 's/`[^`]*`//g')"
+        if echo "$residual" | grep -qE "($CHECK12_DENYLIST)"; then
+            bare_token="$(echo "$residual" | grep -oE "($CHECK12_DENYLIST)" | head -n1)"
+            check12_found=true
+            add_finding 'CHECK12' "$doc_file" "$line_num" \
+                "bare validation-tool/manifest token '$bare_token' in governance/agents prose -- reference the toolchain by role/intent, not a concrete tool or manifest filename"
+        fi
+    done < <(awk '
+        BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
+        {
+            # YAML frontmatter: first line "---" opens, next "---" closes.
+            if (!fm_done && NR == 1 && $0 == "---") { in_fm = 1; next }
+            if (in_fm) { if ($0 == "---") { in_fm = 0; fm_done = 1 } next }
+            # Fenced code blocks toggle on lines starting with ```.
+            if ($0 ~ /^```/) { in_fence = !in_fence; next }
+            if (in_fence) next
+            # Indented code lines (>=4 leading spaces).
+            if ($0 ~ /^    /) next
+            print NR "\t" $0
+        }
+    ' "$doc_file")
+done < <(find "$PLUGIN_ROOT/governance" "$PLUGIN_ROOT/agents" -maxdepth 1 -name '*.md' -type f -print0)
+
+if [[ "$check12_found" == false ]]; then
+    echo '[PASS] Check 12: No bare validation-tool/manifest token in governance/agents prose'
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''
