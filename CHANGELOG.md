@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.29.1] - 2026-06-07
+
+### Changed
+
+- **Single-sourced the injection P1–P4 taxonomy: removed inline restatements in `plugin/governance/safety-rails.md` and `plugin/skills/adaptation-cycle/SKILL.md`, deferring to the canonical home in `plugin/governance/security-policy.md` (Injection-Suspect Classification).** Closes #211.
+
 ## [2.29.0] - 2026-06-07
 
 ### Changed
