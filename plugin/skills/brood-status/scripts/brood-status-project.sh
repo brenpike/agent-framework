@@ -93,6 +93,12 @@
 # set -u: every value is read explicitly; an unset variable is a programming error here. We do
 # NOT use `set -e`: per-strain field/ledger problems are caught and rendered as tokens, never
 # allowed to abort the whole read. There is no EXIT trap.
+#
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: per-item failures route
+# through blocker() with explicit exit codes, and unguarded jq/grep value-tests legitimately
+# return non-zero in normal flow (rendering MALFORMED/MISSING tokens) — `set -e` would abort
+# the read mid-projection.
 
 set -u
 

@@ -89,6 +89,12 @@
 #                               (default "codex-only" when empty)
 #   $7  SELF_LOGIN              viewer login used to exclude self-authored
 #                               activity from delta tokens (required)
+#
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: compute_snapshot returns
+# non-zero in the normal retry/backoff flow guarded by `if !`, pipefail is scoped per-pipeline
+# inside subshells, and failures route through poll_fail() with explicit exit codes — a global
+# `set -e` would abort the poll loop on the first transient gh hiccup.
 
 set -u
 

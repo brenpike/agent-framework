@@ -237,6 +237,11 @@
 # input error (live-seam-file-not-found). The seams are checked ONLY inside the
 # live helpers, which the --payload-file path never reaches.
 
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: the fail-OPEN-on-CONTENT
+# posture (§4) relies on jq pipelines swallowing malformed payloads to []; live failures route
+# through fetchnorm_fail()/validate_live_response with explicit exit codes, and `$?` is captured
+# after gh — `set -e`/`pipefail` would abort those guarded paths.
 set -u
 # INVARIANT: trap body ends with guaranteed-zero `:` so a failing rm never clobbers the
 # script's own exit code under set -e (mirrors ADR-0020 thin-entrypoint convention).

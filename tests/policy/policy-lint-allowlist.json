@@ -8,5 +8,71 @@
     "rule": "CHECK11",
     "path": "plugin/skills/injection-scan/SKILL.md",
     "line": 102
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/brood-status/scripts/brood-status-project.sh",
+    "line": 97,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — per-strain field/ledger problems are rendered as MALFORMED/MISSING tokens and must not abort the whole read; pre-flight failures route through blocker() with explicit exit codes."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/github-review-loop/scripts/fetch-normalize.sh",
+    "line": 240,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — fail-OPEN-on-CONTENT posture (jq pipelines swallow malformed payloads to []); live failures route through fetchnorm_fail()/validate_live_response with explicit exit codes."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/github-review-loop/scripts/ledger-reconstruct.sh",
+    "line": 215,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — grep -q marker probe returns non-zero in normal empty-log flow; injected fixtures fail-open; live failures route through ledgerrecon_fail() with explicit exit codes."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/github-review-loop/scripts/pr-change-detect-poll.sh",
+    "line": 93,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — compute_snapshot returns non-zero in the normal retry/backoff flow guarded by `if !`; failures route through poll_fail() with explicit exit codes."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/github-review-loop/scripts/prefilter.sh",
+    "line": 101,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — pipefail is scoped per-pipeline inside subshells; fail-open posture; failures route through prefilter_fail() with explicit exit codes."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/github-review-loop/scripts/preflight.sh",
+    "line": 21,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — every `gh ... || fail` and `[ ... ] || fail` relies on a non-zero result NOT aborting so fail() can emit a structured PREFLIGHT_ERROR with an explicit exit code."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/github-review-loop/scripts/reply-resolve.sh",
+    "line": 136,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — the resolve mutation is NON-BLOCKING (a failed resolve logs and still exits 0); set -e would abort on a deliberately-tolerated resolve failure. Hard failures route through replyresolve_fail()."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/init-run-ledger/scripts/init-run-ledger.sh",
+    "line": 98,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — grep -Eq charset gates and `[ -e ] && blocker` value-tests return non-zero in normal flow; failures route through blocker() with explicit exit codes; an EXIT trap performs invocation-owned cleanup."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh",
+    "line": 80,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — `jq -e has(...)` key-presence probes return non-zero in the normal absent-key flow; grep -Eq gates and `[ ]` tests gate blocker() with explicit exit codes."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/record-state-result/scripts/record-state-result.sh",
+    "line": 116,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — `jq -e has(...)` key-presence probes return non-zero in the normal absent-key flow; transition/binding validation routes through blocker() with explicit exit codes (ledger left byte-unchanged)."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/spawn-brood/scripts/spawn-brood.sh",
+    "line": 74,
+    "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — per-strain failures are caught (`if ! git worktree add`) and routed to the failed-strain path so the manifest still records the partial brood; `git ls-remote --exit-code` rc=2 is a normal no-collision result; INT/TERM trap reports leaked resources."
   }
 ]

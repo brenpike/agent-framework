@@ -94,6 +94,11 @@
 # set -u: an unset variable is a programming error here (every value is parsed
 # explicitly from the inputs file). We do NOT use `set -e`: failures are routed through
 # the blocker() helper with a verbose reason rather than a bubbled raw tool error.
+#
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: grep -Eq charset gates and
+# `[ -e ] && blocker` value-tests legitimately return non-zero in normal flow, and the EXIT
+# trap performs invocation-owned cleanup — `set -e` would abort before blocker() runs.
 
 set -u
 
