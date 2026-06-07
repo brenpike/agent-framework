@@ -839,11 +839,13 @@ inject_strain() {
   # INJECT_VERIFY_ATTEMPTS times (POLL_INTERVAL apart) WITHOUT sending Enter. Sets two
   # outer vars: turn_started=true once READY_SUBSTRING is absent FROM A LIVE CAPTURE across
   # INJECT_DEBOUNCE_POLLS consecutive polls (debounced positive signal); and
-  # continuously_unsubmitted=true ONLY if ready chrome was present on EVERY live poll (no
-  # absence ever observed) — the gate that authorizes a corrective resend. A capture-pane
-  # FAILURE (dead pane) is NOT a ready-absence: it resets the debounce run and is never
-  # read as a turn start (no keystroke is ever sent to a dead pane), so a dead pane falls
-  # through poll exhaustion to mark_failed rather than being misreported as started.
+  # continuously_unsubmitted=true ONLY if ready chrome was CONFIRMED PRESENT on EVERY poll —
+  # the gate that authorizes a corrective resend. It is cleared by ANY poll that fails to
+  # confirm ready chrome: a live ready-absent capture (a transition was observed) OR a
+  # capture-pane FAILURE (dead/unavailable pane proved nothing). A capture failure is never
+  # read as a turn start (no keystroke is ever sent on it) and now also cannot keep the resend
+  # gate open, so an all-captures-failed pass falls through poll exhaustion to mark_failed with
+  # NO corrective Enter rather than firing a stray Enter into a possibly-already-submitted child.
   verify_turn_started() {
     turn_started=false
     continuously_unsubmitted=true
@@ -853,8 +855,14 @@ inject_strain() {
     while [ "$poll" -lt "$INJECT_VERIFY_ATTEMPTS" ]; do
       sleep "$POLL_INTERVAL"
       if ! pane="$(tmux capture-pane -t "$tmux_session" -p 2>/dev/null)"; then
-        # Capture failed (likely a dead pane): NOT evidence of submission. Reset the
-        # debounce run; do not flip continuously_unsubmitted (no live transition seen).
+        # Capture failed (likely a dead pane): NOT a live ready-present poll, so it CANNOT
+        # keep the resend gate open. continuously_unsubmitted means "ready chrome confirmed
+        # present on EVERY live poll"; a failed capture proved nothing, so it disqualifies a
+        # corrective resend exactly as an absence would (without counting toward turn-start).
+        # Reset the debounce run and clear the gate so an all-captures-failed pass falls
+        # through poll exhaustion to mark_failed with NO second Enter into a possibly-already-
+        # submitted child.
+        continuously_unsubmitted=false
         consecutive_absent=0
         poll=$((poll + 1))
         continue
