@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.29.0] - 2026-06-07
+
+### Changed
+
+- **brood-status: status table headers renamed to make the child-claim vs hatchery-verdict trust boundary self-evident — `Workflow State` → `Strain State (claimed)`, `run.status` → `Strain Status (claimed)`, `Status` → `Hatchery Status (observed)`.** The two `(claimed)` columns are projected from the child's own run ledger (self-reported, informational only); the `(observed)` column is the hatchery's verdict from external observables and is authoritative (ADR-0007). Display-label change only — the `brood-status-collect/1` JSON schema field names are unchanged. (`plugin/skills/brood-status/SKILL.md`, `plugin/references/brood-ledger-model.md`) Closes #214.
+
 ## [2.28.2] - 2026-06-06
 
 ### Fixed
