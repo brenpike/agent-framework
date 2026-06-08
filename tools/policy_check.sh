@@ -835,10 +835,11 @@ fi
 # before matching so an autocrlf checkout does not produce false findings.
 #
 # Finding line: a documented exception script carries a `P18 FLOOR EXCEPTION`
-# comment marking the deliberate omission; the finding is anchored to that line
-# so the CHECK13 allowlist entry (seeded to that comment line) matches via the
-# established test_allowlisted path. A script with no such marker (e.g. a new
-# unguarded script) falls back to its first executable line, or line 1.
+# comment marking the deliberate omission; the marker is recognized by canonical
+# normalized match (see the marker branch below) and the finding is anchored to
+# that line so the CHECK13 allowlist entry (seeded to that comment line) matches
+# via the established test_allowlisted path. A script with no such marker (e.g. a
+# new unguarded script) falls back to its first executable line, or line 1.
 
 echo ''
 echo '=== CHECK 13: P18 fail-closed shell floor ==='
@@ -861,8 +862,28 @@ while IFS= read -r -d '' shell_script; do
         if [[ "$line_num" -eq 1 && "$trimmed" == '#!'* ]]; then
             continue
         fi
-        if [[ "$exception_line" -eq 0 && "$trimmed" == *'P18 FLOOR EXCEPTION'* ]]; then
-            exception_line="$line_num"
+        # Recognize the documented P18 FLOOR EXCEPTION marker by CANONICAL
+        # NORMALIZED match rather than a brittle contiguous-substring test. All
+        # shipped markers are single-sourced to the exact phrase
+        # `P18 FLOOR EXCEPTION`; normalizing the candidate line before the
+        # contains-test additionally tolerates future whitespace/punctuation
+        # drift (extra spaces, ASCII hyphen `-`, em-dash, en-dash) on that same
+        # 3-word phrase. Normalization: strip a leading `#` and surrounding
+        # whitespace, strip a trailing CR (already stripped above, belt-and-
+        # suspenders), collapse internal runs of whitespace AND dash characters
+        # to a single space, then uppercase. Recognition is contiguous (the
+        # normalized line must CONTAIN the normalized canonical token), NOT a
+        # gappy subsequence, so unrelated comments cannot falsely match.
+        if [[ "$exception_line" -eq 0 ]]; then
+            norm_line="$(printf '%s' "$trimmed" \
+                | sed -e 's/\r$//' \
+                      -e 's/^#//' \
+                      -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+                      -e 's/[[:space:]–—-]\{1,\}/ /g' \
+                | tr '[:lower:]' '[:upper:]')"
+            if [[ "$norm_line" == *'P18 FLOOR EXCEPTION'* ]]; then
+                exception_line="$line_num"
+            fi
         fi
         if [[ -z "$trimmed" || "$trimmed" == '#'* ]]; then
             continue
