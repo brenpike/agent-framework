@@ -196,13 +196,17 @@ SUMMARY="${positionals[2]:-}"
 SURFACE="${positionals[3]:-}"
 CANDIDATE_URL="${positionals[4]:-}"
 
-[ -n "$THREAD_ID" ] || replyresolve_fail "missing-thread-id"
-[ -n "$FIX_SHA" ] || replyresolve_fail "missing-fix-sha"
-[ -n "$SUMMARY" ] || replyresolve_fail "missing-summary"
-# SURFACE validity is enforced by the surface->delivery dispatch below
-# (thread mutates; toplevel/review no-op; any other surface fails closed with
-# unmapped-surface). CANDIDATE_URL is accepted for positional-arity compatibility
-# but no live path interpolates it, so it has no validation gate.
+# Required-input validation is SURFACE-SCOPED, not global. THREAD_ID / FIX_SHA /
+# SUMMARY are consumed ONLY by the thread surface (the reply target + reply body),
+# so their guards live INSIDE the thread) branch below. The toplevel/review
+# surfaces deliver NOTHING and consume NONE of these — the normalizer emits
+# thread_id: null for both non-thread surfaces (fetch-normalize.sh §2), so a
+# global THREAD_ID guard here would FALSE-BLOCK a real fixed top-level/review
+# candidate with missing-thread-id before the silent-no-op dispatch could run
+# (#218). SURFACE validity itself is enforced by the surface->delivery dispatch
+# below (thread mutates; toplevel/review no-op; any other surface fails closed
+# with unmapped-surface). CANDIDATE_URL is accepted for positional-arity
+# compatibility but no live path interpolates it, so it has no validation gate.
 
 # Timeout wrapper for gh API calls. Prefer coreutils `timeout`; fall
 # back to macOS Homebrew `gtimeout`; degrade gracefully (run unguarded) when
@@ -282,6 +286,13 @@ run_mutation() {
 # <other>  -> FAIL CLOSED via replyresolve_fail; NEVER reaches the thread mutation.
 case "$SURFACE" in
   thread)
+    # Thread-surface required inputs (surface-scoped — see the validation note
+    # above). The thread reply targets THREAD_ID and its body interpolates
+    # FIX_SHA + SUMMARY, so all three are REQUIRED here and fail closed with
+    # their stable reason tokens. No-op surfaces never reach this gate.
+    [ -n "$THREAD_ID" ] || replyresolve_fail "missing-thread-id"
+    [ -n "$FIX_SHA" ] || replyresolve_fail "missing-fix-sha"
+    [ -n "$SUMMARY" ] || replyresolve_fail "missing-summary"
     # (a) REPLY — always, before any resolve. A reply failure is a HARD failure:
     # resolving a thread whose fix-reply never posted would orphan the resolve.
     reply_body="Fixed in $FIX_SHA. $SUMMARY."

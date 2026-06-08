@@ -141,6 +141,48 @@ else
   failed "review:silent-no-op" "status=$status cap=$(cat "$cap") out=$out"
 fi
 
+# ── toplevel surface PRODUCTION SHAPE: empty thread id is a SILENT NO-OP (#218) ─────
+# The normalizer emits thread_id: null for non-thread surfaces (fetch-normalize.sh §2), so a
+# REAL fixed toplevel candidate reaches reply-resolve.sh with an EMPTY THREAD_ID positional.
+# The required-input guards are surface-scoped (inside the thread) branch), so an empty thread
+# id must NOT trip missing-thread-id — it must silently no-op: empty capture, zero stdout, exit 0.
+cap="$(fresh_capture toplevel_empty_tid)"
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
+  bash "$REPLY_RESOLVE" --resolve-eligible -- "" pqr678 "Addressed in code" toplevel "https://github.com/o/r/pull/5#issuecomment-1" 2>&1)"
+status=$?
+if [ "$status" -eq 0 ] && [ ! -s "$cap" ] && [ -z "$out" ]; then
+  pass "toplevel:empty-tid-silent-no-op" "empty thread id no-ops (no missing-thread-id), zero stdout, exit 0"
+else
+  failed "toplevel:empty-tid-silent-no-op" "status=$status cap=$(cat "$cap") out=$out"
+fi
+
+# ── review surface PRODUCTION SHAPE: empty thread id is a SILENT NO-OP (#218) ────────
+# Identical to the toplevel production-shape case: an empty thread id on the review surface must
+# silently no-op (empty capture, zero stdout, exit 0), NOT fail with missing-thread-id.
+cap="$(fresh_capture review_empty_tid)"
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
+  bash "$REPLY_RESOLVE" -- "" stu901 "Summary addressed" review "https://github.com/o/r/pull/5#pullrequestreview-9" 2>&1)"
+status=$?
+if [ "$status" -eq 0 ] && [ ! -s "$cap" ] && [ -z "$out" ]; then
+  pass "review:empty-tid-silent-no-op" "empty thread id no-ops (no missing-thread-id), zero stdout, exit 0"
+else
+  failed "review:empty-tid-silent-no-op" "status=$status cap=$(cat "$cap") out=$out"
+fi
+
+# ── thread surface STILL requires a thread id (guard relocated, not removed) ─────────
+# The missing-thread-id guard moved INTO the thread) branch — it must still fire for a thread
+# surface with an empty thread id: REPLYRESOLVE_ERROR=missing-thread-id, exit non-zero, no mutation.
+cap="$(fresh_capture thread_empty_tid)"
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
+  bash "$REPLY_RESOLVE" --resolve-eligible -- "" abc123 "Fix applied" thread "" 2>/dev/null)"
+status=$?
+if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -q '^REPLYRESOLVE_ERROR=missing-thread-id$' \
+   && [ ! -s "$cap" ]; then
+  pass "thread:empty-tid-missing-thread-id" "thread surface still fails closed on empty thread id, no mutation"
+else
+  failed "thread:empty-tid-missing-thread-id" "status=$status out=$out cap=$(cat "$cap")"
+fi
+
 # ── unmapped surface fails CLOSED (no mutation issued) ──────────────────────────────
 # An unknown surface (e.g. `bogus`) is not in the surface->delivery map: REPLYRESOLVE_ERROR=
 # unmapped-surface, exit non-zero, and NO mutation captured (dispatch never falls back to thread).
