@@ -44,7 +44,7 @@ fresh_capture() {
 # A thread surface, resolve-eligible: the REPLY line must precede the RESOLVE line, and both target
 # the thread id. Exit 0.
 cap="$(fresh_capture happy)"
-out="$(REPLYRESOLVE_CAPTURE_FILE="$cap" \
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" --resolve-eligible -- PRRT_aaa abc123 "Fixed the null deref" thread "" 2>&1)"
 status=$?
 reply_line="$(grep -n '^REPLY ' "$cap" | head -n1 | cut -d: -f1)"
@@ -65,7 +65,7 @@ fi
 # The caller signals "not all addressed" by OMITTING --resolve-eligible. The reply is still posted;
 # NO resolve is issued. Exit 0.
 cap="$(fresh_capture unaddressed)"
-out="$(REPLYRESOLVE_CAPTURE_FILE="$cap" \
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" -- PRRT_bbb def456 "Partial fix" thread "" 2>&1)"
 status=$?
 if [ "$status" -eq 0 ] && grep -q '^REPLY ' "$cap" && ! grep -q '^RESOLVE ' "$cap"; then
@@ -78,7 +78,7 @@ fi
 # Even with --resolve-eligible, the --question-needs-user-input marker hard-blocks resolve. The reply
 # is still posted. Exit 0.
 cap="$(fresh_capture question)"
-out="$(REPLYRESOLVE_CAPTURE_FILE="$cap" \
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" --resolve-eligible --question-needs-user-input -- \
   PRRT_ccc ghi789 "Replied but awaiting answer" thread "" 2>&1)"
 status=$?
@@ -92,7 +92,7 @@ fi
 # A failed RESOLVE (simulated via REPLYRESOLVE_RESOLVE_STATUS=1) logs the REPLYRESOLVE_RESOLVE_FAILED
 # diagnostic to stderr but the script STILL exits 0 — the reply landed and the candidate succeeded.
 cap="$(fresh_capture resolvefail)"
-err="$(REPLYRESOLVE_CAPTURE_FILE="$cap" REPLYRESOLVE_RESOLVE_STATUS=1 \
+err="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" REPLYRESOLVE_RESOLVE_STATUS=1 \
   bash "$REPLY_RESOLVE" --resolve-eligible -- PRRT_ddd jkl012 "Fix applied" thread "" 2>&1 1>/dev/null)"
 status=$?
 if [ "$status" -eq 0 ] && grep -q '^REPLY ' "$cap" && grep -q '^RESOLVE ' "$cap" \
@@ -106,7 +106,7 @@ fi
 # A failed REPLY (simulated via REPLYRESOLVE_REPLY_STATUS=1) exits 1 with REPLYRESOLVE_ERROR=reply
 # -failed and NEVER issues a resolve (reply-before-resolve invariant: no orphaned resolve).
 cap="$(fresh_capture replyfail)"
-out="$(REPLYRESOLVE_CAPTURE_FILE="$cap" REPLYRESOLVE_REPLY_STATUS=1 \
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" REPLYRESOLVE_REPLY_STATUS=1 \
   bash "$REPLY_RESOLVE" --resolve-eligible -- PRRT_eee mno345 "Attempted fix" thread "" 2>/dev/null)"
 status=$?
 if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -q '^REPLYRESOLVE_ERROR=reply-failed$' \
@@ -120,7 +120,7 @@ fi
 # A toplevel surface reply body appends " Addresses: <url>"; NO resolve is ever issued for a non-thread
 # surface. Exit 0.
 cap="$(fresh_capture toplevel)"
-out="$(REPLYRESOLVE_CAPTURE_FILE="$cap" \
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" --resolve-eligible -- PRRT_fff pqr678 "Addressed in code" toplevel "https://github.com/o/r/pull/5#issuecomment-1" 2>&1)"
 status=$?
 if [ "$status" -eq 0 ] \
@@ -133,7 +133,7 @@ fi
 
 # review surface also carries the Addresses: line.
 cap="$(fresh_capture reviewsurface)"
-out="$(REPLYRESOLVE_CAPTURE_FILE="$cap" \
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" -- PRRT_ggg stu901 "Summary addressed" review "https://github.com/o/r/pull/5#pullrequestreview-9" 2>&1)"
 status=$?
 if [ "$status" -eq 0 ] \
@@ -148,7 +148,7 @@ fi
 # A toplevel surface with NO candidate url is an input error: REPLYRESOLVE_ERROR=missing-candidate-url,
 # exit non-zero, and NO mutation captured (validation runs before any mutation).
 cap="$(fresh_capture badinput)"
-out="$(REPLYRESOLVE_CAPTURE_FILE="$cap" \
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" -- PRRT_hhh vwx234 "No url" toplevel "" 2>/dev/null)"
 status=$?
 if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -q '^REPLYRESOLVE_ERROR=missing-candidate-url$' \
@@ -156,6 +156,39 @@ if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -q '^REPLYRESOLVE_ERROR=mi
   pass "badinput:missing-candidate-url" "exit=$status REPLYRESOLVE_ERROR=missing-candidate-url, no mutation"
 else
   failed "badinput:missing-candidate-url" "status=$status out=$out cap=$(cat "$cap")"
+fi
+
+# ── Fail-closed gate lock: CAPTURE_FILE WITHOUT TEST_MODE does NOT divert ──────────
+# STEP-001 made the capture seam require BOTH REPLYRESOLVE_TEST_MODE=1 AND
+# REPLYRESOLVE_CAPTURE_FILE. A stray CAPTURE_FILE ALONE must no longer divert — the
+# mutation goes LIVE to gh. We assert the gate's observable contract: with TEST_MODE
+# absent the capture file is NEVER written (the seam stayed inactive and the code
+# fell through to the live path). NOTE: TEST_MODE is deliberately UNSET here — the
+# whole point of the case.
+#
+# OFFLINE INVARIANT: with TEST_MODE unset and otherwise-valid inputs, run_mutation
+# falls through to the LIVE `gh api graphql` path. Without a stub that would invoke
+# the REAL gh CLI when present (network call / 45s timeout) despite this suite being
+# offline. We prepend a stub `gh` to PATH that records it was reached (proving the
+# code went live) and exits non-zero, so no real CLI runs. Asserting the stub was
+# reached AND the capture file stayed empty locks BOTH halves of the contract:
+# the seam did NOT divert (cap empty) and the live path WAS taken (stub reached).
+cap="$(fresh_capture nodivert)"
+gh_stub_dir="$TMPDIR_TEST/nodivert-stubbin"
+gh_stub_marker="$TMPDIR_TEST/nodivert-gh-reached"
+mkdir -p "$gh_stub_dir"
+{
+  printf '%s\n' '#!/usr/bin/env bash'
+  printf 'printf reached > %q\n' "$gh_stub_marker"
+  printf '%s\n' 'exit 1'
+} > "$gh_stub_dir/gh"
+chmod +x "$gh_stub_dir/gh"
+PATH="$gh_stub_dir:$PATH" REPLYRESOLVE_CAPTURE_FILE="$cap" \
+  bash "$REPLY_RESOLVE" --resolve-eligible -- PRRT_iii xyz789 "No test mode" thread "" >/dev/null 2>&1
+if [ ! -s "$cap" ] && [ -f "$gh_stub_marker" ]; then
+  pass "failclosed:capture-without-testmode-no-divert" "CAPTURE_FILE alone did NOT divert (cap empty); live gh path reached (stub invoked)"
+else
+  failed "failclosed:capture-without-testmode-no-divert" "diverted or live-path-not-reached — cap=$(cat "$cap") stub_reached=$([ -f "$gh_stub_marker" ] && echo yes || echo no)"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────────

@@ -10,6 +10,16 @@
     "line": 102
   },
   {
+    "rule": "CHECK11",
+    "path": "plugin/skills/github-review-loop/SKILL.md",
+    "line": 3
+  },
+  {
+    "rule": "CHECK11",
+    "path": "plugin/skills/seed-hive/SKILL.md",
+    "line": 3
+  },
+  {
     "rule": "CHECK13",
     "path": "plugin/skills/brood-status/scripts/brood-status-project.sh",
     "line": 97,
@@ -18,7 +28,7 @@
   {
     "rule": "CHECK13",
     "path": "plugin/skills/github-review-loop/scripts/fetch-normalize.sh",
-    "line": 240,
+    "line": 248,
     "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — fail-OPEN-on-CONTENT posture (jq pipelines swallow malformed payloads to []); live failures route through fetchnorm_fail()/validate_live_response with explicit exit codes."
   },
   {
@@ -48,7 +58,7 @@
   {
     "rule": "CHECK13",
     "path": "plugin/skills/github-review-loop/scripts/reply-resolve.sh",
-    "line": 136,
+    "line": 143,
     "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — the resolve mutation is NON-BLOCKING (a failed resolve logs and still exits 0); set -e would abort on a deliberately-tolerated resolve failure. Hard failures route through replyresolve_fail()."
   },
   {

@@ -106,9 +106,16 @@
 # like fetch-normalize.sh's --payload-file seam (live = real gh; injected =
 # trusted/offline).
 #
-#   REPLYRESOLVE_CAPTURE_FILE   when set + non-empty, every mutation is APPENDED to
-#                               this file (one line per mutation) INSTEAD of being
-#                               run against gh. Line format (stable, asserted by
+#   REPLYRESOLVE_TEST_MODE      DEDICATED test-mode gate. The capture seam below
+#                               activates ONLY when this is EXACTLY "1" (not merely
+#                               non-empty). When unset / not "1", the live gh path
+#                               is ALWAYS taken — a stray REPLYRESOLVE_CAPTURE_FILE
+#                               ALONE no longer diverts a live mutation (fail-closed
+#                               to live).
+#   REPLYRESOLVE_CAPTURE_FILE   when REPLYRESOLVE_TEST_MODE="1" AND this is set +
+#                               non-empty, every mutation is APPENDED to this file
+#                               (one line per mutation) INSTEAD of being run against
+#                               gh. Line format (stable, asserted by
 #                               test_reply_resolve.sh):
 #                                 REPLY thread=<id> body=<body>
 #                                 RESOLVE thread=<id>
@@ -119,8 +126,8 @@
 #   REPLYRESOLVE_RESOLVE_STATUS simulated gh exit status for the RESOLVE mutation
 #                               (default 0). Non-zero -> non-blocking-failure path
 #                               (logs, still exits 0).
-# All three are INERT in production (unset -> real gh). The seam is checked ONLY
-# inside run_mutation.
+# All four are INERT in production (unset -> real gh). The seam is checked ONLY
+# inside run_mutation, and requires BOTH TEST_MODE=1 and CAPTURE_FILE to engage.
 #
 # Markers / exit posture:
 #   - exit 0 on success (reply posted; resolve issued-or-skipped-or-failed).
@@ -231,7 +238,10 @@ mutation($threadId: ID!) {
 # active, NO gh call is made — the script is fully offline.
 run_mutation() {
   local kind="$1" thread_id="$2" body="${3:-}"
-  if [ -n "${REPLYRESOLVE_CAPTURE_FILE:-}" ]; then
+  # TEST SEAM GATE (§5): capture seam activates ONLY when the dedicated test-mode
+  # flag is the exact opt-in value AND the capture file is set+non-empty. A stray
+  # REPLYRESOLVE_CAPTURE_FILE alone NEVER diverts — fail-closed to live gh.
+  if [ "${REPLYRESOLVE_TEST_MODE:-}" = "1" ] && [ -n "${REPLYRESOLVE_CAPTURE_FILE:-}" ]; then
     case "$kind" in
       reply)
         printf 'REPLY thread=%s body=%s\n' "$thread_id" "$body" >> "$REPLYRESOLVE_CAPTURE_FILE"
