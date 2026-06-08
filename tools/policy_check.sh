@@ -874,11 +874,21 @@ while IFS= read -r -d '' shell_script; do
         # letter anywhere on the line rather than only the first cluster.
         if [[ "$trimmed" == 'set '* || "$trimmed" == 'set' ]]; then
             [[ "$first_set_line" -eq 0 ]] && first_set_line="$line_num"
-            [[ "$trimmed" =~ (^|[[:space:]])-[a-zA-Z]*e ]] && has_errexit=true
-            [[ "$trimmed" =~ (^|[[:space:]])-[a-zA-Z]*u ]] && has_nounset=true
+            # Strip a trailing inline comment before matching flags: a `#`
+            # preceded by whitespace begins a shell comment, so flags appearing
+            # only after it (e.g. `set -u # TODO add -e -o pipefail`) must NOT
+            # count toward the floor. Without this strip, comment text would
+            # falsely satisfy errexit/pipefail and skip both the finding and the
+            # CHECK13 allowlist path.
+            set_flags="$trimmed"
+            if [[ "$set_flags" =~ ^(.*[[:space:]])#.*$ ]]; then
+                set_flags="${BASH_REMATCH[1]}"
+            fi
+            [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*e ]] && has_errexit=true
+            [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*u ]] && has_nounset=true
             # pipefail attaches to a trailing -o, whether standalone (set -o
             # pipefail) or as the last flag in a cluster (set -euo pipefail).
-            [[ "$trimmed" =~ (^|[[:space:]])-[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=true
+            [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=true
             continue
         fi
         # First non-comment, non-set executable statement ends the floor window:
