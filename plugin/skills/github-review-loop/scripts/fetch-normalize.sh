@@ -227,15 +227,23 @@
 # seams inject a RAW live response + exit status that the LIVE helpers consume
 # exactly as a real `gh` response, so validate_live_response runs over injected
 # content identically to a real fetch. INERT in production (unset -> real gh):
+#   FETCHNORM_TEST_MODE            DEDICATED test-mode gate. EITHER live seam below
+#                                  activates ONLY when this is EXACTLY "1" (not
+#                                  merely non-empty). When unset / not "1", the live
+#                                  gh path is ALWAYS taken — a stray *_FILE var
+#                                  ALONE no longer diverts a live fetch (fail-closed
+#                                  to live).
 #   FETCHNORM_LIVE_GRAPHQL_FILE    raw graphql response body file (`-` = stdin n/a here)
 #   FETCHNORM_LIVE_GRAPHQL_STATUS  simulated gh exit status (default 0)
 #   FETCHNORM_LIVE_CI_FILE         raw `gh pr checks` response body file
 #   FETCHNORM_LIVE_CI_STATUS       simulated gh exit status (default 0)
-# When the *_FILE var is set + non-empty, the helper reads that file as the live
-# response and uses *_STATUS as the live exit code INSTEAD of invoking gh, then
-# routes the result THROUGH validate_live_response. An unreadable seam file is an
-# input error (live-seam-file-not-found). The seams are checked ONLY inside the
-# live helpers, which the --payload-file path never reaches.
+# When FETCHNORM_TEST_MODE="1" AND the *_FILE var is set + non-empty, the helper
+# reads that file as the live response and uses *_STATUS as the live exit code
+# INSTEAD of invoking gh, then routes the result THROUGH validate_live_response. The
+# *_STATUS vars are read ONLY inside that already-gated branch (no separate gate).
+# An unreadable seam file is an input error (live-seam-file-not-found). The seams
+# are checked ONLY inside the live helpers, which the --payload-file path never
+# reaches.
 
 # P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
 # are DELIBERATELY omitted. The full floor would change behavior: the fail-OPEN-on-CONTENT
@@ -456,9 +464,11 @@ validate_live_response() {
 fetch_graphql_payload() {
   local gql_body gql_status
   # LIVE-RESPONSE TEST SEAM (§5b): inject a raw response + status THROUGH the gate
-  # instead of invoking gh. Inert in production (unset -> real fetch). The seam
-  # response is validated exactly as a real one — UNLIKE --payload-file.
-  if [ -n "${FETCHNORM_LIVE_GRAPHQL_FILE:-}" ]; then
+  # instead of invoking gh. Activates ONLY when FETCHNORM_TEST_MODE="1" AND the
+  # *_FILE var is set+non-empty — a stray file var ALONE never diverts (fail-closed
+  # to live). Inert in production. The seam response is validated exactly as a real
+  # one — UNLIKE --payload-file.
+  if [ "${FETCHNORM_TEST_MODE:-}" = "1" ] && [ -n "${FETCHNORM_LIVE_GRAPHQL_FILE:-}" ]; then
     if [ ! -f "$FETCHNORM_LIVE_GRAPHQL_FILE" ]; then
       echo "FETCHNORM_ERROR=live-seam-file-not-found"
       return 1
@@ -505,8 +515,10 @@ fetch_graphql_payload() {
 fetch_ci_payload() {
   local ci_out ci_status
   # LIVE-RESPONSE TEST SEAM (§5b): inject a raw response + status THROUGH the gate
-  # instead of invoking gh. Inert in production (unset -> real fetch).
-  if [ -n "${FETCHNORM_LIVE_CI_FILE:-}" ]; then
+  # instead of invoking gh. Activates ONLY when FETCHNORM_TEST_MODE="1" AND the
+  # *_FILE var is set+non-empty — a stray file var ALONE never diverts (fail-closed
+  # to live). Inert in production.
+  if [ "${FETCHNORM_TEST_MODE:-}" = "1" ] && [ -n "${FETCHNORM_LIVE_CI_FILE:-}" ]; then
     if [ ! -f "$FETCHNORM_LIVE_CI_FILE" ]; then
       echo "FETCHNORM_ERROR=live-seam-file-not-found"
       return 1
