@@ -839,6 +839,18 @@ fi
 # statement. Lines are CRLF-tolerant: a trailing carriage return is stripped
 # before matching so an autocrlf checkout does not produce false findings.
 #
+# SCOPE / LIMITATION: CHECK 13 is a BEST-EFFORT lint. It detects the PRESENCE of
+# a floor STATEMENT at the top of a script — a standalone `set -euo pipefail`
+# equivalent that runs as a simple command in the main shell. It does NOT prove
+# floor EFFECTIVENESS under every pathological construct: a floor `set` reached
+# only inside a conditional or function after the scan window, or an eval'd /
+# dynamically-built `set`, is outside what this scanner can verify and is a
+# documented limitation tracked separately. The scanner DOES fail closed on the
+# common ineffective forms — a `set` that is piped, subshelled, backgrounded,
+# chained, or `;`-separated is treated as establishing nothing (see the
+# effectiveness guard below), so those constructs are flagged rather than
+# silently credited.
+#
 # Finding line: a documented exception script carries a `P18 FLOOR EXCEPTION`
 # comment marking the deliberate omission; the marker is recognized by canonical
 # normalized match (see the marker branch below) and the finding is anchored to
@@ -914,6 +926,26 @@ while IFS= read -r -d '' shell_script; do
             set_flags="$trimmed"
             if [[ "$set_flags" =~ ^(.*[[:space:]])#.*$ ]]; then
                 set_flags="${BASH_REMATCH[1]}"
+            fi
+            # FAIL-CLOSED effectiveness guard: a `set` only changes the script's
+            # main-shell options when it runs as a STANDALONE SIMPLE COMMAND. A
+            # `set` that is piped (`set -euo pipefail | cat`), subshelled
+            # (`(set -euo pipefail)`), backgrounded (`set ... &`), chained
+            # (`set ... && cmd`), command-substituted, or split off with a `;`
+            # runs in a subshell or is not the floor statement at all, so its
+            # flags do NOT establish the floor. Detecting any of these operator
+            # characters in the set statement marks the line INERT: we do not
+            # tokenize it and do not credit its flags, so the script is judged on
+            # the remaining effective `set` lines (and is flagged if none floor
+            # it). This is strictness-only — it can never fail open. The option
+            # NAME `pipefail` contains no `|`, so a clean `set -euo pipefail`,
+            # `set -o pipefail`, `set -e`, `set -u`, split-line floors, and
+            # `set --` carry NONE of these characters and are unaffected.
+            if [[ "$set_flags" == *'|'* || "$set_flags" == *'&'* \
+                || "$set_flags" == *'('* || "$set_flags" == *')'* \
+                || "$set_flags" == *';'* || "$set_flags" == *'`'* \
+                || "$set_flags" == *'$'* ]]; then
+                continue
             fi
             # has_errexit/has_nounset/has_pipefail PERSIST across `set` lines and
             # are NOT reset here: a split-line floor (set -e + set -u + set -o
