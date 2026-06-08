@@ -922,6 +922,18 @@ while IFS= read -r -d '' shell_script; do
             # pipefail) or as the last flag in a cluster (set -euo pipefail).
             [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=true
             [[ "$set_flags" =~ (^|[[:space:]])\+[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=false
+            # Long-form `-o option-name` floor options (Bash `help set` documents
+            # `-o errexit` == `-e`, `-o nounset` == `-u`, `-o pipefail`). A script
+            # flooring itself as `set -o errexit -o nounset -o pipefail` is valid
+            # Bash and IS floored, so recognize these long forms in the SAME
+            # single tokenizer path alongside the short forms above. The `+o`
+            # disable counterparts clear the option, mirroring the `+`/`+o`
+            # short-form disable semantics. (pipefail long form is already
+            # covered by the -o/+o ... pipefail patterns above.)
+            [[ "$set_flags" =~ (^|[[:space:]])-o[[:space:]]+errexit ]] && has_errexit=true
+            [[ "$set_flags" =~ (^|[[:space:]])\+o[[:space:]]+errexit ]] && has_errexit=false
+            [[ "$set_flags" =~ (^|[[:space:]])-o[[:space:]]+nounset ]] && has_nounset=true
+            [[ "$set_flags" =~ (^|[[:space:]])\+o[[:space:]]+nounset ]] && has_nounset=false
             continue
         fi
         # First non-comment, non-set executable statement ends the floor window:
