@@ -14,8 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deferred
 
-- Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
+
+## [2.29.4] - 2026-06-08
+
+### Fixed
+
+- **Review-loop reply delivery is now surface-aware: thread comments get a reply + resolve; top-level and review-summary comments are a silent no-op; unmapped surfaces fail-closed. Replaces the prior single-mechanism thread-reply that was invoked against non-thread nodes.** (`plugin/agents/github-reviewer.md`) Closes #218.
 
 ## [2.29.2] - 2026-06-07
 
