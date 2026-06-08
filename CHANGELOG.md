@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred from #205 (behavior-preserving): top-level/review-summary reply single-mechanism limitation — tracked in #218.
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.29.2] - 2026-06-07
+
+### Added
+
+- **CHECK 13 in `tools/policy_check.sh` mechanically enforces the P18 fail-closed shell floor (`set -euo pipefail`) across `plugin/**/*.sh`, FAIL-CLOSED under `--strict`, with a P3 safety fixture pinning the check.** (#240)
+
+### Changed
+
+- **Realized the P18 fail-closed shell floor (#240): retrofitted the `set -euo pipefail` floor policy across `plugin/**/*.sh`.** Most scripts carry a documented, allowlisted exception — the 11 EXEC scripts deliberately use `set -u` + `blocker()`/`fail()` error-routing, and the 5 sourced `_shared` libraries omit `set -e`/EXIT-trap per ADR-0020 (a sourced file must not mutate the caller's shell).
+
 ## [2.29.1] - 2026-06-07
 
 ### Changed
