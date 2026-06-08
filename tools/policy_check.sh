@@ -927,20 +927,34 @@ while IFS= read -r -d '' shell_script; do
             if [[ "$set_flags" =~ ^(.*[[:space:]])#.*$ ]]; then
                 set_flags="${BASH_REMATCH[1]}"
             fi
+            # Strip a SINGLE optional trailing list terminator before the
+            # effectiveness guard below. A standalone `set -euo pipefail;` (or,
+            # after the inline-comment strip above, `set -euo pipefail; # note`)
+            # is still ONE valid Bash simple command that floors the current
+            # shell — the trailing `;` is a list terminator, not a separator
+            # introducing a SECOND command. Removing only a `;` that is the last
+            # non-whitespace character keeps such a floor effective while leaving
+            # a `;` that DOES introduce another command (`set -e; cmd`) intact,
+            # so the guard below still marks THAT line inert. Strictness is
+            # preserved: this only un-inerts a genuine trailing-terminator floor.
+            if [[ "$set_flags" =~ ^(.*[^[:space:];])[[:space:]]*\;[[:space:]]*$ ]]; then
+                set_flags="${BASH_REMATCH[1]}"
+            fi
             # FAIL-CLOSED effectiveness guard: a `set` only changes the script's
             # main-shell options when it runs as a STANDALONE SIMPLE COMMAND. A
             # `set` that is piped (`set -euo pipefail | cat`), subshelled
             # (`(set -euo pipefail)`), backgrounded (`set ... &`), chained
             # (`set ... && cmd`), command-substituted, or split off with a `;`
-            # runs in a subshell or is not the floor statement at all, so its
-            # flags do NOT establish the floor. Detecting any of these operator
-            # characters in the set statement marks the line INERT: we do not
-            # tokenize it and do not credit its flags, so the script is judged on
-            # the remaining effective `set` lines (and is flagged if none floor
-            # it). This is strictness-only — it can never fail open. The option
-            # NAME `pipefail` contains no `|`, so a clean `set -euo pipefail`,
-            # `set -o pipefail`, `set -e`, `set -u`, split-line floors, and
-            # `set --` carry NONE of these characters and are unaffected.
+            # that introduces another command runs in a subshell or is not the
+            # floor statement at all, so its flags do NOT establish the floor.
+            # Detecting any of these operator characters in the set statement
+            # marks the line INERT: we do not tokenize it and do not credit its
+            # flags, so the script is judged on the remaining effective `set`
+            # lines (and is flagged if none floor it). This is strictness-only —
+            # it can never fail open. The option NAME `pipefail` contains no `|`,
+            # so a clean `set -euo pipefail`, `set -o pipefail`, `set -e`,
+            # `set -u`, split-line floors, a trailing-`;` floor (stripped above),
+            # and `set --` carry NONE of these characters and are unaffected.
             if [[ "$set_flags" == *'|'* || "$set_flags" == *'&'* \
                 || "$set_flags" == *'('* || "$set_flags" == *')'* \
                 || "$set_flags" == *';'* || "$set_flags" == *'`'* \
