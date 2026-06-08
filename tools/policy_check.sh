@@ -818,6 +818,115 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+# ── CHECK 13: P18 fail-closed shell floor ──────────────────────────────────
+#
+# Every committed plugin runtime shell script (plugin/**/*.sh) MUST enable the
+# fail-closed shell floor — errexit, nounset, and pipefail — before its first
+# executable statement, OR carry a documented CHECK13 allowlist exception. The
+# three options may be set across one or more top-level `set` lines and in any
+# spelling (set -euo pipefail, set -e + set -u + set -o pipefail, set -eu +
+# set -o pipefail, etc.); each option is detected independently rather than by a
+# single literal substring. Scope is plugin runtime scripts only — tools/ and
+# tests/ are intentionally excluded.
+#
+# Detection reads top-of-file lines, skipping the shebang and comment/blank
+# lines, and stops scanning `set` options at the first non-comment executable
+# statement. Lines are CRLF-tolerant: a trailing carriage return is stripped
+# before matching so an autocrlf checkout does not produce false findings.
+#
+# Finding line: a documented exception script carries a `P18 FLOOR EXCEPTION`
+# comment marking the deliberate omission; the finding is anchored to that line
+# so the CHECK13 allowlist entry (seeded to that comment line) matches via the
+# established test_allowlisted path. A script with no such marker (e.g. a new
+# unguarded script) falls back to its first executable line, or line 1.
+
+echo ''
+echo '=== CHECK 13: P18 fail-closed shell floor ==='
+
+check13_found=false
+while IFS= read -r -d '' shell_script; do
+    has_errexit=false
+    has_nounset=false
+    has_pipefail=false
+    first_set_line=0
+    exception_line=0
+    line_num=0
+    while IFS= read -r textline || [[ -n "$textline" ]]; do
+        line_num=$((line_num + 1))
+        # CRLF tolerance: strip a single trailing carriage return.
+        textline="${textline%$'\r'}"
+        trimmed="${textline#"${textline%%[![:space:]]*}"}"
+        # Skip the shebang, blank lines, and comment lines. The documented
+        # P18 FLOOR EXCEPTION marker, when present, anchors the finding line.
+        if [[ "$line_num" -eq 1 && "$trimmed" == '#!'* ]]; then
+            continue
+        fi
+        if [[ "$exception_line" -eq 0 && "$trimmed" == *'P18 FLOOR EXCEPTION'* ]]; then
+            exception_line="$line_num"
+        fi
+        if [[ -z "$trimmed" || "$trimmed" == '#'* ]]; then
+            continue
+        fi
+        # Collect set-option floor flags from top-level `set` lines. Each option
+        # is matched independently: a flag may appear in any short-option cluster
+        # (-e, -eu, -euo) or as a separate space-delimited flag (set -e -u -o
+        # pipefail), so the patterns match a `-`-prefixed cluster carrying the
+        # letter anywhere on the line rather than only the first cluster.
+        if [[ "$trimmed" == 'set '* || "$trimmed" == 'set' ]]; then
+            [[ "$first_set_line" -eq 0 ]] && first_set_line="$line_num"
+            [[ "$trimmed" =~ (^|[[:space:]])-[a-zA-Z]*e ]] && has_errexit=true
+            [[ "$trimmed" =~ (^|[[:space:]])-[a-zA-Z]*u ]] && has_nounset=true
+            # pipefail attaches to a trailing -o, whether standalone (set -o
+            # pipefail) or as the last flag in a cluster (set -euo pipefail).
+            [[ "$trimmed" =~ (^|[[:space:]])-[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=true
+            continue
+        fi
+        # First non-comment, non-set executable statement ends the floor window:
+        # `set` options enabled below here would not establish the floor.
+        break
+    done < "$shell_script"
+
+    if [[ "$has_errexit" == true && "$has_nounset" == true && "$has_pipefail" == true ]]; then
+        continue
+    fi
+
+    # Anchor the finding to (in precedence order) the documented P18 FLOOR
+    # EXCEPTION comment, the first partial `set` line, or line 1 — so a
+    # documented-exception script's finding line matches its seeded CHECK13
+    # allowlist entry via test_allowlisted (the exception comment for scripts
+    # that carry one, the partial-floor `set` line otherwise, line 1 for a
+    # bare sourced library). A new unguarded script with none of these still
+    # fires on line 1.
+    if [[ "$exception_line" -gt 0 ]]; then
+        finding_line="$exception_line"
+    elif [[ "$first_set_line" -gt 0 ]]; then
+        finding_line="$first_set_line"
+    else
+        finding_line=1
+    fi
+    # The pass/fail tally counts only NON-allowlisted findings as failures: a
+    # script with a documented CHECK13 exception is a clean (allowlisted) state,
+    # not a check failure. Resolve allowlist status on the same rel-path
+    # normalization add_finding applies so the two agree.
+    rel_script="$shell_script"
+    if [[ "$shell_script" == "$REPO_ROOT"* ]]; then
+        rel_script="${shell_script#"$REPO_ROOT"/}"
+    fi
+    rel_script="${rel_script//\\//}"
+    if [[ "$(test_allowlisted 'CHECK13' "$rel_script" "$finding_line")" != "true" ]]; then
+        check13_found=true
+    fi
+    add_finding 'CHECK13' "$shell_script" "$finding_line" \
+        "missing P18 fail-closed shell floor (set -euo pipefail) -- add the floor or document a justified CHECK13 allowlist exception"
+done < <(find "$PLUGIN_ROOT" -name '*.sh' -type f -print0)
+
+if [[ "$check13_found" == false ]]; then
+    echo '[PASS] Check 13: All plugin shell scripts carry the P18 fail-closed floor or a CHECK13 exception'
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''
