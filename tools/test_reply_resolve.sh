@@ -161,17 +161,34 @@ fi
 # ── Fail-closed gate lock: CAPTURE_FILE WITHOUT TEST_MODE does NOT divert ──────────
 # STEP-001 made the capture seam require BOTH REPLYRESOLVE_TEST_MODE=1 AND
 # REPLYRESOLVE_CAPTURE_FILE. A stray CAPTURE_FILE ALONE must no longer divert — the
-# mutation goes LIVE to gh. Offline we cannot exercise the live gh call, but we CAN
-# lock the gate's observable contract: with TEST_MODE absent the capture file is
-# NEVER written (the seam stayed inactive and the code fell through to the live
-# path). NOTE: TEST_MODE is deliberately UNSET here — the whole point of the case.
+# mutation goes LIVE to gh. We assert the gate's observable contract: with TEST_MODE
+# absent the capture file is NEVER written (the seam stayed inactive and the code
+# fell through to the live path). NOTE: TEST_MODE is deliberately UNSET here — the
+# whole point of the case.
+#
+# OFFLINE INVARIANT: with TEST_MODE unset and otherwise-valid inputs, run_mutation
+# falls through to the LIVE `gh api graphql` path. Without a stub that would invoke
+# the REAL gh CLI when present (network call / 45s timeout) despite this suite being
+# offline. We prepend a stub `gh` to PATH that records it was reached (proving the
+# code went live) and exits non-zero, so no real CLI runs. Asserting the stub was
+# reached AND the capture file stayed empty locks BOTH halves of the contract:
+# the seam did NOT divert (cap empty) and the live path WAS taken (stub reached).
 cap="$(fresh_capture nodivert)"
-REPLYRESOLVE_CAPTURE_FILE="$cap" \
+gh_stub_dir="$TMPDIR_TEST/nodivert-stubbin"
+gh_stub_marker="$TMPDIR_TEST/nodivert-gh-reached"
+mkdir -p "$gh_stub_dir"
+{
+  printf '%s\n' '#!/usr/bin/env bash'
+  printf 'printf reached > %q\n' "$gh_stub_marker"
+  printf '%s\n' 'exit 1'
+} > "$gh_stub_dir/gh"
+chmod +x "$gh_stub_dir/gh"
+PATH="$gh_stub_dir:$PATH" REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" --resolve-eligible -- PRRT_iii xyz789 "No test mode" thread "" >/dev/null 2>&1
-if [ ! -s "$cap" ]; then
-  pass "failclosed:capture-without-testmode-no-divert" "CAPTURE_FILE alone did NOT divert (file unwritten — went live)"
+if [ ! -s "$cap" ] && [ -f "$gh_stub_marker" ]; then
+  pass "failclosed:capture-without-testmode-no-divert" "CAPTURE_FILE alone did NOT divert (cap empty); live gh path reached (stub invoked)"
 else
-  failed "failclosed:capture-without-testmode-no-divert" "seam diverted WITHOUT TEST_MODE — cap=$(cat "$cap")"
+  failed "failclosed:capture-without-testmode-no-divert" "diverted or live-path-not-reached — cap=$(cat "$cap") stub_reached=$([ -f "$gh_stub_marker" ] && echo yes || echo no)"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────────
