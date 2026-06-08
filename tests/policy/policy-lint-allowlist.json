@@ -10,6 +10,16 @@
     "line": 102
   },
   {
+    "rule": "CHECK11",
+    "path": "plugin/skills/github-review-loop/SKILL.md",
+    "line": 3
+  },
+  {
+    "rule": "CHECK11",
+    "path": "plugin/skills/seed-hive/SKILL.md",
+    "line": 3
+  },
+  {
     "rule": "CHECK13",
     "path": "plugin/skills/brood-status/scripts/brood-status-project.sh",
     "line": 97,
