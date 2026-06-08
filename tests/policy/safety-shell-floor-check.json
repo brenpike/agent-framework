@@ -1,0 +1,15 @@
+{
+  "rule": "check13-shell-floor-lint-present",
+  "description": "P3 consumer-assertion: CHECK 13 (P18 fail-closed shell floor) in tools/policy_check.sh is load-bearing — it lints every plugin/**/*.sh for `set -euo pipefail` (errexit/nounset/pipefail, detected independently) and PASSES only on a full floor OR a documented CHECK13 allowlist exception. This fixture pins the three load-bearing literals that prove the check exists and still enforces the floor-OR-allowlisted contract: the `=== CHECK 13:` section header (the block exists), `add_finding 'CHECK13'` (it emits CHECK13 findings), and `test_allowlisted 'CHECK13'` (the allowlist-escape path is wired through the established allowlist machinery). superset mode fails if any of the three is removed; extras from elsewhere in the file are ignored.",
+  "set_check": {
+    "extract_regex": "(=== CHECK 13:|(?:add_finding|test_allowlisted) 'CHECK13')",
+    "expected_set": [
+      "=== CHECK 13:",
+      "add_finding 'CHECK13'",
+      "test_allowlisted 'CHECK13'"
+    ],
+    "files": [
+      { "path": "tools/policy_check.sh", "mode": "superset" }
+    ]
+  }
+}
