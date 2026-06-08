@@ -8,7 +8,7 @@
 # beyond defining the functions, and never exits. `bash -n` validates it as a sourced
 # fragment.
 #
-# P18 FLOOR — DOCUMENTED EXCEPTION (ADR-0020): as a SOURCED library this file deliberately
+# P18 FLOOR EXCEPTION (ADR-0020): as a SOURCED library this file deliberately
 # OMITS the P18 shell-safety floor `set -e` / `set -o pipefail` and any EXIT trap. A sourced
 # file mutates the SOURCING shell's option state, so installing those here would corrupt
 # every caller's shell; the floor is therefore the documented exception, not the full
