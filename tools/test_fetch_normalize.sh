@@ -332,6 +332,10 @@ run_live_fail_case() {
   local -a env_assign=()
   while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do env_assign+=("$1"); shift; done
   shift  # drop the "--"
+  # STEP-001 gate: the live seam activates ONLY when FETCHNORM_TEST_MODE=1 is ALSO
+  # set alongside the FETCHNORM_LIVE_*_FILE var. Inject it once here so every
+  # live-seam case routes through validate_live_response instead of going live.
+  env_assign+=("FETCHNORM_TEST_MODE=1")
   local out status
   out="$(env "${env_assign[@]}" bash "$NORMALIZE" "$@" 2>/dev/null)"
   status=$?
@@ -357,6 +361,10 @@ run_live_failopen_case() {
   local -a env_assign=()
   while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do env_assign+=("$1"); shift; done
   shift  # drop the "--"
+  # STEP-001 gate: the live seam activates ONLY when FETCHNORM_TEST_MODE=1 is ALSO
+  # set alongside the FETCHNORM_LIVE_*_FILE var. Inject it once here so every
+  # live-seam case routes through validate_live_response instead of going live.
+  env_assign+=("FETCHNORM_TEST_MODE=1")
   if [ ! -f "$expected_fix" ]; then failed "$case_name" "expected fixture missing: $expected_fix"; return; fi
   local raw status expected actual
   raw="$(env "${env_assign[@]}" bash "$NORMALIZE" "$@" 2>/dev/null)"
@@ -468,6 +476,28 @@ run_live_failopen_case "live-open:ci-failing-status1" \
 run_failopen_case "injected-bypass:errors-array-trusted" \
   "$FN_DIR/injected-graphql-with-errors.json" - \
   "$EXPECTED_DIR/injected-errors-bypass.json"
+
+# ── Fail-closed gate lock: LIVE_*_FILE WITHOUT TEST_MODE does NOT divert ───────────
+# STEP-001 made the live seam require BOTH FETCHNORM_TEST_MODE=1 AND the
+# FETCHNORM_LIVE_*_FILE var. A stray *_FILE ALONE must no longer divert — the fetch
+# goes LIVE. We point the GraphQL seam file at the SAME errors fixture case 1 uses
+# (which, were the seam active, would fail closed as graphql-errors), but DELIBERATELY
+# OMIT FETCHNORM_TEST_MODE and supply NO OWNER/REPO/PR positionals. With the seam
+# inactive the code falls through to the live path and trips the OWNER guard FIRST —
+# so the reason is `missing-owner`, NOT `graphql-errors`. That the fixture's
+# graphql-errors signal is NEVER produced proves the seam file was never read.
+nodivert_out="$(FETCHNORM_LIVE_GRAPHQL_FILE="$FN_DIR/live-graphql-errors.json" \
+  bash "$NORMALIZE" -- "" "" "" all selfuser 2>/dev/null)"
+nodivert_status=$?
+if [ "$nodivert_status" -ne 0 ] \
+   && printf '%s\n' "$nodivert_out" | grep -q '^FETCHNORM_ERROR=missing-owner$' \
+   && ! printf '%s\n' "$nodivert_out" | grep -q '^FETCHNORM_ERROR=graphql-errors$'; then
+  pass "fail-closed:live-file-without-testmode-no-divert" \
+    "LIVE_GRAPHQL_FILE alone did NOT divert (missing-owner from live path, fixture unread)"
+else
+  failed "fail-closed:live-file-without-testmode-no-divert" \
+    "seam diverted WITHOUT TEST_MODE — status=$nodivert_status out=$nodivert_out"
+fi
 
 # ── reviewer_filter scoping ───────────────────────────────────────────────────────
 # Same payload, three filters. codex-only matches ONLY chatgpt-codex-connector (900). all matches
