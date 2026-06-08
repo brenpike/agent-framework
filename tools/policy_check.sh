@@ -825,9 +825,14 @@ fi
 # executable statement, OR carry a documented CHECK13 allowlist exception. The
 # three options may be set across one or more top-level `set` lines and in any
 # spelling (set -euo pipefail, set -e + set -u + set -o pipefail, set -eu +
-# set -o pipefail, etc.); each option is detected independently rather than by a
-# single literal substring. Scope is plugin runtime scripts only — tools/ and
-# tests/ are intentionally excluded.
+# set -o pipefail, set -o errexit -o nounset -o pipefail, etc.). Each `set` line
+# is parsed by a left-to-right argument tokenizer that mirrors Bash's own
+# interpretation: clustered short flags (-euo), long-form `-o name`, the `+`/`+o`
+# disable forms, and the `--` end-of-options terminator (after which tokens are
+# positional, NOT options) are all handled in one ordered walk. Option state
+# persists across lines so a split-line floor and a later disable resolve to the
+# final state. Scope is plugin runtime scripts only — tools/ and tests/ are
+# intentionally excluded.
 #
 # Detection reads top-of-file lines, skipping the shebang and comment/blank
 # lines, and stops scanning `set` options at the first non-comment executable
@@ -888,52 +893,110 @@ while IFS= read -r -d '' shell_script; do
         if [[ -z "$trimmed" || "$trimmed" == '#'* ]]; then
             continue
         fi
-        # Collect set-option floor flags from top-level `set` lines. Each option
-        # is matched independently: a flag may appear in any short-option cluster
-        # (-e, -eu, -euo) or as a separate space-delimited flag (set -e -u -o
-        # pipefail), so the patterns match a `-`-prefixed cluster carrying the
-        # letter anywhere on the line rather than only the first cluster.
+        # Parse top-level `set` lines with a left-to-right argument tokenizer
+        # that mirrors how Bash itself interprets `set` arguments, rather than a
+        # bag of independent per-line regexes. The previous regex approach was
+        # FAIL-OPEN for `set -- -e -u -o pipefail`: Bash treats every token after
+        # `--` as a POSITIONAL PARAMETER, not an option, so such a line floors
+        # NOTHING — but the regexes still counted the trailing -e/-u/-o pipefail
+        # and let an unfloored script pass strict validation. Tokenizing in order
+        # and stopping at `--` closes that hole and dissolves the whole flag-side
+        # edge-case class (clusters, long-form `-o name`, `+`/`+o` disables, and
+        # `--` terminator are all one walk).
         if [[ "$trimmed" == 'set '* || "$trimmed" == 'set' ]]; then
             [[ "$first_set_line" -eq 0 ]] && first_set_line="$line_num"
-            # Strip a trailing inline comment before matching flags: a `#`
-            # preceded by whitespace begins a shell comment, so flags appearing
-            # only after it (e.g. `set -u # TODO add -e -o pipefail`) must NOT
-            # count toward the floor. Without this strip, comment text would
-            # falsely satisfy errexit/pipefail and skip both the finding and the
-            # CHECK13 allowlist path.
+            # Strip a trailing inline comment before tokenizing: a `#` preceded
+            # by whitespace begins a shell comment, so flags appearing only after
+            # it (e.g. `set -u # TODO add -e -o pipefail`) must NOT count toward
+            # the floor. Without this strip, comment text would falsely satisfy
+            # errexit/pipefail and skip both the finding and the CHECK13
+            # allowlist path.
             set_flags="$trimmed"
             if [[ "$set_flags" =~ ^(.*[[:space:]])#.*$ ]]; then
                 set_flags="${BASH_REMATCH[1]}"
             fi
-            # Track each option independently, honoring both the `-` (enable)
-            # and `+` (disable) forms. `set +e`/`set +u`/`set +o pipefail` turn
-            # the corresponding option back OFF (Bash `help set`: a `+` rather
-            # than `-` causes the flag to be turned off). Top-of-file `set`
-            # lines are processed in order, so a later disable clears an earlier
-            # enable and the FINAL state before the first executable statement
-            # decides the floor. Without this, a script with `set -euo pipefail`
-            # followed by `set +e` would still be counted as fully floored —
-            # a fail-open hole in the guard.
-            [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*e ]] && has_errexit=true
-            [[ "$set_flags" =~ (^|[[:space:]])\+[a-zA-Z]*e ]] && has_errexit=false
-            [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*u ]] && has_nounset=true
-            [[ "$set_flags" =~ (^|[[:space:]])\+[a-zA-Z]*u ]] && has_nounset=false
-            # pipefail attaches to a trailing -o/+o, whether standalone (set -o
-            # pipefail) or as the last flag in a cluster (set -euo pipefail).
-            [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=true
-            [[ "$set_flags" =~ (^|[[:space:]])\+[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=false
-            # Long-form `-o option-name` floor options (Bash `help set` documents
-            # `-o errexit` == `-e`, `-o nounset` == `-u`, `-o pipefail`). A script
-            # flooring itself as `set -o errexit -o nounset -o pipefail` is valid
-            # Bash and IS floored, so recognize these long forms in the SAME
-            # single tokenizer path alongside the short forms above. The `+o`
-            # disable counterparts clear the option, mirroring the `+`/`+o`
-            # short-form disable semantics. (pipefail long form is already
-            # covered by the -o/+o ... pipefail patterns above.)
-            [[ "$set_flags" =~ (^|[[:space:]])-o[[:space:]]+errexit ]] && has_errexit=true
-            [[ "$set_flags" =~ (^|[[:space:]])\+o[[:space:]]+errexit ]] && has_errexit=false
-            [[ "$set_flags" =~ (^|[[:space:]])-o[[:space:]]+nounset ]] && has_nounset=true
-            [[ "$set_flags" =~ (^|[[:space:]])\+o[[:space:]]+nounset ]] && has_nounset=false
+            # has_errexit/has_nounset/has_pipefail PERSIST across `set` lines and
+            # are NOT reset here: a split-line floor (set -e + set -u + set -o
+            # pipefail) and a disable-after-floor (set -euo pipefail; set +e)
+            # both depend on order across lines, so the FINAL state before the
+            # first executable statement decides the floor.
+            read -ra set_args <<< "$set_flags"
+            arg_count=${#set_args[@]}
+            arg_index=1   # set_args[0] is the literal `set`
+            while [[ "$arg_index" -lt "$arg_count" ]]; do
+                token="${set_args[$arg_index]}"
+                if [[ "$token" == '--' ]]; then
+                    # Everything after `--` is positional, not options. Stop.
+                    break
+                elif [[ "$token" == '-o' || "$token" == '+o' ]]; then
+                    # Long-form option: the NAME is the next token. Enable for
+                    # `-o`, disable for `+o`. Guard the trailing-token case.
+                    if [[ "$((arg_index + 1))" -lt "$arg_count" ]]; then
+                        opt_name="${set_args[$((arg_index + 1))]}"
+                        case "$opt_name" in
+                            errexit)  [[ "$token" == '-o' ]] && has_errexit=true  || has_errexit=false ;;
+                            nounset)  [[ "$token" == '-o' ]] && has_nounset=true  || has_nounset=false ;;
+                            pipefail) [[ "$token" == '-o' ]] && has_pipefail=true || has_pipefail=false ;;
+                        esac
+                        arg_index=$((arg_index + 1))   # consume the name token
+                    fi
+                elif [[ "$token" == '-' || "$token" == '+' ]]; then
+                    : # bare - / + : ignore safely
+                elif [[ "$token" == -[a-zA-Z]* ]]; then
+                    # Clustered SHORT enable flags, e.g. -e, -eu, -euo. Walk the
+                    # cluster letters; a cluster `o` consumes the NEXT WHOLE TOKEN
+                    # as the long option name (the `-euo pipefail` case).
+                    cluster="${token#-}"
+                    cluster_i=0
+                    while [[ "$cluster_i" -lt "${#cluster}" ]]; do
+                        letter="${cluster:$cluster_i:1}"
+                        case "$letter" in
+                            e) has_errexit=true ;;
+                            u) has_nounset=true ;;
+                            o)
+                                if [[ "$((arg_index + 1))" -lt "$arg_count" ]]; then
+                                    opt_name="${set_args[$((arg_index + 1))]}"
+                                    case "$opt_name" in
+                                        errexit)  has_errexit=true ;;
+                                        nounset)  has_nounset=true ;;
+                                        pipefail) has_pipefail=true ;;
+                                    esac
+                                    arg_index=$((arg_index + 1))   # consume name
+                                fi
+                                break   # `o` ends cluster scanning
+                                ;;
+                        esac
+                        cluster_i=$((cluster_i + 1))
+                    done
+                elif [[ "$token" == +[a-zA-Z]* ]]; then
+                    # Clustered SHORT disable flags, e.g. +e, +eu. A cluster `o`
+                    # consumes the next token as the name and disables it.
+                    cluster="${token#+}"
+                    cluster_i=0
+                    while [[ "$cluster_i" -lt "${#cluster}" ]]; do
+                        letter="${cluster:$cluster_i:1}"
+                        case "$letter" in
+                            e) has_errexit=false ;;
+                            u) has_nounset=false ;;
+                            o)
+                                if [[ "$((arg_index + 1))" -lt "$arg_count" ]]; then
+                                    opt_name="${set_args[$((arg_index + 1))]}"
+                                    case "$opt_name" in
+                                        errexit)  has_errexit=false ;;
+                                        nounset)  has_nounset=false ;;
+                                        pipefail) has_pipefail=false ;;
+                                    esac
+                                    arg_index=$((arg_index + 1))   # consume name
+                                fi
+                                break
+                                ;;
+                        esac
+                        cluster_i=$((cluster_i + 1))
+                    done
+                fi
+                # anything else (positional-looking / unknown long opt) → ignore
+                arg_index=$((arg_index + 1))
+            done
             continue
         fi
         # First non-comment, non-set executable statement ends the floor window:
