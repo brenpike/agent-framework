@@ -884,11 +884,23 @@ while IFS= read -r -d '' shell_script; do
             if [[ "$set_flags" =~ ^(.*[[:space:]])#.*$ ]]; then
                 set_flags="${BASH_REMATCH[1]}"
             fi
+            # Track each option independently, honoring both the `-` (enable)
+            # and `+` (disable) forms. `set +e`/`set +u`/`set +o pipefail` turn
+            # the corresponding option back OFF (Bash `help set`: a `+` rather
+            # than `-` causes the flag to be turned off). Top-of-file `set`
+            # lines are processed in order, so a later disable clears an earlier
+            # enable and the FINAL state before the first executable statement
+            # decides the floor. Without this, a script with `set -euo pipefail`
+            # followed by `set +e` would still be counted as fully floored —
+            # a fail-open hole in the guard.
             [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*e ]] && has_errexit=true
+            [[ "$set_flags" =~ (^|[[:space:]])\+[a-zA-Z]*e ]] && has_errexit=false
             [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*u ]] && has_nounset=true
-            # pipefail attaches to a trailing -o, whether standalone (set -o
+            [[ "$set_flags" =~ (^|[[:space:]])\+[a-zA-Z]*u ]] && has_nounset=false
+            # pipefail attaches to a trailing -o/+o, whether standalone (set -o
             # pipefail) or as the last flag in a cluster (set -euo pipefail).
             [[ "$set_flags" =~ (^|[[:space:]])-[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=true
+            [[ "$set_flags" =~ (^|[[:space:]])\+[a-zA-Z]*o[[:space:]]+pipefail ]] && has_pipefail=false
             continue
         fi
         # First non-comment, non-set executable statement ends the floor window:
