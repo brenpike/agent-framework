@@ -818,6 +818,279 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+# ── CHECK 13: P18 fail-closed shell floor ──────────────────────────────────
+#
+# Every committed plugin runtime shell script (plugin/**/*.sh) MUST enable the
+# fail-closed shell floor — errexit, nounset, and pipefail — before its first
+# executable statement, OR carry a documented CHECK13 allowlist exception. The
+# three options may be set across one or more top-level `set` lines and in any
+# spelling (set -euo pipefail, set -e + set -u + set -o pipefail, set -eu +
+# set -o pipefail, set -o errexit -o nounset -o pipefail, etc.). Each `set` line
+# is parsed by a left-to-right argument tokenizer that mirrors Bash's own
+# interpretation: clustered short flags (-euo), long-form `-o name`, the `+`/`+o`
+# disable forms, and the `--` end-of-options terminator (after which tokens are
+# positional, NOT options) are all handled in one ordered walk. Option state
+# persists across lines so a split-line floor and a later disable resolve to the
+# final state. Scope is plugin runtime scripts only — tools/ and tests/ are
+# intentionally excluded.
+#
+# Detection reads top-of-file lines, skipping the shebang and comment/blank
+# lines, and stops scanning `set` options at the first non-comment executable
+# statement. Lines are CRLF-tolerant: a trailing carriage return is stripped
+# before matching so an autocrlf checkout does not produce false findings.
+#
+# SCOPE / LIMITATION: CHECK 13 is a BEST-EFFORT lint. It detects the PRESENCE of
+# a floor STATEMENT at the top of a script — a standalone `set -euo pipefail`
+# equivalent that runs as a simple command in the main shell. It does NOT prove
+# floor EFFECTIVENESS under every pathological construct: a floor `set` reached
+# only inside a conditional or function after the scan window, or an eval'd /
+# dynamically-built `set`, is outside what this scanner can verify and is a
+# documented limitation tracked separately. The scanner DOES fail closed on the
+# common ineffective forms — a `set` that is piped, subshelled, backgrounded,
+# chained, or `;`-separated is treated as establishing nothing (see the
+# effectiveness guard below), so those constructs are flagged rather than
+# silently credited.
+#
+# Finding line: a documented exception script carries a `P18 FLOOR EXCEPTION`
+# comment marking the deliberate omission; the marker is recognized by canonical
+# normalized match (see the marker branch below) and the finding is anchored to
+# that line so the CHECK13 allowlist entry (seeded to that comment line) matches
+# via the established test_allowlisted path. A script with no such marker (e.g. a
+# new unguarded script) falls back to its first executable line, or line 1.
+
+echo ''
+echo '=== CHECK 13: P18 fail-closed shell floor ==='
+
+check13_found=false
+while IFS= read -r -d '' shell_script; do
+    has_errexit=false
+    has_nounset=false
+    has_pipefail=false
+    first_set_line=0
+    exception_line=0
+    line_num=0
+    while IFS= read -r textline || [[ -n "$textline" ]]; do
+        line_num=$((line_num + 1))
+        # CRLF tolerance: strip a single trailing carriage return.
+        textline="${textline%$'\r'}"
+        trimmed="${textline#"${textline%%[![:space:]]*}"}"
+        # Skip the shebang, blank lines, and comment lines. The documented
+        # P18 FLOOR EXCEPTION marker, when present, anchors the finding line.
+        if [[ "$line_num" -eq 1 && "$trimmed" == '#!'* ]]; then
+            continue
+        fi
+        # Recognize the documented P18 FLOOR EXCEPTION marker by CANONICAL
+        # NORMALIZED match rather than a brittle contiguous-substring test. All
+        # shipped markers are single-sourced to the exact phrase
+        # `P18 FLOOR EXCEPTION`; normalizing the candidate line before the
+        # contains-test additionally tolerates future whitespace/punctuation
+        # drift (extra spaces, ASCII hyphen `-`, em-dash, en-dash) on that same
+        # 3-word phrase. Normalization: strip a leading `#` and surrounding
+        # whitespace, strip a trailing CR (already stripped above, belt-and-
+        # suspenders), collapse internal runs of whitespace AND dash characters
+        # to a single space, then uppercase. Recognition is contiguous (the
+        # normalized line must CONTAIN the normalized canonical token), NOT a
+        # gappy subsequence, so unrelated comments cannot falsely match.
+        if [[ "$exception_line" -eq 0 ]]; then
+            norm_line="$(printf '%s' "$trimmed" \
+                | sed -e 's/\r$//' \
+                      -e 's/^#//' \
+                      -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+                      -e 's/[[:space:]–—-]\{1,\}/ /g' \
+                | tr '[:lower:]' '[:upper:]')"
+            if [[ "$norm_line" == *'P18 FLOOR EXCEPTION'* ]]; then
+                exception_line="$line_num"
+            fi
+        fi
+        if [[ -z "$trimmed" || "$trimmed" == '#'* ]]; then
+            continue
+        fi
+        # Parse top-level `set` lines with a left-to-right argument tokenizer
+        # that mirrors how Bash itself interprets `set` arguments, rather than a
+        # bag of independent per-line regexes. The previous regex approach was
+        # FAIL-OPEN for `set -- -e -u -o pipefail`: Bash treats every token after
+        # `--` as a POSITIONAL PARAMETER, not an option, so such a line floors
+        # NOTHING — but the regexes still counted the trailing -e/-u/-o pipefail
+        # and let an unfloored script pass strict validation. Tokenizing in order
+        # and stopping at `--` closes that hole and dissolves the whole flag-side
+        # edge-case class (clusters, long-form `-o name`, `+`/`+o` disables, and
+        # `--` terminator are all one walk).
+        if [[ "$trimmed" == 'set '* || "$trimmed" == 'set' ]]; then
+            [[ "$first_set_line" -eq 0 ]] && first_set_line="$line_num"
+            # Strip a trailing inline comment before tokenizing: a `#` preceded
+            # by whitespace begins a shell comment, so flags appearing only after
+            # it (e.g. `set -u # TODO add -e -o pipefail`) must NOT count toward
+            # the floor. Without this strip, comment text would falsely satisfy
+            # errexit/pipefail and skip both the finding and the CHECK13
+            # allowlist path.
+            set_flags="$trimmed"
+            if [[ "$set_flags" =~ ^(.*[[:space:]])#.*$ ]]; then
+                set_flags="${BASH_REMATCH[1]}"
+            fi
+            # Strip a SINGLE optional trailing list terminator before the
+            # effectiveness guard below. A standalone `set -euo pipefail;` (or,
+            # after the inline-comment strip above, `set -euo pipefail; # note`)
+            # is still ONE valid Bash simple command that floors the current
+            # shell — the trailing `;` is a list terminator, not a separator
+            # introducing a SECOND command. Removing only a `;` that is the last
+            # non-whitespace character keeps such a floor effective while leaving
+            # a `;` that DOES introduce another command (`set -e; cmd`) intact,
+            # so the guard below still marks THAT line inert. Strictness is
+            # preserved: this only un-inerts a genuine trailing-terminator floor.
+            if [[ "$set_flags" =~ ^(.*[^[:space:];])[[:space:]]*\;[[:space:]]*$ ]]; then
+                set_flags="${BASH_REMATCH[1]}"
+            fi
+            # FAIL-CLOSED effectiveness guard: a `set` only changes the script's
+            # main-shell options when it runs as a STANDALONE SIMPLE COMMAND. A
+            # `set` that is piped (`set -euo pipefail | cat`), subshelled
+            # (`(set -euo pipefail)`), backgrounded (`set ... &`), chained
+            # (`set ... && cmd`), command-substituted, or split off with a `;`
+            # that introduces another command runs in a subshell or is not the
+            # floor statement at all, so its flags do NOT establish the floor.
+            # Detecting any of these operator characters in the set statement
+            # marks the line INERT: we do not tokenize it and do not credit its
+            # flags, so the script is judged on the remaining effective `set`
+            # lines (and is flagged if none floor it). This is strictness-only —
+            # it can never fail open. The option NAME `pipefail` contains no `|`,
+            # so a clean `set -euo pipefail`, `set -o pipefail`, `set -e`,
+            # `set -u`, split-line floors, a trailing-`;` floor (stripped above),
+            # and `set --` carry NONE of these characters and are unaffected.
+            if [[ "$set_flags" == *'|'* || "$set_flags" == *'&'* \
+                || "$set_flags" == *'('* || "$set_flags" == *')'* \
+                || "$set_flags" == *';'* || "$set_flags" == *'`'* \
+                || "$set_flags" == *'$'* ]]; then
+                continue
+            fi
+            # has_errexit/has_nounset/has_pipefail PERSIST across `set` lines and
+            # are NOT reset here: a split-line floor (set -e + set -u + set -o
+            # pipefail) and a disable-after-floor (set -euo pipefail; set +e)
+            # both depend on order across lines, so the FINAL state before the
+            # first executable statement decides the floor.
+            read -ra set_args <<< "$set_flags"
+            arg_count=${#set_args[@]}
+            arg_index=1   # set_args[0] is the literal `set`
+            while [[ "$arg_index" -lt "$arg_count" ]]; do
+                token="${set_args[$arg_index]}"
+                if [[ "$token" == '--' ]]; then
+                    # Everything after `--` is positional, not options. Stop.
+                    break
+                elif [[ "$token" == '-o' || "$token" == '+o' ]]; then
+                    # Long-form option: the NAME is the next token. Enable for
+                    # `-o`, disable for `+o`. Guard the trailing-token case.
+                    if [[ "$((arg_index + 1))" -lt "$arg_count" ]]; then
+                        opt_name="${set_args[$((arg_index + 1))]}"
+                        case "$opt_name" in
+                            errexit)  [[ "$token" == '-o' ]] && has_errexit=true  || has_errexit=false ;;
+                            nounset)  [[ "$token" == '-o' ]] && has_nounset=true  || has_nounset=false ;;
+                            pipefail) [[ "$token" == '-o' ]] && has_pipefail=true || has_pipefail=false ;;
+                        esac
+                        arg_index=$((arg_index + 1))   # consume the name token
+                    fi
+                elif [[ "$token" == '-' || "$token" == '+' ]]; then
+                    : # bare - / + : ignore safely
+                elif [[ "$token" == -[a-zA-Z]* ]]; then
+                    # Clustered SHORT enable flags, e.g. -e, -eu, -euo. Walk the
+                    # cluster letters; a cluster `o` consumes the NEXT WHOLE TOKEN
+                    # as the long option name (the `-euo pipefail` case).
+                    cluster="${token#-}"
+                    cluster_i=0
+                    while [[ "$cluster_i" -lt "${#cluster}" ]]; do
+                        letter="${cluster:$cluster_i:1}"
+                        case "$letter" in
+                            e) has_errexit=true ;;
+                            u) has_nounset=true ;;
+                            o)
+                                if [[ "$((arg_index + 1))" -lt "$arg_count" ]]; then
+                                    opt_name="${set_args[$((arg_index + 1))]}"
+                                    case "$opt_name" in
+                                        errexit)  has_errexit=true ;;
+                                        nounset)  has_nounset=true ;;
+                                        pipefail) has_pipefail=true ;;
+                                    esac
+                                    arg_index=$((arg_index + 1))   # consume name
+                                fi
+                                break   # `o` ends cluster scanning
+                                ;;
+                        esac
+                        cluster_i=$((cluster_i + 1))
+                    done
+                elif [[ "$token" == +[a-zA-Z]* ]]; then
+                    # Clustered SHORT disable flags, e.g. +e, +eu. A cluster `o`
+                    # consumes the next token as the name and disables it.
+                    cluster="${token#+}"
+                    cluster_i=0
+                    while [[ "$cluster_i" -lt "${#cluster}" ]]; do
+                        letter="${cluster:$cluster_i:1}"
+                        case "$letter" in
+                            e) has_errexit=false ;;
+                            u) has_nounset=false ;;
+                            o)
+                                if [[ "$((arg_index + 1))" -lt "$arg_count" ]]; then
+                                    opt_name="${set_args[$((arg_index + 1))]}"
+                                    case "$opt_name" in
+                                        errexit)  has_errexit=false ;;
+                                        nounset)  has_nounset=false ;;
+                                        pipefail) has_pipefail=false ;;
+                                    esac
+                                    arg_index=$((arg_index + 1))   # consume name
+                                fi
+                                break
+                                ;;
+                        esac
+                        cluster_i=$((cluster_i + 1))
+                    done
+                fi
+                # anything else (positional-looking / unknown long opt) → ignore
+                arg_index=$((arg_index + 1))
+            done
+            continue
+        fi
+        # First non-comment, non-set executable statement ends the floor window:
+        # `set` options enabled below here would not establish the floor.
+        break
+    done < "$shell_script"
+
+    if [[ "$has_errexit" == true && "$has_nounset" == true && "$has_pipefail" == true ]]; then
+        continue
+    fi
+
+    # Anchor the finding to (in precedence order) the documented P18 FLOOR
+    # EXCEPTION comment, the first partial `set` line, or line 1 — so a
+    # documented-exception script's finding line matches its seeded CHECK13
+    # allowlist entry via test_allowlisted (the exception comment for scripts
+    # that carry one, the partial-floor `set` line otherwise, line 1 for a
+    # bare sourced library). A new unguarded script with none of these still
+    # fires on line 1.
+    if [[ "$exception_line" -gt 0 ]]; then
+        finding_line="$exception_line"
+    elif [[ "$first_set_line" -gt 0 ]]; then
+        finding_line="$first_set_line"
+    else
+        finding_line=1
+    fi
+    # The pass/fail tally counts only NON-allowlisted findings as failures: a
+    # script with a documented CHECK13 exception is a clean (allowlisted) state,
+    # not a check failure. Resolve allowlist status on the same rel-path
+    # normalization add_finding applies so the two agree.
+    rel_script="$shell_script"
+    if [[ "$shell_script" == "$REPO_ROOT"* ]]; then
+        rel_script="${shell_script#"$REPO_ROOT"/}"
+    fi
+    rel_script="${rel_script//\\//}"
+    if [[ "$(test_allowlisted 'CHECK13' "$rel_script" "$finding_line")" != "true" ]]; then
+        check13_found=true
+    fi
+    add_finding 'CHECK13' "$shell_script" "$finding_line" \
+        "missing P18 fail-closed shell floor (set -euo pipefail) -- add the floor or document a justified CHECK13 allowlist exception"
+done < <(find "$PLUGIN_ROOT" -name '*.sh' -type f -print0)
+
+if [[ "$check13_found" == false ]]; then
+    echo '[PASS] Check 13: All plugin shell scripts carry the P18 fail-closed floor or a CHECK13 exception'
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''

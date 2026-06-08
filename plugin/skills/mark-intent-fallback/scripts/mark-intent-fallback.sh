@@ -76,6 +76,11 @@
 #
 # set -u: an unset variable is a programming error (every value is parsed from the inputs
 # file). No `set -e`: failures route through blocker() with a verbose reason.
+#
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: `jq -e has(...)`
+# key-presence probes legitimately return non-zero in the normal absent-key flow, and
+# grep -Eq / `[ ]` gates feed blocker() — `set -e` would abort instead of blocking cleanly.
 
 set -u
 

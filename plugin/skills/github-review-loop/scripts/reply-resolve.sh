@@ -132,6 +132,11 @@
 # Reason tokens (STABLE — asserted by the test):
 #   missing-thread-id | missing-fix-sha | missing-summary | invalid-surface |
 #   missing-candidate-url | reply-failed
+#
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: the resolve mutation is
+# NON-BLOCKING (a failed resolve logs and the script still exits 0), so `set -e` would abort
+# on a deliberately-tolerated resolve failure; hard failures route through replyresolve_fail().
 
 set -u
 

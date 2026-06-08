@@ -212,6 +212,11 @@
 # Consumer:          ${CLAUDE_PLUGIN_ROOT}/skills/detect-remediation-signals/SKILL.md
 #                    (its Input Contract `ledger` shape)
 
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: the grep -q marker probe
+# returns non-zero in the normal empty-log flow, awk/jq stages swallow malformed input to [],
+# injected fixtures fail-open, and live failures route through ledgerrecon_fail() with explicit
+# exit codes — `set -e`/`pipefail` would abort those guarded paths.
 set -u
 # INVARIANT: trap body ends with guaranteed-zero `:` so a failing cleanup never
 # clobbers the script's own exit code (mirrors fetch-normalize.sh / ADR-0020).

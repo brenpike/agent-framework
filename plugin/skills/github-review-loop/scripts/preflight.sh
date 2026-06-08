@@ -17,6 +17,11 @@
 #   $1  PR_REF          PR number or URL
 #   $2  WORKING_BRANCH  expected working branch
 #   $3  BASE_BRANCH     expected base branch (PR target)
+#
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: every `gh ... || fail` and
+# `[ ... ] || fail` relies on a non-zero result NOT aborting so fail() can emit a structured
+# PREFLIGHT_ERROR with an explicit exit code — `set -e` would abort before fail() runs.
 
 set -u
 

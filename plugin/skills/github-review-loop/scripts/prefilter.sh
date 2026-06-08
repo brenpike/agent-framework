@@ -97,6 +97,12 @@
 #                         (default "codex-only" when empty)
 #   $5  SELF_LOGIN        viewer login used to strip self-authored latest
 #                         comments from the actionable set (required)
+#
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: pipefail is scoped
+# per-pipeline inside subshells, the fail-open posture and grep classify value-tests
+# legitimately return non-zero in normal flow, and failures route through prefilter_fail()
+# with explicit exit codes — a global `set -e` would abort those guarded paths.
 
 set -u
 

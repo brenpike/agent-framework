@@ -70,6 +70,12 @@
 # explicitly from the inputs file); fail loudly rather than silently spawn with an
 # empty branch/path. We do NOT use `set -e`: per-strain failures are caught and
 # routed to the failed-strain path so the manifest still records the partial brood.
+#
+# P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
+# are DELIBERATELY omitted. The full floor would change behavior: per-strain failures are
+# caught (`if ! git worktree add`) and routed to the failed-strain path, `git ls-remote
+# --exit-code` rc=2 is a normal no-collision result, and the INT/TERM trap reports leaked
+# resources — `set -e` would abort the whole brood on the first per-strain hiccup.
 
 set -u
 

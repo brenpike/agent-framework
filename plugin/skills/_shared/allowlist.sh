@@ -8,6 +8,14 @@
 # beyond defining the functions, and never exits. `bash -n` validates it as a sourced
 # fragment.
 #
+# P18 FLOOR EXCEPTION (ADR-0020): as a SOURCED library this file deliberately
+# OMITS the P18 shell-safety floor `set -e` / `set -o pipefail` and any EXIT trap. A sourced
+# file mutates the SOURCING shell's option state, so installing those here would corrupt
+# every caller's shell; the floor is therefore the documented exception, not the full
+# `set -euo pipefail`. This file carries no top-level `set` at all (pure function
+# definitions); each caller owns its own `set -u` and error routing. Allowlisted under
+# CHECK13 as a P18 documented exception.
+#
 # SINGLE RESPONSIBILITY: gate ONE manifest/ledger-derived value against the value CLASS
 # its field belongs to. This file implements the INPUT half of a FLOOR-AT-INPUT /
 # ENCODE-AT-OUTPUT model: every value is gated against the shared security floor at the
