@@ -1,6 +1,6 @@
 ---
 name: adaptation-cycle
-description: Run a local pre-PR Codex code review (adaptation cycle) via codex-plugin-cc, capture structured output, normalize findings, and return them to the caller. Review-only — does not fix findings. Invoked by local-reviewer agent only.
+description: Runs a local pre-PR Codex review via codex-plugin-cc, normalizes findings, and returns them to the caller. Review-only — does not fix findings. Invoked by local-reviewer agent only. Use when running a local pre-PR review.
 allowed-tools:
   - Read
   - Bash(git status *)
