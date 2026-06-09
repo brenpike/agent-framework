@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.30.0] - 2026-06-08
+
+### Added
+
+- **`plugin/skills/github-review-loop/scripts/react-marker.sh` — new script that emits a self-authored `EYES` reaction on non-thread reviewer nodes (`toplevel`/`review`) as the handled-marker, restoring github-review-loop convergence on whole-PR surfaces.**
+
+### Fixed
+
+- **Review-loop no longer re-churns indefinitely on `toplevel`/`review` (non-thread, `thread_id:null`) reviewer comments — a committed fix is now recorded handled via a viewer-scoped `EYES` reaction (`reactionGroups{content viewerHasReacted}` harvested by `fix-history-classify.jq`), replacing the `Addresses:` comment-marker removed in #218.** (`plugin/skills/github-review-loop/scripts/react-marker.sh`, `plugin/skills/github-review-loop/scripts/fix-history-classify.jq`) Closes #265.
+
 ## [2.29.4] - 2026-06-08
 
 ### Fixed
