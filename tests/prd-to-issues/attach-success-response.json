@@ -1,0 +1,1 @@
+{ "data": { "addSubIssue": { "issue": { "id": "I_parent", "number": 10 }, "subIssue": { "id": "I_child", "number": 42 } } } }
