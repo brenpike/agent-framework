@@ -1,0 +1,1 @@
+{ "data": { "search": { "pageInfo": { "hasNextPage": true, "endCursor": "cursor1" }, "nodes": [ { "id": "I_orphan", "number": 21, "title": "tracer slice A", "parent": null } ] } } }

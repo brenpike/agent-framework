@@ -1,0 +1,1 @@
+{ "data": { "search": { "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [ { "id": "I_quoted", "number": 31, "title": "slice \"beta\"", "parent": null }, { "id": "I_unquoted", "number": 32, "title": "slice beta", "parent": null } ] } } }

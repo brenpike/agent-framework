@@ -277,6 +277,52 @@ run_exit1_case "find-by-title:missing-id-exit1" -- \
   find-by-title --title "tracer slice A" \
   --response-file "$PI_DIR/find-by-title-missing-id-response.json"
 
+# ── find-by-title: TERMINAL-PAGE gate — non-terminal offline pages fail closed ────────
+# An injected page with pageInfo.hasNextPage=true MUST fail closed (offline seam treats
+# the injected page as the COMPLETE result set; a continued page would silently drop
+# unfetched candidates). Parallel to list-children:has-next-page-exit1.
+run_exit1_case "find-by-title:multipage-exit1" -- \
+  find-by-title --title "tracer slice A" \
+  --response-file "$PI_DIR/find-by-title-multipage-response.json"
+
+# A response with `nodes` but a MISSING pageInfo (hasNextPage absent/null) MUST fail
+# closed — no `// false` default, so absent pageInfo is not silently treated as terminal.
+# Parallel to list-children:missing-pageinfo-exit1.
+run_exit1_case "find-by-title:missing-pageinfo-exit1" -- \
+  find-by-title --title "tracer slice A" \
+  --response-file "$PI_DIR/find-by-title-missing-pageinfo-response.json"
+
+# ── find-by-title: quote-bearing title — jq --arg exact-filter byte-for-byte ─────────
+# A title containing a `"` is passed through the jq --arg exact-title post-filter.
+# The fixture has two nodes: one with the quote-bearing title (should match) and one
+# without (should not match), proving the filter is byte-exact and the `"` does not
+# broaden or break the match. The DSL-neutralization (`"` → space in the search query)
+# is not observable offline; only the exact post-filter behavior is tested here.
+run_case "find-by-title:quote-title" "$EXPECTED_DIR/find-by-title-quote-title.json" -- \
+  find-by-title --title 'slice "beta"' \
+  --response-file "$PI_DIR/find-by-title-quote-title-response.json"
+
+# ── find-by-title: bad --repo charset guard fires before gh (exit 2, live path) ──────
+# An invalid --repo (contains a third `/` segment or a space/bang) MUST fail closed with
+# exit 2 BEFORE any gh call — the owner/repo charset guard fires at the arg-validation
+# stage (mirrors attach:bad-node-id / live-reject cases: no SUBISSUE_OPS_OFFLINE, no gh
+# needed). Tests two malformed forms: extra slash (a/b/c) and non-charset char (bad!).
+BAD_REPO_STATUS=0
+bash "$OPS" find-by-title --title "slice" --repo "a/b/c" >/dev/null 2>&1 || BAD_REPO_STATUS=$?
+if [ "$BAD_REPO_STATUS" -eq 2 ]; then
+  pass "find-by-title:bad-repo-exit2" "exit=2 (a/b/c rejected by charset guard)"
+else
+  failed "find-by-title:bad-repo-exit2" "expected exit 2 for repo=a/b/c, got $BAD_REPO_STATUS"
+fi
+
+BAD_REPO2_STATUS=0
+bash "$OPS" find-by-title --title "slice" --repo "bad repo!" >/dev/null 2>&1 || BAD_REPO2_STATUS=$?
+if [ "$BAD_REPO2_STATUS" -eq 2 ]; then
+  pass "find-by-title:bad-repo-noslash-exit2" "exit=2 (bad repo! rejected by charset guard)"
+else
+  failed "find-by-title:bad-repo-noslash-exit2" "expected exit 2 for repo='bad repo!', got $BAD_REPO2_STATUS"
+fi
+
 # ── Live-mode fixture rejection: --response-file is a TEST SEAM only (exit 2) ───────
 # Each subcommand, when invoked LIVE (no SUBISSUE_OPS_OFFLINE) WITH --response-file, MUST be
 # rejected fail-closed (exit 2) BEFORE any gh call — the flag could spoof a created/attached/child

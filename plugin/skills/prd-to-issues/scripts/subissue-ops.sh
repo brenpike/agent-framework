@@ -406,16 +406,34 @@ normalize_children() {
 # unverifiable read is never emitted. Exit codes: 0 = normalized; 1 = fail-closed.
 normalize_find_by_title() {
   local resp="$1" title="$2" validated
+  # OFFLINE shape gate: root `.data.search` non-null, `.nodes` an array, EVERY node carries
+  # a string id/number/title — AND a TERMINAL-PAGE gate mirroring normalize_children: the
+  # injected offline page is treated as the COMPLETE result set, so its
+  # `search.pageInfo.hasNextPage` MUST be a genuine boolean `false` (no `// false` default —
+  # a missing/null/non-boolean OR a `true` hasNextPage FAILS CLOSED, so an injected page that
+  # is not a genuine terminal page cannot normalize as if the unfetched candidates do not
+  # exist). The LIVE path enforces completeness via the pagination loop, not this gate.
   validated="$(validate_response_shape "$resp" \
     '.data.search' \
-    'true' \
+    '(.pageInfo.hasNextPage | type == "boolean")
+     and (.pageInfo.hasNextPage == false)' \
     '.nodes' \
     '(.number | type == "number")
      and (.id | type == "string" and length > 0)
      and (.title | type == "string" and length > 0)' \
     '.data.search.nodes')" || return 1
-  # Exact-title post-filter: untrusted title enters ONLY as --arg DATA, never the program.
-  printf '%s' "$validated" | jq -c --arg title "$title" \
+  filter_exact_title "$validated" "$title"
+}
+
+# filter_exact_title <nodes-json-array> <title>: the SINGLE SOURCE exact-title post-filter
+# (shared by the offline normalize_find_by_title path AND the live paginate-to-completeness
+# path, so the exactness contract can never diverge). Search is fuzzy/full-text; this keeps
+# ONLY nodes whose `.title` EQUALS the queried title byte-for-byte and wraps them in the §3
+# {title, matches:[{number,id,title,parent}]} schema. The UNTRUSTED title enters ONLY as
+# --arg DATA — it is NEVER interpolated into the jq program.
+filter_exact_title() {
+  local nodes="$1" title="$2"
+  printf '%s' "$nodes" | jq -c --arg title "$title" \
     '{ title: $title,
        matches: [ .[]
                   | select(.title == $title)
@@ -535,8 +553,9 @@ mutation($issueId: ID!, $subIssueId: ID!) {
 # identity + its sub-issue `parent` (null when unparented). The exact-title post-filter
 # runs in normalize_find_by_title — search itself is fuzzy/full-text.
 FIND_BY_TITLE_QUERY='
-query($q: String!) {
-  search(query: $q, type: ISSUE, first: 100) {
+query($q: String!, $after: String) {
+  search(query: $q, type: ISSUE, first: 100, after: $after) {
+    pageInfo { hasNextPage endCursor }
     nodes {
       ... on Issue {
         id
@@ -547,6 +566,69 @@ query($q: String!) {
     }
   }
 }'
+
+# paginate_to_completeness: the SINGLE SHARED paginate-to-completeness mechanism (P1)
+# driving BOTH cmd_list_children (node.subIssues) and cmd_find_by_title (search). It
+# follows endCursor while hasNextPage, routes EVERY raw page through the shared kernel
+# BEFORE accumulation (a malformed/error page FAILS CLOSED mid-loop, never emitting a
+# partial set as complete), accumulates the cleaned node objects across pages, and
+# emits the FULLY-ACCUMULATED node array (compact JSON) on stdout. The per-page root
+# predicate is VALUE-AGNOSTIC on hasNextPage (must be a boolean — present/null/non-bool
+# fails closed — but true is still accepted so the loop keeps paging); the loop, not the
+# kernel, drives completeness. Fails closed when hasNextPage is true but endCursor is
+# empty (GitHub-issued cursor missing). The cursor `$after` is GitHub-issued DATA passed
+# via -F, never interpolated into source.
+#
+# Args:
+#   $1 label        — diagnostic prefix for die() messages (the subcommand name)
+#   $2 query        — the GraphQL query const
+#   $3 root_path    — jq path to the entity holding the collection (e.g. .data.node)
+#   $4 root_pred    — jq boolean over that entity; MUST gate hasNextPage|type=="boolean"
+#   $5 coll_path    — jq path FROM root to the node array (e.g. .subIssues.nodes)
+#   $6 elem_pred    — jq boolean per element (field completeness)
+#   $7 pageinfo     — jq path FROM root to the pageInfo object (e.g. .subIssues.pageInfo)
+#   $8.. base_args  — the FIXED gh query-arg pair(s) identifying the connection
+#                     (e.g. -f id=<NODE_ID> or -f q=<SEARCH_STRING>); $after is appended
+#                     by this loop, never by the caller.
+paginate_to_completeness() {
+  local label="$1" query="$2" root_path="$3" root_pred="$4" coll_path="$5" elem_pred="$6" pageinfo="$7"
+  shift 7
+  local -a base_args=("$@")
+  local after="" page projected accumulated="[]" has_next end_cursor
+  while :; do
+    if [ -z "$after" ]; then
+      page="$(gh api graphql "${GQL_HEADER_ARGS[@]}" -f query="$query" \
+                "${base_args[@]}" 2>/dev/null)" \
+        || die "$label: GraphQL query failed" 1
+    else
+      page="$(gh api graphql "${GQL_HEADER_ARGS[@]}" -f query="$query" \
+                "${base_args[@]}" -F after="$after" 2>/dev/null)" \
+        || die "$label: GraphQL query failed" 1
+    fi
+    # Validate the raw page shape WITHOUT a hasNextPage==false gate (mid-pagination a
+    # continued page is legitimate); the loop drives completeness. Project to this page's
+    # clean nodes + its pageInfo for cursor advance. The root predicate (caller-supplied)
+    # gates hasNextPage PRESENCE/TYPE (boolean) but is VALUE-AGNOSTIC on its value.
+    projected="$(validate_response_shape "$page" \
+      "$root_path" \
+      "$root_pred" \
+      "$coll_path" \
+      "$elem_pred" \
+      "{ nodes: (($root_path) | $coll_path),
+         hasNextPage: (($root_path) | $pageinfo.hasNextPage),
+         endCursor: (($root_path) | $pageinfo.endCursor // null) }")" \
+      || die "$label: malformed page" 1
+    accumulated="$(jq -c -n --argjson acc "$accumulated" --argjson page "$projected" \
+      '$acc + $page.nodes')"
+    has_next="$(printf '%s' "$projected" | jq -r '.hasNextPage')"
+    end_cursor="$(printf '%s' "$projected" | jq -r '.endCursor // ""')"
+    [ "$has_next" = "true" ] || break
+    [ -n "$end_cursor" ] \
+      || die "$label: connection reports hasNextPage but no endCursor" 1
+    after="$end_cursor"
+  done
+  printf '%s' "$accumulated"
+}
 
 # --- Subcommand implementations ----------------------------------------------
 
@@ -732,54 +814,25 @@ cmd_list_children() {
   [ -n "$parent_id" ] || die "list-children requires --parent-id" 2
   require_gh "list-children"
 
-  # PAGINATE TO COMPLETENESS (issue #228 lesson): follow endCursor while hasNextPage.
-  # Each raw page is routed through the SHARED kernel BEFORE accumulation, so a
-  # malformed/error page FAILS CLOSED mid-loop rather than emitting a partial set. The
-  # per-page projection keeps the page's own pageInfo (so this loop can read
-  # hasNextPage/endCursor) AND the cleaned child nodes; children accumulate across
-  # pages, then the final record drops pageInfo. `$after` (the cursor) is GitHub-issued
-  # DATA passed via -F, never interpolated into source.
-  local after="" page projected accumulated="[]" has_next end_cursor
-  while :; do
-    if [ -z "$after" ]; then
-      page="$(gh api graphql "${GQL_HEADER_ARGS[@]}" -f query="$SUBISSUES_QUERY" \
-                -f id="$parent_id" 2>/dev/null)" \
-        || die "list-children: GraphQL subIssues query failed for parent id '$parent_id'" 1
-    else
-      page="$(gh api graphql "${GQL_HEADER_ARGS[@]}" -f query="$SUBISSUES_QUERY" \
-                -f id="$parent_id" -F after="$after" 2>/dev/null)" \
-        || die "list-children: GraphQL subIssues query failed for parent id '$parent_id'" 1
-    fi
-    # Validate the raw page shape WITHOUT the hasNextPage==false gate (mid-pagination a
-    # continued page is legitimate); the loop itself drives completeness. Project to
-    # this page's clean child nodes + its pageInfo for cursor advance.
-    # Root predicate gates on hasNextPage PRESENCE/TYPE (must be a boolean) but is
-    # VALUE-AGNOSTIC: the live loop must STILL accept hasNextPage==true to keep
-    # paginating; only a missing/null/non-boolean hasNextPage fails this page closed via
-    # the kernel (a response with nodes but absent/null pageInfo is NOT treated complete).
-    projected="$(validate_response_shape "$page" \
-      '.data.node' \
-      '(.id | type == "string" and length > 0)
-       and (.subIssues.pageInfo.hasNextPage | type == "boolean")' \
-      '.subIssues.nodes' \
-      '(.number | type == "number")
-       and (.id | type == "string" and length > 0)
-       and (.title | type == "string" and length > 0)' \
-      '{ children: [ (.data.node.subIssues.nodes)[] | { number, id, title } ],
-         hasNextPage: (.data.node.subIssues.pageInfo.hasNextPage),
-         endCursor: (.data.node.subIssues.pageInfo.endCursor // null) }')" \
-      || die "list-children: malformed subIssues page for parent id '$parent_id'" 1
-    accumulated="$(jq -c -n --argjson acc "$accumulated" --argjson page "$projected" \
-      '$acc + $page.children')"
-    has_next="$(printf '%s' "$projected" | jq -r '.hasNextPage')"
-    end_cursor="$(printf '%s' "$projected" | jq -r '.endCursor // ""')"
-    [ "$has_next" = "true" ] || break
-    [ -n "$end_cursor" ] \
-      || die "list-children: connection reports hasNextPage but no endCursor for parent id '$parent_id'" 1
-    after="$end_cursor"
-  done
+  # PAGINATE TO COMPLETENESS (issue #228 lesson) via the SHARED mechanism: each raw page
+  # is routed through the kernel BEFORE accumulation (a malformed/error page FAILS CLOSED
+  # mid-loop, never a partial set), nodes accumulate across pages, completeness is driven
+  # by the loop on hasNextPage/endCursor. The root predicate gates `.id` (string,len>0) AND
+  # `subIssues.pageInfo.hasNextPage` as a boolean (VALUE-AGNOSTIC — true is still accepted).
+  local accumulated
+  accumulated="$(paginate_to_completeness \
+    "list-children" "$SUBISSUES_QUERY" \
+    '.data.node' \
+    '(.id | type == "string" and length > 0)
+     and (.subIssues.pageInfo.hasNextPage | type == "boolean")' \
+    '.subIssues.nodes' \
+    '(.number | type == "number")
+     and (.id | type == "string" and length > 0)
+     and (.title | type == "string" and length > 0)' \
+    '.subIssues.pageInfo' \
+    -f id="$parent_id")" || exit "$?"
   jq -c -n --arg pid "$parent_id" --argjson children "$accumulated" \
-    '{ parent_id: $pid, children: $children }'
+    '{ parent_id: $pid, children: [ $children[] | { number, id, title } ] }'
 }
 
 cmd_find_by_title() {
@@ -819,18 +872,46 @@ cmd_find_by_title() {
     owner_repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \
       || die "find-by-title: failed to resolve owner/repo (pass --repo)" 1
   fi
+  # Charset-validate owner AND repo: split on the single `/`, gate each against the GitHub
+  # name charset BEFORE any gh call (defense-in-depth — owner_repo flows into the search DSL
+  # via -f as DATA, but a malformed `--repo` is a usage bug, not a broadened query). Replaces
+  # the weak `*/*` glob, which admitted e.g. `a/b/c` or shell metacharacters.
   case "$owner_repo" in */*) ;; *) die "find-by-title: --repo must be owner/repo (got '$owner_repo')" 2 ;; esac
+  local owner_part repo_part
+  owner_part="${owner_repo%%/*}"; repo_part="${owner_repo#*/}"
+  case "$owner_part" in ''|*[!A-Za-z0-9._-]*) die "find-by-title: invalid repo owner (got '$owner_part')" 2 ;; esac
+  case "$repo_part" in ''|*/*|*[!A-Za-z0-9._-]*) die "find-by-title: invalid repo name (got '$repo_part')" 2 ;; esac
 
-  # Build the search query STRING. The untrusted title is concatenated ONLY into this
-  # query VALUE which is passed to gh via -f `q=` as DATA — it is NEVER interpolated into
-  # the GraphQL query source or any shell command word. `in:title` narrows the full-text
-  # search; the exact-title post-filter in normalize_find_by_title enforces byte equality.
-  local query_value resp
-  query_value="repo:$owner_repo in:title \"$title\""
-  resp="$(gh api graphql "${GQL_HEADER_ARGS[@]}" -f query="$FIND_BY_TITLE_QUERY" \
-            -f q="$query_value" 2>/dev/null)" \
-    || die "find-by-title: GraphQL search failed for title in '$owner_repo'" 1
-  normalize_find_by_title "$resp" "$title"
+  # Build the search query STRING. The untrusted title flows ONLY into this query VALUE,
+  # passed to gh via -f `q=` as DATA — NEVER interpolated into the GraphQL query source or a
+  # shell command word. DSL-SAFETY (BROADEN-AND-TRUST-THE-FILTER): a `"` in the title would
+  # break the `in:title "..."` phrase (an unterminated/escaped quote errors the search or
+  # breaks out of the phrase). So neutralize the title's `"` characters into spaces, yielding
+  # a BROADER-but-SAFE unquoted `in:title` search that can never error or break the phrase.
+  # AUTHORITATIVE exactness stays on the jq --arg byte-for-byte post-filter (filter_exact_title)
+  # over the FULLY-paginated result set — broadening the DSL search can only ADD candidates the
+  # exact filter then drops; it can never admit a non-exact match.
+  local title_terms query_value
+  title_terms="${title//\"/ }"
+  query_value="repo:$owner_repo in:title $title_terms"
+
+  # PAGINATE TO COMPLETENESS via the SHARED mechanism (mirrors list-children): accumulate ALL
+  # search nodes across pages, then run the exact-title post-filter ONCE over the full set.
+  # The root predicate gates `search.pageInfo.hasNextPage` as a boolean (VALUE-AGNOSTIC — true
+  # still keeps paging); `.parent` is OPTIONAL per node (null when unparented) so it is NOT in
+  # the element predicate. The query value (with the untrusted title as DATA) passes via -f q=.
+  local accumulated
+  accumulated="$(paginate_to_completeness \
+    "find-by-title" "$FIND_BY_TITLE_QUERY" \
+    '.data.search' \
+    '(.pageInfo.hasNextPage | type == "boolean")' \
+    '.nodes' \
+    '(.number | type == "number")
+     and (.id | type == "string" and length > 0)
+     and (.title | type == "string" and length > 0)' \
+    '.pageInfo' \
+    -f q="$query_value")" || exit "$?"
+  filter_exact_title "$accumulated" "$title"
 }
 
 # --- Dispatch ----------------------------------------------------------------
