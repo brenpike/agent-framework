@@ -302,6 +302,60 @@ run_case "find-by-title:quote-title" "$EXPECTED_DIR/find-by-title-quote-title.js
   find-by-title --title 'slice "beta"' \
   --response-file "$PI_DIR/find-by-title-quote-title-response.json"
 
+# ── find-by-title: search-DSL WHITELIST — qualifier-bearing titles still match ───────
+# The q= search terms are now built by a WHITELIST (build_search_terms keeps ONLY
+# [A-Za-z0-9] runs, every other byte → space), so a slice title carrying GitHub search
+# DSL syntax — `is:closed`, a leading `-`, `repo:owner/name`, an embedded `:` — can no
+# longer NARROW/EXCLUDE the candidate set before the jq exact filter runs. Each fixture's
+# candidate node carries the FULL literal title (incl the qualifier substring); the exact
+# --arg post-filter MUST still return that node byte-for-byte. (The DSL-degrade itself is
+# asserted directly below via the build-search-terms unit cases — the q= value is not
+# observable offline; here we lock that the exact filter recovers the qualifier-bearing node.)
+run_case "find-by-title:dsl-is-closed" "$EXPECTED_DIR/find-by-title-qualifier-is-closed.json" -- \
+  find-by-title --title "fix is:closed bug" \
+  --response-file "$PI_DIR/find-by-title-qualifier-is-closed-response.json"
+run_case "find-by-title:dsl-leading-dash" "$EXPECTED_DIR/find-by-title-leading-dash.json" -- \
+  find-by-title --title "-foo bar" \
+  --response-file "$PI_DIR/find-by-title-leading-dash-response.json"
+run_case "find-by-title:dsl-repo-qualifier" "$EXPECTED_DIR/find-by-title-qualifier-repo.json" -- \
+  find-by-title --title "add repo:owner/name link" \
+  --response-file "$PI_DIR/find-by-title-qualifier-repo-response.json"
+run_case "find-by-title:dsl-embedded-colon" "$EXPECTED_DIR/find-by-title-embedded-colon.json" -- \
+  find-by-title --title "slice: alpha" \
+  --response-file "$PI_DIR/find-by-title-embedded-colon-response.json"
+
+# ── build-search-terms: the WHITELIST degrade itself (offline seam, no gh) ────────────
+# Direct unit assertions on build_search_terms via the offline build-search-terms seam:
+# the untrusted title is degraded to PLAIN broadening terms — ONLY [A-Za-z0-9] runs
+# survive, every DSL-significant byte (`:`, leading `-`, `"`, `/`, unicode) becomes a
+# space, internal whitespace collapses, ends trim. A degenerate ALL-punctuation title
+# degrades to the EMPTY string (caller then emits a repo-scoped in:title-any search).
+assert_terms() {
+  local case_name="$1" in_title="$2" want="$3" got
+  got="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" build-search-terms --title "$in_title" 2>/dev/null)"
+  if [ "$got" = "$want" ]; then
+    pass "$case_name" "'$in_title' -> '$want'"
+  else
+    failed "$case_name" "'$in_title' -> expected '$want', got '$got'"
+  fi
+}
+assert_terms "build-search-terms:is-closed"   "fix is:closed bug"        "fix is closed bug"
+assert_terms "build-search-terms:leading-dash" "-foo bar"                "foo bar"
+assert_terms "build-search-terms:repo-qual"   "add repo:owner/name link" "add repo owner name link"
+assert_terms "build-search-terms:colon"       "slice: alpha"             "slice alpha"
+assert_terms "build-search-terms:quote"        'slice "beta"'            "slice beta"
+assert_terms "build-search-terms:degenerate"   ':-/"  @#'                ""
+
+# build-search-terms is an OFFLINE-ONLY test seam: a LIVE invocation (no SUBISSUE_OPS_OFFLINE)
+# MUST fail closed (exit 2) before doing anything — it is not a live caller entry point.
+BST_LIVE_STATUS=0
+bash "$OPS" build-search-terms --title "x" >/dev/null 2>&1 || BST_LIVE_STATUS=$?
+if [ "$BST_LIVE_STATUS" -eq 2 ]; then
+  pass "build-search-terms:live-rejected" "exit=2 (offline-only seam rejected live)"
+else
+  failed "build-search-terms:live-rejected" "expected exit 2, got $BST_LIVE_STATUS"
+fi
+
 # ── find-by-title: bad --repo charset guard fires before gh (exit 2, live path) ──────
 # An invalid --repo (contains a third `/` segment or a space/bang) MUST fail closed with
 # exit 2 BEFORE any gh call — the owner/repo charset guard fires at the arg-validation

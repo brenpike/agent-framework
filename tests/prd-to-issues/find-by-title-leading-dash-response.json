@@ -1,0 +1,1 @@
+{ "data": { "search": { "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [ { "id": "I_dash", "number": 43, "title": "-foo bar", "parent": null }, { "id": "I_dash_attached", "number": 44, "title": "-foo bar", "parent": { "id": "I_epic", "number": 7 } }, { "id": "I_dash_nonmatch", "number": 45, "title": "foo bar", "parent": null } ] } } }

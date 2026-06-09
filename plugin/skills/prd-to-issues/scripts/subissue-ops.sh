@@ -425,6 +425,30 @@ normalize_find_by_title() {
   filter_exact_title "$validated" "$title"
 }
 
+# build_search_terms <title>: degrade an UNTRUSTED slice title into PLAIN broadening search
+# terms for the GitHub `q=` value (WHITELIST, closed-by-construction). Keeps ONLY runs of
+# `[A-Za-z0-9]`; EVERY other byte — the DSL-significant ones (`:` qualifier separator like
+# `is:closed`/`repo:owner/name`, a leading `-` token-exclusion, `"`/quotes, every other
+# punctuation, and any unicode/non-ascii byte) — becomes a space; then internal whitespace
+# is collapsed and the ends trimmed. NO DSL-significant byte can survive, so the title can
+# never narrow/exclude the candidate set or break/error the search. This REPLACES the old
+# `"`-only blacklist, which let `:`/leading-`-`/every un-enumerated metacharacter through.
+# AUTHORITATIVE exactness stays on the jq --arg byte-for-byte post-filter (filter_exact_title)
+# over the FULLY-paginated set — broadening the DSL search can only ADD candidates the exact
+# filter then drops; it can never admit a non-exact match. A title that is ALL punctuation
+# degrades to the EMPTY string (caller emits a repo-scoped in:title-any search; see
+# cmd_find_by_title) — the exact filter remains authoritative over the candidate set.
+# Pure tr+jq, no gh — offline-exercisable via the `build-search-terms` seam.
+build_search_terms() {
+  # tr -c 'A-Za-z0-9' ' ' turns every non-alphanumeric byte (incl multibyte/unicode bytes)
+  # into a space; the jq pass collapses internal whitespace runs and trims the ends. Both
+  # are deterministic on arbitrary bytes. The untrusted title is DATA on stdin / --arg —
+  # never interpolated into a program word.
+  local title="$1" broadened
+  broadened="$(printf '%s' "$title" | tr -c 'A-Za-z0-9' ' ')"
+  printf '%s' "$broadened" | jq -R -r 'gsub("\\s+"; " ") | gsub("^ | $"; "")'
+}
+
 # filter_exact_title <nodes-json-array> <title>: the SINGLE SOURCE exact-title post-filter
 # (shared by the offline normalize_find_by_title path AND the live paginate-to-completeness
 # path, so the exactness contract can never diverge). Search is fuzzy/full-text; this keeps
@@ -884,16 +908,25 @@ cmd_find_by_title() {
 
   # Build the search query STRING. The untrusted title flows ONLY into this query VALUE,
   # passed to gh via -f `q=` as DATA — NEVER interpolated into the GraphQL query source or a
-  # shell command word. DSL-SAFETY (BROADEN-AND-TRUST-THE-FILTER): a `"` in the title would
-  # break the `in:title "..."` phrase (an unterminated/escaped quote errors the search or
-  # breaks out of the phrase). So neutralize the title's `"` characters into spaces, yielding
-  # a BROADER-but-SAFE unquoted `in:title` search that can never error or break the phrase.
-  # AUTHORITATIVE exactness stays on the jq --arg byte-for-byte post-filter (filter_exact_title)
-  # over the FULLY-paginated result set — broadening the DSL search can only ADD candidates the
-  # exact filter then drops; it can never admit a non-exact match.
-  local title_terms query_value
-  title_terms="${title//\"/ }"
-  query_value="repo:$owner_repo in:title $title_terms"
+  # shell command word. DSL-SAFETY (WHITELIST, closed-by-construction): build_search_terms
+  # degrades the untrusted title to PLAIN broadening terms keeping ONLY `[A-Za-z0-9]` runs —
+  # EVERY DSL-significant byte (`:` qualifier separator, leading `-` exclusion, `"`/quotes,
+  # all other punctuation, unicode) becomes a space, so NO metacharacter can narrow/exclude
+  # the candidate set or break/error the search. This replaces the old `"`-only blacklist,
+  # which let `:`/leading-`-`/every un-enumerated metacharacter through. When the title is ALL
+  # punctuation, terms is EMPTY and the query is the repo-scoped `in:title`-any search (no
+  # terms) — NOT a pre-emptive fail-closed; the jq --arg exact post-filter remains authoritative
+  # over the candidate set, and the fail-closed kernel surfaces any GitHub rejection of a
+  # no-terms search. AUTHORITATIVE exactness stays on the jq --arg byte-for-byte post-filter
+  # (filter_exact_title) over the FULLY-paginated set — broadening the DSL search can only ADD
+  # candidates the exact filter then drops; it can never admit a non-exact match.
+  local terms query_value
+  terms="$(build_search_terms "$title")"
+  if [ -n "$terms" ]; then
+    query_value="repo:$owner_repo in:title $terms"
+  else
+    query_value="repo:$owner_repo in:title"
+  fi
 
   # PAGINATE TO COMPLETENESS via the SHARED mechanism (mirrors list-children): accumulate ALL
   # search nodes across pages, then run the exact-title post-filter ONCE over the full set.
@@ -912,6 +945,24 @@ cmd_find_by_title() {
     '.pageInfo' \
     -f q="$query_value")" || exit "$?"
   filter_exact_title "$accumulated" "$title"
+}
+
+# cmd_build_search_terms: OFFLINE-ONLY seam exposing the pure build_search_terms transform
+# so the test can assert the q=-terms WHITELIST degrade with only jq + bash (no gh) — mirrors
+# attach-subissue's --emit-payload offline build. It performs NO gh/network work, so it is
+# gated to SUBISSUE_OPS_OFFLINE: a LIVE invocation FAILS CLOSED (exit 2) BEFORE doing anything,
+# since this is a test seam, not a live caller entry point. Emits the degraded terms (one line).
+cmd_build_search_terms() {
+  is_offline || die "build-search-terms is an offline test seam; set SUBISSUE_OPS_OFFLINE" 2
+  local title=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --title) [ "$#" -ge 2 ] || die "missing value for --title" 2
+               title="$2"; shift 2 ;;
+      *) die "build-search-terms: unexpected argument '$1'" 2 ;;
+    esac
+  done
+  build_search_terms "$title"
 }
 
 # --- Dispatch ----------------------------------------------------------------
@@ -936,6 +987,7 @@ case "$subcmd" in
   attach-subissue) cmd_attach_subissue "$@" ;;
   list-children)   cmd_list_children "$@" ;;
   find-by-title)   cmd_find_by_title "$@" ;;
+  build-search-terms) cmd_build_search_terms "$@" ;;
   -h|--help)       usage; exit 0 ;;
   *)               die "unknown subcommand '$subcmd' (try --help)" 2 ;;
 esac

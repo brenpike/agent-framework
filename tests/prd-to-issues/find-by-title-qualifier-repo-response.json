@@ -1,0 +1,1 @@
+{ "data": { "search": { "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [ { "id": "I_repo", "number": 46, "title": "add repo:owner/name link", "parent": null }, { "id": "I_repo_nonmatch", "number": 47, "title": "add repo:other/name link", "parent": null } ] } } }
