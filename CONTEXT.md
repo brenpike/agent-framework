@@ -280,7 +280,7 @@ _Avoid_: brood config, brood state, registry
 ### Pipeline & Artifacts
 
 **Initiative**:
-The unit of work correlated by a single slug across its plan, Handoff, PRD, and issue set. One slug per initiative; the slug names `.hivemind/plans/<slug>.md`, `.hivemind/handoffs/<slug>.md`, `docs/prds/<slug>.md`, and the `initiative:<slug>` issue label.
+The unit of work correlated by a single slug across its plan, Handoff, PRD, and issue set. One slug per initiative; the slug names `.hivemind/plans/<slug>.md`, `.hivemind/handoffs/<slug>.md`, `docs/prds/<slug>.md`, and corresponds to the PRD-level parent (epic) issue whose native sub-issues are the sliced work items.
 _Avoid_: project, epic, feature
 
 **PRD**:
