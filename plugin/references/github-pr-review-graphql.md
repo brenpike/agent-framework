@@ -16,6 +16,7 @@ Resolvable pull request review threads are GraphQL objects. Do not try to resolv
 - [Reply to Review Thread](#reply-to-review-thread) — mutation to post a reply to an existing review thread
 - [Resolve Review Thread](#resolve-review-thread) — mutation to mark a review thread as resolved
 - [Surface-to-Delivery Contract](#surface-to-delivery-contract) — canonical mapping of feedback surface to mutation(s) used (issue #218)
+- [Reaction Marker](#reaction-marker) — self-authored `EYES` reaction that marks a fixed non-thread surface handled (issue #265)
 - [Author Filtering](#author-filtering) — rules for scoping feedback to specific reviewer identities
 - [Codex Approval Detection](#codex-approval-detection) — paginated 👍 reaction lookup that signals Codex approval
 
@@ -222,16 +223,56 @@ mutation($threadId: ID!) {
 
 ## Surface-to-Delivery Contract
 
-Maps each feedback surface to the mutation(s) `reply-resolve.sh` executes. The mapping is closed-by-construction — no runtime fallback, no `addComment` mutation, no `Addresses: <url>` body convention.
+Maps each feedback surface to the mutation(s) used to mark a fixed surface handled. The mapping is closed-by-construction — no runtime fallback, no `addComment` mutation, no `Addresses: <url>` body convention. `reply-resolve.sh` remains the THREAD-ONLY mutation path (reply + conditional resolve); the non-thread `toplevel`/`review` surfaces are marked handled by a self-authored `EYES` reaction (see [Reaction Marker](#reaction-marker)), NOT by `reply-resolve.sh`.
 
 | Surface | Mutation(s) | Notes |
 |---------|-------------|-------|
-| `thread` | `addPullRequestReviewThreadReply` then (conditional) `resolveReviewThread` | Reply targets the thread node id (`PRRT_...`). Resolve fires only when the thread is unresolved after reply. |
-| `toplevel` | none (silent no-op) | Top-level PR comments are not resolvable and are never reply-targeted. Posting `addPullRequestReviewThreadReply` against a non-thread node was the #218 defect — these surfaces intentionally produce no mutation. |
-| `review` | none (silent no-op) | Same rationale as `toplevel`: review-summary nodes have no thread node; attempting a thread reply against them was the #218 defect. |
+| `thread` | `addPullRequestReviewThreadReply` then (conditional) `resolveReviewThread` | Reply targets the thread node id (`PRRT_...`). Resolve fires only when the thread is unresolved after reply. Executed by `reply-resolve.sh`. |
+| `toplevel` | `addReaction` (`EYES`) on the IssueComment node | A self-authored `EYES` (👀) reaction is added to the reviewer's top-level IssueComment node as the handled marker. NOT reply-targeted, NOT thread-resolvable (top-level PR comments have no thread node). `reply-resolve.sh` is NOT invoked for this surface — its `toplevel` silent no-op is UNCHANGED; posting `addPullRequestReviewThreadReply` against a non-thread node was the #218 defect. |
+| `review` | `addReaction` (`EYES`) on the PullRequestReview node | Same as `toplevel`: a self-authored `EYES` (👀) reaction is added to the reviewer's PullRequestReview summary node as the handled marker. Review-summary nodes have no thread node, so they are NOT reply-targeted and NOT thread-resolvable. `reply-resolve.sh` is NOT invoked — its `review` silent no-op is UNCHANGED. |
 | unmapped / unknown | fail-closed | Any surface value not in the table above causes the script to exit with an error rather than fall through silently. |
 
-No new GraphQL mutation is introduced. The former `Addresses: <url>` body line that was appended to replies is removed from the live path — thread replies carry only the fix summary, not a back-reference URL.
+The former `Addresses: <url>` body line that was appended to replies is removed from the live path — thread replies carry only the fix summary, not a back-reference URL. The handled marker for non-thread surfaces is the `EYES` reaction described below; ZERO new PR comments are posted.
+
+## Reaction Marker
+
+Non-thread reviewer surfaces (`toplevel` = IssueComment, `review` = PullRequestReview summary) carry `thread_id: null` and have no thread node to reply to or resolve. A committed fix to such a surface is recorded handled by adding a self-authored `EYES` (👀) reaction to the reviewer's own comment/review node. Both `IssueComment` and `PullRequestReview` implement `Reactable`, so the same mutation and harvest fragment apply to both.
+
+### Emit (mark handled)
+
+`$nodeId` is the reviewer's IssueComment or PullRequestReview GraphQL node id (the `id` selected in [Fetch Top-Level PR Comments](#fetch-top-level-pr-comments) / [Fetch Reviews](#fetch-reviews)).
+
+```bash
+gh api graphql \
+  -f nodeId="NODE_ID" \
+  -f query='
+mutation($nodeId: ID!) {
+  addReaction(input: { subjectId: $nodeId, content: EYES }) {
+    reaction { content }
+  }
+}'
+```
+
+`EYES` is the single named marker constant — a member of the `ReactionContent` enum. It is chosen because it reads semantically as "seen/handled". `addReaction` against a node the authenticated viewer has ALREADY reacted to with the same content is a server-side no-op / success — the emit path tolerates re-marking the same node without special-casing duplicates.
+
+### Harvest (detect handled)
+
+Add this fragment to the IssueComment node selection in [Fetch Top-Level PR Comments](#fetch-top-level-pr-comments) and to the PullRequestReview node selection in [Fetch Reviews](#fetch-reviews):
+
+```graphql
+reactionGroups { content viewerHasReacted }
+```
+
+A surface is handled when its `reactionGroups` contains an entry with `content == "EYES"` and `viewerHasReacted == true`. `viewerHasReacted` is scoped to the authenticated `gh` viewer (OUR identity), so a human or Codex reacting with the same 👀 emoji from ANOTHER account never false-positives our handled signal — only our own reaction counts.
+
+### Disambiguation — two different `EYES` subjects
+
+The `EYES` marker here is OUR self-authored reaction on a per-COMMENT / per-REVIEW node. It is a DISJOINT subject from the 👀 reaction described in [Codex Approval Detection](#codex-approval-detection), which is Codex's reaction on the PR OBJECT meaning "still running". The two share an emoji but never the same subject:
+
+- **This marker (#265):** `EYES` reaction on an `IssueComment` / `PullRequestReview` node, authored by our viewer, detected via `reactionGroups { content viewerHasReacted }` on that node → surface handled.
+- **Codex "still running" (existing):** `eyes` reaction on the PR object, authored by Codex, detected via the REST reactions endpoint → never approval.
+
+A reader must not conflate them: per-node viewer-scoped handled marker vs PR-object Codex-authored progress signal.
 
 ## Author Filtering
 
