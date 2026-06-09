@@ -1,12 +1,9 @@
 ---
 name: improving-architecture
 description: >-
-  Analyzes a codebase read-only and emits a ranked refactoring blueprint of deepening
-  opportunities — turning shallow modules (small behaviour behind a large, leaky interface)
-  into deep ones for testability and AI-navigability. Use when the user wants to improve
-  architecture, find refactoring opportunities, consolidate tightly-coupled modules, make
-  the codebase more testable, or make it more AI-navigable: this finds
-  and ranks specific refactors but never edits code, writes docs, or spawns agents.
+  Analyzes a codebase read-only and emits a ranked deepening/refactoring blueprint for
+  testability and AI-navigability, editing nothing. Use when improving architecture, finding
+  refactor opportunities, or making code more testable or AI-navigable.
 allowed-tools:
   - Read
   - Glob

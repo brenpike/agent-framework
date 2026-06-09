@@ -1,6 +1,9 @@
 ---
 name: detect-remediation-signals
-description: Detect break-fix, root-cluster, diminishing-returns, and stop-and-merge signals from a fix-ledger before a reviewer decides whether to keep patching. Use when a reviewer needs one verdict over the accumulated findings to judge whether the next per-finding patch is a treadmill, a prior fix is being undone, the loop is plateauing, or the surface is hardened enough to advise merge. Trigger: "detect remediation signals", "cluster these findings", "are we whack-a-moling", "should we keep patching".
+description: >-
+  Detects break-fix, root-cluster, diminishing-returns, and stop-and-merge signals from a
+  fix-ledger. Use when a reviewer needs one verdict on accumulated findings before the next
+  patch (whack-a-mole / plateau / merge-advise check).
 allowed-tools:
   - Read
 shell: bash

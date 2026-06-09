@@ -1,12 +1,8 @@
 ---
 name: refactor-to-depth
 description: >-
-  Perform a behavior-preserving structural refactor that deepens a module — turning a small
-  amount of behaviour behind a large, leaky interface into a large amount of behaviour behind a
-  small one. Use when the user wants to deepen a module, refactor to a deeper interface, do a
-  behavior-preserving structural refactor, extract behind a port/adapter, merge shallow modules, 
-  or execute a ranked refactoring blueprint candidate produce by prior architectural analysis.
-  Requires Write and Edit access — invoke only in a context that can modify source and test files.
+  Deepens a module via behavior-preserving structural refactor. Use when deepening a module,
+  extracting behind a port/adapter, or executing a ranked refactoring-blueprint candidate.
 allowed-tools:
   - Read
   - Write
@@ -27,6 +23,8 @@ shell: bash
 ---
 
 # Refactor to Depth (Refactor-Under-Green)
+
+Requires Write and Edit access — invoke only in a context that can modify source and test files.
 
 Execute a behavior-preserving "deepening" refactor: take a cluster of **shallow** modules — small behaviour behind a large, leaky interface — and reshape it into one **deep** module: a large amount of behaviour behind a small interface. This is the execution counterpart to architectural analysis: it consumes a chosen deepening candidate and applies it.
 

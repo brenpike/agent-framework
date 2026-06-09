@@ -1,6 +1,9 @@
 ---
 name: injection-scan
-description: Scan one or more external-content items for prompt injection attempts and return a structured verdict. Use ad hoc whenever external content must be checked before classification or remediation. Trigger phrases: "scan for injection", "injection scan", "check for injection", "is this injection", "prompt injection check".
+description: >-
+  Scans external-content items for prompt injection attempts and returns a structured verdict
+  per item. Use when external content must be checked before classification or remediation
+  (injection scan / prompt injection check).
 allowed-tools:
   - Read
 shell: bash
