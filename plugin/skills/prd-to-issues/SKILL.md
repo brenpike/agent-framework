@@ -211,26 +211,38 @@ To get a child issue's NODE ID after `gh issue create`, use `gh issue view <numb
 
 Run this AFTER the slicing quiz is approved (the approved slice set defines the planned titles to match) and BEFORE any publish. A blocker-first multi-step publish can fail mid-run, leaving a partial issue set; without this preflight a rerun would DUPLICATE issues and may wire dependents to the duplicates. This preflight reads and matches existing issues only — it adds no scope, no independence claim, and no file paths.
 
-1. **Ensure parent exists first.** Call `ensure-parent` (with `--existing-number` if the epic was created in a prior run). Capture the parent NODE ID.
+### Create→attach ordering and the partial-failure window
 
-2. **List existing sub-issues.** Call `list-children` with the parent NODE ID:
+Each slice is published in two steps: (1) `gh issue create` creates the child issue, then (2) `attach-subissue` wires it to the parent epic. If the process halts between those two steps — crash, network failure, or auth expiry — the child issue exists in GitHub but carries no parent (`parent: null`). This is the **partial-failure window**: the orphaned issue is invisible to `list-children` (which enumerates only already-attached children) but IS discoverable by `find-by-title`. A rerun that relies solely on `list-children` would not see the orphan and would re-create it, producing a duplicate.
+
+### Steps
+
+1. **Ensure parent exists first.** Call `ensure-parent` (with `--existing-number` if the epic was created in a prior run). Capture the parent NODE ID. If the call fails, surface a blocker and STOP.
+
+2. **Discover candidates for each planned slice via `find-by-title`.** For every approved slice title, call:
 
    ```bash
    bash ${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh \
-     list-children \
-     --parent-id <PARENT_NODE_ID>
+     find-by-title \
+     --title "<exact slice title>" \
+     [--repo <owner/repo>]
    ```
 
-   Output: `{ "parent_id": "<NODE_ID>", "children": [ { "number": <int>, "id": "<NODE_ID>", "title": "<str>" }, ... ] }`. The script paginates to completeness — the returned set is authoritative. If the call fails, surface a blocker and STOP — never fall back to blind-create.
+   Output: `{ "title": <str>, "matches": [ { "number": <int>, "id": <node-id>, "title": <str>, "parent": { "number": <int>, "id": <node-id> } | null }, ... ] }`. `matches` includes BOTH issues already attached to a parent AND recently-created-but-unparented issues — covering the partial-failure window. If the call fails, surface a blocker and STOP — never fall back to blind-create.
 
-3. **Match key — Title only.** For each approved slice, match against existing sub-issues by exact **Title** (the Strain name).
+   `list-children` may additionally be called to enumerate all currently-attached children for overall state awareness, but it is NOT sufficient as the sole discovery mechanism: orphans from the partial-failure window will not appear there.
 
-4. **Classify each planned slice:**
-   - **REUSE** — exactly one unambiguous title match in the existing sub-issues → record its real `#number` for dependency wiring; do NOT recreate it.
-   - **CREATE** — no match → publish fresh.
-   - **AMBIGUOUS / CONFLICT** — any of: multiple matches for one title; a single match whose body/Acceptance Criteria materially diverge from the planned slice. On any of these, STOP and surface the conflict to the user for confirmation — do NOT blind-create and do NOT blind-reuse.
+3. **Classify each planned slice** using the `find-by-title` results (deterministic key = exact title):
 
-5. **Resume-safe.** Because matched slices are reused (not recreated) and only unmatched slices are created, a rerun after a mid-publish failure converges to the complete set without duplicates.
+   - **REUSE (already attached)** — exactly one match whose `parent.number` equals the parent epic's number → the slice is already wired; record its real `#number` for dependency wiring and skip both create and attach.
+   - **ATTACH-OR-REUSE (orphan)** — exactly one match with `parent: null` (unparented) → the slice was created but never attached (partial-failure window). REUSE the existing issue: call `attach-subissue` to wire it to the parent epic (do NOT recreate). `attach-subissue`'s recoverable `already-parented` warning makes this re-attach idempotent.
+   - **CREATE** — zero matches → no prior attempt; publish fresh.
+   - **CONFLICT / AMBIGUOUS** — any of the following; on any of these, STOP and surface the conflict to the user for confirmation — do NOT blind-create and do NOT blind-reuse:
+     - Multiple matches for one title (cannot determine which is the intended slice).
+     - Exactly one match whose `parent` is set to a DIFFERENT parent (not this epic) — the issue is owned by another hierarchy; do not reparent without explicit user direction.
+     - A single match (attached or orphan) whose body/Acceptance Criteria materially diverge from the planned slice.
+
+4. **Resume-safe.** Because every pre-existing issue (attached or orphan) is classified and reused rather than recreated, a rerun after a mid-publish failure converges to the complete set without duplicates.
 
 ---
 
@@ -244,6 +256,6 @@ Publish only after the user approves the slicing quiz, `gh` auth is confirmed, a
 
 3. **Create each CREATE-class issue** with `gh issue create`, passing the behavior-only body. Use `--title` (the Strain name) and `--body` (the four-section template). No initiative label is applied.
 
-4. **Attach each created issue as a sub-issue** of the parent epic immediately after creation. Retrieve the child's NODE ID (`gh issue view <number> --json id --jq '.id'`), then call `attach-subissue`. Also attach any REUSE-matched slices that are not yet sub-issues of this parent (the `list-children` output reveals which are already attached).
+4. **Attach each created or orphan issue as a sub-issue** of the parent epic. For each **CREATE**-class slice: immediately after creation, retrieve the child's NODE ID (`gh issue view <number> --json id --jq '.id'`), then call `attach-subissue`. For each **ATTACH-OR-REUSE**-class slice (orphan recovered from the partial-failure window): call `attach-subissue` using the orphan's NODE ID recorded by the preflight. **REUSE (already attached)**-class slices need no attach call — the preflight already confirmed their parent link.
 
 5. **Verify** each created issue with `gh issue view <number>` if confirmation is needed, and report the published issue numbers and titles back to the caller.
