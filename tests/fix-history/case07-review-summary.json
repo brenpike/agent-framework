@@ -4,15 +4,8 @@
       "pullRequest": {
         "reviewThreads": { "totalCount": 0, "nodes": [] },
         "comments": {
-          "totalCount": 1,
-          "nodes": [
-            {
-              "id": "IC_kwDOcase07comment799",
-              "author": { "login": "selfuser" },
-              "body": "Addresses: https://github.com/o/r/pull/1#pullrequestreview-700",
-              "url": "https://github.com/o/r/pull/1#issuecomment-799"
-            }
-          ]
+          "totalCount": 0,
+          "nodes": []
         },
         "reviews": {
           "totalCount": 5,
@@ -29,14 +22,16 @@
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Some commentary on the approach.",
               "state": "COMMENTED",
-              "url": "https://github.com/o/r/pull/1#pullrequestreview-702"
+              "url": "https://github.com/o/r/pull/1#pullrequestreview-702",
+              "reactionGroups": [ { "content": "EYES", "viewerHasReacted": false } ]
             },
             {
               "id": "PRR_kwDOcase07review700",
               "author": { "login": "chatgpt-codex-connector" },
               "body": "Earlier requested change, now handled.",
               "state": "CHANGES_REQUESTED",
-              "url": "https://github.com/o/r/pull/1#pullrequestreview-700"
+              "url": "https://github.com/o/r/pull/1#pullrequestreview-700",
+              "reactionGroups": [ { "content": "EYES", "viewerHasReacted": true } ]
             },
             {
               "id": "PRR_kwDOcase07review703",
