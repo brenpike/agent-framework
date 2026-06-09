@@ -177,7 +177,7 @@ Do NOT enumerate the slices in the parent body — the native sub-issues list is
 Before publishing any child issue, call `ensure-parent` to create-or-find the parent epic:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh" \
+bash ${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh \
   ensure-parent \
   --title "<Initiative name>" \
   --body-file - \
@@ -192,7 +192,7 @@ Output: `{ "number": <int>, "id": "<NODE_ID>", "status": "created"|"resolved" }`
 After each child issue is created, attach it to the parent epic:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh" \
+bash ${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh \
   attach-subissue \
   --parent-id <PARENT_NODE_ID> \
   --child-id <CHILD_NODE_ID>
@@ -216,7 +216,7 @@ Run this AFTER the slicing quiz is approved (the approved slice set defines the 
 2. **List existing sub-issues.** Call `list-children` with the parent NODE ID:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh" \
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh \
      list-children \
      --parent-id <PARENT_NODE_ID>
    ```
