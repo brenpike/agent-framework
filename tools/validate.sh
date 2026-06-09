@@ -38,6 +38,7 @@ SUITE_TEST_FETCH_NORMALIZE='test_fetch_normalize.sh'
 SUITE_TEST_EXIT_PRECEDENCE='test_exit_precedence.sh'
 SUITE_TEST_LOOP_STATE='test_loop_state.sh'
 SUITE_TEST_REPLY_RESOLVE='test_reply_resolve.sh'
+SUITE_TEST_REACT_MARKER='test_react_marker.sh'
 SUITE_TEST_LEDGER_RECONSTRUCT='test_ledger_reconstruct.sh'
 SUITE_TEST_TRIAGE_OPS='test_triage_ops.sh'
 
@@ -56,6 +57,7 @@ ALL_SUITES=(
   "$SUITE_TEST_EXIT_PRECEDENCE"
   "$SUITE_TEST_LOOP_STATE"
   "$SUITE_TEST_REPLY_RESOLVE"
+  "$SUITE_TEST_REACT_MARKER"
   "$SUITE_TEST_LEDGER_RECONSTRUCT"
   "$SUITE_TEST_TRIAGE_OPS"
 )
@@ -75,6 +77,7 @@ KNOWN_SUITES=(
   test_exit_precedence.sh
   test_loop_state.sh
   test_reply_resolve.sh
+  test_react_marker.sh
   test_ledger_reconstruct.sh
   test_triage_ops.sh
 )
@@ -339,6 +342,18 @@ map_path() {
     matched=1
   fi
 
+  # test_react_marker: the react-marker script (.sh) + its fixture dir. The script is ALSO a
+  # plugin/* file (policy_check prose-lints it via the wholesale rule below), but policy_check NEVER
+  # EXECUTES bash — so without this rule a react-marker edit would only be prose-linted, never
+  # behaviorally exercised. Route both the script and its fixture dir to the behavioral suite.
+  # (tools/test_react_marker.sh itself is covered by the tools/** full-suite leg.)
+  if [[ "$p" == plugin/skills/github-review-loop/scripts/react-marker.sh \
+     || "$p" == tools/test_react_marker.sh \
+     || "$p" == tests/react-marker/* ]]; then
+    add_selected "$SUITE_TEST_REACT_MARKER" "$p (react-marker script/fixture)"
+    matched=1
+  fi
+
   # test_ledger_reconstruct: the ledger-reconstruct script (.sh) + its fixture dir. The script is
   # ALSO a plugin/* file (policy_check prose-lints it via the wholesale rule below), but
   # policy_check NEVER EXECUTES bash — so without this rule a ledger-reconstruct edit would only
@@ -553,6 +568,7 @@ self_test() {
     ["test_exit_precedence.sh"]="plugin/skills/github-review-loop/scripts/exit-precedence.sh"
     ["test_loop_state.sh"]="plugin/skills/github-review-loop/scripts/loop-state.sh"
     ["test_reply_resolve.sh"]="tests/reply-resolve/README.md"
+    ["test_react_marker.sh"]="tests/react-marker/README.md"
     ["test_ledger_reconstruct.sh"]="tests/ledger-reconstruct/README.md"
     ["test_triage_ops.sh"]="tests/triage-backlog/case-x.json"
   )
