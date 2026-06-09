@@ -143,6 +143,19 @@ run_case "case09:reviewer-filter-all" "case09-reviewer-filter.json" "selfuser" "
 run_case "case10:thread-overflow-no-visible-match" "case10-thread-overflow-no-visible-match.json" "selfuser" "all" \
   '[{"surface":"thread","thread_resolved":false,"thread_overflow":true,"thread_id":"PRRT_case10hhhhhhhhhhhh","id":null,"databaseId":null,"url":null,"classification":"actionable"}]'
 
+# ── Case 11: legacy `Addresses:` handled marker WITHOUT an EYES reaction ─────────
+# Backward-compat: a PR processed by the PRE-reaction workflow carries a durable
+# self-authored `Addresses: <url>` top-level comment but NO EYES reaction on the
+# addressed nodes (the EYES marker did not yet exist). The legacy harvest must keep
+# classifying those nodes handled so restart/upgrade does not re-dispatch already-
+# fixed non-thread feedback. The non-self toplevel comment whose url is harvested
+# (issuecomment-111), with empty reactionGroups → handled via the legacy fallback;
+# the unaddressed toplevel (issuecomment-112) → actionable; the review summary whose
+# url is harvested, also with no EYES → handled via the legacy fallback. The self
+# `Addresses:` comment is not emitted.
+run_case "case11:legacy-addresses-no-eyes" "case11-legacy-addresses-no-eyes.json" "selfuser" "all" \
+  '[{"surface":"review","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":"PRR_kwDOcase11review113","databaseId":null,"url":"https://github.com/o/r/pull/1#issuecomment-111","classification":"handled"},{"surface":"toplevel","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":"IC_kwDOcase11comment111","databaseId":null,"url":"https://github.com/o/r/pull/1#issuecomment-111","classification":"handled"},{"surface":"toplevel","thread_resolved":false,"thread_overflow":false,"thread_id":null,"id":"IC_kwDOcase11comment112","databaseId":null,"url":"https://github.com/o/r/pull/1#issuecomment-112","classification":"actionable"}]'
+
 # ── Summary ──────────────────────────────────────────────────────────────────────
 echo
 echo "fix-history-classify: $PASS_COUNT passed, $FAIL_COUNT failed"

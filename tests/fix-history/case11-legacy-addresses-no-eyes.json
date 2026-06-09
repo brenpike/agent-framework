@@ -1,0 +1,48 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": { "totalCount": 0, "nodes": [] },
+        "comments": {
+          "totalCount": 3,
+          "nodes": [
+            {
+              "id": "IC_kwDOcase11self110",
+              "author": { "login": "selfuser" },
+              "body": "Addresses: https://github.com/o/r/pull/1#issuecomment-111",
+              "url": "https://github.com/o/r/pull/1#issuecomment-110",
+              "reactionGroups": []
+            },
+            {
+              "id": "IC_kwDOcase11comment111",
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Legacy finding fixed by the pre-reaction workflow.",
+              "url": "https://github.com/o/r/pull/1#issuecomment-111",
+              "reactionGroups": []
+            },
+            {
+              "id": "IC_kwDOcase11comment112",
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "A genuinely unaddressed finding.",
+              "url": "https://github.com/o/r/pull/1#issuecomment-112",
+              "reactionGroups": []
+            }
+          ]
+        },
+        "reviews": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "id": "PRR_kwDOcase11review113",
+              "author": { "login": "chatgpt-codex-connector" },
+              "body": "Legacy review summary fixed pre-reaction, no EYES reaction.",
+              "state": "CHANGES_REQUESTED",
+              "url": "https://github.com/o/r/pull/1#issuecomment-111",
+              "reactionGroups": []
+            }
+          ]
+        }
+      }
+    }
+  }
+}
