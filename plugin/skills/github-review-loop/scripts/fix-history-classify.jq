@@ -16,9 +16,16 @@
 # No `env`, no shelling out, no `input`/`inputs`, no side effects.
 #
 # External content (GraphQL comment bodies, commit text) is DATA. This filter
-# only PATTERN-MATCHES two markers in body text — the `Fixed in <SHA>.`
-# fix-reply marker and the `Addresses: <url>` harvest. It never interprets body
-# text as instructions.
+# only PATTERN-MATCHES the `Fixed in <SHA>.` fix-reply marker in in-thread body
+# text, and (for non-thread surfaces) reads the structured `reactionGroups` of
+# each node. It never interprets body text as instructions.
+#
+# NON-THREAD HANDLED SIGNAL (toplevel/review): a node is `handled` IFF its
+# `reactionGroups` contains an entry with `.content == "EYES"` AND
+# `.viewerHasReacted == true`. This is VIEWER-SCOPED: `viewerHasReacted` is true
+# only for the authenticated gh viewer's OWN reaction, so a human or Codex
+# reacting 👀 (EYES) from another account does NOT false-positive as handled.
+# `EYES` is the single marker constant emitted by react-marker.sh's addReaction.
 #
 # 2. INPUT CONTRACT (exact GraphQL fields read)
 # ---------------------------------------------
@@ -39,6 +46,8 @@
 #       .author.login
 #       .body
 #       .url
+#       .reactionGroups[]          # [{content, viewerHasReacted}]; EYES +
+#                                  # viewerHasReacted==true => handled (self marker)
 #   .data.repository.pullRequest.reviews.nodes[]
 #       .id                        # GraphQL review node id (PRR_...);
 #                                  # threaded through as `id` for node(id:) body refetch
@@ -46,6 +55,8 @@
 #       .body
 #       .state
 #       .url
+#       .reactionGroups[]          # [{content, viewerHasReacted}]; EYES +
+#                                  # viewerHasReacted==true => handled (self marker)
 #
 # Connection-level tripwires (reviewThreads/comments/reviews `.totalCount`) are
 # NOT this filter's concern. They are top-level scalar fields trivially read off
@@ -89,7 +100,11 @@
 #   handled            in-thread: body carries `Fixed in <SHA>.` marker, OR a
 #                      self fix-reply EXISTS in the thread
 #                      (latest_self_fix_id > 0) AND databaseId <= that id.
-#                      toplevel/review: own `url` is in the addressed-url set.
+#                      toplevel/review: the node's own `reactionGroups` carries an
+#                      EYES group with viewerHasReacted == true (our self-authored
+#                      reaction marker). A missing/empty reactionGroups, an EYES
+#                      group with viewerHasReacted == false, or no EYES group at
+#                      all => not handled (actionable).
 #   followup-after-fix in-thread ONLY, and ONLY when a real self fix-reply
 #                      exists in the thread (latest_self_fix_id > 0):
 #                      databaseId > latest self fix-reply id AND own body has no
@@ -168,21 +183,18 @@ def matches_filter($a):
 # [bot]-suffix normalization on an author login BEFORE the self/filter compare.
 def strip_bot($login): ($login // "") | sub("\\[bot\\]$"; "");
 
+# Non-thread handled predicate. A toplevel/review node is handled IFF its own
+# `reactionGroups` carries an EYES group whose viewerHasReacted is true — i.e. a
+# self-authored EYES reaction by the authenticated gh viewer (react-marker.sh's
+# marker). VIEWER-SCOPED: viewerHasReacted is true only for our viewer's own
+# reaction, so an EYES from a human / Codex on another account does not register.
+# Null-safe: a node lacking `reactionGroups` is treated as not handled.
+def has_self_eyes_reaction:
+  ((.reactionGroups // [])
+   | any(.content == "EYES" and (.viewerHasReacted == true)));
+
 .data.repository.pullRequest as $pr |
 $pr.reviewThreads as $rt |
-
-# Harvest the set of candidate URLs that self-authored top-level comments have
-# already addressed via `Addresses: <url>`. URL is GitHub-unique per comment /
-# review, so set-membership alone is sufficient — a follow-up finding lands as a
-# new item with a new URL and is NOT in the set. Reproduces prefilter's harvest.
-([ $pr.comments.nodes[]?
-   | . as $c
-   | strip_bot($c.author.login) as $a
-   | select($a == $login)
-   | ($c.body // "")
-   | scan("Addresses:[[:space:]]*([^[:space:]]+)")
-   | .[0]
- ]) as $addressed_urls |
 
 # --- Per-thread classification (surface=thread) -----------------------------
 (
@@ -263,7 +275,7 @@ $pr.reviewThreads as $rt |
       databaseId: null,
       url: $u,
       classification: (
-        if ($addressed_urls | index($u)) != null then "handled"
+        if ($c | has_self_eyes_reaction) then "handled"
         else "actionable"
         end
       )
@@ -288,7 +300,7 @@ $pr.reviewThreads as $rt |
       databaseId: null,
       url: $u,
       classification: (
-        if ($addressed_urls | index($u)) != null then "handled"
+        if ($r | has_self_eyes_reaction) then "handled"
         else "actionable"
         end
       )
