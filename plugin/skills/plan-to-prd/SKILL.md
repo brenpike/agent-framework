@@ -1,13 +1,9 @@
 ---
 name: plan-to-prd
 description: >-
-  Turns an already-interrogated plan into a committed PRD — a WHAT-only specification of
-  what an Initiative delivers — written to `docs/prds/<slug>.md`. Synthesizes from the plan
-  with near-zero re-interrogation; runs only two light confirm gates (story completeness,
-  scope boundaries). Use when the user wants to turn an interrogated plan into a PRD, write
-  a PRD from a plan, produce a PRD, or draft `docs/prds/<slug>.md`. Trigger on: "turn an
-  interrogated plan into a PRD", "write a PRD from a plan", "plan to PRD", "produce a PRD",
-  "/hivemind:plan-to-prd".
+  Turns an interrogated plan into a committed WHAT-only PRD written to `docs/prds/<slug>.md`.
+  Use when writing a PRD from a plan, producing `docs/prds/<slug>.md`, or converting a plan
+  to PRD.
 allowed-tools:
   - Read
   - Write
