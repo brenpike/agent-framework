@@ -74,13 +74,14 @@
 #     to DISPATCH through the same any(actionable) read, preserving the old
 #     "oversized thread → DISPATCH" fail-open with no extra bash logic.
 #   - Body-marker detection, the latest-self-fix-id ordering, and the
-#     `Addresses: <url>` top-level/review harvest all live in the shared filter
-#     now (see its header for the exact predicates). prefilter no longer
-#     re-implements them; it only reads the filter's `classification` field.
-#   - The `Addresses:` URL harvest only scans self-authored bodies inside the
-#     `comments(last: 50)` page; the >50 fail-open at the bash layer covers
-#     the case where the addressing reply has been pushed off the page along
-#     with its candidate.
+#     `EYES` reaction marker on non-thread (top-level/review) surfaces all live
+#     in the shared filter now (see its header for the exact predicates).
+#     prefilter no longer re-implements them; it only reads the filter's
+#     `classification` field.
+#   - The `EYES` reaction marker is detected from the `reactionGroups { content
+#     viewerHasReacted }` selection on the `comments(last: 50)` and
+#     `reviews(last: 50)` pages; the >50 fail-open at the bash layer covers the
+#     case where a reacted-handled candidate has been pushed off the page.
 #
 # Markers emitted (one labeled line):
 #   PREFILTER_SKIP            silently update baseline; do NOT dispatch
@@ -181,11 +182,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     pullRequest(number: $pr) {
       comments(last: 50) {
         totalCount
-        nodes { author { login } body url }
+        nodes { author { login } body url reactionGroups { content viewerHasReacted } }
       }
       reviews(last: 50) {
         totalCount
-        nodes { author { login } body state url }
+        nodes { author { login } body state url reactionGroups { content viewerHasReacted } }
       }
       reviewThreads(first: 50) {
         totalCount
@@ -258,9 +259,9 @@ case "$reviews_total" in ''|*[!0-9]*) reviews_total=0 ;; esac
 # the in-page inspection is untrustworthy on at least one axis — fail OPEN to
 # DISPATCH rather than risk skipping a real finding outside the page. Only a
 # `{handled}`-only (or empty) classification with all three totalCounts bounded
-# means every unresolved candidate already carries its `Fixed in <SHA>.` /
-# `Addresses: <url>` self reply and no oversized connection could be hiding new
-# feedback — silently update baseline.
+# means every unresolved candidate already carries its `Fixed in <SHA>.` self
+# reply (threads) or self-authored `EYES` reaction (top-level/review) and no
+# oversized connection could be hiding new feedback — silently update baseline.
 if [ "$dispatch_class" = "true" ]; then
   echo "PREFILTER_DISPATCH"
 elif [ "$threads_total" -gt 50 ] || [ "$comments_total" -gt 50 ] || [ "$reviews_total" -gt 50 ]; then
