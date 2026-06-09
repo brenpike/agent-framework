@@ -1,6 +1,6 @@
 ---
 name: route-workflow
-description: Classify a non-Reflex request and select which workflow handles it — the sole workflow classifier. Selects by judgment, never a keyword table; emits selected | ambiguous | exploratory | blocked. Trigger: "route workflow", "which workflow", "classify request", "select workflow".
+description: Classifies a non-Reflex request and selects the handling workflow as the sole classifier, emitting selected, ambiguous, exploratory, or blocked. Use when routing or classifying a request to a workflow.
 allowed-tools:
   - Read
 shell: bash

@@ -1,6 +1,6 @@
 ---
 name: spawn-brood
-description: Dispatch parallel overlord sessions as a brood. Spawns N Claude Code instances in separate git worktrees via tmux, injects task descriptions, and writes the brood manifest. Trigger: "spawn brood", "dispatch brood", "deploy brood", "parallel sessions", "dispatch fleet".
+description: Dispatches parallel overlord sessions as a brood, spawning N Claude Code instances in separate git worktrees via tmux and writing the brood manifest. Use when spawning a brood or running parallel strains.
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh *)
   - Read
