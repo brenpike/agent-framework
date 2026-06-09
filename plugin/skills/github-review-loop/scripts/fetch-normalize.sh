@@ -48,11 +48,13 @@
 #   }
 #   comments(last: 50) {               # top-level (issue) PR comments
 #     totalCount                       # connection-level tripwire (read below)
-#     nodes[] { id author { login } body url }   # id = IC_... issue comment id
+#     nodes[] { id author { login } body url               # id = IC_... issue comment id
+#               reactionGroups { content viewerHasReacted } } # EYES marker -> classifier handled
 #   }
 #   reviews(last: 50) {                # review summaries
 #     totalCount                       # connection-level tripwire (read below)
-#     nodes[] { id author { login } body state url }  # id = PRR_... review id
+#     nodes[] { id author { login } body state url          # id = PRR_... review id
+#               reactionGroups { content viewerHasReacted } } # EYES marker -> classifier handled
 #   }
 #
 # Three connection-level `totalCount` TRIPWIRE reads (reviewThreads / comments /
@@ -345,11 +347,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     pullRequest(number: $pr) {
       comments(last: 50) {
         totalCount
-        nodes { id author { login } body url }
+        nodes { id author { login } body url reactionGroups { content viewerHasReacted } }
       }
       reviews(last: 50) {
         totalCount
-        nodes { id author { login } body state url }
+        nodes { id author { login } body state url reactionGroups { content viewerHasReacted } }
       }
       reviewThreads(first: 50) {
         totalCount
