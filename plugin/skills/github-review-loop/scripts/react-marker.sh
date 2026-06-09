@@ -210,7 +210,14 @@ run_reaction() {
   # flag is the exact opt-in value AND the capture file is set+non-empty. A stray
   # REACTMARKER_CAPTURE_FILE alone NEVER diverts — fail-closed to live gh.
   if [ "${REACTMARKER_TEST_MODE:-}" = "1" ] && [ -n "${REACTMARKER_CAPTURE_FILE:-}" ]; then
-    printf 'REACT node=%s content=%s\n' "$node_id" "$REACTION_CONTENT" >> "$REACTMARKER_CAPTURE_FILE"
+    # FAIL-CLOSED on capture: with set -e deliberately omitted (P18 floor exception),
+    # an unguarded append failure (unwritable/stale capture path) would be SILENTLY
+    # ignored and the function would still return the default-0 simulated status —
+    # reporting marker SUCCESS while NOTHING was captured and the live gh mutation was
+    # bypassed. Guard the append so a write failure becomes a hard failure (react-failed)
+    # rather than a false success. A successful append falls through to the simulated
+    # status (default 0, or the injected REACTMARKER_REACT_STATUS).
+    printf 'REACT node=%s content=%s\n' "$node_id" "$REACTION_CONTENT" >> "$REACTMARKER_CAPTURE_FILE" || return 1
     return "${REACTMARKER_REACT_STATUS:-0}"
   fi
   # LIVE path. Capture combined output so an "already reacted" error can be

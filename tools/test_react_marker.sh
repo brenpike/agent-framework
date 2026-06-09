@@ -166,6 +166,39 @@ else
   failed "failclosed:capture-without-testmode-no-divert" "diverted or live-path-not-reached — cap=$(cat "$cap") stub_reached=$([ -f "$gh_stub_marker" ] && echo yes || echo no)"
 fi
 
+# ── Capture-append failure is a HARD failure, NOT a false success (#265 regression) ──
+# When the seam is ACTIVE (TEST_MODE=1 + CAPTURE_FILE) but the capture path is UNWRITABLE, the append
+# fails. With set -e deliberately omitted (P18 floor), an UNGUARDED append would be silently ignored
+# and run_reaction would still return the default-0 simulated status — reporting marker SUCCESS while
+# NOTHING was captured and the live gh mutation was bypassed. The `|| return 1` guard converts that
+# into react-failed. Assert: exit non-zero, REACTMARKER_ERROR=react-failed, and the live gh path is
+# NOT reached (a stub gh on PATH must stay un-invoked — the seam stayed engaged and hard-failed on
+# the append, never falling through to live). REACTMARKER_REACT_STATUS is left at its default 0 so
+# the ONLY failure source under test is the append itself.
+unwritable_dir="$TMPDIR_TEST/unwritable-capdir"
+mkdir -p "$unwritable_dir"
+chmod 000 "$unwritable_dir"
+bad_cap="$unwritable_dir/cap.log"
+gh_stub_dir2="$TMPDIR_TEST/capfail-stubbin"
+gh_stub_marker2="$TMPDIR_TEST/capfail-gh-reached"
+mkdir -p "$gh_stub_dir2"
+{
+  printf '%s\n' '#!/usr/bin/env bash'
+  printf 'printf reached > %q\n' "$gh_stub_marker2"
+  printf '%s\n' 'exit 0'
+} > "$gh_stub_dir2/gh"
+chmod +x "$gh_stub_dir2/gh"
+out="$(PATH="$gh_stub_dir2:$PATH" REACTMARKER_TEST_MODE=1 REACTMARKER_CAPTURE_FILE="$bad_cap" \
+  bash "$REACT_MARKER" "$TOPLEVEL_NODE" toplevel "https://github.com/o/r/pull/5#issuecomment-1" 2>&1)"
+status=$?
+chmod 755 "$unwritable_dir"  # restore so the EXIT trap's rm -rf can clean it up
+if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -qx 'REACTMARKER_ERROR=react-failed' \
+   && [ ! -f "$gh_stub_marker2" ]; then
+  pass "capfail:append-failure-hard-fails" "unwritable capture -> exit=$status REACTMARKER_ERROR=react-failed, live gh NOT reached"
+else
+  failed "capfail:append-failure-hard-fails" "status=$status out=$out gh_reached=$([ -f "$gh_stub_marker2" ] && echo yes || echo no)"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────────
 echo
 echo "react-marker: $PASS_COUNT passed, $FAIL_COUNT failed"
