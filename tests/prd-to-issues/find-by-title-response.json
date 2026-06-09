@@ -1,0 +1,1 @@
+{ "data": { "search": { "nodes": [ { "id": "I_orphan", "number": 21, "title": "tracer slice A", "parent": null }, { "id": "I_attached", "number": 22, "title": "tracer slice A", "parent": { "id": "I_epic", "number": 7 } }, { "id": "I_nonmatch", "number": 23, "title": "tracer slice A extra", "parent": null } ] } } }

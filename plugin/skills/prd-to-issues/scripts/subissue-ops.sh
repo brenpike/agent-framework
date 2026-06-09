@@ -19,6 +19,8 @@
 #   - attach a sliced (child) issue to the parent as a NATIVE sub-issue via the
 #     GraphQL `addSubIssue` mutation,
 #   - read the parent's `subIssues` connection (paginated to completeness),
+#   - discover candidate child issues by EXACT title (attached AND unparented) so a
+#     create-before-attach partial failure is recoverable, not re-created,
 #   - surface a GitHub rejection of an attach (child already parented, cycle) as a
 #     STRUCTURED recoverable warning record instead of crashing.
 # The split mirrors triage-ops.sh: a thin live `gh`/network shell wrapping a pure,
@@ -54,12 +56,39 @@
 #     child issue's id), so no number->id round-trip is needed.
 #     online:  addSubIssue mutation, raw response routed through surface_attach_response.
 #     offline: with --response-file -> surfaces that injected response (exercises the
-#              attached / already-parented / cycle / error / transport records); else
-#              -> emits the constructed GraphQL variables payload (exercises payload
-#              build).
+#              attached / already-parented / cycle / error / transport records); with
+#              --emit-payload (the EXPLICIT opt-in) -> emits the constructed GraphQL
+#              variables payload (exercises payload build). Offline with NEITHER flag
+#              FAILS CLOSED (exit 2) — symmetric with ensure-parent/list-children, so an
+#              ambient SUBISSUE_OPS_OFFLINE leak can never turn a REAL attach into a silent
+#              success no-op via a fall-through payload build.
 #     --response-file is a TEST SEAM honored ONLY when SUBISSUE_OPS_OFFLINE is set;
 #     a live invocation supplying it is REJECTED fail-closed via the shared guard
 #     (see §5) BEFORE any gh call.
+#     --parent-id / --child-id are validated against the node-id charset (defense-in-depth,
+#     ADR-0020) BEFORE any gh/GraphQL use.
+#
+#   find-by-title --title <str> [--repo <owner/repo>] [--response-file <path|->]
+#     DETERMINISTIC orphan/candidate discovery: search issues by EXACT title to find
+#     candidate child issues — both ALREADY-ATTACHED (carrying a parent) AND recently-
+#     created-but-UNPARENTED issues — so a create-before-attach PARTIAL FAILURE is
+#     RECOVERABLE (attach-or-reuse) instead of re-creating a duplicate slice. The skill
+#     (RSTEP-002) consumes the output to decide attach-vs-reuse per slice.
+#     EXACT-title semantics: GitHub search is full-text/fuzzy, so the search returns
+#     CANDIDATES and this subcommand POST-FILTERS to issues whose `.title` EQUALS the
+#     queried title byte-for-byte (the untrusted title is compared as DATA via jq --arg,
+#     never interpolated). The untrusted title flows ONLY through gh search args and the
+#     jq --arg exact-match filter; it is NEVER interpolated into shell or GraphQL source.
+#     online:  `gh api graphql` search(type: ISSUE) over `repo:<owner/repo> in:title
+#              "<title>"` (the query STRING is built with the title bound via gh -f as
+#              DATA — see §4); the raw search response is routed through the SHARED kernel
+#              (see §4) then exact-title post-filtered.
+#     offline: with --response-file -> normalizes the injected raw GraphQL search response
+#              through the shared kernel + exact-title filter (the injected fixture is the
+#              search result set). REQUIRES --response-file offline (fail-closed otherwise).
+#     --response-file is a TEST SEAM honored ONLY when SUBISSUE_OPS_OFFLINE is set; a live
+#     invocation supplying it is REJECTED fail-closed via the shared guard (see §5) BEFORE
+#     any gh call.
 #
 #   list-children --parent-id <NODE_ID> [--response-file <path|->]
 #     Read the parent's `subIssues` connection. PAGINATES TO COMPLETENESS in the
@@ -85,7 +114,7 @@
 #   ensure-parent:
 #     { "number": <int>, "id": <node-id>, "status": "created"|"resolved" }
 #
-#   attach-subissue payload (offline, no --response-file):
+#   attach-subissue payload (offline, --emit-payload):
 #     { "issueId": <parent-node-id>, "subIssueId": <child-node-id> }
 #   attach-subissue surfaced response (online, or offline with --response-file):
 #     attached: { "status": "attached", "parent": <int>, "child": <int> }
@@ -96,6 +125,15 @@
 #   list-children normalized:
 #     { "parent_id": <node-id|null>,
 #       "children": [ { "number": <int>, "id": <node-id>, "title": <str> }, ... ] }
+#
+#   find-by-title normalized:
+#     { "title": <str>,
+#       "matches": [ { "number": <int>, "id": <node-id>, "title": <str>,
+#                      "parent": { "number": <int>, "id": <node-id> } | null }, ... ] }
+#     `matches` holds ONLY issues whose title EQUALS the queried title byte-for-byte
+#     (exact-title post-filter). `parent` is null for an UNPARENTED (orphan) candidate and
+#     the {number,id} of the parent for an already-attached child — the skill reads it to
+#     decide attach (parent null) vs reuse/skip (already attached to the intended epic).
 #
 # 4. INVARIANTS
 # -------------
@@ -145,8 +183,10 @@
 # Set env SUBISSUE_OPS_OFFLINE to any non-empty value to make EVERY subcommand skip
 # ALL gh/network calls and instead drive its pure transform over INJECTED input,
 # emitting the deterministic artifact (parent record / attach payload / surfaced
-# record / normalized children) to stdout. Input that would normally come from gh is
-# injected via --response-file (ensure-parent, attach-subissue, list-children). The
+# record / normalized children / title-match candidates) to stdout. Input that would
+# normally come from gh is injected via --response-file (ensure-parent, attach-subissue,
+# list-children, find-by-title); attach-subissue's payload-build artifact instead needs
+# the explicit --emit-payload opt-in (offline attach with NEITHER flag FAILS CLOSED). The
 # fixture flag is honored ONLY when SUBISSUE_OPS_OFFLINE is set; a live invocation
 # supplying it is REJECTED fail-closed (exit 2) BEFORE any gh call via the single
 # shared guard reject_fixture_flags_in_live_mode (one mechanism, no per-subcommand
@@ -154,7 +194,7 @@
 # a fixture spoof a created/attached/child state for a mutation that never ran. Use
 # `-` for stdin on any *-file flag. The pure transforms are factored as functions
 # reading from injected input (build_attach_payload, surface_attach_response,
-# normalize_parent_resolve, normalize_children) so the test can drive each directly
+# normalize_parent_resolve, normalize_children, normalize_find_by_title) so the test can drive each directly
 # via the offline CLI with only jq + bash, no `gh`. Mirrors triage-ops.sh's
 # --response-file injection.
 
@@ -216,6 +256,23 @@ read_injected() {
   else
     die "injection file not found: $src" 1
   fi
+}
+
+# assert_node_id <flag-name> <value>: DEFENSE-IN-DEPTH node-id allowlist (ADR-0020 trust
+# boundary). Applied at every node-id-bearing subcommand entry (attach-subissue
+# --parent-id/--child-id, list-children --parent-id, find-by-title's resolved parent id)
+# BEFORE any gh/GraphQL use. Node ids already flow ONLY through gh `-f/-F` as DATA (never
+# interpolated into shell or GraphQL source), so this is a belt-and-suspenders floor, not
+# the primary boundary. Charset: ^[A-Za-z0-9_=-]+$ — admits modern `I_kw...` ids AND
+# legacy base64 `==`-padded ids (`=` IS allowed); charset-only, no length/prefix bound.
+# Deliberately NOT _shared/allowlist.sh's identifier class, whose ^[A-Za-z0-9._/-]+$ omits
+# `=` and would false-reject legacy ids. Fails CLOSED (exit 2) on any out-of-charset byte.
+assert_node_id() {
+  local flag="$1" value="$2"
+  case "$value" in
+    '') die "$flag must be a non-empty node id" 2 ;;
+    *[!A-Za-z0-9_=-]*) die "$flag contains an invalid node id (allowed charset: A-Za-z0-9_=-)" 2 ;;
+  esac
 }
 
 # --- Pure transform core (offline-exercisable; no gh) ------------------------
@@ -308,10 +365,13 @@ normalize_parent_resolve() {
 # caller never makes attach decisions from a corrupted-into-"no children" state.
 # Fail-closed on: empty/non-JSON transport, any `.errors`, missing/null `.data.node`,
 # missing/non-array `subIssues.nodes`, any null/wrong-typed child identifier
-# (number/id/title), AND — mirroring deps-read's #228 lesson — a CONTINUED connection
-# (`subIssues.pageInfo.hasNextPage == true`): the offline seam injects a SINGLE page
-# and treats it as COMPLETE, so a continued page would normalize as if the unfetched
-# children do not exist; that partial read is failed closed rather than emitted. (The
+# (number/id/title), AND — mirroring deps-read's #228 lesson — a NON-TERMINAL page:
+# `subIssues.pageInfo.hasNextPage` MUST be a genuine boolean `false`. A missing/null/
+# non-boolean `hasNextPage` FAILS CLOSED (no `// false` default — a response whose
+# pageInfo is absent/null is NOT silently treated as complete), and a `true` value also
+# fails closed: the offline seam injects a SINGLE page and treats it as COMPLETE, so a
+# continued or unverifiable-terminal page would normalize as if the unfetched children
+# do not exist; that partial read is failed closed rather than emitted. (The
 # LIVE path follows endCursor across all pages, so live completeness is enforced by
 # the loop, not this normalizer — see cmd_list_children.) The parent_id is captured
 # from .data.node.id. Exit codes: 0 = normalized; 1 = fail-closed.
@@ -320,7 +380,8 @@ normalize_children() {
   validate_response_shape "$resp" \
     '.data.node' \
     '(.id | type == "string" and length > 0)
-     and ((.subIssues.pageInfo.hasNextPage // false) == false)' \
+     and (.subIssues.pageInfo.hasNextPage | type == "boolean")
+     and (.subIssues.pageInfo.hasNextPage == false)' \
     '.subIssues.nodes' \
     '(.number | type == "number")
      and (.id | type == "string" and length > 0)
@@ -328,6 +389,38 @@ normalize_children() {
     '.data.node as $n
      | { parent_id: ($n.id // null),
          children: [ ($n.subIssues.nodes)[] | { number, id, title } ] }'
+}
+
+# normalize_find_by_title <response-json> <title>: project a raw search(type: ISSUE)
+# GraphQL response into the find-by-title schema (§3) — FAIL-CLOSED via the shared kernel,
+# then EXACT-title post-filtered. Two passes:
+#   1. validate_response_shape gates the SHAPE: root `.data.search` non-null, `.nodes` an
+#      array, and EVERY node carries a string id (len>0), a number, and a string title
+#      (len>0). The `parent` field is OPTIONAL per node (null when unparented), so it is
+#      NOT in the element predicate; it is normalized to {number,id}|null in pass 2.
+#   2. a jq pass binds the UNTRUSTED title as DATA via --arg and keeps ONLY nodes whose
+#      `.title == $title` byte-for-byte (search is fuzzy; this enforces exact-title). The
+#      title is NEVER interpolated into the jq program — it flows solely through --arg.
+# A transport error, `.errors` envelope, null search root, non-array nodes, or any node
+# missing a required identity field FAILS CLOSED (nonzero) — a candidate set built from an
+# unverifiable read is never emitted. Exit codes: 0 = normalized; 1 = fail-closed.
+normalize_find_by_title() {
+  local resp="$1" title="$2" validated
+  validated="$(validate_response_shape "$resp" \
+    '.data.search' \
+    'true' \
+    '.nodes' \
+    '(.number | type == "number")
+     and (.id | type == "string" and length > 0)
+     and (.title | type == "string" and length > 0)' \
+    '.data.search.nodes')" || return 1
+  # Exact-title post-filter: untrusted title enters ONLY as --arg DATA, never the program.
+  printf '%s' "$validated" | jq -c --arg title "$title" \
+    '{ title: $title,
+       matches: [ .[]
+                  | select(.title == $title)
+                  | { number, id, title,
+                      parent: ( if (.parent != null) then { number: .parent.number, id: .parent.id } else null end ) } ] }'
 }
 
 # build_attach_payload <parent-id> <child-id>: the GraphQL variables for the
@@ -437,6 +530,24 @@ mutation($issueId: ID!, $subIssueId: ID!) {
   }
 }'
 
+# find-by-title: search ISSUES by query string (built with the untrusted title bound as
+# DATA via gh -f `$q`, never interpolated into this source). Returns each candidate's
+# identity + its sub-issue `parent` (null when unparented). The exact-title post-filter
+# runs in normalize_find_by_title — search itself is fuzzy/full-text.
+FIND_BY_TITLE_QUERY='
+query($q: String!) {
+  search(query: $q, type: ISSUE, first: 100) {
+    nodes {
+      ... on Issue {
+        id
+        number
+        title
+        parent { id number }
+      }
+    }
+  }
+}'
+
 # --- Subcommand implementations ----------------------------------------------
 
 cmd_ensure_parent() {
@@ -541,7 +652,7 @@ cmd_ensure_parent() {
 }
 
 cmd_attach_subissue() {
-  local parent_id="" child_id="" response_file=""
+  local parent_id="" child_id="" response_file="" emit_payload=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --parent-id) [ "$#" -ge 2 ] || die "missing value for --parent-id" 2
@@ -550,9 +661,14 @@ cmd_attach_subissue() {
                child_id="$2"; shift 2 ;;
       --response-file) [ "$#" -ge 2 ] || die "missing value for --response-file" 2
                response_file="$2"; shift 2 ;;
+      --emit-payload) emit_payload="1"; shift ;;
       *) die "attach-subissue: unexpected argument '$1'" 2 ;;
     esac
   done
+
+  # Node ids (when supplied) are validated BEFORE any gh/GraphQL use — defense-in-depth.
+  [ -n "$parent_id" ] && assert_node_id "--parent-id" "$parent_id"
+  [ -n "$child_id" ] && assert_node_id "--child-id" "$child_id"
 
   if is_offline; then
     if [ -n "$response_file" ]; then
@@ -561,8 +677,15 @@ cmd_attach_subissue() {
       surface_attach_response "$(read_injected "$response_file")"
       return "$?"
     fi
+    # Offline attach-subissue is SYMMETRIC with ensure-parent/list-children: the response-
+    # surfacing path REQUIRES --response-file. Payload CONSTRUCTION (the only other offline
+    # action) requires the EXPLICIT --emit-payload opt-in — it is an intentional offline
+    # build, never a silent fall-through. Without EITHER flag we FAIL CLOSED: an ambient
+    # SUBISSUE_OPS_OFFLINE leak must never turn a REAL attach into a silent success no-op.
+    [ -n "$emit_payload" ] \
+      || die "offline attach-subissue requires --response-file (surface a response) or --emit-payload (build the variables payload)" 2
     [ -n "$parent_id" ] && [ -n "$child_id" ] \
-      || die "offline attach-subissue requires --parent-id and --child-id (or --response-file)" 2
+      || die "offline attach-subissue --emit-payload requires --parent-id and --child-id" 2
     build_attach_payload "$parent_id" "$child_id"
     return 0
   fi
@@ -592,6 +715,9 @@ cmd_list_children() {
       *) die "list-children: unexpected argument '$1'" 2 ;;
     esac
   done
+
+  # Node id (when supplied) is validated BEFORE any gh/GraphQL use — defense-in-depth.
+  [ -n "$parent_id" ] && assert_node_id "--parent-id" "$parent_id"
 
   if is_offline; then
     # Offline injects a SINGLE page treated as the COMPLETE connection — its
@@ -627,15 +753,20 @@ cmd_list_children() {
     # Validate the raw page shape WITHOUT the hasNextPage==false gate (mid-pagination a
     # continued page is legitimate); the loop itself drives completeness. Project to
     # this page's clean child nodes + its pageInfo for cursor advance.
+    # Root predicate gates on hasNextPage PRESENCE/TYPE (must be a boolean) but is
+    # VALUE-AGNOSTIC: the live loop must STILL accept hasNextPage==true to keep
+    # paginating; only a missing/null/non-boolean hasNextPage fails this page closed via
+    # the kernel (a response with nodes but absent/null pageInfo is NOT treated complete).
     projected="$(validate_response_shape "$page" \
       '.data.node' \
-      '(.id | type == "string" and length > 0)' \
+      '(.id | type == "string" and length > 0)
+       and (.subIssues.pageInfo.hasNextPage | type == "boolean")' \
       '.subIssues.nodes' \
       '(.number | type == "number")
        and (.id | type == "string" and length > 0)
        and (.title | type == "string" and length > 0)' \
       '{ children: [ (.data.node.subIssues.nodes)[] | { number, id, title } ],
-         hasNextPage: (.data.node.subIssues.pageInfo.hasNextPage // false),
+         hasNextPage: (.data.node.subIssues.pageInfo.hasNextPage),
          endCursor: (.data.node.subIssues.pageInfo.endCursor // null) }')" \
       || die "list-children: malformed subIssues page for parent id '$parent_id'" 1
     accumulated="$(jq -c -n --argjson acc "$accumulated" --argjson page "$projected" \
@@ -651,6 +782,57 @@ cmd_list_children() {
     '{ parent_id: $pid, children: $children }'
 }
 
+cmd_find_by_title() {
+  local title="" repo="" response_file=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --title) [ "$#" -ge 2 ] || die "missing value for --title" 2
+               title="$2"; shift 2 ;;
+      --repo) [ "$#" -ge 2 ] || die "missing value for --repo" 2
+               repo="$2"; shift 2 ;;
+      --response-file) [ "$#" -ge 2 ] || die "missing value for --response-file" 2
+               response_file="$2"; shift 2 ;;
+      *) die "find-by-title: unexpected argument '$1'" 2 ;;
+    esac
+  done
+  [ -n "$title" ] || die "find-by-title: --title is required" 2
+
+  if is_offline; then
+    # Offline normalizes the injected search response (treated as the search result set)
+    # through the shared kernel + exact-title filter. REQUIRES --response-file (symmetric
+    # with the other discovery subcommands).
+    [ -n "$response_file" ] || die "offline find-by-title requires --response-file" 2
+    normalize_find_by_title "$(read_injected "$response_file")" "$title"
+    return
+  fi
+
+  reject_fixture_flags_in_live_mode "find-by-title" "--response-file=$response_file"
+  require_gh "find-by-title"
+
+  # Resolve owner/repo: explicit --repo wins, else the current checkout (mirrors
+  # ensure-parent). The search is scoped to that repo so candidates do not leak across
+  # repos.
+  local owner_repo
+  if [ -n "$repo" ]; then
+    owner_repo="$repo"
+  else
+    owner_repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \
+      || die "find-by-title: failed to resolve owner/repo (pass --repo)" 1
+  fi
+  case "$owner_repo" in */*) ;; *) die "find-by-title: --repo must be owner/repo (got '$owner_repo')" 2 ;; esac
+
+  # Build the search query STRING. The untrusted title is concatenated ONLY into this
+  # query VALUE which is passed to gh via -f `q=` as DATA — it is NEVER interpolated into
+  # the GraphQL query source or any shell command word. `in:title` narrows the full-text
+  # search; the exact-title post-filter in normalize_find_by_title enforces byte equality.
+  local query_value resp
+  query_value="repo:$owner_repo in:title \"$title\""
+  resp="$(gh api graphql "${GQL_HEADER_ARGS[@]}" -f query="$FIND_BY_TITLE_QUERY" \
+            -f q="$query_value" 2>/dev/null)" \
+    || die "find-by-title: GraphQL search failed for title in '$owner_repo'" 1
+  normalize_find_by_title "$resp" "$title"
+}
+
 # --- Dispatch ----------------------------------------------------------------
 
 usage() {
@@ -659,8 +841,9 @@ $PROG — deterministic mechanism for the hivemind prd-to-issues skill (native s
 usage: $PROG <subcommand> [args]
 subcommands:
   ensure-parent   --title <str> --body <str>|--body-file <path|-> [--repo <owner/repo>] [--existing-number <int>] [--response-file <path|->]
-  attach-subissue --parent-id <ID> --child-id <ID> [--response-file <path|->]
+  attach-subissue --parent-id <ID> --child-id <ID> [--response-file <path|->] | --emit-payload --parent-id <ID> --child-id <ID> (offline payload build)
   list-children   --parent-id <ID> [--response-file <path|->]
+  find-by-title   --title <str> [--repo <owner/repo>] [--response-file <path|->]
 Set SUBISSUE_OPS_OFFLINE to drive the pure transforms over injected input (no gh).
 EOF
 }
@@ -671,6 +854,7 @@ case "$subcmd" in
   ensure-parent)   cmd_ensure_parent "$@" ;;
   attach-subissue) cmd_attach_subissue "$@" ;;
   list-children)   cmd_list_children "$@" ;;
+  find-by-title)   cmd_find_by_title "$@" ;;
   -h|--help)       usage; exit 0 ;;
   *)               die "unknown subcommand '$subcmd' (try --help)" 2 ;;
 esac

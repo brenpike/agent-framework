@@ -118,14 +118,16 @@ run_exit1_case() {
 }
 
 # ── attach-subissue: GraphQL variables payload shape ───────────────────────────────
-# Offline attach-subissue WITHOUT --response-file builds the addSubIssue variables payload.
-# CRITICAL FIELD MAPPING: issueId = the PARENT, subIssueId = the CHILD (NOT blockingIssueId).
+# Offline attach-subissue with the EXPLICIT --emit-payload opt-in builds the addSubIssue
+# variables payload. CRITICAL FIELD MAPPING: issueId = the PARENT, subIssueId = the CHILD
+# (NOT blockingIssueId). The opt-in flag is REQUIRED — payload build is no longer a silent
+# fall-through when --response-file is absent (see attach:offline-no-flag-exit2 below).
 run_case "attach:payload-shape" "$EXPECTED_DIR/attach-payload.json" -- \
-  attach-subissue --parent-id I_parent --child-id I_child
+  attach-subissue --emit-payload --parent-id I_parent --child-id I_child
 
 # Direct key/value assertion: the payload is EXACTLY {issueId:PARENT, subIssueId:CHILD}. Locks the
 # load-bearing parent/child mapping independently of the golden file — a swap would be caught here.
-PAYLOAD="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" attach-subissue --parent-id I_parent --child-id I_child 2>/dev/null)"
+PAYLOAD="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" attach-subissue --emit-payload --parent-id I_parent --child-id I_child 2>/dev/null)"
 if printf '%s' "$PAYLOAD" | jq -e '
     (keys | sort) == ["issueId","subIssueId"]
     and .issueId == "I_parent"
@@ -134,6 +136,24 @@ if printf '%s' "$PAYLOAD" | jq -e '
 else
   failed "attach:payload-mapping" "unexpected payload mapping (payload: $PAYLOAD)"
 fi
+
+# ── attach-subissue: offline fail-closed symmetry (F2) ─────────────────────────────
+# Offline attach-subissue with NEITHER --response-file NOR --emit-payload MUST fail closed
+# (exit 2). Previously the absent-flag path fell through to build_attach_payload and exited
+# 0, so an ambient SUBISSUE_OPS_OFFLINE leak turned a REAL attach into a silent success
+# no-op. Even with live-shaped --parent-id/--child-id present, neither opt-in flag means
+# no offline action is authorized — fail closed.
+run_exit1_case "attach:offline-no-flag-exit2" -- \
+  attach-subissue --parent-id I_parent --child-id I_child
+
+# ── attach-subissue: node-id allowlist (F4, defense-in-depth) ──────────────────────
+# An out-of-charset node id (the allowed charset is ^[A-Za-z0-9_=-]+$) fails closed BEFORE
+# any payload build. A realistic legacy base64 `==`-padded id (which the charset ALLOWS via
+# `=`) passes — proving the validator does not false-reject legacy ids.
+run_exit1_case "attach:bad-node-id-exit2" -- \
+  attach-subissue --emit-payload --parent-id "I_parent;rm -rf" --child-id I_child
+run_exit0_case "attach:legacy-base64-id-ok" -- \
+  attach-subissue --emit-payload --parent-id "MDU6SXNzdWUx==" --child-id "MDU6SXNzdWUy=="
 
 # ── attach-subissue: success surfacing ─────────────────────────────────────────────
 # A canned success addSubIssue response surfaces {status:attached, parent, child} and exits 0.
@@ -189,6 +209,22 @@ run_exit1_case "list-children:missing-title-exit1" -- \
 run_exit1_case "list-children:has-next-page-exit1" -- \
   list-children --response-file "$PI_DIR/list-children-paginated-response.json"
 
+# ── list-children: pagination completeness fail-closed (F3) ────────────────────────
+# A response with `nodes` but a MISSING pageInfo (so hasNextPage is absent/null) MUST fail
+# closed — previously `hasNextPage // false` treated absent pageInfo as a COMPLETE terminal
+# page, silently dropping any unfetched children. The offline normalizer now requires
+# `hasNextPage | type == "boolean"` AND `== false`, so an absent/null/non-boolean value
+# fails closed.
+run_exit1_case "list-children:missing-pageinfo-exit1" -- \
+  list-children --response-file "$PI_DIR/list-children-missing-pageinfo-response.json"
+
+# ── list-children: node-id allowlist (F4) ──────────────────────────────────────────
+# An out-of-charset --parent-id fails closed BEFORE any gh/normalize. (No --response-file:
+# the arg-level node-id guard fires first, regardless of seam.)
+run_exit1_case "list-children:bad-node-id-exit2" -- \
+  list-children --parent-id "I_parent\$(touch x)" \
+  --response-file "$PI_DIR/list-children-complete-response.json"
+
 # ── ensure-parent: resolved / created normalization ────────────────────────────────
 # With --existing-number the injected repository.issue response normalizes to status:resolved;
 # without it (the create path's post-create node-id read) it tags status:created. Both project
@@ -210,6 +246,37 @@ run_exit1_case "ensure-parent:graphql-error-exit1" -- \
   ensure-parent --existing-number 7 \
   --response-file "$PI_DIR/ensure-parent-graphql-error-response.json"
 
+# ── find-by-title: exact-title candidate discovery (F1) ────────────────────────────
+# A search response with an UNPARENTED candidate (#21, parent:null), an ALREADY-ATTACHED
+# candidate (#22, parent:{7}), and a fuzzy NON-EXACT title (#23 "...extra") normalizes to
+# the {title, matches:[{number,id,title,parent}]} schema with ONLY the byte-exact-title
+# matches (#21, #22) — the fuzzy #23 is dropped by the exact-title post-filter. parent is
+# null for the orphan and {number,id} for the attached child, so the skill can decide
+# attach-vs-reuse per slice.
+run_case "find-by-title:exact-matches" "$EXPECTED_DIR/find-by-title-matches.json" -- \
+  find-by-title --title "tracer slice A" \
+  --response-file "$PI_DIR/find-by-title-response.json"
+
+# An empty search result set normalizes to an empty matches array (a clean no-candidate
+# result, NOT a failure) so the skill knows the slice must be created.
+run_case "find-by-title:empty" "$EXPECTED_DIR/find-by-title-empty.json" -- \
+  find-by-title --title "no such slice" \
+  --response-file "$PI_DIR/find-by-title-empty-response.json"
+
+# ── find-by-title: FAIL-CLOSED variants (exit 1) ───────────────────────────────────
+# A null search root, a GraphQL `.errors` envelope, and a node missing a required identity
+# field (id) each MUST fail closed via the shared kernel so a candidate set is never built
+# from an unverifiable read.
+run_exit1_case "find-by-title:null-search-exit1" -- \
+  find-by-title --title "tracer slice A" \
+  --response-file "$PI_DIR/find-by-title-null-search-response.json"
+run_exit1_case "find-by-title:graphql-error-exit1" -- \
+  find-by-title --title "tracer slice A" \
+  --response-file "$PI_DIR/find-by-title-graphql-error-response.json"
+run_exit1_case "find-by-title:missing-id-exit1" -- \
+  find-by-title --title "tracer slice A" \
+  --response-file "$PI_DIR/find-by-title-missing-id-response.json"
+
 # ── Live-mode fixture rejection: --response-file is a TEST SEAM only (exit 2) ───────
 # Each subcommand, when invoked LIVE (no SUBISSUE_OPS_OFFLINE) WITH --response-file, MUST be
 # rejected fail-closed (exit 2) BEFORE any gh call — the flag could spoof a created/attached/child
@@ -218,7 +285,8 @@ run_exit1_case "ensure-parent:graphql-error-exit1" -- \
 for live_case in \
   "attach-subissue:attach-subissue --response-file $PI_DIR/attach-success-response.json" \
   "list-children:list-children --response-file $PI_DIR/list-children-complete-response.json" \
-  "ensure-parent:ensure-parent --existing-number 7 --response-file $PI_DIR/ensure-parent-resolve-response.json" ; do
+  "ensure-parent:ensure-parent --existing-number 7 --response-file $PI_DIR/ensure-parent-resolve-response.json" \
+  "find-by-title:find-by-title --title slice --response-file $PI_DIR/find-by-title-response.json" ; do
   cname="${live_case%%:*}"
   cargs="${live_case#*:}"
   LIVE_STATUS=0
