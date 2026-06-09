@@ -1,6 +1,6 @@
 ---
 name: create-working-branch
-description: Create or confirm the compliant working branch for the current approved plan before implementation begins.
+description: Creates or confirms the compliant working branch for the current approved plan. Use when starting implementation on an approved plan and the working branch needs to be created or verified.
 allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)

@@ -1,6 +1,6 @@
 ---
 name: molt
-description: Create a checkpoint commit (molt) for the current approved plan after a completed phase, milestone, version bump, or review remediation item.
+description: Creates a checkpoint commit for the current approved plan. Use when completing a phase, milestone, version bump, or review-remediation item.
 allowed-tools:
   - Bash(git status *)
   - Bash(git diff *)

@@ -1,6 +1,6 @@
 ---
 name: open-plan-pr
-description: Open a pull request for a successfully completed approved plan after final verification.
+description: Opens a pull request for a successfully completed approved plan after final verification. Use when validation and versioning gates have passed and the plan is ready for PR.
 allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)
