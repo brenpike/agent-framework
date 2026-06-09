@@ -1,6 +1,6 @@
 ---
 name: zoom-out
-description: Tell the agent to zoom out and give broader context or a higher-level perspective. Use when you're unfamiliar with a section of code or need to understand how it fits into the bigger picture.
+description: Provides broader architectural context and a higher-level perspective on a section of code. Use when unfamiliar with a code area or needing to see how it fits into the bigger picture.
 allowed-tools: []
 shell: bash
 disable-model-invocation: true

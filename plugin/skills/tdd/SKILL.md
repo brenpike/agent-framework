@@ -1,10 +1,8 @@
 ---
 name: tdd
 description: >-
-  Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle.
-  Use when the user asks to implement X using TDD, write this with TDD, use TDD, TDD this feature,
-  red-green-refactor, or test-first. Requires Write and Edit access — invoke only in a context
-  that can modify source and test files.
+  Implements features test-first via red-green-refactor TDD. Use when the user asks to TDD a
+  feature, write tests first, or red-green-refactor.
 allowed-tools:
   - Read
   - Write
@@ -21,6 +19,8 @@ shell: bash
 ---
 
 # Test-Driven Development (Red-Green-Refactor)
+
+Requires Write and Edit access — invoke only in a context that can modify source and test files.
 
 TDD produces better designs because writing the test first forces you to think about the interface before the implementation. The test is the first caller — if it's awkward to test, the interface is awkward to use.
 

@@ -1,6 +1,6 @@
 ---
 name: github-review-loop
-description: Watch an open PR and remediate review feedback in a loop until a terminal condition. Arms a main-session Monitor on a thin change-detect poll and dispatches `hivemind:github-reviewer` in fix mode per actionable event. Executed by the overlord only — loop must run in the main session where Monitor survives subagent dispatches (ADR-0005).
+description: Watches an open PR and remediates review feedback in a loop until a terminal condition. Executed by the overlord only — loop must run in the main session where Monitor survives subagent dispatches. Use when watching a PR for the GitHub review loop.
 allowed-tools:
   - Read
   - Monitor

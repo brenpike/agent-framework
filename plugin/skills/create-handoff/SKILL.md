@@ -1,12 +1,9 @@
 ---
 name: create-handoff
 description: >-
-  Synthesizes an interrogated plan (and optional relevant handoff-context) into a session-resumption
-  handoff document at `.hivemind/handoffs/<slug>.md` that points to the plan rather than
-  duplicating it. Pure synthesis — asks no questions. Use when the user wants to generate a
-  session-resumption handoff, create a handoff document, write a fresh-session kickoff brief,
-  or bridge an interrogated plan into a new session. Trigger on: "create a handoff", "generate
-  a handoff", "session-resumption handoff", "fresh-session kickoff brief".
+  Synthesizes an interrogated plan into a session-resumption handoff document at
+  `.hivemind/handoffs/<slug>.md`. Use when creating a handoff, generating a
+  fresh-session kickoff brief, or bridging an interrogated plan into a new session.
 allowed-tools:
   - Read
   - Write

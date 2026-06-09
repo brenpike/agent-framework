@@ -1,6 +1,6 @@
 ---
 name: seed-hive
-description: One-time project setup. Apply the required `.claude/settings.json` keys (enabledPlugins + default agent) so the overlord becomes the session default agent. Use only when adopting the plugin in a new project, when repairing settings, or when the user explicitly requests setup. Also ensures `.hivemind/` and `.claude/worktrees/` are excluded from git via `.gitignore`.
+description: Applies required .claude/settings.json keys to make the overlord the session default agent and gitignores .hivemind/ and .claude/worktrees/. Use when adopting the plugin in a new project or repairing plugin setup.
 allowed-tools:
   - Read
   - Write

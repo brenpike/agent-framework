@@ -1,6 +1,6 @@
 ---
 name: brood-status
-description: Check status of all broods, with per-strain status. Reports per-strain tmux session state, branch existence, and PR status from external observables. Trigger: "brood status", "check brood", "brood-status", "brood progress", "how's the brood", "fleet status".
+description: Renders a read-only hatchery dashboard showing each strain's tmux session state, branch existence, and PR status for all broods under the current checkout. Use when checking brood status or hatchery progress.
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/brood-status/scripts/brood-status-collect.sh)
 shell: bash

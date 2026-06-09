@@ -1,6 +1,6 @@
 ---
 name: triage-backlog
-description: Judgment-driven triage of the entire open GitHub issue backlog — rate every open issue across 7 mutually-exclusive label families (readiness, type, effort, moscow, priority, risk, difficulty) plus native depends-on, render a delta comparison table, and apply behind a confirm gate. Use when triaging or re-triaging issues, anchoring re-runs on prior labels and changing a rating only with a stated reason. Trigger: "/triage-backlog", "triage the backlog", "re-triage issues", "triage issues".
+description: Rates every open issue across 7 mutex label families, infers depends-on links, renders a delta table, and applies labels behind a confirm gate. Use when triaging or re-triaging the issue backlog.
 allowed-tools:
   - Read
   - Bash

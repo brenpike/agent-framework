@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.30.1] - 2026-06-09
+
+### Changed
+
+- Normalized all 25 skill `description` frontmatter fields to the Claude skills best-practice formula (verb-first third-person summary + single "Use when …" trigger clause), collapsing redundant trigger lists and relocating access-requirement notes from descriptions into skill bodies. Metadata/docs only — no skill behavior, tools, or contract changes.
+
 ## [2.30.0] - 2026-06-08
 
 ### Added

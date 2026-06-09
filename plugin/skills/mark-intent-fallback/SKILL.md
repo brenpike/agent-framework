@@ -1,6 +1,6 @@
 ---
 name: mark-intent-fallback
-description: Record an intent-fallback event into a version-skewed run ledger and optionally close out a stale run — the sanctioned ledger write-path that deliberately bypasses transition-validation and the version-binding guard record-state-result.sh hard-rejects. Invoked by the overlord resume-on-start gate: the "proceed intent-driven" door for a skewed run, and the "start fresh" stale-run closeout. Trigger: "mark intent fallback", "intent-driven resume", "close out a stale run".
+description: Records a version-skew intent-fallback event into the run ledger and optionally closes a stale run. Use when handling version skew on resume or closing out a stale run.
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh *)
   - Read

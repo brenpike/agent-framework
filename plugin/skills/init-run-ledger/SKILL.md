@@ -1,6 +1,6 @@
 ---
 name: init-run-ledger
-description: Initialize the run ledger for the current overlord instance — creates .hivemind/runs/<run-id>/ and writes the initial state.json. Trigger: "init run ledger", "initialize ledger", "create run ledger", "start a run".
+description: Creates the run ledger for the current overlord instance, writing .hivemind/runs/<run-id>/state.json. Use when starting or initializing a new run.
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/init-run-ledger/scripts/init-run-ledger.sh *)
   - Read

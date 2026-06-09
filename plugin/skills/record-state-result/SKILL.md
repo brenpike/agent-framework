@@ -1,6 +1,6 @@
 ---
 name: record-state-result
-description: Record the outcome of the current workflow state into the run ledger and advance state.current to the legal next state. Validates the transition against the workflow definition. Trigger: "record state result", "advance workflow state", "record transition", "advance the run".
+description: Records a workflow state outcome into the run ledger, validates the transition against the workflow definition, and advances state.current to the legal next state. Use when advancing a run after a state completes.
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/record-state-result/scripts/record-state-result.sh *)
   - Read

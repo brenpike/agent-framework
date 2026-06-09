@@ -1,13 +1,9 @@
 ---
 name: prd-to-issues
 description: >-
-  Slices a committed PRD into vertically-sliced GitHub issues — one tracer-bullet slice = one
-  issue = one Strain candidate — under a single `initiative:<slug>` label, anchored to the PRD
-  file. Runs ONE interrogation loop, the slicing quiz, then publishes blocker-first via `gh`.
-  Use when the user wants to slice a PRD into GitHub issues, turn a PRD into issues, create
-  brood-ready issues from a PRD, decompose a PRD into vertical slices, or break a PRD into
-  trackable work. Trigger on: "slice a PRD into GitHub issues", "PRD to issues", "create
-  brood-ready issues from a PRD", "decompose a PRD", "/hivemind:prd-to-issues".
+  Slices a committed PRD into vertically-sliced brood-ready GitHub issues anchored to the PRD
+  file. Use when decomposing a PRD into GitHub issues, creating vertical slices from a PRD, or
+  breaking a PRD into trackable work.
 allowed-tools:
   - Read
   - Bash(find *)

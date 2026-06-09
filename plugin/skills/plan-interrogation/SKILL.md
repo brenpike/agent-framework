@@ -1,13 +1,9 @@
 ---
 name: plan-interrogation
 description: >-
-  Intensely interviews the user about their plan — one question at a time — challenging it
-  against the project's existing domain model, sharpening terminology, and updating/creating
-  documentation (CONTEXT.md, ADRs) as decisions crystallise. Use when the user wants to
-  stress-test a plan, challenge a plan, interrogate a plan, red-team a plan, or harden a plan
-  against their project's language and documented decisions. Trigger on: "stress-test a plan",
-  "challenge plan", "grill me", "interrogate plan", "red team plan", "harden plan",
-  "/hivemind:plan-interrogation".
+  Interviews the user about their plan one question at a time, challenging it against the
+  project's domain model and updating CONTEXT.md and ADRs as decisions crystallise. Use when
+  stress-testing, red-teaming, interrogating, or hardening a plan.
 allowed-tools:
   - Read
   - Write

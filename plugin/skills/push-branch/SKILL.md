@@ -1,6 +1,6 @@
 ---
 name: push-branch
-description: Push the current working branch to its remote. No PR creation — push only, for resuming a review loop after remediation commits.
+description: Pushes the current working branch to its remote without creating a PR. Use when resuming a review loop by pushing remediation commits to the remote.
 allowed-tools:
   - Bash(git status *)
   - Bash(git branch *)
