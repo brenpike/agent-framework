@@ -13,8 +13,7 @@ allowed-tools:
   - Bash(gh issue create *)
   - Bash(gh issue list *)
   - Bash(gh issue view *)
-  - Bash(gh label create *)
-  - Bash(gh label list *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh *)
 shell: bash
 ---
 
@@ -61,13 +60,13 @@ Derive `<slug>` from the input; never hardcode it.
 - If sourcing from `docs/prds/<slug>.md`, the slug is the PRD filename stem.
 - If sourcing from live context, derive a short, kebab-case slug from the **Initiative**'s name and confirm it with the user before publishing.
 
-One slug names the whole Initiative — its plan, optional handoff, PRD at `docs/prds/<slug>.md`, and this issue set's `initiative:<slug>` label. Reuse the existing slug; do not invent a second one.
+One slug names the whole Initiative — its plan, optional handoff, PRD at `docs/prds/<slug>.md`, and the parent epic issue that groups its sub-issues. Reuse the existing slug; do not invent a second one.
 
 ---
 
 ## Preflight — `gh` auth
 
-Before drafting, confirm GitHub CLI is authenticated. If `gh` is unauthenticated (or `gh issue list` / `gh label list` fails on auth), surface a **blocker** to the user and stop — do not fall back to printing issue bodies as if published, and do not fail silently. This same auth blocker covers the idempotency / resume preflight below: if the `gh issue list` call that enumerates existing initiative issues fails on auth, surface a blocker and STOP — never fall back to blind-create. The slicing quiz may proceed for drafting, but no publish step runs until auth is confirmed.
+Before drafting, confirm GitHub CLI is authenticated. If `gh` is unauthenticated (or `gh issue list` fails on auth), surface a **blocker** to the user and stop — do not fall back to printing issue bodies as if published, and do not fail silently. This same auth blocker covers the idempotency / resume preflight below: if the `list-children` call that enumerates existing sub-issues fails on auth, surface a blocker and STOP — never fall back to blind-create. The slicing quiz may proceed for drafting, but no publish step runs until auth is confirmed.
 
 ---
 
@@ -125,8 +124,9 @@ Each published issue body uses EXACTLY these four sections, in this order. The b
 ```markdown
 ## Initiative
 
-A reference to `docs/prds/<slug>.md` — the epic anchor for this Initiative. This is the PRD
-file, NOT a GitHub parent/tracking issue.
+A reference to `docs/prds/<slug>.md` — the PRD for this Initiative. Each issue in this
+set is a native sub-issue of the parent epic for `<slug>`; the parent epic is the live,
+progress-tracked enumeration of all slices.
 
 ## What to build
 
@@ -156,32 +156,81 @@ These keep the issue a behavior spec and preserve the cerebrate's independence a
 
 ---
 
-## Labeling and linking
+## Parent epic and sub-issue wiring
 
-- **Exactly one `initiative:<slug>` label per issue.** This is the only label this skill applies. If the label does not exist, create it first:
+Grouping is done via GitHub native parent/child hierarchy — a single **parent epic issue** per PRD, with each slice attached as a native sub-issue. No initiative labels are used.
 
-  ```bash
-  gh label create "initiative:<slug>" --description "Initiative: <slug>" 2>/dev/null || true
-  ```
+All sub-issue GraphQL operations go through `${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh`. Reference: `${CLAUDE_PLUGIN_ROOT}/references/github-subissue-graphql.md`.
 
-  Check existing labels with `gh label list` before creating to avoid a redundant create.
+### Parent epic body
+
+The parent epic body contains:
+
+1. A link to `docs/prds/<slug>.md`.
+2. A one-line summary of the Initiative.
+3. One sentence: "Each sub-issue is one tracer-bullet vertical slice."
+
+Do NOT enumerate the slices in the parent body — the native sub-issues list is the live, progress-tracked enumeration.
+
+### ensure-parent
+
+Before publishing any child issue, call `ensure-parent` to create-or-find the parent epic:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh" \
+  ensure-parent \
+  --title "<Initiative name>" \
+  --body-file - \
+  [--repo owner/repo] \
+  [--existing-number <int>]
+```
+
+Output: `{ "number": <int>, "id": "<NODE_ID>", "status": "created"|"resolved" }`. Capture the `id` (NODE ID) — required for `attach-subissue`.
+
+### attach-subissue
+
+After each child issue is created, attach it to the parent epic:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh" \
+  attach-subissue \
+  --parent-id <PARENT_NODE_ID> \
+  --child-id <CHILD_NODE_ID>
+```
+
+A `"status": "warning"` response (already-parented, cycle-rejected) is a recoverable signal — surface it to the user and continue. A non-zero exit is a hard error — fail closed and surface a blocker.
+
+To get a child issue's NODE ID after `gh issue create`, use `gh issue view <number> --json id --jq '.id'`.
+
 - **Blocked-by via native body refs** — the `## Dependencies` section's `#123` refs. No external linking mechanism, no custom dependency field.
-- **NO GitHub epic / tracking / parent issue.** The PRD file at `docs/prds/<slug>.md` is the Initiative anchor; the `## Initiative` section points at it. Do not create or modify any parent issue.
 - **Publish blockers FIRST.** Publish slices with no blockers first so their real issue numbers exist; then publish dependent slices. A `#123` ref to a not-yet-created blocker cannot resolve, so create blockers first. Reused blockers already have resolvable numbers and need no ordering.
 
 ---
 
 ## Idempotency / resume preflight
 
-Run this AFTER the slicing quiz is approved (the approved slice set defines the planned titles to match) and BEFORE any publish. A blocker-first multi-step publish can fail mid-run, leaving a partial issue set; without this preflight a rerun would DUPLICATE issues and may wire dependents to the duplicates. This preflight reads and matches existing issues only — it adds no scope, no independence claim, no file paths, and no new label.
+Run this AFTER the slicing quiz is approved (the approved slice set defines the planned titles to match) and BEFORE any publish. A blocker-first multi-step publish can fail mid-run, leaving a partial issue set; without this preflight a rerun would DUPLICATE issues and may wire dependents to the duplicates. This preflight reads and matches existing issues only — it adds no scope, no independence claim, and no file paths.
 
-1. **List existing initiative issues.** `gh issue list --label "initiative:<slug>" --state all --limit 1000 --json number,title,state,body`. The `--state all` is deliberate — closed issues must be seen so a previously-closed match can be surfaced, not silently recreated — and `state` MUST be in the `--json` field list so each match's OPEN/CLOSED state is available to the classification below (without it, the CLOSED-as-CONFLICT rule cannot be evaluated). The explicit high `--limit` defeats `gh issue list`'s default cap of 30, which would otherwise truncate the existing-issue set for a many-thin-slice Initiative and let an existing slice beyond the first page be missed and recreated. If the returned count equals the limit (enumeration may be incomplete), treat the list as untrustworthy: STOP and surface a blocker rather than risk recreating an unseen slice — fail closed, never blind-create.
-2. **Match key — Title + label, NOT the `## Initiative` anchor.** For each approved slice, match against existing issues by BOTH `initiative:<slug>` label membership AND exact slice **Title** (the Strain name). CRITICAL: the `## Initiative` PRD-anchor body text is identical across every slice of an Initiative and MUST NOT be used as the per-slice discriminator — it is only a coarse belongs-to-this-initiative check. The per-slice discriminator is Title + label.
-3. **Classify each planned slice:**
-   - **REUSE** — exactly one unambiguous OPEN title match → record its real `#number` for dependency wiring; do NOT recreate it.
+1. **Ensure parent exists first.** Call `ensure-parent` (with `--existing-number` if the epic was created in a prior run). Capture the parent NODE ID.
+
+2. **List existing sub-issues.** Call `list-children` with the parent NODE ID:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh" \
+     list-children \
+     --parent-id <PARENT_NODE_ID>
+   ```
+
+   Output: `{ "parent_id": "<NODE_ID>", "children": [ { "number": <int>, "id": "<NODE_ID>", "title": "<str>" }, ... ] }`. The script paginates to completeness — the returned set is authoritative. If the call fails, surface a blocker and STOP — never fall back to blind-create.
+
+3. **Match key — Title only.** For each approved slice, match against existing sub-issues by exact **Title** (the Strain name).
+
+4. **Classify each planned slice:**
+   - **REUSE** — exactly one unambiguous title match in the existing sub-issues → record its real `#number` for dependency wiring; do NOT recreate it.
    - **CREATE** — no match → publish fresh.
-   - **AMBIGUOUS / CONFLICT** — any of: multiple OPEN matches for one title; a single match whose body/Acceptance Criteria materially diverge from the planned slice; or a title match whose `state` is `CLOSED` (was it intentionally closed?). A CLOSED title match is ALWAYS a conflict — never reuse it and never blind-create over it. On any of these, STOP and surface the conflict to the user for confirmation — do NOT blind-create and do NOT blind-reuse.
-4. **Resume-safe.** Because matched slices are reused (not recreated) and only unmatched slices are created, a rerun after a mid-publish failure converges to the complete set without duplicates.
+   - **AMBIGUOUS / CONFLICT** — any of: multiple matches for one title; a single match whose body/Acceptance Criteria materially diverge from the planned slice. On any of these, STOP and surface the conflict to the user for confirmation — do NOT blind-create and do NOT blind-reuse.
+
+5. **Resume-safe.** Because matched slices are reused (not recreated) and only unmatched slices are created, a rerun after a mid-publish failure converges to the complete set without duplicates.
 
 ---
 
@@ -189,6 +238,12 @@ Run this AFTER the slicing quiz is approved (the approved slice set defines the 
 
 Publish only after the user approves the slicing quiz, `gh` auth is confirmed, and the idempotency / resume preflight has classified every planned slice.
 
-1. **Publish in dependency order — blockers FIRST.** Create only the slices classified **CREATE** by the idempotency / resume preflight; never recreate a **REUSE**-matched slice. Among CREATE slices, publish those with no blockers first so their real issue numbers exist; then publish dependent CREATE slices. When filling a dependent's `## Dependencies` section, use the resolved real `#123` ref of each blocker — taken from EITHER a just-created blocker OR a REUSE-matched existing blocker (whose number the preflight already recorded). Ordering still matters for newly-created blockers: a `#123` ref to a not-yet-created blocker cannot resolve, so create blockers first. Reused blockers already have resolvable numbers and need no ordering.
-2. **Create each CREATE-class issue** with `gh issue create`, passing the behavior-only body and the single `initiative:<slug>` label. Use `--title` (the Strain name) and `--body` (the four-section template).
-3. **Verify** each created issue with `gh issue view <number>` if confirmation is needed, and report the published issue numbers and titles back to the caller.
+1. **Ensure the parent epic.** Call `ensure-parent` and capture the parent NODE ID. This must complete before any child is created.
+
+2. **Publish in dependency order — blockers FIRST.** Create only the slices classified **CREATE** by the idempotency / resume preflight; never recreate a **REUSE**-matched slice. Among CREATE slices, publish those with no blockers first so their real issue numbers exist; then publish dependent CREATE slices. When filling a dependent's `## Dependencies` section, use the resolved real `#123` ref of each blocker — taken from EITHER a just-created blocker OR a REUSE-matched existing blocker (whose number the preflight already recorded).
+
+3. **Create each CREATE-class issue** with `gh issue create`, passing the behavior-only body. Use `--title` (the Strain name) and `--body` (the four-section template). No initiative label is applied.
+
+4. **Attach each created issue as a sub-issue** of the parent epic immediately after creation. Retrieve the child's NODE ID (`gh issue view <number> --json id --jq '.id'`), then call `attach-subissue`. Also attach any REUSE-matched slices that are not yet sub-issues of this parent (the `list-children` output reveals which are already attached).
+
+5. **Verify** each created issue with `gh issue view <number>` if confirmation is needed, and report the published issue numbers and titles back to the caller.
