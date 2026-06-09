@@ -114,8 +114,14 @@ Cycle arithmetic, ceiling, terminal-vs-cycle, and `same-finding-repeat` mapping:
 `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/loop-state.sh`.
 Multi-token precedence ORDER:
 `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/exit-precedence.sh`.
-No persisted ledger — GitHub is the ledger (`Fixed in <SHA>` replies; fix-SHA skip
-makes re-invocation idempotent on restart).
+No persisted local ledger — GitHub is the ledger. Thread surfaces converge via
+`Fixed in <SHA>` replies (fix-SHA skip makes re-invocation idempotent on restart).
+Non-thread surfaces (`toplevel` / `review`) converge via a self-authored `EYES`
+reaction on the reviewer node, written by
+`${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/react-marker.sh` — the
+"handled" marker lives durably on the PR, not on disk, so it survives loop polls
+and session restarts with no `.hivemind` state. Both mechanisms keep the marker on
+GitHub, strengthening the GitHub-is-the-ledger claim.
 
 ## Terminal report
 
