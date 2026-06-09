@@ -175,10 +175,12 @@ fi
 # NOT reached (a stub gh on PATH must stay un-invoked — the seam stayed engaged and hard-failed on
 # the append, never falling through to live). REACTMARKER_REACT_STATUS is left at its default 0 so
 # the ONLY failure source under test is the append itself.
-unwritable_dir="$TMPDIR_TEST/unwritable-capdir"
-mkdir -p "$unwritable_dir"
-chmod 000 "$unwritable_dir"
-bad_cap="$unwritable_dir/cap.log"
+#
+# The write must fail INDEPENDENT of permissions: `chmod 000` does not stop root (the validation
+# suite runs as root in the container), so a permission-based unwritable dir would let the append
+# SUCCEED and silently invert this assertion. Instead point the capture file under a NONEXISTENT
+# parent — the `>>` redirect then fails with ENOENT for every user, root included.
+bad_cap="$TMPDIR_TEST/nonexistent-parent-dir/cap.log"
 gh_stub_dir2="$TMPDIR_TEST/capfail-stubbin"
 gh_stub_marker2="$TMPDIR_TEST/capfail-gh-reached"
 mkdir -p "$gh_stub_dir2"
@@ -191,7 +193,6 @@ chmod +x "$gh_stub_dir2/gh"
 out="$(PATH="$gh_stub_dir2:$PATH" REACTMARKER_TEST_MODE=1 REACTMARKER_CAPTURE_FILE="$bad_cap" \
   bash "$REACT_MARKER" "$TOPLEVEL_NODE" toplevel "https://github.com/o/r/pull/5#issuecomment-1" 2>&1)"
 status=$?
-chmod 755 "$unwritable_dir"  # restore so the EXIT trap's rm -rf can clean it up
 if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -qx 'REACTMARKER_ERROR=react-failed' \
    && [ ! -f "$gh_stub_marker2" ]; then
   pass "capfail:append-failure-hard-fails" "unwritable capture -> exit=$status REACTMARKER_ERROR=react-failed, live gh NOT reached"
