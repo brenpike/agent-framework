@@ -15,6 +15,7 @@ Resolvable pull request review threads are GraphQL objects. Do not try to resolv
 - [Detection Filtering](#detection-filtering) — filters to apply before yielding any result as actionable feedback
 - [Reply to Review Thread](#reply-to-review-thread) — mutation to post a reply to an existing review thread
 - [Resolve Review Thread](#resolve-review-thread) — mutation to mark a review thread as resolved
+- [Surface-to-Delivery Contract](#surface-to-delivery-contract) — canonical mapping of feedback surface to mutation(s) used (issue #218)
 - [Author Filtering](#author-filtering) — rules for scoping feedback to specific reviewer identities
 - [Codex Approval Detection](#codex-approval-detection) — paginated 👍 reaction lookup that signals Codex approval
 
@@ -218,6 +219,19 @@ mutation($threadId: ID!) {
   }
 }'
 ```
+
+## Surface-to-Delivery Contract
+
+Maps each feedback surface to the mutation(s) `reply-resolve.sh` executes. The mapping is closed-by-construction — no runtime fallback, no `addComment` mutation, no `Addresses: <url>` body convention.
+
+| Surface | Mutation(s) | Notes |
+|---------|-------------|-------|
+| `thread` | `addPullRequestReviewThreadReply` then (conditional) `resolveReviewThread` | Reply targets the thread node id (`PRRT_...`). Resolve fires only when the thread is unresolved after reply. |
+| `toplevel` | none (silent no-op) | Top-level PR comments are not resolvable and are never reply-targeted. Posting `addPullRequestReviewThreadReply` against a non-thread node was the #218 defect — these surfaces intentionally produce no mutation. |
+| `review` | none (silent no-op) | Same rationale as `toplevel`: review-summary nodes have no thread node; attempting a thread reply against them was the #218 defect. |
+| unmapped / unknown | fail-closed | Any surface value not in the table above causes the script to exit with an error rather than fall through silently. |
+
+No new GraphQL mutation is introduced. The former `Addresses: <url>` body line that was appended to replies is removed from the live path — thread replies carry only the fix summary, not a back-reference URL.
 
 ## Author Filtering
 

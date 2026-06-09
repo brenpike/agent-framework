@@ -47,10 +47,12 @@
 #                    the reply body verbatim.
 #   $3  SUMMARY      one-line human summary of the fix. REQUIRED. DATA —
 #                    interpolated into the reply body verbatim, never interpreted.
-#   $4  SURFACE      "thread" | "toplevel" | "review". REQUIRED. Selects the reply
-#                    body variant (see §3). Only "thread" is ever resolve-eligible.
-#   $5  CANDIDATE_URL  the candidate's GitHub url. REQUIRED for toplevel/review
-#                    (the `Addresses:` line); IGNORED for thread.
+#   $4  SURFACE      "thread" | "toplevel" | "review". REQUIRED. Selects the
+#                    surface->delivery map (see §3). Only "thread" delivers a
+#                    mutation; toplevel/review are silent no-ops.
+#   $5  CANDIDATE_URL  the candidate's GitHub url. ACCEPTED for positional-arity
+#                    compatibility but UNUSED — no live path interpolates it. The
+#                    caller still passes 5 positionals; this one is inert.
 #
 #   --resolve-eligible        mark this thread eligible for resolve: ALL non-self
 #                             comments on it are addressed (each has a fix-SHA
@@ -63,16 +65,24 @@
 #                             was also (erroneously) passed. The reply is still
 #                             posted.
 #
-# 3. OUTPUT / BEHAVIOR
-# --------------------
-# Issues the mutations in this FIXED order:
-#   (a) REPLY  (always, on every invocation) — addPullRequestReviewThreadReply
-#       over THREAD_ID with the body:
-#         thread surface:           "Fixed in <SHA>. <summary>."
-#         toplevel / review surface:"Fixed in <SHA>. <summary>. Addresses: <url>"
+# 3. OUTPUT / BEHAVIOR — SURFACE -> DELIVERY MAP (closed by construction)
+# -----------------------------------------------------------------------
+# The surface selects the delivery; the map is exhaustive and fail-closed:
+#   thread   -> REPLY then conditional RESOLVE (the only mutating surface).
+#   toplevel -> SILENT NO-OP: no reply, no resolve, exit 0, ZERO stdout,
+#               NOTHING written to the capture seam.
+#   review   -> SILENT NO-OP: identical to toplevel.
+#   <other>  -> FAIL CLOSED: replyresolve_fail "unmapped-surface" (exit 1).
+#               NEVER falls back to the thread mutation.
+# Rationale (#218): toplevel/review candidates have NO review-thread node, so
+# addPullRequestReviewThreadReply has no valid target — posting over them landed
+# the reply on the wrong/null target. The fix is to deliver NOTHING for them.
+#
+# For the thread surface the mutations issue in this FIXED order:
+#   (a) REPLY  — addPullRequestReviewThreadReply over THREAD_ID with the body:
+#         "Fixed in <SHA>. <summary>."   (NO `Addresses:` line on any surface)
 #   (b) RESOLVE (conditional) — resolveReviewThread over THREAD_ID, issued ONLY
-#       when SURFACE == "thread" AND --resolve-eligible AND NOT
-#       --question-needs-user-input.
+#       when --resolve-eligible AND NOT --question-needs-user-input.
 #
 # stdout: human-trivial progress is NOT emitted (Bash Command Discipline — no
 # decorative stdout). On success the script exits 0 and is silent on stdout.
@@ -81,14 +91,18 @@
 #
 # 4. INVARIANTS (behavior-preserving vs agent step 12)
 # ----------------------------------------------------
-#   - REPLY BEFORE RESOLVE: the reply mutation is always issued before any resolve
-#     mutation. A reply failure is a HARD failure (exit 1, REPLYRESOLVE_ERROR) —
-#     resolving a thread whose fix-reply never posted would orphan the resolve.
-#   - REPLY BODY FORMAT: exactly "Fixed in <SHA>. <summary>." ; toplevel/review
-#     surfaces ALSO append " Addresses: <url>". No other body shape.
-#   - RESOLVE ONLY A THREAD SURFACE, ONLY WHEN FULLY ADDRESSED: resolve is issued
+#   - SURFACE -> DELIVERY IS CLOSED BY CONSTRUCTION: only SURFACE == "thread"
+#     delivers a mutation; toplevel/review are silent no-ops; any other surface
+#     fails closed (unmapped-surface). The thread mutation is NEVER a fallback.
+#   - REPLY BEFORE RESOLVE: on the thread surface the reply mutation is always
+#     issued before any resolve mutation. A reply failure is a HARD failure
+#     (exit 1, REPLYRESOLVE_ERROR) — resolving a thread whose fix-reply never
+#     posted would orphan the resolve.
+#   - REPLY BODY FORMAT: exactly "Fixed in <SHA>. <summary>." on the thread
+#     surface. No `Addresses:` line; no other body shape.
+#   - RESOLVE ONLY THE THREAD SURFACE, ONLY WHEN FULLY ADDRESSED: resolve is issued
 #     only for SURFACE == "thread" with --resolve-eligible. toplevel/review
-#     surfaces are NEVER resolved (they are not resolvable review threads).
+#     surfaces post nothing at all, so they are inherently never resolved.
 #   - NEVER RESOLVE question-needs-user-input: the --question-needs-user-input
 #     marker hard-blocks resolve regardless of eligibility.
 #   - RESOLVE IS NON-BLOCKING: a failed resolve logs REPLYRESOLVE_RESOLVE_FAILED
@@ -137,8 +151,8 @@
 #     resolve.
 #
 # Reason tokens (STABLE — asserted by the test):
-#   missing-thread-id | missing-fix-sha | missing-summary | invalid-surface |
-#   missing-candidate-url | reply-failed
+#   missing-thread-id | missing-fix-sha | missing-summary | unmapped-surface |
+#   reply-failed
 #
 # P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
 # are DELIBERATELY omitted. The full floor would change behavior: the resolve mutation is
@@ -182,18 +196,17 @@ SUMMARY="${positionals[2]:-}"
 SURFACE="${positionals[3]:-}"
 CANDIDATE_URL="${positionals[4]:-}"
 
-[ -n "$THREAD_ID" ] || replyresolve_fail "missing-thread-id"
-[ -n "$FIX_SHA" ] || replyresolve_fail "missing-fix-sha"
-[ -n "$SUMMARY" ] || replyresolve_fail "missing-summary"
-case "$SURFACE" in
-  thread|toplevel|review) : ;;
-  *) replyresolve_fail "invalid-surface" ;;
-esac
-# toplevel/review surfaces carry the `Addresses:` line, which REQUIRES the url.
-case "$SURFACE" in
-  toplevel|review)
-    [ -n "$CANDIDATE_URL" ] || replyresolve_fail "missing-candidate-url" ;;
-esac
+# Required-input validation is SURFACE-SCOPED, not global. THREAD_ID / FIX_SHA /
+# SUMMARY are consumed ONLY by the thread surface (the reply target + reply body),
+# so their guards live INSIDE the thread) branch below. The toplevel/review
+# surfaces deliver NOTHING and consume NONE of these — the normalizer emits
+# thread_id: null for both non-thread surfaces (fetch-normalize.sh §2), so a
+# global THREAD_ID guard here would FALSE-BLOCK a real fixed top-level/review
+# candidate with missing-thread-id before the silent-no-op dispatch could run
+# (#218). SURFACE validity itself is enforced by the surface->delivery dispatch
+# below (thread mutates; toplevel/review no-op; any other surface fails closed
+# with unmapped-surface). CANDIDATE_URL is accepted for positional-arity
+# compatibility but no live path interpolates it, so it has no validation gate.
 
 # Timeout wrapper for gh API calls. Prefer coreutils `timeout`; fall
 # back to macOS Homebrew `gtimeout`; degrade gracefully (run unguarded) when
@@ -266,26 +279,41 @@ run_mutation() {
   esac
 }
 
-# --- Build the reply body (the §3 format). thread -> no Addresses line;
-# toplevel/review -> append " Addresses: <url>". -------------------------------
-reply_body="Fixed in $FIX_SHA. $SUMMARY."
+# --- SURFACE -> DELIVERY DISPATCH (§3, closed by construction) -----------------
+# thread   -> REPLY then conditional RESOLVE.
+# toplevel/review -> SILENT NO-OP: no mutation, no resolve, nothing to the capture
+#                    seam; fall through to exit 0.
+# <other>  -> FAIL CLOSED via replyresolve_fail; NEVER reaches the thread mutation.
 case "$SURFACE" in
-  toplevel|review) reply_body="$reply_body Addresses: $CANDIDATE_URL" ;;
+  thread)
+    # Thread-surface required inputs (surface-scoped — see the validation note
+    # above). The thread reply targets THREAD_ID and its body interpolates
+    # FIX_SHA + SUMMARY, so all three are REQUIRED here and fail closed with
+    # their stable reason tokens. No-op surfaces never reach this gate.
+    [ -n "$THREAD_ID" ] || replyresolve_fail "missing-thread-id"
+    [ -n "$FIX_SHA" ] || replyresolve_fail "missing-fix-sha"
+    [ -n "$SUMMARY" ] || replyresolve_fail "missing-summary"
+    # (a) REPLY — always, before any resolve. A reply failure is a HARD failure:
+    # resolving a thread whose fix-reply never posted would orphan the resolve.
+    reply_body="Fixed in $FIX_SHA. $SUMMARY."
+    if ! run_mutation reply "$THREAD_ID" "$reply_body"; then
+      replyresolve_fail "reply-failed"
+    fi
+    # (b) RESOLVE — conditional. Only when fully addressed, and NEVER for a
+    # question-needs-user-input thread. Non-blocking: a failed resolve logs and
+    # the script STILL exits 0.
+    if [ "$RESOLVE_ELIGIBLE" -eq 1 ] && [ "$QUESTION_NEEDS_USER_INPUT" -eq 0 ]; then
+      if ! run_mutation resolve "$THREAD_ID"; then
+        echo "github-review-loop: REPLYRESOLVE_RESOLVE_FAILED thread=$THREAD_ID — resolve mutation failed; the fix is committed, pushed, and replied, so this is NON-BLOCKING (the thread stays open on GitHub but remediation succeeded)." >&2
+      fi
+    fi
+    ;;
+  toplevel|review)
+    # SILENT NO-OP: these surfaces have no review-thread node (#218); deliver
+    # nothing and exit cleanly.
+    : ;;
+  *)
+    replyresolve_fail "unmapped-surface" ;;
 esac
-
-# --- (a) REPLY — always, before any resolve. A reply failure is a HARD failure:
-# resolving a thread whose fix-reply never posted would orphan the resolve. ------
-if ! run_mutation reply "$THREAD_ID" "$reply_body"; then
-  replyresolve_fail "reply-failed"
-fi
-
-# --- (b) RESOLVE — conditional. Only a thread surface, only when fully addressed,
-# and NEVER for a question-needs-user-input thread. Non-blocking: a failed resolve
-# logs and the script STILL exits 0. -------------------------------------------
-if [ "$SURFACE" = "thread" ] && [ "$RESOLVE_ELIGIBLE" -eq 1 ] && [ "$QUESTION_NEEDS_USER_INPUT" -eq 0 ]; then
-  if ! run_mutation resolve "$THREAD_ID"; then
-    echo "github-review-loop: REPLYRESOLVE_RESOLVE_FAILED thread=$THREAD_ID — resolve mutation failed; the fix is committed, pushed, and replied, so this is NON-BLOCKING (the thread stays open on GitHub but remediation succeeded)." >&2
-  fi
-fi
 
 exit 0

@@ -116,46 +116,85 @@ else
   failed "replyfail:hard-fail-no-resolve" "status=$status out=$out cap=$(cat "$cap")"
 fi
 
-# ── toplevel/review Addresses: body variant ────────────────────────────────────────
-# A toplevel surface reply body appends " Addresses: <url>"; NO resolve is ever issued for a non-thread
-# surface. Exit 0.
+# ── toplevel surface is a SILENT NO-OP (#218) ──────────────────────────────────────
+# A toplevel surface has no review-thread node, so NOTHING is delivered: no REPLY, no RESOLVE,
+# zero stdout, empty capture file, exit 0. (Even with --resolve-eligible and a candidate url.)
 cap="$(fresh_capture toplevel)"
 out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" --resolve-eligible -- PRRT_fff pqr678 "Addressed in code" toplevel "https://github.com/o/r/pull/5#issuecomment-1" 2>&1)"
 status=$?
-if [ "$status" -eq 0 ] \
-   && grep -q '^REPLY thread=PRRT_fff body=Fixed in pqr678\. Addressed in code\. Addresses: https://github.com/o/r/pull/5#issuecomment-1$' "$cap" \
-   && ! grep -q '^RESOLVE ' "$cap"; then
-  pass "toplevel:addresses-variant-no-resolve" "Addresses: line present, NO resolve for non-thread"
+if [ "$status" -eq 0 ] && [ ! -s "$cap" ] && [ -z "$out" ]; then
+  pass "toplevel:silent-no-op" "no mutation captured, zero stdout, exit 0"
 else
-  failed "toplevel:addresses-variant-no-resolve" "status=$status cap=$(cat "$cap") out=$out"
+  failed "toplevel:silent-no-op" "status=$status cap=$(cat "$cap") out=$out"
 fi
 
-# review surface also carries the Addresses: line.
+# ── review surface is a SILENT NO-OP (#218) ─────────────────────────────────────────
+# Identical to toplevel: no REPLY, no RESOLVE, empty capture file, exit 0.
 cap="$(fresh_capture reviewsurface)"
 out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
   bash "$REPLY_RESOLVE" -- PRRT_ggg stu901 "Summary addressed" review "https://github.com/o/r/pull/5#pullrequestreview-9" 2>&1)"
 status=$?
-if [ "$status" -eq 0 ] \
-   && grep -q '^REPLY thread=PRRT_ggg body=Fixed in stu901\. Summary addressed\. Addresses: https://github.com/o/r/pull/5#pullrequestreview-9$' "$cap" \
-   && ! grep -q '^RESOLVE ' "$cap"; then
-  pass "review:addresses-variant" "review surface Addresses: line present"
+if [ "$status" -eq 0 ] && [ ! -s "$cap" ] && [ -z "$out" ]; then
+  pass "review:silent-no-op" "no mutation captured, zero stdout, exit 0"
 else
-  failed "review:addresses-variant" "status=$status cap=$(cat "$cap") out=$out"
+  failed "review:silent-no-op" "status=$status cap=$(cat "$cap") out=$out"
 fi
 
-# ── input-validation fail-closed (no mutation issued) ──────────────────────────────
-# A toplevel surface with NO candidate url is an input error: REPLYRESOLVE_ERROR=missing-candidate-url,
-# exit non-zero, and NO mutation captured (validation runs before any mutation).
-cap="$(fresh_capture badinput)"
+# ── toplevel surface PRODUCTION SHAPE: empty thread id is a SILENT NO-OP (#218) ─────
+# The normalizer emits thread_id: null for non-thread surfaces (fetch-normalize.sh §2), so a
+# REAL fixed toplevel candidate reaches reply-resolve.sh with an EMPTY THREAD_ID positional.
+# The required-input guards are surface-scoped (inside the thread) branch), so an empty thread
+# id must NOT trip missing-thread-id — it must silently no-op: empty capture, zero stdout, exit 0.
+cap="$(fresh_capture toplevel_empty_tid)"
 out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
-  bash "$REPLY_RESOLVE" -- PRRT_hhh vwx234 "No url" toplevel "" 2>/dev/null)"
+  bash "$REPLY_RESOLVE" --resolve-eligible -- "" pqr678 "Addressed in code" toplevel "https://github.com/o/r/pull/5#issuecomment-1" 2>&1)"
 status=$?
-if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -q '^REPLYRESOLVE_ERROR=missing-candidate-url$' \
-   && [ ! -s "$cap" ]; then
-  pass "badinput:missing-candidate-url" "exit=$status REPLYRESOLVE_ERROR=missing-candidate-url, no mutation"
+if [ "$status" -eq 0 ] && [ ! -s "$cap" ] && [ -z "$out" ]; then
+  pass "toplevel:empty-tid-silent-no-op" "empty thread id no-ops (no missing-thread-id), zero stdout, exit 0"
 else
-  failed "badinput:missing-candidate-url" "status=$status out=$out cap=$(cat "$cap")"
+  failed "toplevel:empty-tid-silent-no-op" "status=$status cap=$(cat "$cap") out=$out"
+fi
+
+# ── review surface PRODUCTION SHAPE: empty thread id is a SILENT NO-OP (#218) ────────
+# Identical to the toplevel production-shape case: an empty thread id on the review surface must
+# silently no-op (empty capture, zero stdout, exit 0), NOT fail with missing-thread-id.
+cap="$(fresh_capture review_empty_tid)"
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
+  bash "$REPLY_RESOLVE" -- "" stu901 "Summary addressed" review "https://github.com/o/r/pull/5#pullrequestreview-9" 2>&1)"
+status=$?
+if [ "$status" -eq 0 ] && [ ! -s "$cap" ] && [ -z "$out" ]; then
+  pass "review:empty-tid-silent-no-op" "empty thread id no-ops (no missing-thread-id), zero stdout, exit 0"
+else
+  failed "review:empty-tid-silent-no-op" "status=$status cap=$(cat "$cap") out=$out"
+fi
+
+# ── thread surface STILL requires a thread id (guard relocated, not removed) ─────────
+# The missing-thread-id guard moved INTO the thread) branch — it must still fire for a thread
+# surface with an empty thread id: REPLYRESOLVE_ERROR=missing-thread-id, exit non-zero, no mutation.
+cap="$(fresh_capture thread_empty_tid)"
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
+  bash "$REPLY_RESOLVE" --resolve-eligible -- "" abc123 "Fix applied" thread "" 2>/dev/null)"
+status=$?
+if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -q '^REPLYRESOLVE_ERROR=missing-thread-id$' \
+   && [ ! -s "$cap" ]; then
+  pass "thread:empty-tid-missing-thread-id" "thread surface still fails closed on empty thread id, no mutation"
+else
+  failed "thread:empty-tid-missing-thread-id" "status=$status out=$out cap=$(cat "$cap")"
+fi
+
+# ── unmapped surface fails CLOSED (no mutation issued) ──────────────────────────────
+# An unknown surface (e.g. `bogus`) is not in the surface->delivery map: REPLYRESOLVE_ERROR=
+# unmapped-surface, exit non-zero, and NO mutation captured (dispatch never falls back to thread).
+cap="$(fresh_capture badsurface)"
+out="$(REPLYRESOLVE_TEST_MODE=1 REPLYRESOLVE_CAPTURE_FILE="$cap" \
+  bash "$REPLY_RESOLVE" -- PRRT_hhh vwx234 "Bad surface" bogus "" 2>/dev/null)"
+status=$?
+if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -q '^REPLYRESOLVE_ERROR=unmapped-surface$' \
+   && [ ! -s "$cap" ]; then
+  pass "badsurface:unmapped-surface" "exit=$status REPLYRESOLVE_ERROR=unmapped-surface, no mutation"
+else
+  failed "badsurface:unmapped-surface" "status=$status out=$out cap=$(cat "$cap")"
 fi
 
 # ── Fail-closed gate lock: CAPTURE_FILE WITHOUT TEST_MODE does NOT divert ──────────
