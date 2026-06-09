@@ -884,27 +884,35 @@ cmd_find_by_title() {
   fi
 
   reject_fixture_flags_in_live_mode "find-by-title" "--response-file=$response_file"
-  require_gh "find-by-title"
 
   # Resolve owner/repo: explicit --repo wins, else the current checkout (mirrors
   # ensure-parent). The search is scoped to that repo so candidates do not leak across
-  # repos.
+  # repos. An EXPLICITLY supplied --repo is a pure-usage value validated BEFORE require_gh
+  # so a malformed --repo fails closed (exit 2) even on a machine without `gh` — the
+  # owner/repo charset guard is the usage gate, not a network precondition. `gh` is only
+  # required when --repo was OMITTED (to resolve owner/repo from the checkout) or for the
+  # subsequent GraphQL search.
   local owner_repo
   if [ -n "$repo" ]; then
     owner_repo="$repo"
   else
+    require_gh "find-by-title"
     owner_repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \
       || die "find-by-title: failed to resolve owner/repo (pass --repo)" 1
   fi
   # Charset-validate owner AND repo: split on the single `/`, gate each against the GitHub
-  # name charset BEFORE any gh call (defense-in-depth — owner_repo flows into the search DSL
-  # via -f as DATA, but a malformed `--repo` is a usage bug, not a broadened query). Replaces
-  # the weak `*/*` glob, which admitted e.g. `a/b/c` or shell metacharacters.
+  # name charset BEFORE any gh/GraphQL call (defense-in-depth — owner_repo flows into the
+  # search DSL via -f as DATA, but a malformed `--repo` is a usage bug, not a broadened
+  # query). Replaces the weak `*/*` glob, which admitted e.g. `a/b/c` or shell metacharacters.
   case "$owner_repo" in */*) ;; *) die "find-by-title: --repo must be owner/repo (got '$owner_repo')" 2 ;; esac
   local owner_part repo_part
   owner_part="${owner_repo%%/*}"; repo_part="${owner_repo#*/}"
   case "$owner_part" in ''|*[!A-Za-z0-9._-]*) die "find-by-title: invalid repo owner (got '$owner_part')" 2 ;; esac
   case "$repo_part" in ''|*/*|*[!A-Za-z0-9._-]*) die "find-by-title: invalid repo name (got '$repo_part')" 2 ;; esac
+
+  # With an EXPLICIT --repo the charset guard above has now passed; require `gh` before the
+  # live GraphQL search (the --repo-omitted branch already required it above).
+  [ -n "$repo" ] && require_gh "find-by-title"
 
   # Build the search query STRING. The untrusted title flows ONLY into this query VALUE,
   # passed to gh via -f `q=` as DATA — NEVER interpolated into the GraphQL query source or a
