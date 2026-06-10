@@ -605,14 +605,14 @@ surface_attach_response() {
         if ((.errors // []) | length) > 0
         then
           (.errors | map(.message // "")) as $msgs
-          | if   ($msgs | all(test("already (has|been added)|parent"; "i")))
+          | if   ($msgs | all(test("already (has|been added).*parent|already a sub-?issue|already parented"; "i")))
             then { status: "warning", kind: "already-parented",
                    message: ($msgs[0] // "child already has a parent") }
             elif ($msgs | all(test("cycl|circular"; "i")))
             then { status: "warning", kind: "cycle-rejected",
                    message: ($msgs[0] // "addSubIssue rejected: cycle") }
             else { status: "warning", kind: "error",
-                   message: ($msgs | map(select(test("already (has|been added)|parent|cycl|circular"; "i") | not)))[0] } end
+                   message: ($msgs | map(select(test("already (has|been added).*parent|already a sub-?issue|already parented|cycl|circular"; "i") | not)))[0] } end
         elif (.data.addSubIssue.issue.number != null
               and .data.addSubIssue.subIssue.number != null)
         then { status: "attached",
@@ -709,12 +709,21 @@ query($q: String!, $after: String) {
 #   $5 coll_path    — jq path FROM root to the node array (e.g. .subIssues.nodes)
 #   $6 elem_pred    — jq boolean per element (field completeness)
 #   $7 pageinfo     — jq path FROM root to the pageInfo object (e.g. .subIssues.pageInfo)
-#   $8.. base_args  — the FIXED gh query-arg pair(s) identifying the connection
+#   $8 result_cap   — TRUNCATION GUARD (P2): GitHub's GraphQL `search` connection returns at
+#                     MOST 1000 results, then reports hasNextPage==false even when MORE matches
+#                     exist — a truncated window the exact-title filter cannot see past, so an
+#                     existing slice/orphan beyond the cap is silently missed and re-CREATED as a
+#                     duplicate. When result_cap > 0 and the loop terminates (hasNextPage==false)
+#                     with accumulated count >= result_cap, the set is NOT provably complete:
+#                     FAIL CLOSED rather than emit a truncated set as authoritative. Pass `0` to
+#                     DISABLE (the subIssues connection of a single epic is bounded and not subject
+#                     to the search cap).
+#   $9.. base_args  — the FIXED gh query-arg pair(s) identifying the connection
 #                     (e.g. -f id=<NODE_ID> or -f q=<SEARCH_STRING>); $after is appended
 #                     by this loop, never by the caller.
 paginate_to_completeness() {
-  local label="$1" query="$2" root_path="$3" root_pred="$4" coll_path="$5" elem_pred="$6" pageinfo="$7"
-  shift 7
+  local label="$1" query="$2" root_path="$3" root_pred="$4" coll_path="$5" elem_pred="$6" pageinfo="$7" result_cap="$8"
+  shift 8
   local -a base_args=("$@")
   local after="" page projected accumulated="[]" has_next end_cursor
   while :; do
@@ -749,6 +758,18 @@ paginate_to_completeness() {
       || die "$label: connection reports hasNextPage but no endCursor" 1
     after="$end_cursor"
   done
+  # TRUNCATION GUARD (P2): the loop above trusts hasNextPage==false as "complete". For the
+  # GitHub `search` connection that trust is UNSAFE at the 1000-result ceiling — search reports
+  # hasNextPage==false at the cap even when more matches exist. When a positive result_cap is in
+  # effect and the accumulated set reached it, the window MAY be truncated and the exact-title
+  # filter cannot see past it, so a slice/orphan beyond the cap would be mis-classified CREATE
+  # and duplicated. Fail closed rather than emit a possibly-truncated set as authoritative.
+  if [ "$result_cap" -gt 0 ] 2>/dev/null; then
+    local acc_count
+    acc_count="$(printf '%s' "$accumulated" | jq -r 'length')"
+    [ "$acc_count" -lt "$result_cap" ] \
+      || die "$label: search returned $acc_count results at the GitHub search cap ($result_cap); the result window may be TRUNCATED and an existing issue beyond the cap could be missed — narrow the title search or use a non-search lookup path" 1
+  fi
   printf '%s' "$accumulated"
 }
 
@@ -996,6 +1017,7 @@ cmd_list_children() {
      and (.id | type == "string" and length > 0)
      and (.title | type == "string" and length > 0)' \
     '.subIssues.pageInfo' \
+    0 \
     -f id="$parent_id")" || exit "$?"
   jq -c -n --arg pid "$parent_id" --argjson children "$accumulated" \
     '{ parent_id: $pid, children: [ $children[] | { number, id, title } ] }'
@@ -1029,6 +1051,7 @@ run_title_search() {
      and (.title | type == "string" and length > 0)
      and (.state | type == "string" and length > 0)' \
     '.pageInfo' \
+    1000 \
     -f q="$query_value")" || return "$?"
   filter_exact_title "$accumulated" "$title"
 }
