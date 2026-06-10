@@ -28,6 +28,26 @@ When choosing a structural fix, prefer one that dissolves the whole class by con
 - floor-at-input plus encode-at-output over per-context charset handling
 - validate-where-bytes-are-intact over validate-after-a-lossy-round-trip
 
+### Closed-by-Construction Acceptance Test
+
+A named gate applied as PROSE JUDGMENT by both reviewers AND the overlord before accepting any candidate "structural" remediation as cluster-closing. It is the discriminator between a fix that dissolves the class and one that merely extends the handled set under a structural-looking name.
+
+The gate question, asked of every proposed structural fix:
+
+> What class of future finding does this make impossible, and why?
+
+Decision rule on the answer:
+
+- If the answer ENUMERATES handled cases — "we now also check X", "we added the missing attribute", "the predicate now covers this case too" — the fix is NOT closed-by-construction. It is **complete-the-known-set**, and it is still whack-a-mole: the next un-enumerated attribute is the next finding. Keep the cluster OPEN and escalate; do not accept the fix as cluster-closing.
+- If the answer NAMES AN ELIMINATED CLASS by changing the KEY, the primitive, or the approach — "title is no longer the key, so title-collision findings cannot exist", "the value is now derived from ground truth rather than validated, so malformed-input findings cannot exist" — the fix IS closed-by-construction. Accept it as cluster-closing.
+
+The two training shapes, generically:
+
+- **Closed.** A fix that was reaching for the wrong primitive (e.g. a fuzzy/approximate lookup used as an exactness oracle) is replaced by a ground-truth-enumerating primitive that cannot produce the failure mode. The class is named and gone.
+- **Not closed.** A predicate that gains another conjunct or another checked attribute per finding — the shape stays identical, only the byte/field/path differs each pass. This is the **Same-Framing Test** answering "yes" against a fix dressed as structural.
+
+This gate refines the ordered preferences above: a preference is only satisfied when the chosen fix passes this test. A reject-enumeration that grows one entry per finding fails it; a positive allowlist or a real parser that makes the malformed class unrepresentable passes it.
+
 ## Bounded-Impact Gating
 
 Assess the actual blast radius of a finding independent of the reviewer's severity badge: is it informational-only? does it touch only already-validated enum/charset surfaces? does the attacker already control the input? The assessed impact — not the badge — informs the fix-now vs defer vs accept decision. A badge is an input to this assessment, never a substitute for it.
@@ -58,6 +78,35 @@ Severity only TUNES the **Root-Cluster** threshold N:
 - **N=2** when a high-severity finding lands on a just-touched or same-framing surface
 - **N=3** by default otherwise
 
+The "just-touched / same-framing surface" qualifier here is a WITHIN-PASS modifier: it tunes N for the single classification pass in front of the reviewer. It is orthogonal to, and must not be conflated with, the ACROSS-ITERATION axis defined in **Cross-Iteration Same-Surface Recurrence** below.
+
+## Cross-Iteration Same-Surface Recurrence
+
+A second root-cluster signal, ORTHOGONAL to the within-pass fix-framing + line-overlap cluster key. It fires INDEPENDENT of framing match and INDEPENDENT of line-range overlap: the signal is that one surface keeps absorbing findings across the loop, not that two findings rhyme within a pass. The recurrence rate on a young surface IS itself the cluster signal.
+
+This is a NEW CLUSTERING AXIS THAT TUNES N — the same shape as **Severity as Sensitivity Modifier**, which tunes N by severity. It is NOT a standalone trigger; it sets the threshold at which **Root-Cluster** trips for a qualifying surface. Two gates must both hold:
+
+- **Gate A — recurrence.** One surface (the same file or component) absorbs findings across **two or more DISTINCT loop iterations**, even when the line ranges are disjoint AND the fix-framings differ. Within-pass framing/line matching is NOT required for this gate; cross-iteration re-emission on the same surface is the whole signal.
+- **Gate B — youth (HARD REQUIREMENT, AND'd with Gate A).** The surface was INTRODUCED or HEAVILY MODIFIED in THIS SAME PR or initiative. A young surface that keeps emitting findings is a design smell: code just written should not need repeated reviewer correction. Mature or legacy surfaces NEVER trip cross-iteration recurrence — they route to the existing **Stop-and-Merge** bounded-tail → merge-advisory path instead.
+
+Threshold N for this axis:
+
+- **N=2** when the recurring findings on the young surface touch a SHARED data-access / query / parse / serialization PRIMITIVE — a semantic/primitive clustering axis: the same underlying primitive is being patched at the edges across iterations.
+- **N=3** otherwise.
+
+Distinction from the within-pass axis (do not conflate): the "just-touched / same-framing surface" qualifier in **Severity as Sensitivity Modifier** is a WITHIN-PASS modifier scoped to a single classification pass. THIS axis is ACROSS-ITERATION — it spans the loop's distinct iterations — and is additive to and distinct from the within-pass modifier. A surface can be quiet within every individual pass and still trip this axis by re-emitting across iterations.
+
+Multiple roots per surface: the recurrence counter PERSISTS across structural fixes. Closing root #1 with an accepted structural fix does NOT reset the counter. A surface that has already yielded one root is held to a LOWER threshold for the next — having needed a structural fix once is evidence the surface is structurally hot, so the next recurrence trips sooner.
+
+## Bounded-Tail vs Recurring-Class Disambiguation
+
+The **Stop-and-Merge** section reserves "every push spawns only a fresh bounded tail, never a new defect class" as a merge precondition. That bounded-tail clause now applies ONLY to MATURE surfaces. The disambiguation:
+
+- **Young surface + recurring findings** (the surface was introduced or heavily modified in this PR/initiative): this is NOT a bounded tail. A young surface that keeps emitting findings is a design smell, so it escalates to a root-cause ZOOM-OUT (question the key/primitive per the **Closed-by-Construction Acceptance Test**), never to merge-advisory. This is the escalation path of **Cross-Iteration Same-Surface Recurrence**.
+- **Mature / legacy surface + bounded tail**: this remains a merge-advisory candidate per **Stop-and-Merge**. A genuine mature-surface bounded tail — a hardened legacy surface whose remaining findings are a converging tail with a tracked structural home — must STILL reach `merge_advised`. The young-surface escalation rule does not gate it.
+
+Regression guard: do not let the young-surface escalation swallow the mature-surface merge path. The two are disjoint by Gate B of **Cross-Iteration Same-Surface Recurrence** — youth is the discriminator. A mature surface failing Gate B routes to merge-advisory exactly as before this section existed.
+
 ## Verdict Consumption
 
 The `hivemind:detect-remediation-signals` skill emits a verdict in which EVERY block
@@ -69,6 +118,16 @@ cerebrate — MUST read the inner fired field (`break_fix.verdict == "break-fix"
 `merge_advisory.advise == true`) and MUST NEVER test block presence or block truthiness. The
 authority for the exact block keys and inner field names is the
 `hivemind:detect-remediation-signals` Output Contract.
+
+## Overlord Recurrence Tracking & Zoom-Out Routing Asymmetry
+
+The per-surface recurrence counter that drives **Cross-Iteration Same-Surface Recurrence** is RECONSTRUCTED each loop from GitHub ground truth — there is NO persisted local recurrence file. GitHub IS the ledger, consistent with the stateless github-reviewer that reconstructs its fix-ledger from ground truth rather than persisting one. The count for a surface is reconstructed as: resolved threads citing a structural fix on that surface, PLUS subsequent new findings on that same surface after the fix. Each such (structural-fix-then-new-finding) pair on a surface is one non-closing structural fix.
+
+Forced zoom-out after the second non-closing structural fix: when a surface has absorbed TWO non-closing structural fixes — two accepted structural remediations each followed by a fresh finding on the same surface — the overlord forces an APPROACH-LEVEL zoom-out. That zoom-out questions the KEY or PRIMITIVE per the **Closed-by-Construction Acceptance Test**; it does NOT dispatch another conjunct-completion patch. A second structural fix that did not close the class is itself evidence the fixes are aiming at the wrong primitive.
+
+The counter PERSISTS across structural fixes (per **Cross-Iteration Same-Surface Recurrence**): a surface that already yielded one root is held to the lower threshold for the next, so the second non-closing fix is the trip point, not the start of a fresh count.
+
+Zoom-out routing asymmetry: the user-only architecture zoom-out skill carries `disable-model-invocation: true`, so the overlord cannot invoke it directly. The overlord therefore routes an architectural zoom-out THROUGH the cerebrate, via the existing `review_remediation_plan` / `review_remediation_plan_postpr` remediation state (the same path a `root-cluster-suspected` exit_reason already takes to reach a structural fix). This is the intended path, not a workaround: cerebrate is the architectural-reasoning surface the overlord delegates to, and the disable-model-invocation constraint on the user-only skill is the reason the route goes via the remediation state rather than a direct skill call.
 
 ## Skeleton-Enrichment Judgment Criteria
 
