@@ -246,6 +246,42 @@ run_exit1_case "ensure-parent:graphql-error-exit1" -- \
   ensure-parent --existing-number 7 \
   --response-file "$PI_DIR/ensure-parent-graphql-error-response.json"
 
+# ── ensure-parent: ORPHAN-SAFE discover-then-create (Q2 DECISION) ───────────────────
+# Discovery runs ONLY on the create path (no --existing-number), injected via the dedicated
+# --discovery-response-file seam (a SEARCH response). Resolution rules:
+#   (c) exactly ONE OPEN exact-title match -> status resolved-by-title (skip create).
+#   (d) ZERO matches -> create unchanged (falls through to the --response-file `created` sim).
+#   (e) MULTIPLE exact / a CLOSED exact / divergent -> FAIL CLOSED (never duplicate or reuse
+#       a closed epic).
+# The shared search machinery (run_title_search/filter_exact_title) is reused — the offline
+# discovery transform exercises normalize_find_by_title + resolve_discovery over the fixture.
+run_case "ensure-parent:discover-one-open-resolved" "$EXPECTED_DIR/ensure-parent-resolved-by-title.json" -- \
+  ensure-parent --title "tracer epic" --body anchor \
+  --discovery-response-file "$PI_DIR/ensure-parent-discovery-one-open-response.json"
+
+# ZERO discovery matches -> fall through to the create simulation (status created). Both the
+# discovery (empty) and the post-create node-id read (--response-file) fixtures are supplied.
+run_case "ensure-parent:discover-zero-create" "$EXPECTED_DIR/ensure-parent-created.json" -- \
+  ensure-parent --title "tracer epic" --body anchor \
+  --discovery-response-file "$PI_DIR/ensure-parent-discovery-empty-response.json" \
+  --response-file "$PI_DIR/ensure-parent-resolve-response.json"
+
+# A single CLOSED exact match MUST fail closed — never silently reuse a closed epic.
+run_exit1_case "ensure-parent:discover-closed-exit1" -- \
+  ensure-parent --title "tracer epic" --body anchor \
+  --discovery-response-file "$PI_DIR/ensure-parent-discovery-closed-response.json"
+
+# MULTIPLE exact matches MUST fail closed — never blind-pick among duplicate epics.
+run_exit1_case "ensure-parent:discover-multiple-exit1" -- \
+  ensure-parent --title "tracer epic" --body anchor \
+  --discovery-response-file "$PI_DIR/ensure-parent-discovery-multiple-response.json"
+
+# --discovery-response-file is invalid WITH --existing-number (discovery runs only on the
+# create path) — fail closed (exit 2).
+run_exit1_case "ensure-parent:discovery-with-existing-number-exit2" -- \
+  ensure-parent --existing-number 7 \
+  --discovery-response-file "$PI_DIR/ensure-parent-discovery-one-open-response.json"
+
 # ── find-by-title: exact-title candidate discovery (F1) ────────────────────────────
 # A search response with an UNPARENTED candidate (#21, parent:null), an ALREADY-ATTACHED
 # candidate (#22, parent:{7}), and a fuzzy NON-EXACT title (#23 "...extra") normalizes to
@@ -276,6 +312,20 @@ run_exit1_case "find-by-title:graphql-error-exit1" -- \
 run_exit1_case "find-by-title:missing-id-exit1" -- \
   find-by-title --title "tracer slice A" \
   --response-file "$PI_DIR/find-by-title-missing-id-response.json"
+
+# A node MISSING `state` MUST fail closed via the shared kernel — state is now a REQUIRED
+# identity field (same fail-closed posture as a missing id/number/title). Mirrors missing-id.
+run_exit1_case "find-by-title:missing-state-exit1" -- \
+  find-by-title --title "tracer slice A" \
+  --response-file "$PI_DIR/find-by-title-missing-state-response.json"
+
+# ── find-by-title: CLOSED exact match — state surfaced truthfully ──────────────────
+# A search returning a CLOSED exact-title match emits the record with state:"CLOSED". The
+# SCRIPT only SURFACES state; classifying a closed match as a CONFLICT is the SKILL's job
+# (PRSTEP-003), never baked into the script — so the match is emitted, not dropped.
+run_case "find-by-title:closed-match" "$EXPECTED_DIR/find-by-title-closed-match.json" -- \
+  find-by-title --title "tracer slice A" \
+  --response-file "$PI_DIR/find-by-title-closed-match-response.json"
 
 # ── find-by-title: TERMINAL-PAGE gate — non-terminal offline pages fail closed ────────
 # An injected page with pageInfo.hasNextPage=true MUST fail closed (offline seam treats
@@ -386,6 +436,7 @@ for live_case in \
   "attach-subissue:attach-subissue --response-file $PI_DIR/attach-success-response.json" \
   "list-children:list-children --response-file $PI_DIR/list-children-complete-response.json" \
   "ensure-parent:ensure-parent --existing-number 7 --response-file $PI_DIR/ensure-parent-resolve-response.json" \
+  "ensure-parent-discovery:ensure-parent --title slice --body anchor --discovery-response-file $PI_DIR/ensure-parent-discovery-one-open-response.json" \
   "find-by-title:find-by-title --title slice --response-file $PI_DIR/find-by-title-response.json" ; do
   cname="${live_case%%:*}"
   cargs="${live_case#*:}"

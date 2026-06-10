@@ -30,23 +30,44 @@
 # ----------------------------------
 #   ensure-parent --title <str> --body <str>|--body-file <path|-> [--repo <owner/repo>]
 #                 [--existing-number <int>] [--response-file <path|->]
-#     Idempotently CREATE-OR-FIND the PRD-level epic (parent) issue.
+#                 [--discovery-response-file <path|->]
+#     Idempotently CREATE-OR-FIND the PRD-level epic (parent) issue — ORPHAN-SAFE
+#     (closed-by-construction): when no --existing-number is supplied, ensure-parent first
+#     DISCOVERS-BY-TITLE before creating, so a create-before-record partial failure never
+#     spawns a SECOND duplicate epic.
 #     Idempotency key: if --existing-number is supplied the parent is RESOLVED (its
 #     node id read by number) instead of created — the skill anchors the epic to a
-#     known issue across re-runs. Otherwise a NEW issue is created.
+#     known issue across re-runs. Otherwise: discover the EXACT epic title via the SHARED
+#     search machinery (build_search_terms + paginate_to_completeness + filter_exact_title —
+#     the SAME path find-by-title uses, never a divergent copy), then apply the resolution
+#     rules below; only on ZERO matches is a NEW issue created.
+#     Discovery resolution rules (Q2 DECISION):
+#       - exactly ONE OPEN exact-title match  -> RESOLVE it (skip create), status
+#         `resolved-by-title`, emit its number+id.
+#       - ZERO matches                        -> CREATE as today, status `created`.
+#       - MULTIPLE exact matches, OR any CLOSED exact match, OR divergent -> FAIL CLOSED
+#         (structured, nonzero) — never blind-create a second parent, never silently reuse a
+#         closed epic. The ambiguity is surfaced, not papered over.
 #     online (create path): `gh issue create --title --body[-file]` (untrusted title
 #              /body flow ONLY through gh flags, never into shell/GraphQL source),
 #              then resolve its node id by number via GraphQL. --repo, when given,
-#              is passed to gh as `-R`.
+#              is passed to gh as `-R`. The PRE-CREATE discovery search applies the SAME
+#              owner/repo charset guard find-by-title has (not the weak `*/*` glob).
 #     online (resolve path, --existing-number): GraphQL repository.issue(number) read
 #              of { number id }, routed through the SHARED kernel (see §4).
 #     offline: with --response-file -> normalizes the injected raw GraphQL
 #              repository.issue response (number+id) through the shared kernel and
-#              emits the parent record. Title/body/create are NOT exercised offline
-#              (no deterministic transform — creation is pure live side effect).
-#     --response-file is a TEST SEAM honored ONLY when SUBISSUE_OPS_OFFLINE is set;
-#     a live invocation supplying it is REJECTED fail-closed via the shared guard
-#     (see §5) BEFORE any gh call.
+#              emits the parent record (status resolved when --existing-number was given,
+#              else created — the create path's post-create node-id read). Title/body/create
+#              are NOT exercised offline (no deterministic transform — creation is pure live
+#              side effect). With --discovery-response-file (no --existing-number) -> runs the
+#              discovery transform (shared kernel + exact-title filter + resolution rules) over
+#              the injected SEARCH response: one OPEN match emits status resolved-by-title; a
+#              multiple/CLOSED/divergent set FAILS CLOSED; ZERO matches falls through to the
+#              --response-file `created` simulation.
+#     --response-file / --discovery-response-file are TEST SEAMS honored ONLY when
+#     SUBISSUE_OPS_OFFLINE is set; a live invocation supplying either is REJECTED fail-closed
+#     via the shared guard (see §5) BEFORE any gh call.
 #
 #   attach-subissue --parent-id <NODE_ID> --child-id <NODE_ID> [--response-file <path|->]
 #     Run the GraphQL `addSubIssue` mutation. CRITICAL FIELD MAPPING: the input
@@ -82,7 +103,9 @@
 #     online:  `gh api graphql` search(type: ISSUE) over `repo:<owner/repo> in:title
 #              "<title>"` (the query STRING is built with the title bound via gh -f as
 #              DATA — see §4); the raw search response is routed through the SHARED kernel
-#              (see §4) then exact-title post-filtered.
+#              (see §4) then exact-title post-filtered. Each emitted match carries the
+#              issue's `state` (OPEN/CLOSED) — the script SURFACES state truthfully; the
+#              closed-child CONFLICT judgment lives in the SKILL, never in this script.
 #     offline: with --response-file -> normalizes the injected raw GraphQL search response
 #              through the shared kernel + exact-title filter (the injected fixture is the
 #              search result set). REQUIRES --response-file offline (fail-closed otherwise).
@@ -112,7 +135,10 @@
 # 3. OUTPUT SCHEMA — JSON on stdout (compact)
 # -------------------------------------------
 #   ensure-parent:
-#     { "number": <int>, "id": <node-id>, "status": "created"|"resolved" }
+#     { "number": <int>, "id": <node-id>,
+#       "status": "created"|"resolved"|"resolved-by-title" }
+#     `resolved-by-title` is emitted when the pre-create discovery found exactly ONE OPEN
+#     exact-title epic and resolved it instead of creating a duplicate (orphan-safety).
 #
 #   attach-subissue payload (offline, --emit-payload):
 #     { "issueId": <parent-node-id>, "subIssueId": <child-node-id> }
@@ -129,11 +155,15 @@
 #   find-by-title normalized:
 #     { "title": <str>,
 #       "matches": [ { "number": <int>, "id": <node-id>, "title": <str>,
+#                      "state": "OPEN"|"CLOSED",
 #                      "parent": { "number": <int>, "id": <node-id> } | null }, ... ] }
 #     `matches` holds ONLY issues whose title EQUALS the queried title byte-for-byte
-#     (exact-title post-filter). `parent` is null for an UNPARENTED (orphan) candidate and
-#     the {number,id} of the parent for an already-attached child — the skill reads it to
-#     decide attach (parent null) vs reuse/skip (already attached to the intended epic).
+#     (exact-title post-filter). `state` is the issue's GitHub state (OPEN/CLOSED), surfaced
+#     truthfully so the skill (PRSTEP-003) can treat a CLOSED exact match as a CONFLICT — the
+#     classification JUDGMENT is the SKILL's, never baked into this script. `parent` is null
+#     for an UNPARENTED (orphan) candidate and the {number,id} of the parent for an already-
+#     attached child — the skill reads it to decide attach (parent null) vs reuse/skip
+#     (already attached to the intended epic).
 #
 # 4. INVARIANTS
 # -------------
@@ -177,6 +207,13 @@
 #   - FAIL-CLOSED on malformed injected input to a pure transform (bad --response-file,
 #     unreadable injection file, a continued offline page) — a malformed fixture is a
 #     usage bug, not noise.
+#   - PARENT ORPHAN-SAFETY IS CLOSED-BY-CONSTRUCTION. ensure-parent never blind-creates a
+#     second epic: with no --existing-number it DISCOVERS-BY-TITLE first (reusing the SINGLE
+#     SHARED search machinery find-by-title uses — build_search_terms + paginate_to_completeness
+#     + filter_exact_title, never a divergent second search), resolves a lone OPEN exact match
+#     (status resolved-by-title), creates ONLY on zero matches, and FAILS CLOSED on a
+#     multiple/CLOSED/divergent set rather than duplicating or reusing a closed epic. The same
+#     owner/repo charset guard find-by-title enforces is applied to the discovery search path.
 #
 # 5. OFFLINE TEST SEAM (STEP-002 depends on this)
 # -----------------------------------------------
@@ -185,18 +222,20 @@
 # emitting the deterministic artifact (parent record / attach payload / surfaced
 # record / normalized children / title-match candidates) to stdout. Input that would
 # normally come from gh is injected via --response-file (ensure-parent, attach-subissue,
-# list-children, find-by-title); attach-subissue's payload-build artifact instead needs
-# the explicit --emit-payload opt-in (offline attach with NEITHER flag FAILS CLOSED). The
-# fixture flag is honored ONLY when SUBISSUE_OPS_OFFLINE is set; a live invocation
-# supplying it is REJECTED fail-closed (exit 2) BEFORE any gh call via the single
+# list-children, find-by-title); ensure-parent's PRE-CREATE discovery search is injected via
+# the dedicated --discovery-response-file seam (a SEARCH response, distinct from the
+# --response-file repository.issue response); attach-subissue's payload-build artifact instead
+# needs the explicit --emit-payload opt-in (offline attach with NEITHER flag FAILS CLOSED). The
+# fixture flags are honored ONLY when SUBISSUE_OPS_OFFLINE is set; a live invocation
+# supplying any is REJECTED fail-closed (exit 2) BEFORE any gh call via the single
 # shared guard reject_fixture_flags_in_live_mode (one mechanism, no per-subcommand
-# divergence) — it is a test seam, not a live caller payload, and would otherwise let
-# a fixture spoof a created/attached/child state for a mutation that never ran. Use
-# `-` for stdin on any *-file flag. The pure transforms are factored as functions
+# divergence) — they are test seams, not live caller payloads, and would otherwise let
+# a fixture spoof a created/attached/child/resolved-by-title state for a mutation that never
+# ran. Use `-` for stdin on any *-file flag. The pure transforms are factored as functions
 # reading from injected input (build_attach_payload, surface_attach_response,
-# normalize_parent_resolve, normalize_children, normalize_find_by_title) so the test can drive each directly
-# via the offline CLI with only jq + bash, no `gh`. Mirrors triage-ops.sh's
-# --response-file injection.
+# normalize_parent_resolve, normalize_children, normalize_find_by_title, resolve_discovery) so
+# the test can drive each directly via the offline CLI with only jq + bash, no `gh`. Mirrors
+# triage-ops.sh's --response-file injection.
 
 set -euo pipefail
 
@@ -256,6 +295,21 @@ read_injected() {
   else
     die "injection file not found: $src" 1
   fi
+}
+
+# assert_owner_repo <subcmd> <owner/repo>: the SINGLE SOURCE owner/repo charset guard,
+# shared by find-by-title AND ensure-parent's pre-create discovery search so the two cannot
+# diverge (ensure-parent's create path previously did only the weak `*/*` glob; the discovery
+# path now applies this stronger guard). Split on the single `/`, gate each half against the
+# GitHub name charset BEFORE any gh/GraphQL call. owner_repo flows into the search DSL via -f
+# as DATA, but a malformed value is a usage bug, not a broadened query — fail CLOSED (exit 2).
+# Replaces the weak `*/*` glob, which admitted e.g. `a/b/c` or shell metacharacters.
+assert_owner_repo() {
+  local subcmd="$1" owner_repo="$2" owner_part repo_part
+  case "$owner_repo" in */*) ;; *) die "$subcmd: --repo must be owner/repo (got '$owner_repo')" 2 ;; esac
+  owner_part="${owner_repo%%/*}"; repo_part="${owner_repo#*/}"
+  case "$owner_part" in ''|*[!A-Za-z0-9._-]*) die "$subcmd: invalid repo owner (got '$owner_part')" 2 ;; esac
+  case "$repo_part" in ''|*/*|*[!A-Za-z0-9._-]*) die "$subcmd: invalid repo name (got '$repo_part')" 2 ;; esac
 }
 
 # assert_node_id <flag-name> <value>: DEFENSE-IN-DEPTH node-id allowlist (ADR-0020 trust
@@ -395,12 +449,14 @@ normalize_children() {
 # GraphQL response into the find-by-title schema (§3) — FAIL-CLOSED via the shared kernel,
 # then EXACT-title post-filtered. Two passes:
 #   1. validate_response_shape gates the SHAPE: root `.data.search` non-null, `.nodes` an
-#      array, and EVERY node carries a string id (len>0), a number, and a string title
-#      (len>0). The `parent` field is OPTIONAL per node (null when unparented), so it is
-#      NOT in the element predicate; it is normalized to {number,id}|null in pass 2.
+#      array, and EVERY node carries a string id (len>0), a number, a string title (len>0),
+#      AND a string state (len>0) — a state-less node FAILS CLOSED, same posture as the other
+#      identity fields. The `parent` field is OPTIONAL per node (null when unparented), so it
+#      is NOT in the element predicate; it is normalized to {number,id}|null in pass 2.
 #   2. a jq pass binds the UNTRUSTED title as DATA via --arg and keeps ONLY nodes whose
-#      `.title == $title` byte-for-byte (search is fuzzy; this enforces exact-title). The
-#      title is NEVER interpolated into the jq program — it flows solely through --arg.
+#      `.title == $title` byte-for-byte (search is fuzzy; this enforces exact-title), emitting
+#      each match's `state` (OPEN/CLOSED) truthfully (closed-child CONFLICT judgment is the
+#      SKILL's job). The title is NEVER interpolated into the jq program — it flows via --arg.
 # A transport error, `.errors` envelope, null search root, non-array nodes, or any node
 # missing a required identity field FAILS CLOSED (nonzero) — a candidate set built from an
 # unverifiable read is never emitted. Exit codes: 0 = normalized; 1 = fail-closed.
@@ -420,7 +476,8 @@ normalize_find_by_title() {
     '.nodes' \
     '(.number | type == "number")
      and (.id | type == "string" and length > 0)
-     and (.title | type == "string" and length > 0)' \
+     and (.title | type == "string" and length > 0)
+     and (.state | type == "string" and length > 0)' \
     '.data.search.nodes')" || return 1
   filter_exact_title "$validated" "$title"
 }
@@ -453,16 +510,56 @@ build_search_terms() {
 # (shared by the offline normalize_find_by_title path AND the live paginate-to-completeness
 # path, so the exactness contract can never diverge). Search is fuzzy/full-text; this keeps
 # ONLY nodes whose `.title` EQUALS the queried title byte-for-byte and wraps them in the §3
-# {title, matches:[{number,id,title,parent}]} schema. The UNTRUSTED title enters ONLY as
-# --arg DATA — it is NEVER interpolated into the jq program.
+# {title, matches:[{number,id,title,state,parent}]} schema. Each match carries the issue's
+# `state` (OPEN/CLOSED) truthfully — the SCRIPT only SURFACES it; the closed-child CONFLICT
+# JUDGMENT is the SKILL's job, never baked in here. The UNTRUSTED title enters ONLY as --arg
+# DATA — it is NEVER interpolated into the jq program.
 filter_exact_title() {
   local nodes="$1" title="$2"
   printf '%s' "$nodes" | jq -c --arg title "$title" \
     '{ title: $title,
        matches: [ .[]
                   | select(.title == $title)
-                  | { number, id, title,
+                  | { number, id, title, state,
                       parent: ( if (.parent != null) then { number: .parent.number, id: .parent.id } else null end ) } ] }'
+}
+
+# resolve_discovery <find-by-title-json>: the PURE discovery resolution transform for
+# ensure-parent's orphan-safety (Q2 DECISION). Input is the filter_exact_title output
+# ({title, matches:[{number,id,title,state,parent}]}) over the EXACT epic title. It applies
+# the resolution rules and emits a DECISION on stdout (exit 0) or FAILS CLOSED (exit 1):
+#   - exactly ONE match whose state == "OPEN" -> emits the parent record
+#     { number, id, status: "resolved-by-title" } (the caller emits it verbatim).
+#   - ZERO matches -> emits { action: "create" } (the caller proceeds to create).
+#   - MULTIPLE exact matches, OR a single CLOSED match, OR any CLOSED member of a multi-set
+#     (i.e. ANYTHING other than the lone-OPEN or empty case) -> FAILS CLOSED (structured
+#     record to stderr, exit 1) — never resolve a closed epic, never pick among duplicates.
+# Pure jq — offline-exercisable. The single-OPEN test is `length==1 and .[0].state=="OPEN"`;
+# everything else that is non-empty is the divergent/ambiguous/closed fail-closed branch.
+resolve_discovery() {
+  local matches_json="$1" decision
+  decision="$(printf '%s' "$matches_json" | jq -c '
+        .matches as $m
+        | if   ($m | length) == 0
+          then { action: "create" }
+          elif ($m | length) == 1 and ($m[0].state == "OPEN")
+          then { number: $m[0].number, id: $m[0].id, status: "resolved-by-title" }
+          else { action: "fail" } end')" || {
+    jq -c -n '{ status:"error", kind:"discovery-malformed",
+                message:"could not evaluate discovery matches" }' >&2
+    return 1
+  }
+  case "$(printf '%s' "$decision" | jq -r '.action // "ok"')" in
+    fail)
+      printf '%s' "$matches_json" | jq -c \
+        '{ status:"error", kind:"ambiguous-epic",
+           message:"discovery found multiple exact-title matches, a closed match, or a divergent set — refusing to create or reuse",
+           matches: .matches }' >&2
+      return 1 ;;
+    *)
+      printf '%s\n' "$decision"
+      return 0 ;;
+  esac
 }
 
 # build_attach_payload <parent-id> <child-id>: the GraphQL variables for the
@@ -585,6 +682,7 @@ query($q: String!, $after: String) {
         id
         number
         title
+        state
         parent { id number }
       }
     }
@@ -657,7 +755,7 @@ paginate_to_completeness() {
 # --- Subcommand implementations ----------------------------------------------
 
 cmd_ensure_parent() {
-  local title="" body="" body_file="" repo="" existing_number="" response_file=""
+  local title="" body="" body_file="" repo="" existing_number="" response_file="" discovery_response_file=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --title) [ "$#" -ge 2 ] || die "missing value for --title" 2
@@ -672,6 +770,8 @@ cmd_ensure_parent() {
                existing_number="$2"; shift 2 ;;
       --response-file) [ "$#" -ge 2 ] || die "missing value for --response-file" 2
                response_file="$2"; shift 2 ;;
+      --discovery-response-file) [ "$#" -ge 2 ] || die "missing value for --discovery-response-file" 2
+               discovery_response_file="$2"; shift 2 ;;
       *) die "ensure-parent: unexpected argument '$1'" 2 ;;
     esac
   done
@@ -679,7 +779,30 @@ cmd_ensure_parent() {
     case "$existing_number" in ''|*[!0-9]*) die "ensure-parent: --existing-number must be an integer (got '$existing_number')" 2 ;; esac
   fi
 
+  # --discovery-response-file is meaningful ONLY on the create path (no --existing-number) —
+  # with an idempotency key supplied there is nothing to discover. Reject the combination as a
+  # usage bug rather than silently ignoring the injected discovery fixture.
+  if [ -n "$discovery_response_file" ] && [ -n "$existing_number" ]; then
+    die "ensure-parent: --discovery-response-file is invalid with --existing-number (discovery runs only on the create path)" 2
+  fi
+
   if is_offline; then
+    # Offline DISCOVERY seam (create path): with --discovery-response-file the injected SEARCH
+    # response is run through the shared kernel + exact-title filter + resolve_discovery. A lone
+    # OPEN exact match emits { number, id, status:"resolved-by-title" }; a multiple/CLOSED/
+    # divergent set FAILS CLOSED (exit 1); ZERO matches falls through to the --response-file
+    # `created` simulation below (mirroring the live discover-then-create flow).
+    if [ -n "$discovery_response_file" ]; then
+      local matches decision
+      matches="$(normalize_find_by_title "$(read_injected "$discovery_response_file")" "$title")" \
+        || die "ensure-parent: malformed discovery search response" 1
+      decision="$(resolve_discovery "$matches")" || return 1
+      if [ "$(printf '%s' "$decision" | jq -r '.action // "resolved"')" != "create" ]; then
+        printf '%s\n' "$decision"
+        return 0
+      fi
+      # ZERO matches: fall through to the create simulation (requires --response-file).
+    fi
     # Offline exercises ONLY the resolve/normalize transform (creation is a pure live
     # side effect with no deterministic transform). The injected response is treated
     # as a repository.issue read; status tag is resolved when --existing-number was
@@ -691,7 +814,8 @@ cmd_ensure_parent() {
     return
   fi
 
-  reject_fixture_flags_in_live_mode "ensure-parent" "--response-file=$response_file"
+  reject_fixture_flags_in_live_mode "ensure-parent" \
+    "--response-file=$response_file" "--discovery-response-file=$discovery_response_file"
   require_gh "ensure-parent"
 
   # Resolve owner/repo: explicit --repo wins, else the current checkout.
@@ -702,7 +826,9 @@ cmd_ensure_parent() {
     owner_repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \
       || die "ensure-parent: failed to resolve owner/repo (pass --repo)" 1
   fi
-  case "$owner_repo" in */*) ;; *) die "ensure-parent: --repo must be owner/repo (got '$owner_repo')" 2 ;; esac
+  # Apply the SAME owner/repo charset guard find-by-title uses (the SHARED guard) — tightening
+  # the former weak `*/*` glob now that the discovery search flows owner_repo into the search DSL.
+  assert_owner_repo "ensure-parent" "$owner_repo"
   owner="${owner_repo%%/*}"; repo_name="${owner_repo#*/}"
 
   local number resp
@@ -717,9 +843,25 @@ cmd_ensure_parent() {
     return
   fi
 
-  # CREATE path: untrusted title/body flow ONLY through gh flags (never shell/GraphQL
-  # source). Prefer --body-file when given (large/multiline PRD epic bodies).
+  # ORPHAN-SAFE DISCOVER-THEN-CREATE (no idempotency key): before creating, DISCOVER the epic
+  # by EXACT title via the SHARED search machinery (run_title_search → build_search_terms +
+  # paginate_to_completeness + filter_exact_title — the SAME path find-by-title uses, never a
+  # divergent second search) and apply the resolution rules (resolve_discovery): a lone OPEN
+  # exact match RESOLVES (status resolved-by-title, skip create); a multiple/CLOSED/divergent
+  # set FAILS CLOSED; ZERO matches falls through to create. A title is REQUIRED to discover.
   [ -n "$title" ] || die "ensure-parent: --title is required to create a parent (or pass --existing-number)" 2
+  local discovery decision
+  discovery="$(run_title_search "ensure-parent" "$owner_repo" "$title")" \
+    || die "ensure-parent: discovery search failed" 1
+  decision="$(resolve_discovery "$discovery")" || exit 1
+  if [ "$(printf '%s' "$decision" | jq -r '.action // "resolved"')" != "create" ]; then
+    printf '%s\n' "$decision"
+    return 0
+  fi
+
+  # CREATE path (discovery found ZERO existing epics): untrusted title/body flow ONLY through
+  # gh flags (never shell/GraphQL source). Prefer --body-file when given (large/multiline
+  # PRD epic bodies).
   local -a create_args=(issue create --title "$title")
   [ -n "$repo" ] && create_args=(issue create -R "$owner_repo" --title "$title")
   if [ -n "$body_file" ]; then
@@ -859,6 +1001,38 @@ cmd_list_children() {
     '{ parent_id: $pid, children: [ $children[] | { number, id, title } ] }'
 }
 
+# run_title_search <subcmd> <owner_repo> <title>: the SINGLE SHARED live exact-title search,
+# driving BOTH cmd_find_by_title AND ensure-parent's pre-create discovery so there is exactly
+# ONE search-DSL + pagination + exact-filter path (no divergent second search). Builds the q=
+# value via build_search_terms (untrusted title degraded to plain broadening terms; flows to gh
+# via -f q= as DATA, never interpolated), paginates the FIND_BY_TITLE_QUERY to completeness via
+# the shared mechanism (state-aware element predicate), and runs filter_exact_title ONCE over the
+# full accumulated set. Emits the {title, matches:[{number,id,title,state,parent}]} schema on
+# stdout (exit 0) or FAILS CLOSED via the kernel (propagated exit). The caller MUST have
+# already validated owner_repo via assert_owner_repo and ensured `gh` is on PATH.
+run_title_search() {
+  local subcmd="$1" owner_repo="$2" title="$3"
+  local terms query_value accumulated
+  terms="$(build_search_terms "$title")"
+  if [ -n "$terms" ]; then
+    query_value="repo:$owner_repo in:title $terms"
+  else
+    query_value="repo:$owner_repo in:title"
+  fi
+  accumulated="$(paginate_to_completeness \
+    "$subcmd" "$FIND_BY_TITLE_QUERY" \
+    '.data.search' \
+    '(.pageInfo.hasNextPage | type == "boolean")' \
+    '.nodes' \
+    '(.number | type == "number")
+     and (.id | type == "string" and length > 0)
+     and (.title | type == "string" and length > 0)
+     and (.state | type == "string" and length > 0)' \
+    '.pageInfo' \
+    -f q="$query_value")" || return "$?"
+  filter_exact_title "$accumulated" "$title"
+}
+
 cmd_find_by_title() {
   local title="" repo="" response_file=""
   while [ "$#" -gt 0 ]; do
@@ -900,59 +1074,22 @@ cmd_find_by_title() {
     owner_repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \
       || die "find-by-title: failed to resolve owner/repo (pass --repo)" 1
   fi
-  # Charset-validate owner AND repo: split on the single `/`, gate each against the GitHub
-  # name charset BEFORE any gh/GraphQL call (defense-in-depth — owner_repo flows into the
-  # search DSL via -f as DATA, but a malformed `--repo` is a usage bug, not a broadened
-  # query). Replaces the weak `*/*` glob, which admitted e.g. `a/b/c` or shell metacharacters.
-  case "$owner_repo" in */*) ;; *) die "find-by-title: --repo must be owner/repo (got '$owner_repo')" 2 ;; esac
-  local owner_part repo_part
-  owner_part="${owner_repo%%/*}"; repo_part="${owner_repo#*/}"
-  case "$owner_part" in ''|*[!A-Za-z0-9._-]*) die "find-by-title: invalid repo owner (got '$owner_part')" 2 ;; esac
-  case "$repo_part" in ''|*/*|*[!A-Za-z0-9._-]*) die "find-by-title: invalid repo name (got '$repo_part')" 2 ;; esac
+  # Charset-validate owner AND repo via the SHARED guard BEFORE any gh/GraphQL call
+  # (defense-in-depth — owner_repo flows into the search DSL via -f as DATA, but a malformed
+  # `--repo` is a usage bug, not a broadened query). Replaces the weak `*/*` glob, which
+  # admitted e.g. `a/b/c` or shell metacharacters. Same guard ensure-parent's discovery uses.
+  assert_owner_repo "find-by-title" "$owner_repo"
 
   # With an EXPLICIT --repo the charset guard above has now passed; require `gh` before the
   # live GraphQL search (the --repo-omitted branch already required it above).
   [ -n "$repo" ] && require_gh "find-by-title"
 
-  # Build the search query STRING. The untrusted title flows ONLY into this query VALUE,
-  # passed to gh via -f `q=` as DATA — NEVER interpolated into the GraphQL query source or a
-  # shell command word. DSL-SAFETY (WHITELIST, closed-by-construction): build_search_terms
-  # degrades the untrusted title to PLAIN broadening terms keeping ONLY `[A-Za-z0-9]` runs —
-  # EVERY DSL-significant byte (`:` qualifier separator, leading `-` exclusion, `"`/quotes,
-  # all other punctuation, unicode) becomes a space, so NO metacharacter can narrow/exclude
-  # the candidate set or break/error the search. This replaces the old `"`-only blacklist,
-  # which let `:`/leading-`-`/every un-enumerated metacharacter through. When the title is ALL
-  # punctuation, terms is EMPTY and the query is the repo-scoped `in:title`-any search (no
-  # terms) — NOT a pre-emptive fail-closed; the jq --arg exact post-filter remains authoritative
-  # over the candidate set, and the fail-closed kernel surfaces any GitHub rejection of a
-  # no-terms search. AUTHORITATIVE exactness stays on the jq --arg byte-for-byte post-filter
-  # (filter_exact_title) over the FULLY-paginated set — broadening the DSL search can only ADD
-  # candidates the exact filter then drops; it can never admit a non-exact match.
-  local terms query_value
-  terms="$(build_search_terms "$title")"
-  if [ -n "$terms" ]; then
-    query_value="repo:$owner_repo in:title $terms"
-  else
-    query_value="repo:$owner_repo in:title"
-  fi
-
-  # PAGINATE TO COMPLETENESS via the SHARED mechanism (mirrors list-children): accumulate ALL
-  # search nodes across pages, then run the exact-title post-filter ONCE over the full set.
-  # The root predicate gates `search.pageInfo.hasNextPage` as a boolean (VALUE-AGNOSTIC — true
-  # still keeps paging); `.parent` is OPTIONAL per node (null when unparented) so it is NOT in
-  # the element predicate. The query value (with the untrusted title as DATA) passes via -f q=.
-  local accumulated
-  accumulated="$(paginate_to_completeness \
-    "find-by-title" "$FIND_BY_TITLE_QUERY" \
-    '.data.search' \
-    '(.pageInfo.hasNextPage | type == "boolean")' \
-    '.nodes' \
-    '(.number | type == "number")
-     and (.id | type == "string" and length > 0)
-     and (.title | type == "string" and length > 0)' \
-    '.pageInfo' \
-    -f q="$query_value")" || exit "$?"
-  filter_exact_title "$accumulated" "$title"
+  # Run the SHARED live exact-title search (build_search_terms WHITELIST degrade + paginate-to-
+  # completeness + exact-title post-filter). The untrusted title flows ONLY into the q= value as
+  # DATA — NEVER interpolated into the GraphQL query source or a shell command word. The SAME
+  # path ensure-parent's discovery uses, so the search-DSL/pagination/exactness contract cannot
+  # diverge. A malformed/error page FAILS CLOSED via the kernel inside run_title_search.
+  run_title_search "find-by-title" "$owner_repo" "$title" || exit "$?"
 }
 
 # cmd_build_search_terms: OFFLINE-ONLY seam exposing the pure build_search_terms transform
@@ -980,7 +1117,7 @@ usage() {
 $PROG — deterministic mechanism for the hivemind prd-to-issues skill (native sub-issues).
 usage: $PROG <subcommand> [args]
 subcommands:
-  ensure-parent   --title <str> --body <str>|--body-file <path|-> [--repo <owner/repo>] [--existing-number <int>] [--response-file <path|->]
+  ensure-parent   --title <str> --body <str>|--body-file <path|-> [--repo <owner/repo>] [--existing-number <int>] [--response-file <path|->] [--discovery-response-file <path|->]
   attach-subissue --parent-id <ID> --child-id <ID> [--response-file <path|->] | --emit-payload --parent-id <ID> --child-id <ID> (offline payload build)
   list-children   --parent-id <ID> [--response-file <path|->]
   find-by-title   --title <str> [--repo <owner/repo>] [--response-file <path|->]

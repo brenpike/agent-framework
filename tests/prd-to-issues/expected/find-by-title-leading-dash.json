@@ -1,1 +1,1 @@
-{"title":"-foo bar","matches":[{"number":43,"id":"I_dash","title":"-foo bar","parent":null},{"number":44,"id":"I_dash_attached","title":"-foo bar","parent":{"number":7,"id":"I_epic"}}]}
+{"title":"-foo bar","matches":[{"number":43,"id":"I_dash","title":"-foo bar","state":"OPEN","parent":null},{"number":44,"id":"I_dash_attached","title":"-foo bar","state":"OPEN","parent":{"number":7,"id":"I_epic"}}]}

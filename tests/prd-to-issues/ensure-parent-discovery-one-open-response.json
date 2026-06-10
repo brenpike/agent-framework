@@ -1,0 +1,1 @@
+{ "data": { "search": { "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [ { "id": "I_epic_open", "number": 90, "title": "tracer epic", "state": "OPEN", "parent": null } ] } } }
