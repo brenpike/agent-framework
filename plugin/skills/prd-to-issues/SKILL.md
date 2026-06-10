@@ -185,7 +185,15 @@ bash ${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh \
   [--existing-number <int>]
 ```
 
-Output: `{ "number": <int>, "id": "<NODE_ID>", "status": "created"|"resolved" }`. Capture the `id` (NODE ID) — required for `attach-subissue`.
+Output: `{ "number": <int>, "id": "<NODE_ID>", "status": "created"|"resolved"|"resolved-by-title" }`. Capture the `id` (NODE ID) — required for `attach-subissue`.
+
+**Discover-then-create.** When `--existing-number` is not supplied, `ensure-parent` first searches GitHub by exact title before creating. Resolution rules:
+
+- Single OPEN exact-title match → status `resolved-by-title` (reused; no duplicate epic created).
+- Zero matches → status `created` (new epic created as usual).
+- Multiple exact matches, a CLOSED exact match, or a divergent set → **fail closed / surface to user**. Never silently revive a closed epic as the live parent; never create a second parent alongside an existing one.
+
+When `--existing-number` is supplied the known epic is resolved directly (status `resolved`); discovery is skipped. If the call fails for any reason, surface a blocker and STOP.
 
 ### attach-subissue
 
@@ -217,7 +225,7 @@ Each slice is published in two steps: (1) `gh issue create` creates the child is
 
 ### Steps
 
-1. **Ensure parent exists first.** Call `ensure-parent` (with `--existing-number` if the epic was created in a prior run). Capture the parent NODE ID. If the call fails, surface a blocker and STOP.
+1. **Ensure parent exists first.** Call `ensure-parent` (with `--existing-number` if the epic was created in a prior run). When no `--existing-number` is supplied, `ensure-parent` self-discovers an existing OPEN epic by exact title before creating — emitting status `resolved-by-title` on a single OPEN match, `created` on zero matches, and failing closed on a CLOSED match or multiple matches. Capture the parent NODE ID. If the call fails, surface a blocker and STOP.
 
 2. **Discover candidates for each planned slice via `find-by-title`.** For every approved slice title, call:
 
@@ -228,16 +236,17 @@ Each slice is published in two steps: (1) `gh issue create` creates the child is
      [--repo <owner/repo>]
    ```
 
-   Output: `{ "title": <str>, "matches": [ { "number": <int>, "id": <node-id>, "title": <str>, "parent": { "number": <int>, "id": <node-id> } | null }, ... ] }`. `matches` includes BOTH issues already attached to a parent AND recently-created-but-unparented issues — covering the partial-failure window. If the call fails, surface a blocker and STOP — never fall back to blind-create.
+   Output: `{ "title": <str>, "matches": [ { "number": <int>, "id": <node-id>, "title": <str>, "state": "OPEN"|"CLOSED", "parent": { "number": <int>, "id": <node-id> } | null }, ... ] }`. `matches` includes BOTH issues already attached to a parent AND recently-created-but-unparented issues — covering the partial-failure window. Each match carries `state` (the issue's GitHub state). If the call fails, surface a blocker and STOP — never fall back to blind-create.
 
    `list-children` may additionally be called to enumerate all currently-attached children for overall state awareness, but it is NOT sufficient as the sole discovery mechanism: orphans from the partial-failure window will not appear there.
 
-3. **Classify each planned slice** using the `find-by-title` results (deterministic key = exact title):
+3. **Classify each planned slice** using the `find-by-title` results (deterministic key = exact title). The match record now carries `state`; use it as a classification discriminator:
 
-   - **REUSE (already attached)** — exactly one match whose `parent.number` equals the parent epic's number → the slice is already wired; record its real `#number` for dependency wiring and skip both create and attach.
-   - **ATTACH-OR-REUSE (orphan)** — exactly one match with `parent: null` (unparented) → the slice was created but never attached (partial-failure window). REUSE the existing issue: call `attach-subissue` to wire it to the parent epic (do NOT recreate). `attach-subissue`'s recoverable `already-parented` warning makes this re-attach idempotent.
+   - **REUSE (already attached)** — exactly one match, `state: "OPEN"`, `parent.number` equals the parent epic's number → the slice is already wired; record its real `#number` for dependency wiring and skip both create and attach.
+   - **ATTACH-OR-REUSE (orphan)** — exactly one match, `state: "OPEN"`, `parent: null` (unparented) → the slice was created but never attached (partial-failure window). REUSE the existing issue: call `attach-subissue` to wire it to the parent epic (do NOT recreate). `attach-subissue`'s recoverable `already-parented` warning makes this re-attach idempotent.
    - **CREATE** — zero matches → no prior attempt; publish fresh.
    - **CONFLICT / AMBIGUOUS** — any of the following; on any of these, STOP and surface the conflict to the user for confirmation — do NOT blind-create and do NOT blind-reuse:
+     - Exactly one match whose `state` is `"CLOSED"` — a closed same-title issue is indeterminate (intentionally closed, superseded, or dup-closed); do not silently reuse or attach it as the active slice.
      - Multiple matches for one title (cannot determine which is the intended slice).
      - Exactly one match whose `parent` is set to a DIFFERENT parent (not this epic) — the issue is owned by another hierarchy; do not reparent without explicit user direction.
      - A single match (attached or orphan) whose body/Acceptance Criteria materially diverge from the planned slice.
@@ -250,7 +259,7 @@ Each slice is published in two steps: (1) `gh issue create` creates the child is
 
 Publish only after the user approves the slicing quiz, `gh` auth is confirmed, and the idempotency / resume preflight has classified every planned slice.
 
-1. **Ensure the parent epic.** Call `ensure-parent` and capture the parent NODE ID. This must complete before any child is created.
+1. **Ensure the parent epic.** Call `ensure-parent` and capture the parent NODE ID. When no `--existing-number` is supplied, `ensure-parent` discovers an existing OPEN epic by exact title before creating (status `resolved-by-title` if found, `created` if not, fail closed on a CLOSED or multiple-match result — see the `ensure-parent` section above). This must complete before any child is created.
 
 2. **Publish in dependency order — blockers FIRST.** Create only the slices classified **CREATE** by the idempotency / resume preflight; never recreate a **REUSE**-matched slice. Among CREATE slices, publish those with no blockers first so their real issue numbers exist; then publish dependent CREATE slices. When filling a dependent's `## Dependencies` section, use the resolved real `#123` ref of each blocker — taken from EITHER a just-created blocker OR a REUSE-matched existing blocker (whose number the preflight already recorded).
 
