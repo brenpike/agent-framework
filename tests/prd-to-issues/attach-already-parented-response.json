@@ -1,0 +1,1 @@
+{ "data": { "addSubIssue": null }, "errors": [ { "message": "Sub-issue already has been added to a parent issue." } ] }

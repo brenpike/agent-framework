@@ -72,10 +72,10 @@ A single slug correlates an initiative's plan, handoff, PRD, and issue set. Plan
 - Issue bodies never self-declare file scope and never assert independence.
 - Each sliced issue corresponds to one thin end-to-end unit of behavior and one candidate unit of parallel work.
 - Producing a PRD or an issue set does not initiate, require, or imply a brood; the single-branch-versus-brood decision remains the strategist's call at implementation time.
-- Initiative work items are grouped by a single initiative key, and blocking relationships are expressed through native cross-references between work items.
+- Initiative work items are grouped as native sub-issues under a parent (epic) issue, and blocking relationships are expressed through native cross-references between work items.
 - A handoff, when produced, carries volatile session state and points to the durable plan and PRD rather than duplicating them.
 - A handoff is offered only on explicit request or an Overlord suggestion when the session is context-rich — never as an automatic prompt embedded inside another capability.
-- One slug correlates an initiative's plan, handoff, PRD, and issue set.
+- One slug correlates an initiative's plan, handoff, and PRD; the corresponding issue set is grouped under the parent (epic) issue as native sub-issues.
 - The heavy interrogation methodology is not re-run by any of the three capabilities; each inherits the upstream interrogated output and applies at most its own graduated confirmation or slicing step.
 
 ## Implementation Decisions
@@ -89,7 +89,7 @@ These are architectural and contract-level decisions only. They constrain WHAT t
 - **Session-agnostic, resumable inputs.** Every capability accepts its primary artifact from live context or a persisted file, plus an optional handoff. The handoff is never a required input, and the pipeline is resumable at any boundary.
 - **Intent-based invocation (ADR-0006).** Invocation comes from ordinary intent intake or an explicit command. Capabilities do not hard-wire which specialist handles them; routing is decided at runtime by the expressed intent.
 - **Main-session execution rail (ADR-0005).** A capability that may route sub-work to a specialist must run in the main session, because the tool used to dispatch specialists is unavailable to a sub-session. Pure-synthesis capabilities are context-flexible.
-- **Initiative correlation by slug.** One slug per initiative correlates its plan, handoff, PRD, and issue set. Plans and handoffs are ephemeral scaffolding; the PRD and its supporting decision records are durable, committed artifacts. The PRD is the initiative's anchor; there is no separate tracking work item for the initiative as a whole.
+- **Initiative correlation by slug.** One slug per initiative correlates its plan, handoff, and PRD. Plans and handoffs are ephemeral scaffolding; the PRD and its supporting decision records are durable, committed artifacts. The PRD is the initiative's durable spec anchor; the parent (epic) issue is the GitHub tracking work item that groups the sliced work items as native sub-issues.
 - **Graduated interrogation.** The heavy interrogation methodology stays upstream and is inherited, not repeated. The PRD capability applies only light confirmation; the issue capability applies one focused slicing loop; the handoff capability applies none.
 
 ## Testing Decisions
@@ -100,7 +100,7 @@ These are architectural and contract-level decisions only. They constrain WHAT t
 - Verify the PRD output conforms to the WHAT-only section set and is free of file paths, code, and step sequencing.
 - Verify issue output is behavior-only and contains no self-declared file scope and no independence claim.
 - Verify that producing a PRD or an issue set never initiates or requires a brood, and that the execution-path decision remains separable from artifact production.
-- Verify issue grouping by initiative key and that blocking cross-references resolve correctly when blockers are published before the items that depend on them.
+- Verify issue grouping via the parent epic's native sub-issues and that blocking cross-references resolve correctly when blockers are published before the items that depend on them.
 - Verify the handoff, when produced, points to durable artifacts rather than duplicating them.
 - Confirm capability documentation and prose nowhere couple artifact production to the brood path.
 

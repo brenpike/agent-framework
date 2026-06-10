@@ -1,0 +1,1 @@
+{ "data": { "node": { "id": "I_parentX", "subIssues": { "pageInfo": { "hasNextPage": false, "endCursor": "abc" }, "nodes": [ { "id": "I_child99", "number": 99, "title": "tracer slice with spaces and punctuation: ok!" } ] } } } }

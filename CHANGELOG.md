@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.31.0] - 2026-06-09
+
+### Added
+
+- `prd-to-issues` now groups sliced issues under a PRD-level **parent (epic) issue** using GitHub **native sub-issues**, via a new committed GraphQL script `plugin/skills/prd-to-issues/scripts/subissue-ops.sh` (`ensure-parent` / `attach-subissue` / `list-children`; sends the required `GraphQL-Features: sub_issues` header; fail-closed). New reference `plugin/references/github-subissue-graphql.md` and offline test suite `tools/test_subissue_ops.sh`.
+
+### Changed
+
+- `prd-to-issues` no longer applies the `initiative:<slug>` issue label — initiative grouping is now the native parent/sub-issue hierarchy. Closes #226 (and the folded #246). Go-forward only: existing `initiative:<slug>`-labelled issues are left untouched; no migration is performed. Docs reconciled (CONTEXT.md slug glossary, docs/prds/meta-pipeline.md grouping statements).
+
 ## [2.30.1] - 2026-06-09
 
 ### Changed

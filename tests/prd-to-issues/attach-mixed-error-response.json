@@ -1,0 +1,1 @@
+{ "data": null, "errors": [ { "message": "Adding this sub-issue would create a cycle." }, { "message": "Resource not accessible by integration (permission denied)." } ] }
