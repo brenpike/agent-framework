@@ -406,6 +406,55 @@ else
   failed "build-search-terms:live-rejected" "expected exit 2, got $BST_LIVE_STATUS"
 fi
 
+# ── build-query-value: is:issue qualifier present in constructed q= (P1 correctness) ──
+# The full q= string assembled by run_title_search MUST include the static `is:issue`
+# qualifier so searches never return PRs. `is:issue` is a constant author-controlled token
+# prepended BEFORE the repo scope — it is NEVER derived from the title (which flows only
+# through build_search_terms → plain alphanumeric runs). Asserted via the offline
+# build-query-value seam that exposes the same q= assembly logic.
+BQV_OUT="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" build-query-value --title "tracer slice A" --repo "owner/repo" 2>/dev/null)"
+if printf '%s' "$BQV_OUT" | grep -qF 'is:issue'; then
+  pass "build-query-value:is-issue-present" "q= contains literal 'is:issue' (got: $BQV_OUT)"
+else
+  failed "build-query-value:is-issue-present" "q= missing 'is:issue' qualifier (got: $BQV_OUT)"
+fi
+
+# is:issue must appear BEFORE repo: and in:title — it is a leading static qualifier.
+if printf '%s' "$BQV_OUT" | grep -qE '^is:issue '; then
+  pass "build-query-value:is-issue-leading" "is:issue is the leading token"
+else
+  failed "build-query-value:is-issue-leading" "is:issue not leading in q= (got: $BQV_OUT)"
+fi
+
+# Degenerate title (all punctuation → empty terms): q= must still carry is:issue.
+BQV_DEGEN="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" build-query-value --title ':-/"  @#' --repo "owner/repo" 2>/dev/null)"
+if printf '%s' "$BQV_DEGEN" | grep -qF 'is:issue'; then
+  pass "build-query-value:is-issue-degen" "q= contains is:issue even with degenerate (empty) terms (got: $BQV_DEGEN)"
+else
+  failed "build-query-value:is-issue-degen" "q= missing is:issue for degenerate title (got: $BQV_DEGEN)"
+fi
+
+# The is:issue qualifier comes from the static literal in run_title_search, NEVER from
+# the title. A title that happens to contain 'is:issue' text is degraded by
+# build_search_terms (`:` → space) so the title contributes `is issue` to the terms,
+# not `is:issue`. The q= still carries exactly one `is:issue` from the static prefix.
+BQV_TITLE_IS="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" build-query-value --title "is:issue spurious" --repo "owner/repo" 2>/dev/null)"
+IS_COUNT="$(printf '%s' "$BQV_TITLE_IS" | grep -o 'is:issue' | wc -l | tr -d ' ')"
+if [ "$IS_COUNT" -eq 1 ]; then
+  pass "build-query-value:is-issue-not-from-title" "exactly one is:issue (from static prefix, not from title) (got: $BQV_TITLE_IS)"
+else
+  failed "build-query-value:is-issue-not-from-title" "expected exactly 1 is:issue, got $IS_COUNT (got: $BQV_TITLE_IS)"
+fi
+
+# build-query-value is an OFFLINE-ONLY test seam: a LIVE invocation MUST fail closed (exit 2).
+BQV_LIVE_STATUS=0
+bash "$OPS" build-query-value --title "x" --repo "owner/repo" >/dev/null 2>&1 || BQV_LIVE_STATUS=$?
+if [ "$BQV_LIVE_STATUS" -eq 2 ]; then
+  pass "build-query-value:live-rejected" "exit=2 (offline-only seam rejected live)"
+else
+  failed "build-query-value:live-rejected" "expected exit 2, got $BQV_LIVE_STATUS"
+fi
+
 # ── find-by-title: bad --repo charset guard fires before gh (exit 2, live path) ──────
 # An invalid --repo (contains a third `/` segment or a space/bang) MUST fail closed with
 # exit 2 BEFORE any gh call — the owner/repo charset guard fires at the arg-validation

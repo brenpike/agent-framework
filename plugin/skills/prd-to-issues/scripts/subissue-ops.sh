@@ -1015,9 +1015,9 @@ run_title_search() {
   local terms query_value accumulated
   terms="$(build_search_terms "$title")"
   if [ -n "$terms" ]; then
-    query_value="repo:$owner_repo in:title $terms"
+    query_value="is:issue repo:$owner_repo in:title $terms"
   else
-    query_value="repo:$owner_repo in:title"
+    query_value="is:issue repo:$owner_repo in:title"
   fi
   accumulated="$(paginate_to_completeness \
     "$subcmd" "$FIND_BY_TITLE_QUERY" \
@@ -1110,6 +1110,32 @@ cmd_build_search_terms() {
   build_search_terms "$title"
 }
 
+# cmd_build_query_value: OFFLINE-ONLY seam exposing the full q= assembly that
+# run_title_search constructs (is:issue qualifier + repo scoping + in:title +
+# build_search_terms output). Allows the test to assert the static `is:issue`
+# literal is present without making a live gh call — mirrors cmd_build_search_terms.
+# Emits the full q= string (one line). LIVE invocation FAILS CLOSED (exit 2).
+cmd_build_query_value() {
+  is_offline || die "build-query-value is an offline test seam; set SUBISSUE_OPS_OFFLINE" 2
+  local title="" owner_repo="owner/repo"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --title)      [ "$#" -ge 2 ] || die "missing value for --title" 2
+                    title="$2"; shift 2 ;;
+      --repo)       [ "$#" -ge 2 ] || die "missing value for --repo" 2
+                    owner_repo="$2"; shift 2 ;;
+      *) die "build-query-value: unexpected argument '$1'" 2 ;;
+    esac
+  done
+  local terms
+  terms="$(build_search_terms "$title")"
+  if [ -n "$terms" ]; then
+    printf '%s\n' "is:issue repo:$owner_repo in:title $terms"
+  else
+    printf '%s\n' "is:issue repo:$owner_repo in:title"
+  fi
+}
+
 # --- Dispatch ----------------------------------------------------------------
 
 usage() {
@@ -1133,6 +1159,7 @@ case "$subcmd" in
   list-children)   cmd_list_children "$@" ;;
   find-by-title)   cmd_find_by_title "$@" ;;
   build-search-terms) cmd_build_search_terms "$@" ;;
+  build-query-value)  cmd_build_query_value "$@" ;;
   -h|--help)       usage; exit 0 ;;
   *)               die "unknown subcommand '$subcmd' (try --help)" 2 ;;
 esac
