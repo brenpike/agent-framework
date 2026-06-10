@@ -271,6 +271,14 @@ run_exit1_case "ensure-parent:discover-closed-exit1" -- \
   ensure-parent --title "tracer epic" --body anchor \
   --discovery-response-file "$PI_DIR/ensure-parent-discovery-closed-response.json"
 
+# COMPLETE candidate-state tuple (closes #273): the lone match is OPEN but PARENTED
+# (parent != null) — it is a CHILD sub-issue of another epic, NOT the epic itself. resolve_discovery
+# validates {count==1, OPEN, parent==null} as one tuple, so this open-but-parented candidate FAILS
+# CLOSED (never reused as the parent epic) rather than being wrongly resolved-by-title.
+run_exit1_case "ensure-parent:discover-open-parented-exit1" -- \
+  ensure-parent --title "tracer epic" --body anchor \
+  --discovery-response-file "$PI_DIR/ensure-parent-discovery-one-open-parented-response.json"
+
 # MULTIPLE exact matches MUST fail closed — never blind-pick among duplicate epics.
 run_exit1_case "ensure-parent:discover-multiple-exit1" -- \
   ensure-parent --title "tracer epic" --body anchor \

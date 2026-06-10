@@ -512,22 +512,43 @@ filter_exact_title() {
 # resolve_discovery <find-by-title-json>: the PURE discovery resolution transform for
 # ensure-parent's orphan-safety (Q2 DECISION). Input is the filter_exact_title output
 # ({title, matches:[{number,id,title,state,parent}]}) over the EXACT epic title. It applies
-# the resolution rules and emits a DECISION on stdout (exit 0) or FAILS CLOSED (exit 1):
-#   - exactly ONE match whose state == "OPEN" -> emits the parent record
-#     { number, id, status: "resolved-by-title" } (the caller emits it verbatim).
-#   - ZERO matches -> emits { action: "create" } (the caller proceeds to create).
-#   - MULTIPLE exact matches, OR a single CLOSED match, OR any CLOSED member of a multi-set
-#     (i.e. ANYTHING other than the lone-OPEN or empty case) -> FAILS CLOSED (structured
-#     record to stderr, exit 1) — never resolve a closed epic, never pick among duplicates.
-# Pure jq — offline-exercisable. The single-OPEN test is `length==1 and .[0].state=="OPEN"`;
-# everything else that is non-empty is the divergent/ambiguous/closed fail-closed branch.
+# the resolution rules and emits a DECISION on stdout (exit 0) or FAILS CLOSED (exit 1).
+#
+# COMPLETE CANDIDATE-STATE VALIDATION (closes the candidate-validation-completeness class per
+# issue #273 — closed-by-construction). A lone-epic resolution is SAFE only when the COMPLETE
+# attribute tuple of the candidate holds, validated EXPLICITLY and EXHAUSTIVELY in ONE place so a
+# reviewer can see by inspection that NO attribute is left unchecked. The three required
+# attributes are:
+#       count  == 1        (exactly one exact-title match)
+#   AND state  == "OPEN"   (that match is open)
+#   AND parent == null     (that match is UNPARENTED — an epic, not a CHILD sub-issue of some
+#                           other epic; the `parent` field is already projected by
+#                           filter_exact_title, so the predicate consults it directly)
+# Resolution outcomes:
+#   - the COMPLETE tuple {count==1, OPEN, parent==null} holds -> emit the parent record
+#     { number, id, status: "resolved-by-title" } (the caller emits it verbatim). This is the
+#     ONLY shape that resolves; it is gated on ALL THREE attributes, never a subset.
+#   - ZERO matches -> emit { action: "create" } (the caller proceeds to create).
+#   - ANY other non-empty shape -> FAIL CLOSED (structured record to stderr, exit 1). This single
+#     branch subsumes EVERY unsafe candidate state by construction:
+#       * MULTIPLE exact matches (count>1)                  -> ambiguous, never blind-pick.
+#       * the lone match is CLOSED (state!="OPEN")          -> never reuse a closed epic.
+#       * the lone match is OPEN but PARENTED (parent!=null)-> it is a CHILD sub-issue, not an
+#                                                              epic; surface, never reuse.
+# Because the resolve branch validates the WHOLE tuple, no future single-missing-conjunct finding
+# of this shape can recur: a candidate not matching ALL THREE required attributes fails closed.
+# Pure jq — offline-exercisable.
 resolve_discovery() {
   local matches_json="$1" decision
   decision="$(printf '%s' "$matches_json" | jq -c '
         .matches as $m
         | if   ($m | length) == 0
           then { action: "create" }
-          elif ($m | length) == 1 and ($m[0].state == "OPEN")
+          # COMPLETE candidate-state tuple: ALL THREE attributes must hold to resolve.
+          # {count==1, state=="OPEN", parent==null} — see header (closes #273 class).
+          elif ($m | length) == 1
+               and ($m[0].state  == "OPEN")
+               and ($m[0].parent == null)
           then { number: $m[0].number, id: $m[0].id, status: "resolved-by-title" }
           else { action: "fail" } end')" || {
     jq -c -n '{ status:"error", kind:"discovery-malformed",
@@ -538,7 +559,7 @@ resolve_discovery() {
     fail)
       printf '%s' "$matches_json" | jq -c \
         '{ status:"error", kind:"ambiguous-epic",
-           message:"discovery found multiple exact-title matches, a closed match, or a divergent set — refusing to create or reuse",
+           message:"discovery found multiple exact-title matches, a closed match, or a lone OPEN match that is itself a parented child — refusing to create or reuse",
            matches: .matches }' >&2
       return 1 ;;
     *)

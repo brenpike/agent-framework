@@ -1,0 +1,1 @@
+{"data":{"repository":{"issues":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"I_epic_open_child","number":92,"title":"tracer epic","state":"OPEN","parent":{"number":7,"id":"I_other_epic"}}]}}}}
