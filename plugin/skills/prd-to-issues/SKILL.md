@@ -187,7 +187,7 @@ bash ${CLAUDE_PLUGIN_ROOT}/skills/prd-to-issues/scripts/subissue-ops.sh \
 
 Output: `{ "number": <int>, "id": "<NODE_ID>", "status": "created"|"resolved"|"resolved-by-title" }`. Capture the `id` (NODE ID) — required for `attach-subissue`.
 
-**Discover-then-create.** When `--existing-number` is not supplied, `ensure-parent` first searches GitHub by exact title before creating. Resolution rules:
+**Discover-then-create.** When `--existing-number` is not supplied, `ensure-parent` enumerates the repository's issues and matches by exact title locally before creating. Resolution rules:
 
 - Single OPEN exact-title match → status `resolved-by-title` (reused; no duplicate epic created).
 - Zero matches → status `created` (new epic created as usual).

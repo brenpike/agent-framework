@@ -1,1 +1,1 @@
-{ "data": { "search": { "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [] } } }
+{"data":{"repository":{"issues":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}

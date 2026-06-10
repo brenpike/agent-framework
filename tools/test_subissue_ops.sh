@@ -248,12 +248,12 @@ run_exit1_case "ensure-parent:graphql-error-exit1" -- \
 
 # ── ensure-parent: ORPHAN-SAFE discover-then-create (Q2 DECISION) ───────────────────
 # Discovery runs ONLY on the create path (no --existing-number), injected via the dedicated
-# --discovery-response-file seam (a SEARCH response). Resolution rules:
+# --discovery-response-file seam (a repository.issues ENUMERATION response). Resolution rules:
 #   (c) exactly ONE OPEN exact-title match -> status resolved-by-title (skip create).
 #   (d) ZERO matches -> create unchanged (falls through to the --response-file `created` sim).
 #   (e) MULTIPLE exact / a CLOSED exact / divergent -> FAIL CLOSED (never duplicate or reuse
 #       a closed epic).
-# The shared search machinery (run_title_search/filter_exact_title) is reused — the offline
+# The shared enumeration machinery (run_title_search/filter_exact_title) is reused — the offline
 # discovery transform exercises normalize_find_by_title + resolve_discovery over the fixture.
 run_case "ensure-parent:discover-one-open-resolved" "$EXPECTED_DIR/ensure-parent-resolved-by-title.json" -- \
   ensure-parent --title "tracer epic" --body anchor \
@@ -283,27 +283,27 @@ run_exit1_case "ensure-parent:discovery-with-existing-number-exit2" -- \
   --discovery-response-file "$PI_DIR/ensure-parent-discovery-one-open-response.json"
 
 # ── find-by-title: exact-title candidate discovery (F1) ────────────────────────────
-# A search response with an UNPARENTED candidate (#21, parent:null), an ALREADY-ATTACHED
-# candidate (#22, parent:{7}), and a fuzzy NON-EXACT title (#23 "...extra") normalizes to
-# the {title, matches:[{number,id,title,parent}]} schema with ONLY the byte-exact-title
-# matches (#21, #22) — the fuzzy #23 is dropped by the exact-title post-filter. parent is
-# null for the orphan and {number,id} for the attached child, so the skill can decide
-# attach-vs-reuse per slice.
+# A repository.issues enumeration with an UNPARENTED candidate (#21, parent:null), an
+# ALREADY-ATTACHED candidate (#22, parent:{7}), and a NON-EXACT title (#23 "...extra")
+# normalizes to the {title, matches:[{number,id,title,parent}]} schema with ONLY the
+# byte-exact-title matches (#21, #22) — the non-exact #23 is dropped by the LOCAL exact-title
+# post-filter. parent is null for the orphan and {number,id} for the attached child, so the
+# skill can decide attach-vs-reuse per slice.
 run_case "find-by-title:exact-matches" "$EXPECTED_DIR/find-by-title-matches.json" -- \
   find-by-title --title "tracer slice A" \
   --response-file "$PI_DIR/find-by-title-response.json"
 
-# An empty search result set normalizes to an empty matches array (a clean no-candidate
+# An empty enumeration result set normalizes to an empty matches array (a clean no-candidate
 # result, NOT a failure) so the skill knows the slice must be created.
 run_case "find-by-title:empty" "$EXPECTED_DIR/find-by-title-empty.json" -- \
   find-by-title --title "no such slice" \
   --response-file "$PI_DIR/find-by-title-empty-response.json"
 
 # ── find-by-title: FAIL-CLOSED variants (exit 1) ───────────────────────────────────
-# A null search root, a GraphQL `.errors` envelope, and a node missing a required identity
-# field (id) each MUST fail closed via the shared kernel so a candidate set is never built
-# from an unverifiable read.
-run_exit1_case "find-by-title:null-search-exit1" -- \
+# A null repository.issues root, a GraphQL `.errors` envelope, and a node missing a required
+# identity field (id) each MUST fail closed via the shared kernel so a candidate set is never
+# built from an unverifiable read.
+run_exit1_case "find-by-title:null-repo-issues-exit1" -- \
   find-by-title --title "tracer slice A" \
   --response-file "$PI_DIR/find-by-title-null-search-response.json"
 run_exit1_case "find-by-title:graphql-error-exit1" -- \
@@ -320,7 +320,7 @@ run_exit1_case "find-by-title:missing-state-exit1" -- \
   --response-file "$PI_DIR/find-by-title-missing-state-response.json"
 
 # ── find-by-title: CLOSED exact match — state surfaced truthfully ──────────────────
-# A search returning a CLOSED exact-title match emits the record with state:"CLOSED". The
+# An enumeration containing a CLOSED exact-title match emits the record with state:"CLOSED". The
 # SCRIPT only SURFACES state; classifying a closed match as a CONFLICT is the SKILL's job
 # (PRSTEP-003), never baked into the script — so the match is emitted, not dropped.
 run_case "find-by-title:closed-match" "$EXPECTED_DIR/find-by-title-closed-match.json" -- \
@@ -341,119 +341,6 @@ run_exit1_case "find-by-title:multipage-exit1" -- \
 run_exit1_case "find-by-title:missing-pageinfo-exit1" -- \
   find-by-title --title "tracer slice A" \
   --response-file "$PI_DIR/find-by-title-missing-pageinfo-response.json"
-
-# ── find-by-title: quote-bearing title — jq --arg exact-filter byte-for-byte ─────────
-# A title containing a `"` is passed through the jq --arg exact-title post-filter.
-# The fixture has two nodes: one with the quote-bearing title (should match) and one
-# without (should not match), proving the filter is byte-exact and the `"` does not
-# broaden or break the match. The DSL-neutralization (`"` → space in the search query)
-# is not observable offline; only the exact post-filter behavior is tested here.
-run_case "find-by-title:quote-title" "$EXPECTED_DIR/find-by-title-quote-title.json" -- \
-  find-by-title --title 'slice "beta"' \
-  --response-file "$PI_DIR/find-by-title-quote-title-response.json"
-
-# ── find-by-title: search-DSL WHITELIST — qualifier-bearing titles still match ───────
-# The q= search terms are now built by a WHITELIST (build_search_terms keeps ONLY
-# [A-Za-z0-9] runs, every other byte → space), so a slice title carrying GitHub search
-# DSL syntax — `is:closed`, a leading `-`, `repo:owner/name`, an embedded `:` — can no
-# longer NARROW/EXCLUDE the candidate set before the jq exact filter runs. Each fixture's
-# candidate node carries the FULL literal title (incl the qualifier substring); the exact
-# --arg post-filter MUST still return that node byte-for-byte. (The DSL-degrade itself is
-# asserted directly below via the build-search-terms unit cases — the q= value is not
-# observable offline; here we lock that the exact filter recovers the qualifier-bearing node.)
-run_case "find-by-title:dsl-is-closed" "$EXPECTED_DIR/find-by-title-qualifier-is-closed.json" -- \
-  find-by-title --title "fix is:closed bug" \
-  --response-file "$PI_DIR/find-by-title-qualifier-is-closed-response.json"
-run_case "find-by-title:dsl-leading-dash" "$EXPECTED_DIR/find-by-title-leading-dash.json" -- \
-  find-by-title --title "-foo bar" \
-  --response-file "$PI_DIR/find-by-title-leading-dash-response.json"
-run_case "find-by-title:dsl-repo-qualifier" "$EXPECTED_DIR/find-by-title-qualifier-repo.json" -- \
-  find-by-title --title "add repo:owner/name link" \
-  --response-file "$PI_DIR/find-by-title-qualifier-repo-response.json"
-run_case "find-by-title:dsl-embedded-colon" "$EXPECTED_DIR/find-by-title-embedded-colon.json" -- \
-  find-by-title --title "slice: alpha" \
-  --response-file "$PI_DIR/find-by-title-embedded-colon-response.json"
-
-# ── build-search-terms: the WHITELIST degrade itself (offline seam, no gh) ────────────
-# Direct unit assertions on build_search_terms via the offline build-search-terms seam:
-# the untrusted title is degraded to PLAIN broadening terms — ONLY [A-Za-z0-9] runs
-# survive, every DSL-significant byte (`:`, leading `-`, `"`, `/`, unicode) becomes a
-# space, internal whitespace collapses, ends trim. A degenerate ALL-punctuation title
-# degrades to the EMPTY string (caller then emits a repo-scoped in:title-any search).
-assert_terms() {
-  local case_name="$1" in_title="$2" want="$3" got
-  got="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" build-search-terms --title "$in_title" 2>/dev/null)"
-  if [ "$got" = "$want" ]; then
-    pass "$case_name" "'$in_title' -> '$want'"
-  else
-    failed "$case_name" "'$in_title' -> expected '$want', got '$got'"
-  fi
-}
-assert_terms "build-search-terms:is-closed"   "fix is:closed bug"        "fix is closed bug"
-assert_terms "build-search-terms:leading-dash" "-foo bar"                "foo bar"
-assert_terms "build-search-terms:repo-qual"   "add repo:owner/name link" "add repo owner name link"
-assert_terms "build-search-terms:colon"       "slice: alpha"             "slice alpha"
-assert_terms "build-search-terms:quote"        'slice "beta"'            "slice beta"
-assert_terms "build-search-terms:degenerate"   ':-/"  @#'                ""
-
-# build-search-terms is an OFFLINE-ONLY test seam: a LIVE invocation (no SUBISSUE_OPS_OFFLINE)
-# MUST fail closed (exit 2) before doing anything — it is not a live caller entry point.
-BST_LIVE_STATUS=0
-bash "$OPS" build-search-terms --title "x" >/dev/null 2>&1 || BST_LIVE_STATUS=$?
-if [ "$BST_LIVE_STATUS" -eq 2 ]; then
-  pass "build-search-terms:live-rejected" "exit=2 (offline-only seam rejected live)"
-else
-  failed "build-search-terms:live-rejected" "expected exit 2, got $BST_LIVE_STATUS"
-fi
-
-# ── build-query-value: is:issue qualifier present in constructed q= (P1 correctness) ──
-# The full q= string assembled by run_title_search MUST include the static `is:issue`
-# qualifier so searches never return PRs. `is:issue` is a constant author-controlled token
-# prepended BEFORE the repo scope — it is NEVER derived from the title (which flows only
-# through build_search_terms → plain alphanumeric runs). Asserted via the offline
-# build-query-value seam that exposes the same q= assembly logic.
-BQV_OUT="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" build-query-value --title "tracer slice A" --repo "owner/repo" 2>/dev/null)"
-if printf '%s' "$BQV_OUT" | grep -qF 'is:issue'; then
-  pass "build-query-value:is-issue-present" "q= contains literal 'is:issue' (got: $BQV_OUT)"
-else
-  failed "build-query-value:is-issue-present" "q= missing 'is:issue' qualifier (got: $BQV_OUT)"
-fi
-
-# is:issue must appear BEFORE repo: and in:title — it is a leading static qualifier.
-if printf '%s' "$BQV_OUT" | grep -qE '^is:issue '; then
-  pass "build-query-value:is-issue-leading" "is:issue is the leading token"
-else
-  failed "build-query-value:is-issue-leading" "is:issue not leading in q= (got: $BQV_OUT)"
-fi
-
-# Degenerate title (all punctuation → empty terms): q= must still carry is:issue.
-BQV_DEGEN="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" build-query-value --title ':-/"  @#' --repo "owner/repo" 2>/dev/null)"
-if printf '%s' "$BQV_DEGEN" | grep -qF 'is:issue'; then
-  pass "build-query-value:is-issue-degen" "q= contains is:issue even with degenerate (empty) terms (got: $BQV_DEGEN)"
-else
-  failed "build-query-value:is-issue-degen" "q= missing is:issue for degenerate title (got: $BQV_DEGEN)"
-fi
-
-# The is:issue qualifier comes from the static literal in run_title_search, NEVER from
-# the title. A title that happens to contain 'is:issue' text is degraded by
-# build_search_terms (`:` → space) so the title contributes `is issue` to the terms,
-# not `is:issue`. The q= still carries exactly one `is:issue` from the static prefix.
-BQV_TITLE_IS="$(SUBISSUE_OPS_OFFLINE=1 bash "$OPS" build-query-value --title "is:issue spurious" --repo "owner/repo" 2>/dev/null)"
-IS_COUNT="$(printf '%s' "$BQV_TITLE_IS" | grep -o 'is:issue' | wc -l | tr -d ' ')"
-if [ "$IS_COUNT" -eq 1 ]; then
-  pass "build-query-value:is-issue-not-from-title" "exactly one is:issue (from static prefix, not from title) (got: $BQV_TITLE_IS)"
-else
-  failed "build-query-value:is-issue-not-from-title" "expected exactly 1 is:issue, got $IS_COUNT (got: $BQV_TITLE_IS)"
-fi
-
-# build-query-value is an OFFLINE-ONLY test seam: a LIVE invocation MUST fail closed (exit 2).
-BQV_LIVE_STATUS=0
-bash "$OPS" build-query-value --title "x" --repo "owner/repo" >/dev/null 2>&1 || BQV_LIVE_STATUS=$?
-if [ "$BQV_LIVE_STATUS" -eq 2 ]; then
-  pass "build-query-value:live-rejected" "exit=2 (offline-only seam rejected live)"
-else
-  failed "build-query-value:live-rejected" "expected exit 2, got $BQV_LIVE_STATUS"
-fi
 
 # ── find-by-title: bad --repo charset guard fires before gh (exit 2, live path) ──────
 # An invalid --repo (contains a third `/` segment or a space/bang) MUST fail closed with

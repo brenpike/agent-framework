@@ -1,1 +1,1 @@
-{ "data": { "search": { "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [ { "id": "I_orphan", "number": 21, "title": "tracer slice A", "parent": null } ] } } }
+{"data":{"repository":{"issues":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"I_orphan","number":21,"title":"tracer slice A","parent":null}]}}}}
