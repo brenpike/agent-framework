@@ -107,6 +107,37 @@ The **Stop-and-Merge** section reserves "every push spawns only a fresh bounded 
 
 Regression guard: do not let the young-surface escalation swallow the mature-surface merge path. The two are disjoint by Gate B of **Cross-Iteration Same-Surface Recurrence** — youth is the discriminator. A mature surface failing Gate B routes to merge-advisory exactly as before this section existed.
 
+## Post-Fix Young-Tail Reroute Synthesis
+
+A reviewer's POST-fix advisory step reads only the detector's `merge_advisory` / `diminishing_returns` blocks and discards the detector structure. When **Bounded-Tail vs Recurring-Class Disambiguation** reroutes that advisory because the recurring surface is YOUNG, the cluster verdict's payload is NOT in hand — the step never read the `cluster` block. This section is the SINGLE SOURCE for the obligation that closes that gap and for the role-based shape of the payload the reroute must synthesize. It does not duplicate the disambiguation rule (which decides WHETHER to reroute) or the **Closed-by-Construction Acceptance Test** (which judges whether the tail's tracked fix closes the class); it specifies WHAT a young-tail reroute must carry and the prior obligation that makes the reroute decidable. Both sections are referenced, not restated.
+
+### Gate-B-producing obligation (the overlay must judge youth)
+
+The young-vs-mature reroute discriminator is the Gate-B youth call of **Cross-Iteration Same-Surface Recurrence**. That call is NOT in the deterministic skeleton and NOT in the detector's `merge_advisory` / `diminishing_returns` output. Therefore the pre-fix enrichment overlay each reviewer applies before its detector call (per **Skeleton-Enrichment Judgment Criteria** for the reconstructing reviewer, or directly over the persisted fix-ledger for the stateful reviewer) MUST produce, as agent prose, the Gate-B judgment the POST-fix step depends on:
+
+- **surface YOUTH** — whether each recurring surface was INTRODUCED or HEAVILY MODIFIED in this PR/initiative (the young/mature CALL is judgment, not a script output)
+- **PRIMITIVE-SHARING** — whether the recurring findings patch the edges of one shared data-access / query / parse / serialization primitive
+
+INVARIANT: a POST-fix step that may reroute on youth MUST have a youth call available from the enrichment overlay produced before its detector invocation. A reroute gated on a youth judgment the overlay never produced is a contract violation. The reviewer carries the young-surface recurrence rationale (which iterations re-emitted, why the surface is young, the shared primitive) in the detector's existing `same_framing_rationale` — there is NO new field — so it survives into the POST-fix step.
+
+### Role-based reroute payload
+
+When a POST-fix step reroutes a young recurring surface, it returns `root-cluster-suspected` and MUST synthesize the same payload the pre-fix cluster path carries. The payload is specified here BY ROLE; each reviewer maps these roles onto its own Output-Contract field names and sources each role its own way (the stateless reviewer reconstructs from git ground truth + the fresh post-fix fetch; the stateful reviewer reads its persisted fix-ledger). Roles:
+
+- **surface files** — the young recurring surface file(s) from the enrichment overlay
+- **finding refs** — the unresolved thread-URLs or finding-IDs on that surface (sourced from each reviewer's own current-state set)
+- **shared root** — the hypothesized root cause / root class shared across the recurring findings
+- **same-framing rationale** — the young-surface recurrence rationale carried in the enrichment overlay (which iterations re-emitted, why the surface is young, the shared primitive)
+- **member count** — the recurring-finding count
+
+### Invariants
+
+- A young-tail reroute MUST NOT return `root-cluster-suspected` with an empty payload. Every role above must be populated from the reviewer's own state.
+- Youth is the discriminator. A MATURE / legacy surface with a bounded tail and a tracked structural home stays on the existing **Stop-and-Merge** merge-advisory (or advisory early-exit) path, unchanged. The young-tail reroute MUST NOT swallow that mature path.
+- A reroute introduces NO new `exit_reason` and NO new payload field — it reuses `root-cluster-suspected` and the existing cluster payload roles.
+
+The four consumers of this section, per the governance-consumer convention, are: `github-reviewer` step 5 (pre-fix overlay producing the Gate-B youth judgment), `github-reviewer` step 9 (POST-fix young-tail reroute + synthesis), `local-reviewer` step 6 (pre-fix overlay producing the Gate-B youth judgment), and `local-reviewer` step 9 (POST-fix young-tail reroute + synthesis). This section is the single source of the obligation and the payload roles; those steps reference it by name and do not restate it.
+
 ## Verdict Consumption
 
 The `hivemind:detect-remediation-signals` skill emits a verdict in which EVERY block
