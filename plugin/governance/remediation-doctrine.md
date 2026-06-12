@@ -160,6 +160,21 @@ The counter PERSISTS across structural fixes (per **Cross-Iteration Same-Surface
 
 Zoom-out routing asymmetry: the user-only architecture zoom-out skill carries `disable-model-invocation: true`, so the overlord cannot invoke it directly. The overlord therefore routes an architectural zoom-out THROUGH the cerebrate, via the existing `review_remediation_plan` / `review_remediation_plan_postpr` remediation state (the same path a `root-cluster-suspected` exit_reason already takes to reach a structural fix). This is the intended path, not a workaround: cerebrate is the architectural-reasoning surface the overlord delegates to, and the disable-model-invocation constraint on the user-only skill is the reason the route goes via the remediation state rather than a direct skill call.
 
+### Proactive Zoom-Out Ledger Marker
+
+When the overlord's reconstructed PROACTIVE same-surface recurrence counter trips — the second non-closing structural fix per **Forced zoom-out after the second non-closing structural fix** above, the EXISTING proactive trigger — the overlord records a NAMED overlord-judgment marker into the run ledger so the proactive origin of the resulting `root-cluster-suspected` transition is DISTINGUISHABLE from a reviewer-RETURNED `root-cluster-suspected`. Both origins reach the SAME remediation state (`review_remediation_plan` / `review_remediation_plan_postpr`) via the SAME `root-cluster-suspected` exit_reason described in the asymmetry paragraph above; without this marker the two are indistinguishable in the ledger.
+
+The marker is a single key in the transition's `event.outputs` object. This subsection is the SINGLE SOURCE for its name and semantics; `${CLAUDE_PLUGIN_ROOT}/agents/overlord.md` and `${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md` reference it BY NAME and never restate the mechanics.
+
+- Key: `recurrence_origin`.
+- Value `"proactive"` — the zoom-out was overlord-proactively-derived (the reconstructed proactive recurrence counter tripped).
+- A reviewer-RETURNED cluster OMITS the key (or may carry the explicit value `"reviewer"`).
+- Absence semantics: an ABSENT `recurrence_origin` key ⇒ reviewer-returned / non-proactive. Consumers MUST treat absent as non-proactive and MUST NOT infer proactive origin from anything other than an explicit `"proactive"` value.
+
+This is RECORDED JUDGMENT, not new determinism. The judgment — whether the surface has absorbed two non-closing structural fixes — stays judgment per ADR-0025; the marker only makes the judgment's ORIGIN observable after the fact. It is recorded via the NORMAL `hivemind:record-state-result` `outputs` path on the already-wired `root-cluster-suspected` transition. Explicitly: it introduces NO new workflow state, NO workflow-graph change, and is NOT routed through `hivemind:mark-intent-fallback`. `mark-intent-fallback`'s sanctioned-write pattern — a judgment-origin event made observable in the ledger — is cited here as ANALOGY ONLY; its bypass engine is NOT reused, and `recurrence_origin` rides the standard `outputs` write, not any fallback path.
+
+Producer-state-AGNOSTIC: the marker rides whichever producer-state result carries the `root-cluster-suspected` exit_reason — `github_review_loop`, `github_reviewer_fix`, or the post-PR mirror that targets `review_remediation_plan_postpr` — and is NOT pinned to one state. The marker lives STRICTLY in `event.outputs` and MUST NOT collide with `plan_steps` or any `plan.*` field; it is an origin annotation, not plan content.
+
 ## Skeleton-Enrichment Judgment Criteria
 
 Applies whenever a `github-reviewer` step reconstructs an ephemeral fix-ledger via
