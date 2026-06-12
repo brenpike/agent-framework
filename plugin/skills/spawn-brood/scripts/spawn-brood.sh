@@ -105,6 +105,19 @@ POLL_INTERVAL=2
 # => starting) — not from capture-pane frames.
 INJECT_SETTLE=0.2
 
+# SPAWN-TIME RESEND TUNABLES (inject_strain turn-start verification): under load (many
+# concurrent claude bootstraps) a single submit Enter can race/drop at the pty and leave a
+# child sitting idle at the prompt forever. After the initial submit, inject_strain polls the
+# child run-ledger for started-evidence and resends a bare Enter if none appears within the
+# per-attempt budget. Cadence reuses POLL_INTERVAL above.
+#   RESEND_RETRIES:      max bare-Enter resends AFTER the initial submit before marking failed.
+#   RESEND_POLL_TIMEOUT: seconds to poll the run-ledger per attempt before resending. The total
+#                        verification budget is roughly (RESEND_RETRIES+1)*RESEND_POLL_TIMEOUT,
+#                        sized so a slow-but-healthy child that writes its ledger late is caught
+#                        by a poll rather than failed.
+RESEND_RETRIES=3
+RESEND_POLL_TIMEOUT=8
+
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
 # maintenance point — if the CLI chrome changes, update this substring. See
@@ -804,11 +817,9 @@ inject_strain() {
   # the bracketed-paste window as an in-composer newline rather than a submit.
   sleep "$INJECT_SETTLE"
 
-  # Submit ONCE, after the settle. No turn-start verification, no corrective resend: the
-  # settle is what makes this single Enter land as a submit, and downstream liveness is
-  # judged by hivemind:brood-status from run-ledger evidence, not by capture-pane here. On a
-  # send-keys command failure (e.g. dead pane) clean up the buffer, mark the strain failed,
-  # and return 1.
+  # Submit ONCE, after the settle. The settle is what makes this single Enter land as a submit
+  # (not an in-composer newline). On a send-keys command failure (e.g. dead pane) clean up the
+  # buffer, mark the strain failed, and return 1.
   if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
     printf 'warning: tmux send-keys Enter failed for strain %s\n' "${S_NAME[$idx]}" >&2
     tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
@@ -816,8 +827,59 @@ inject_strain() {
     return 1
   fi
 
-  # Submit keystroke sent; buffer already deleted by paste-buffer -d; strain stays running.
-  return 0
+  # Bounded turn-start verification + idempotent resend. WHY read the on-disk run-ledger and
+  # NOT capture-pane: capture-pane turn-start verification was deliberately REMOVED in issue
+  # #213 / PR #248 because screen-scraping the TUI for a turn-started frame caused a break-fix
+  # review cluster (frame races, chrome coupling, false resends). The run-ledger
+  # (${S_RUN_LEDGER[$idx]}, .../.hivemind/runs/<run_id>/state.json) is GROUND TRUTH: the child
+  # writes .state.current when its workflow actually starts. We poll THAT file — never the
+  # pane — for started-evidence, and resend a bare Enter only if none appears.
+  #
+  # Started-evidence MUST match the brood-status derive gate (_shared/brood-status-derive.sh
+  # and _shared/ledger-project.sh): the ledger file exists, is jq-parseable JSON, and
+  # .state.current is present AND a non-empty string. Absent file / unparseable / null / empty
+  # .state.current => NOT started (fail-closed). Read it with jq only — never hand-parse.
+  local ledger="${S_RUN_LEDGER[$idx]}"
+  local resends=0
+  while : ; do
+    # Poll the run-ledger for started-evidence up to the per-attempt deadline. Fast path: a
+    # child already started on the first poll returns immediately with zero resends.
+    local attempt_deadline=$(( $(date +%s) + RESEND_POLL_TIMEOUT ))
+    while [ "$(date +%s)" -lt "$attempt_deadline" ]; do
+      # Fail-closed jq read: object with a non-empty string .state.current => started. Any of
+      # absent file, unparseable JSON, missing/null/non-string/empty .state.current yields a
+      # non-zero jq exit (or no match), i.e. NOT started — keep polling.
+      if [ -f "$ledger" ] && jq -e \
+          '(type=="object") and (.state.current|type=="string") and (.state.current|length>0)' \
+          "$ledger" >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep "$POLL_INTERVAL"
+    done
+
+    # Per-attempt deadline elapsed with no started-evidence. If retries remain, resend submit.
+    if [ "$resends" -ge "$RESEND_RETRIES" ]; then
+      break
+    fi
+    resends=$(( resends + 1 ))
+    # CRITICAL: resend is send-keys Enter ONLY — never re-run load-buffer/paste-buffer. The task
+    # text was pasted once and is already submitted/consumed; a re-paste would double-inject the
+    # task. A bare Enter on an already-submitted (empty) composer is a harmless no-op. A send-keys
+    # failure here means a dead pane => mark failed and return 1.
+    if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
+      printf 'warning: tmux send-keys Enter (resend) failed for strain %s\n' "${S_NAME[$idx]}" >&2
+      tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
+      mark_failed "$idx"
+      return 1
+    fi
+  done
+
+  # Exhausted all resends with still no started-evidence: this child failed to launch a turn.
+  printf 'warning: strain %s failed to launch (no started-evidence after %d resends)\n' \
+    "${S_NAME[$idx]}" "$RESEND_RETRIES" >&2
+  tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
+  mark_failed "$idx"
+  return 1
 }
 
 # ── Pass 2: wait ready + inject task (ONE shared deadline) ──────────────────────
