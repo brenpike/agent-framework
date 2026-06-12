@@ -1,0 +1,17 @@
+{
+  "rule": "Proactive Zoom-Out Ledger Marker doctrine section coupling",
+  "source": {
+    "file": "plugin/governance/remediation-doctrine.md",
+    "pattern": "### Proactive Zoom-Out Ledger Marker"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "`### Proactive Zoom-Out Ledger Marker`"
+    },
+    {
+      "file": "plugin/references/run-ledger-schema.md",
+      "pattern": "(### Proactive Zoom-Out Ledger Marker)"
+    }
+  ]
+}
