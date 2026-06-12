@@ -161,6 +161,12 @@ plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 # enforce the reader's contract at launch time so no child ever starts with a name the
 # dashboard cannot faithfully render.
 . "$plugin_root/skills/_shared/allowlist.sh"
+# Source the shared run-ledger scalar projector so spawn-time started-evidence is single-sourced
+# from the SAME validator the brood-status dashboard uses (hivemind_project_state_current). This
+# closes the prior divergence where an inline non-empty-string check accepted ledger values the
+# canonical projector rejects as MALFORMED (overlength, wrong charset, multi-document JSON),
+# producing split-brain launch evidence between spawn-brood and brood-status.
+. "$plugin_root/skills/_shared/ledger-project.sh"
 
 # ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
 # Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
@@ -835,10 +841,13 @@ inject_strain() {
   # writes .state.current when its workflow actually starts. We poll THAT file — never the
   # pane — for started-evidence, and resend a bare Enter only if none appears.
   #
-  # Started-evidence MUST match the brood-status derive gate (_shared/brood-status-derive.sh
-  # and _shared/ledger-project.sh): the ledger file exists, is jq-parseable JSON, and
-  # .state.current is present AND a non-empty string. Absent file / unparseable / null / empty
-  # .state.current => NOT started (fail-closed). Read it with jq only — never hand-parse.
+  # Started-evidence MUST match the brood-status derive gate. It is single-sourced from the SAME
+  # canonical projector the dashboard uses — hivemind_project_state_current in
+  # _shared/ledger-project.sh — so the two mechanisms cannot diverge: started-evidence is a
+  # state.current that projects to neither MISSING nor MALFORMED, which enforces single-document
+  # JSON, object shape, the ^[a-z0-9_]+$ charset, and the <=64 length cap. Absent file /
+  # unparseable / null / empty / non-string / overlength / wrong-charset / multi-document =>
+  # MISSING or MALFORMED => NOT started (fail-closed). Never hand-parse — the projector owns it.
   local ledger="${S_RUN_LEDGER[$idx]}"
   local resends=0
   while : ; do
@@ -846,12 +855,13 @@ inject_strain() {
     # child already started on the first poll returns immediately with zero resends.
     local attempt_deadline=$(( $(date +%s) + RESEND_POLL_TIMEOUT ))
     while [ "$(date +%s)" -lt "$attempt_deadline" ]; do
-      # Fail-closed jq read: object with a non-empty string .state.current => started. Any of
-      # absent file, unparseable JSON, missing/null/non-string/empty .state.current yields a
-      # non-zero jq exit (or no match), i.e. NOT started — keep polling.
-      if [ -f "$ledger" ] && jq -e \
-          '(type=="object") and (.state.current|type=="string") and (.state.current|length>0)' \
-          "$ledger" >/dev/null 2>&1; then
+      # Fail-closed projection: started ONLY when the canonical projector returns a validated
+      # state.current (neither MISSING nor MALFORMED). The projector handles absent file /
+      # unparseable / missing / null / non-string / empty / overlength / bad-charset / multi-doc
+      # internally, each yielding a MISSING/MALFORMED sentinel => keep polling.
+      local state_current
+      state_current="$(hivemind_project_state_current "$ledger")"
+      if [ "$state_current" != "MISSING" ] && [ "$state_current" != "MALFORMED" ]; then
         return 0
       fi
       sleep "$POLL_INTERVAL"
