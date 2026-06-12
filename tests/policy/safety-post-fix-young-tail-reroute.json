@@ -1,0 +1,17 @@
+{
+  "rule": "Post-Fix Young-Tail Reroute Synthesis doctrine section coupling",
+  "source": {
+    "file": "plugin/governance/remediation-doctrine.md",
+    "pattern": "## Post-Fix Young-Tail Reroute Synthesis"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/github-reviewer.md",
+      "pattern": "`## Post-Fix Young-Tail Reroute Synthesis`"
+    },
+    {
+      "file": "plugin/agents/local-reviewer.md",
+      "pattern": "`## Post-Fix Young-Tail Reroute Synthesis`"
+    }
+  ]
+}

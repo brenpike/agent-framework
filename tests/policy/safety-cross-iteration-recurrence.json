@@ -1,0 +1,25 @@
+{
+  "rule": "Cross-Iteration Same-Surface Recurrence doctrine section coupling",
+  "source": {
+    "file": "plugin/governance/remediation-doctrine.md",
+    "pattern": "## Cross-Iteration Same-Surface Recurrence"
+  },
+  "consumers": [
+    {
+      "file": "plugin/skills/detect-remediation-signals/SKILL.md",
+      "pattern": "`## Cross-Iteration Same-Surface Recurrence`"
+    },
+    {
+      "file": "plugin/agents/github-reviewer.md",
+      "pattern": "`## Cross-Iteration Same-Surface Recurrence`"
+    },
+    {
+      "file": "plugin/agents/local-reviewer.md",
+      "pattern": "`## Cross-Iteration Same-Surface Recurrence`"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "`## Cross-Iteration Same-Surface Recurrence`"
+    }
+  ]
+}

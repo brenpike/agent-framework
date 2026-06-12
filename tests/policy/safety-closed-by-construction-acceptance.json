@@ -1,0 +1,25 @@
+{
+  "rule": "Closed-by-Construction Acceptance Test doctrine section coupling",
+  "source": {
+    "file": "plugin/governance/remediation-doctrine.md",
+    "pattern": "### Closed-by-Construction Acceptance Test"
+  },
+  "consumers": [
+    {
+      "file": "plugin/skills/detect-remediation-signals/SKILL.md",
+      "pattern": "`### Closed-by-Construction Acceptance Test`"
+    },
+    {
+      "file": "plugin/agents/github-reviewer.md",
+      "pattern": "`### Closed-by-Construction Acceptance Test`"
+    },
+    {
+      "file": "plugin/agents/local-reviewer.md",
+      "pattern": "`### Closed-by-Construction Acceptance Test`"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "`### Closed-by-Construction Acceptance Test`"
+    }
+  ]
+}

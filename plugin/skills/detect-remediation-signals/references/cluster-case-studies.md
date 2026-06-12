@@ -17,6 +17,7 @@ These ground the doctrine's vocabulary in lived experience. For the binding defi
 4. Read-failure-looks-like-empty — shape-validated read + sentinel (cluster)
 5. Trusting manifest-declared paths — ground-truth derivation, deferred-with-scope (cluster)
 6. Break-fix instance — per-construct edit recurrence (break-fix)
+7. Cross-iteration young-surface recurrence — shared query primitive (cluster)
 
 The common shape of the first five: each is one root presenting as N "different" comments.
 Patching any single instance only spawns the next symptom on the next pass — the **same
@@ -138,3 +139,39 @@ precedence.
 
 **Lesson:** track per-construct edit recurrence; a construct repeatedly touched is a
 break-fix risk even when each individual edit looked correct in isolation.
+
+## 7. Cross-iteration young-surface recurrence — shared query primitive (cluster)
+
+**Symptoms (3 findings, across distinct loop iterations on a freshly-introduced module):**
+iteration 1 — a duplicate record slips through because an existence check used a fuzzy/approximate
+search as an exactness oracle; iteration 2 — a DISTINCT framing on a different line of the same
+module: a pagination boundary on the same search call drops a match; iteration 3 — yet another
+framing, a case-fold mismatch in the same lookup. The framings differ each pass and the line
+ranges are disjoint, so the within-pass `fix_framing` and `file:line-range` keys do NOT cluster
+these.
+
+**Shared root:** the module is YOUNG — introduced in this same initiative — and keeps absorbing
+findings across iterations, all orbiting ONE underlying search/query primitive used where an
+exact-existence lookup was needed. The recurrence on the young surface IS the cluster signal; the
+shared primitive is what binds the distinct findings.
+
+- `fix_framing`: `null` (framings differ across iterations; this axis does not need a shared one)
+- `root_class`: `wrong-primitive-for-existence-check`
+
+**Signal fired:** root-cluster via the cross-iteration same-surface recurrence axis (doctrine
+`## Cross-Iteration Same-Surface Recurrence`). Gate A holds — three distinct iterations re-emit on
+the same surface, framing- and line-independent. Gate B holds — the surface is young
+(introduced this initiative), so it escalates to zoom-out rather than to a bounded-tail
+merge-advisory. Because the recurring findings share a query PRIMITIVE, the threshold is **N=2**;
+three members clear it. The within-pass severity modifier never fired — each pass was individually
+quiet — which is exactly why this orthogonal axis exists.
+
+**Closed-by-construction fix:** zoom out and CHANGE THE PRIMITIVE — replace the fuzzy/approximate
+search with a ground-truth exact-key lookup (an indexed unique key or a direct keyed fetch) that
+cannot return an approximate match. Per the `### Closed-by-Construction Acceptance Test`, this
+NAMES AN ELIMINATED CLASS: with the search no longer the existence oracle, fuzzy/boundary/case-fold
+matching findings cannot exist, so the cluster CLOSES. Contrast the complete-the-known-set non-fix:
+adding a case-fold normalization (or one more pagination guard) to the existing fuzzy search only
+ENUMERATES the observed case — the shape stays identical and the next un-enumerated edge of the
+same primitive is the next finding, leaving the cluster OPEN. Prefer **ground-truth derivation over
+validating untrusted input**.
