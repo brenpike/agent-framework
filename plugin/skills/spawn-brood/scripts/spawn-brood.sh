@@ -868,7 +868,9 @@ submit_strain() {
 # BENEATH the strain's GROUND-TRUTH worktree (S_WT[$idx], script-derived from the canonical
 # repo_root + generated brood-id/short — never a manifest/child-supplied path), reject a
 # symlinked / non-regular leaf, file-level-reject NUL, read EXACTLY ONCE into an in-memory
-# snapshot, then project from CONTENT via hivemind_project_state_current_content. We do NOT need
+# snapshot, RE-ASSERT post-read containment (ITEM-4: re-canonicalize the leaf parent and reconfirm
+# it is still under canon_wt, bounding the ancestor-swap micro-TOCTOU between the guard and the cat),
+# then project from CONTENT via hivemind_project_state_current_content. We do NOT need
 # brood-status's `git worktree list` discovery: the write side already KNOWS the canonical
 # worktree it created for this strain, so S_WT[$idx] IS the trusted containment anchor.
 verify_started_evidence() {
@@ -907,7 +909,32 @@ verify_started_evidence() {
   fi
   local ledger_content
   if ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"; then
-    # READ SUCCEEDED. Project from the single in-memory snapshot via the CONTENT projector — the
+    # READ SUCCEEDED.
+    # ITEM-4 DEFENSE-IN-DEPTH (locked, mirrors brood-status-project.sh): after the read, resolve
+    # the ACTUAL read target — canonicalize the leaf's PARENT (cd && pwd -P resolves every symlink
+    # component) and re-append the basename — and RE-ASSERT it is STILL contained under the strain's
+    # canonical worktree (canon_wt). An ANCESTOR such as .hivemind/runs/<run_id> can be swapped to a
+    # symlink AFTER hivemind_assert_file_contained returned but BEFORE this cat; without a post-read
+    # check the projection would accept the escaped target's bytes as started-evidence. Project ONLY
+    # if still contained; otherwise MALFORMED. This bounds (does NOT structurally close — bash has no
+    # portable O_NOFOLLOW) the irreducible one-open micro-TOCTOU to an ACCEPTED residual: only the
+    # validated state.current charset ever surfaces, never raw bytes.
+    local ledger_dir reread_target ledger_still_contained
+    ledger_dir="$(cd "$(dirname -- "$canon_ledger")" 2>/dev/null && pwd -P)"
+    reread_target=""
+    [ -n "$ledger_dir" ] && reread_target="$ledger_dir/$(basename -- "$canon_ledger")"
+    ledger_still_contained=0
+    if [ -n "$reread_target" ]; then
+      case "$reread_target/" in
+        "$canon_wt/"*) ledger_still_contained=1 ;;
+      esac
+    fi
+    if [ "$ledger_still_contained" -ne 1 ]; then
+      # The resolved read target escaped the strain worktree after the read => fail closed.
+      printf 'MALFORMED\n'
+      return 0
+    fi
+    # Confined post-read. Project from the single in-memory snapshot via the CONTENT projector — the
     # same canonical validation the dashboard uses (single-document JSON, object shape,
     # ^[a-z0-9_]+$ charset, <=64 length cap). Never the path-based projector.
     hivemind_project_state_current_content "$ledger_content"
