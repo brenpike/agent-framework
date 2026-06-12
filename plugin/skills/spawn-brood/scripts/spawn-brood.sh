@@ -857,6 +857,72 @@ submit_strain() {
 # send-keys Enter ONLY — never a re-paste. On exhaustion (no started-evidence after all resends):
 # mark_failed + warning + return 1. On a dead-pane send-keys failure: fail-closed mark_failed +
 # return 1. Returns 0 the moment started-evidence appears.
+# verify_started_evidence <idx>: CONFINED single-snapshot projection of the strain's child
+# run-ledger state.current. Echoes the validated state.current, or one of the fixed tokens
+# MISSING / MALFORMED. This is the read-side discipline mandated by the security policy for
+# hostile child-ledger reads, mirroring brood-status-project.sh's confined leaf read — the
+# legacy path-based hivemind_project_state_current projector is NOT used here because it
+# [ -f ]/cat-follows the child-controlled state.json leaf directly (a symlinked leaf swapped in
+# by a compromised child / hostile base could redirect the read to an external or oversized
+# file, an out-of-checkout read oracle, or accept forged started-evidence). We confine the leaf
+# BENEATH the strain's GROUND-TRUTH worktree (S_WT[$idx], script-derived from the canonical
+# repo_root + generated brood-id/short — never a manifest/child-supplied path), reject a
+# symlinked / non-regular leaf, file-level-reject NUL, read EXACTLY ONCE into an in-memory
+# snapshot, then project from CONTENT via hivemind_project_state_current_content. We do NOT need
+# brood-status's `git worktree list` discovery: the write side already KNOWS the canonical
+# worktree it created for this strain, so S_WT[$idx] IS the trusted containment anchor.
+verify_started_evidence() {
+  local idx="$1"
+  local wt="${S_WT[$idx]}"
+  # Relative ledger chain under the strain worktree (mirrors S_RUN_LEDGER derivation):
+  #   .hivemind/runs/<run_id>/state.json
+  local rel_chain=".hivemind/runs/${S_RUN_ID[$idx]}/state.json"
+
+  # Confine the leaf beneath the strain's ground-truth worktree. hivemind_assert_file_contained
+  # rejects a symlinked / non-regular state.json leaf ([ -L ] fires even on a dangling target)
+  # AND any symlinked ancestor of the .hivemind/runs/<run_id> chain, and echoes the CANONICAL
+  # worktree root. Non-existent leaf PASSES (the child may not have written its ledger yet) =>
+  # MISSING below. Reject (non-zero) => fail-closed MALFORMED, never read.
+  local canon_wt
+  if ! canon_wt="$(hivemind_assert_file_contained "$wt" "$rel_chain" 2>/dev/null)"; then
+    printf 'MALFORMED\n'
+    return 0
+  fi
+  local canon_ledger="$canon_wt/$rel_chain"
+
+  # Re-assert the leaf is not a symlink as close to the read as possible (narrows, does not
+  # close, the irreducible single-open micro-TOCTOU — bash has no portable O_NOFOLLOW). An
+  # ACCEPTED bounded residual, identical to brood-status-project.sh: only the validated
+  # state.current charset ever surfaces, never raw bytes.
+  if [ -L "$canon_ledger" ]; then
+    printf 'MALFORMED\n'
+    return 0
+  fi
+  # FILE-LEVEL NUL REJECTION: bash $(...) silently strips NUL; a NUL-bearing ledger would parse
+  # as a different document than what is on disk. JSON never legitimately carries a literal NUL
+  # => MALFORMED, rejected at the FILE level before the $(...) read can erase it.
+  if hivemind_path_has_nul "$canon_ledger"; then
+    printf 'MALFORMED\n'
+    return 0
+  fi
+  local ledger_content
+  if ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"; then
+    # READ SUCCEEDED. Project from the single in-memory snapshot via the CONTENT projector — the
+    # same canonical validation the dashboard uses (single-document JSON, object shape,
+    # ^[a-z0-9_]+$ charset, <=64 length cap). Never the path-based projector.
+    hivemind_project_state_current_content "$ledger_content"
+    return 0
+  elif [ -e "$canon_ledger" ]; then
+    # Present but unreadable (perms / I/O) => present-but-invalid => MALFORMED, never MISSING.
+    printf 'MALFORMED\n'
+    return 0
+  else
+    # Absent leaf (child has not initialized its ledger yet, or it vanished) => MISSING.
+    printf 'MISSING\n'
+    return 0
+  fi
+}
+
 verify_strain() {
   local idx="$1"
   local tmux_session="${S_TMUX[$idx]}"
@@ -870,26 +936,34 @@ verify_strain() {
   # writes .state.current when its workflow actually starts. We poll THAT file — never the
   # pane — for started-evidence, and resend a bare Enter only if none appears.
   #
+  # CONFINED READ (security-policy discipline for hostile child-ledger reads): the per-poll
+  # projection is delegated to verify_started_evidence above, which confines the ledger leaf
+  # beneath the strain's GROUND-TRUTH worktree, rejects a symlinked/non-regular/NUL-bearing
+  # leaf, reads ONCE into a snapshot, and projects via the CONTENT projector — mirroring
+  # brood-status-project.sh. The legacy path-based hivemind_project_state_current (which
+  # [ -f ]/cat-follows the child-controlled leaf directly) is deliberately NOT called here.
+  #
   # Started-evidence MUST match the brood-status derive gate. It is single-sourced from the SAME
-  # canonical projector the dashboard uses — hivemind_project_state_current in
+  # canonical content projector the dashboard uses — hivemind_project_state_current_content in
   # _shared/ledger-project.sh — so the two mechanisms cannot diverge: started-evidence is a
   # state.current that projects to neither MISSING nor MALFORMED, which enforces single-document
   # JSON, object shape, the ^[a-z0-9_]+$ charset, and the <=64 length cap. Absent file /
   # unparseable / null / empty / non-string / overlength / wrong-charset / multi-document =>
   # MISSING or MALFORMED => NOT started (fail-closed). Never hand-parse — the projector owns it.
-  local ledger="${S_RUN_LEDGER[$idx]}"
   local resends=0
   while : ; do
     # Poll the run-ledger for started-evidence up to the per-attempt deadline. Fast path: a
     # child already started on the first poll returns immediately with zero resends.
     local attempt_deadline=$(( $(date +%s) + RESEND_POLL_TIMEOUT ))
     while [ "$(date +%s)" -lt "$attempt_deadline" ]; do
-      # Fail-closed projection: started ONLY when the canonical projector returns a validated
-      # state.current (neither MISSING nor MALFORMED). The projector handles absent file /
-      # unparseable / missing / null / non-string / empty / overlength / bad-charset / multi-doc
-      # internally, each yielding a MISSING/MALFORMED sentinel => keep polling.
+      # Fail-closed projection: started ONLY when the CONFINED projector returns a validated
+      # state.current (neither MISSING nor MALFORMED). verify_started_evidence handles the
+      # confinement (leaf/ancestor symlink reject, NUL reject) AND the value-shape validation;
+      # absent file / unparseable / missing / null / non-string / empty / overlength /
+      # bad-charset / multi-doc / symlink-escape each yield a MISSING/MALFORMED sentinel =>
+      # keep polling.
       local state_current
-      state_current="$(hivemind_project_state_current "$ledger")"
+      state_current="$(verify_started_evidence "$idx")"
       if [ "$state_current" != "MISSING" ] && [ "$state_current" != "MALFORMED" ]; then
         return 0
       fi
