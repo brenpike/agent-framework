@@ -40,19 +40,24 @@ After:
       `<brood-id>-<short>` running claude, and its injected `task.md` — which
       emits the data-boundary preamble FIRST, THEN the YAML child-task metadata
       block (`parent`, `strain`, `run`, `instructions`), THEN the description.
-      The engine submits the task with a settle after the bracketed paste closes
-      then a single Enter, so the submit keystroke lands as a submit instead of
-      racing the paste. It then polls the child's on-disk run-ledger `state.current`
-      for started-evidence within a short per-attempt deadline; if no started-evidence
-      is observed it resends Enter (idempotent — task text is already buffered, never
-      re-pasted) up to a bounded retry cap. On cap exhaustion the strain is marked
-      `failed` (failed-to-launch) in the manifest, distinguishable in
-      `hivemind:brood-status` from the transient `starting` state. Verification reads
-      the child run-ledger `state.current` as ground truth — capture-pane is not used
-      (architectural direction established in #213/#248). Whether a child actually
-      completed turn-start is also observed independently by `hivemind:brood-status`
-      from run-ledger ground truth (child run `state.current` present => `running`,
-      absent => `starting`), not only by spawn-brood.
+      The engine submits each task during a shared Pass-2 readiness round-robin:
+      load-buffer, paste-buffer, settle, then a single Enter, so the submit
+      keystroke lands as a submit instead of racing the paste. After all strains
+      have been submitted in Pass 2, a separate Pass 3 runs per-strain turn-start
+      verification — each strain's verify/resend poll runs on its OWN independent
+      deadline, decoupled from every other strain's readiness budget, so one slow
+      child cannot consume another strain's Pass-2 time. The verifier polls the
+      child's on-disk run-ledger `state.current` for started-evidence; if no
+      started-evidence is observed it resends Enter (idempotent — task text is
+      already buffered, never re-pasted) up to a bounded retry cap. On cap
+      exhaustion the strain is marked `failed` (failed-to-launch) in the manifest,
+      distinguishable in `hivemind:brood-status` from the transient `starting`
+      state. Verification reads the child run-ledger `state.current` as ground
+      truth — capture-pane is not used (architectural direction established in
+      #213/#248). Whether a child actually completed turn-start is also observed
+      independently by `hivemind:brood-status` from run-ledger ground truth
+      (child run `state.current` present => `running`, absent => `starting`),
+      not only by spawn-brood.
 - [ ] `.claude/worktrees/` is excluded from git (the script self-guards).
 - [ ] Final action is the Bash script call (exit 0 = spawned, exit 1 = blocked).
 

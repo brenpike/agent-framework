@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **spawn-brood now verifies child turn-start via run-ledger started-evidence and resends the submit keystroke idempotently after the initial paste; strains that never start are marked failed-to-launch in the manifest instead of being left indistinguishable from slow bootstrap (#271).**
+- **spawn-brood now runs turn-start verification as a decoupled per-strain Pass 3 after the shared Pass-2 submit round-robin completes; each strain's verify/resend poll runs on its own independent deadline so a slow child can no longer consume another strain's readiness budget. Strains that exhaust their per-strain retry cap are marked failed-to-launch in the manifest (#271).**
 
 ## [2.31.0] - 2026-06-09
 
