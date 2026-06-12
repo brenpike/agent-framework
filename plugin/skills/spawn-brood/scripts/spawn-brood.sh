@@ -784,18 +784,33 @@ for idx in $(seq 0 $((strain_count - 1))); do
   cur_session=""
 done
 
-# inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted on
-# paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE bounded
-# prompt. After the paste a short settle (INJECT_SETTLE) allows the closing ESC[201~ to
-# reach the TUI before the SINGLE submit keystroke, so Enter no longer races the paste and
-# is not absorbed inside the bracketed-paste window. Enter is sent ONCE and
-# the function returns success — spawn-brood does NOT verify turn-start by screen-scraping
-# the TUI. Whether the child actually began a turn is observed LATER by hivemind:brood-status
-# from run-ledger ground truth (child run state.current present => running, absent =>
-# starting), not by this script. Best-effort delete the buffer on EVERY failure path so an
-# untrusted task never persists in the shared tmux buffer. Returns 0 once the submit
-# keystroke is sent; 1 only on a tmux command failure (dead pane / load / paste / send error).
-inject_strain() {
+# THREE-PASS STRUCTURE (inject_strain SPLIT into submit_strain + verify_strain): the prior
+# inject_strain combined fast non-blocking submit with a BLOCKING bounded turn-start poll, and
+# was called from inside the Pass-2 readiness round-robin. That coupled a synchronous per-child
+# resend poll (up to (RESEND_RETRIES+1)*RESEND_POLL_TIMEOUT ≈ 32s) to the ONE shared
+# READY_TIMEOUT deadline the whole brood's round-robin runs against — so verifying one child
+# burned the shared wall-clock budget every still-pending strain depends on, and a strain that
+# became ready during that window got falsely marked failed (reviewer root class:
+# synchronous-turn-start-verification-coupled-to-shared-scheduler). The split makes the blocking
+# poll UNREACHABLE from the shared loop by construction:
+#   Pass 1 — spawn worktree + detached session per strain (above).
+#   Pass 2 — shared-deadline readiness round-robin + FAST submit_strain (no blocking poll).
+#   Pass 3 — per-strain verify_strain, each computing its OWN deadline at its Pass-3 entry, so
+#            no strain's verifier shares wall-clock with another's.
+# The turn-start evidence stays on-disk run-ledger state.current ground truth (#213/#248
+# direction), NEVER capture-pane — the split only moved the poll out of the shared loop, it did
+# not change WHAT is polled.
+
+# submit_strain: the FAST, non-blocking half of the former inject_strain. Inject a ready
+# strain's task via a per-strain NAMED buffer deleted on paste (-d). Bracketed paste (-p) keeps
+# the multiline preamble+description as ONE bounded prompt. After the paste a short settle
+# (INJECT_SETTLE) allows the closing ESC[201~ to reach the TUI before the SINGLE submit
+# keystroke, so Enter no longer races the paste and is not absorbed inside the bracketed-paste
+# window. Enter is sent ONCE and the function returns — turn-start is NOT verified here (that is
+# Pass 3's verify_strain). Best-effort delete the buffer on EVERY failure path so an untrusted
+# task never persists in the shared tmux buffer. Returns 0 once the submit keystroke is sent; 1
+# only on a tmux command failure (dead pane / load / paste / send error), marking failed first.
+submit_strain() {
   local idx="$1"
   local tmux_session="${S_TMUX[$idx]}"
   local wt="${S_WT[$idx]}"
@@ -832,8 +847,22 @@ inject_strain() {
     mark_failed "$idx"
     return 1
   fi
+  return 0
+}
 
-  # Bounded turn-start verification + idempotent resend. WHY read the on-disk run-ledger and
+# verify_strain: the BLOCKING half of the former inject_strain — bounded turn-start verification
+# + idempotent resend, run ONCE PER STRAIN in Pass 3 (never inside the shared Pass-2 loop). Its
+# deadline is computed INSIDE this function at its own Pass-3 entry from RESEND_RETRIES /
+# RESEND_POLL_TIMEOUT, so no strain's verifier shares wall-clock with another's. Resend is
+# send-keys Enter ONLY — never a re-paste. On exhaustion (no started-evidence after all resends):
+# mark_failed + warning + return 1. On a dead-pane send-keys failure: fail-closed mark_failed +
+# return 1. Returns 0 the moment started-evidence appears.
+verify_strain() {
+  local idx="$1"
+  local tmux_session="${S_TMUX[$idx]}"
+  local buffer_name="$tmux_session"   # session-unique named buffer (brood-<short>)
+
+  # WHY read the on-disk run-ledger and
   # NOT capture-pane: capture-pane turn-start verification was deliberately REMOVED in issue
   # #213 / PR #248 because screen-scraping the TUI for a turn-started frame caused a break-fix
   # review cluster (frame races, chrome coupling, false resends). The run-ledger
@@ -892,24 +921,43 @@ inject_strain() {
   return 1
 }
 
-# ── Pass 2: wait ready + inject task (ONE shared deadline) ──────────────────────
+# ── Pass 2: wait ready + FAST submit (ONE shared deadline; NO blocking poll) ─────
 # All Pass-1 sessions boot concurrently. A single shared deadline (NOT N×timeout) is
 # what makes the total wait ≈ the slowest single strain: pending strains are polled
 # round-robin against one READY_TIMEOUT budget rather than each consuming its own.
+# The loop body now contains ONLY fast tmux ops — capture-pane readiness check +
+# submit_strain (load/paste/settle/send). The former synchronous turn-start verify
+# poll is GONE from here: it lived inside this shared loop and burned the shared
+# READY_TIMEOUT budget every still-pending strain depends on (reviewer starvation root:
+# synchronous-turn-start-verification-coupled-to-shared-scheduler). It now runs once
+# per strain in Pass 3 below, against each strain's OWN deadline. Turn-start evidence
+# stays on-disk run-ledger ground truth (#213/#248), unchanged — only its CALL SITE
+# moved out of the shared loop.
 deadline=$(( $(date +%s) + READY_TIMEOUT ))
 
-# pending = indices of strains that launched in Pass 1 and are not yet ready/injected.
+# pending = indices of strains that launched in Pass 1 and are not yet ready/submitted.
 declare -a pending=()
 for idx in $(seq 0 $((strain_count - 1))); do
   [ "${S_STATUS[$idx]}" = "running" ] && pending+=("$idx")
 done
+
+# submitted = indices whose submit_strain SUCCEEDED in Pass 2 — the exact set Pass 3 verifies.
+# A strain whose submit FAILED is already mark_failed inside submit_strain and is NOT enqueued
+# here, so it is never re-touched in Pass 3. A strain that times out in readiness below never
+# reaches submit_strain and is failed by the post-loop sweep, so it is likewise absent.
+declare -a submitted=()
 
 while [ "${#pending[@]}" -gt 0 ] && [ "$(date +%s)" -lt "$deadline" ]; do
   declare -a still_pending=()
   for idx in "${pending[@]}"; do
     tmux_session="${S_TMUX[$idx]}"
     if tmux capture-pane -t "$tmux_session" -p 2>/dev/null | grep -qF "$READY_SUBSTRING"; then
-      inject_strain "$idx"   # marks failed internally on tmux error; removed from pending either way
+      # Fast submit only (no blocking poll). On success enqueue for Pass-3 verification; on a
+      # tmux failure submit_strain has already mark_failed'd it — do not enqueue. Either way the
+      # strain leaves pending.
+      if submit_strain "$idx"; then
+        submitted+=("$idx")
+      fi
     else
       still_pending+=("$idx")
     fi
@@ -923,6 +971,17 @@ done
 for idx in "${pending[@]+"${pending[@]}"}"; do
   printf 'warning: strain %s did not reach ready state within %ds\n' "${S_NAME[$idx]}" "$READY_TIMEOUT" >&2
   mark_failed "$idx"
+done
+
+# ── Pass 3: per-strain turn-start verify/resend (each its OWN deadline) ──────────
+# Verify ONLY the strains that successfully submitted in Pass 2. Each verify_strain computes its
+# own deadline at entry from RESEND_RETRIES/RESEND_POLL_TIMEOUT, so no strain's bounded poll
+# shares wall-clock with another's (this is the structural fix for the shared-scheduler
+# starvation root). Sequential is intentional — concurrency is explicitly deferred. This runs
+# BEFORE the INT/TERM trap is disarmed below, so the interruption guard stays armed across
+# Pass 1 → 2 → 3 and a signal mid-verify still reports leaked sessions for manual cleanup.
+for idx in "${submitted[@]+"${submitted[@]}"}"; do
+  verify_strain "$idx"   # marks failed internally on exhaustion / dead pane
 done
 
 # ── Manifest emission ───────────────────────────────────────────────────────────
