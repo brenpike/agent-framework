@@ -125,6 +125,10 @@ Append-only blocker log.
 }
 ```
 
+`event.outputs` is free-form and recorded verbatim. NO schema change and NO new REQUIRED field is implied by the convention that follows — `event.outputs` stays free-form/optional.
+
+**Convention (proactive-recurrence-origin marker):** on a `root-cluster-suspected` transition, `event.outputs` MAY carry the named origin-marker key (`recurrence_origin`). Its presence distinguishes a proactively-derived zoom-out from a reviewer-returned one. The key's name, values, and absence semantics are defined SOLELY in `${CLAUDE_PLUGIN_ROOT}/governance/remediation-doctrine.md (### Proactive Zoom-Out Ledger Marker)` — that subsection is the single source; this note does not restate them.
+
 ## Blocker shape
 
 ```json
