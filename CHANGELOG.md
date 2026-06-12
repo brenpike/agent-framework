@@ -12,11 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **spawn-brood now verifies child turn-start via run-ledger started-evidence and resends the submit keystroke idempotently after the initial paste; strains that never start are marked failed-to-launch in the manifest instead of being left indistinguishable from slow bootstrap (#271).**
-
 ### Deferred
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
+
+## [2.32.1] - 2026-06-12
+
+### Fixed
+
+- **spawn-brood now verifies child turn-start via run-ledger started-evidence and resends the submit keystroke idempotently after the initial paste; strains that never start are marked failed-to-launch in the manifest instead of being left indistinguishable from slow bootstrap (#271).**
 
 ## [2.31.0] - 2026-06-09
 
