@@ -55,19 +55,32 @@
 # The three differed ONLY in the label noun interpolated into the blocker strings (and the
 # inputs-guard blocker text was already byte-identical across all three).
 #
-# Returns 0 on success. On any failure returns non-zero with a message on stderr that
-# REPRODUCES the engine's exact current blocker text via <label> interpolation. NEVER exits.
+# STDERR / RETURN-CODE CONTRACT (byte-preservation):
+#   This function emits NO stderr of its own. The non-containment failure reasons (missing
+#   arg, missing file, invalid JSON) were SINGLE-LINE `blocker:` lines pre-extraction with no
+#   preceding detail line, so this function only signals WHICH failure occurred via a distinct
+#   non-zero return code; the ENGINE owns the (label-interpolated) fixed `blocker:` text. The
+#   containment failure was a TWO-LINE sequence pre-extraction: the inner
+#   hivemind_assert_inputs_contained helper's own UNPREFIXED detail line on fd2, THEN the
+#   engine's `blocker:` line. To preserve that byte-for-byte, the inner-helper stderr is
+#   deliberately PASS-THROUGH (UNCAPTURED — only its STDOUT is `>/dev/null`'d) so its detail
+#   line reaches fd2 as a distinct line ABOVE the engine's blocker line; this function adds no
+#   line of its own for the containment reject. NEVER exits.
+#   Return codes (the engine maps each to its exact current blocker text):
+#     0 success
+#     2 missing required argument
+#     3 inputs file does not exist
+#     4 containment reject (inner helper already emitted its detail line to fd2, uncaptured)
+#     5 inputs file is not valid JSON
 hivemind_read_inputs_file() {
   local inputs_file="$1"
   local label="$2"
 
   if [ -z "$inputs_file" ]; then
-    printf 'missing required argument: path to %s inputs JSON file ($1)\n' "$label" >&2
-    return 1
+    return 2
   fi
   if [ ! -f "$inputs_file" ]; then
-    printf '%s inputs file %s does not exist\n' "$label" "$inputs_file" >&2
-    return 1
+    return 3
   fi
 
   # Defense-in-depth inputs READ-guard (shared helper). Refuse to READ the inputs file when
@@ -75,15 +88,15 @@ hivemind_read_inputs_file() {
   # silent external-read into a hard return BEFORE the jq validity probe below. Running this
   # BEFORE the `jq -e` probe is REQUIRED: `jq -e` opening an attacker-supplied external path
   # is itself an external-file JSON-validity read oracle, so the containment guard must gate
-  # it. The helper never exits; map non-zero to a non-zero return here.
+  # it. The helper never exits. Its STDOUT (the canonical root) is discarded with `>/dev/null`;
+  # its STDERR is left UNCAPTURED so the helper's own detail line flows to fd2 as the FIRST of
+  # the two byte-preserved lines (the engine adds the second, `blocker:`-prefixed line).
   if ! hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$inputs_file" >/dev/null; then
-    printf 'refusing to read the inputs file: %s resolves outside the checkout (symlinked ancestor)\n' "$inputs_file" >&2
-    return 1
+    return 4
   fi
 
   if ! jq -e . "$inputs_file" >/dev/null 2>&1; then
-    printf '%s inputs file %s is not valid JSON\n' "$label" "$inputs_file" >&2
-    return 1
+    return 5
   fi
 
   return 0
@@ -118,8 +131,33 @@ hivemind_read_inputs_file() {
 # The engine reads them with `IFS= read -r canon_ledger; IFS= read -r canon_ledger_dir`.
 # Two newline-separated lines are byte-safe here: both values are canonical filesystem paths
 # under the checkout (no embedded newlines possible — pwd -P output, and run_id is SAFE_ID_RE).
-# On any failure: returns non-zero with a message on stderr reproducing the engine's exact
-# current blocker string. NEVER exits.
+# STDERR / RETURN-CODE CONTRACT (byte-preservation):
+#   Two failure SHAPES, distinguished by return code:
+#
+#   SHAPE A — inner-helper containment rejects (return 2 = hivemind_assert_contained ancestor
+#   guard; return 6 = hivemind_assert_ledger_contained leaf guard). Pre-extraction these were
+#   TWO-LINE sequences: the inner helper's own UNPREFIXED detail line on fd2, THEN the engine's
+#   `blocker:` line. To preserve that byte-for-byte the inner-helper STDERR is deliberately
+#   PASS-THROUGH (UNCAPTURED — only its STDOUT is `>/dev/null`'d) so its detail line reaches fd2
+#   as the line ABOVE the engine's blocker line; this function writes NOTHING (neither stdout
+#   nor stderr) for these two rejects. The engine maps 2/6 to its OWN fixed `blocker:` text,
+#   which interpolates only values the engine already holds ($run_id for 2, $ledger for 6).
+#
+#   SHAPE B — every OTHER failure (canon-root empty, runs-dir canon empty, the inline runs-dir
+#   trailing-slash case-guard which has NO inner helper, `[ -f ]` missing, `jq -e` invalid JSON,
+#   coherence `.run.id` mismatch, post-existence canon-dir / basename asserts). Pre-extraction
+#   these were SINGLE-LINE `blocker:` lines with no preceding detail line. Some interpolate
+#   values computed only INSIDE this function ($ledger_run_id, $canon_ledger, $canon_ledger_dir),
+#   so this function PRINTS the exact reason text (UNPREFIXED, no `blocker: `) to STDOUT and
+#   returns 1; the engine captures that stdout and re-emits it through blocker() (adding the
+#   `blocker: ` prefix + exit 1). One printed line in, one `blocker:` line out — matching the
+#   pre-extraction single-line shape exactly.
+#
+#   The SUCCESS path's two stdout lines are unchanged; success and SHAPE-B failure are mutually
+#   exclusive by return, so the engine's single stdout capture serves both. No `2>&1` is used on
+#   any read, so inner-helper / SHAPE-B stderr never leaks onto the success stdout. NEVER exits.
+#   Return codes: 0 success (two stdout lines); 2 ancestor-guard reject (stdout empty);
+#   6 leaf-guard reject (stdout empty); 1 any SHAPE-B failure (reason on stdout).
 hivemind_open_ledger() {
   local repo_root="$1"
   local run_id="$2"
@@ -131,14 +169,16 @@ hivemind_open_ledger() {
   # The shared helper walks EVERY component of the FULL chain (INCLUDING the <run_id> leaf)
   # and rejects any existing symlink component at ANY depth, then verifies the deepest existing
   # prefix stays inside the checkout — BEFORE any read, mktemp, or mv, so a rejection never
-  # opens or creates a file and the on-disk ledger is byte-unchanged.
+  # opens or creates a file and the on-disk ledger is byte-unchanged. Its STDOUT is captured
+  # (the canonical root); its STDERR is left UNCAPTURED so the helper's own detail line flows
+  # to fd2 as the FIRST of the two byte-preserved lines (the engine adds the second, `blocker:`
+  # line). Capturing stdout alone (no `2>&1`) keeps that detail line on fd2.
   local canon_repo_root
   if ! canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id")"; then
-    printf 'refusing: %s/.hivemind/runs/%s resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged\n' "${canon_repo_root:-$repo_root}" "$run_id" >&2
-    return 1
+    return 2
   fi
   if [ -z "$canon_repo_root" ]; then
-    printf 'failed to canonicalize repo root %s; ledger unchanged\n' "$repo_root" >&2
+    printf 'failed to canonicalize repo root %s; ledger unchanged\n' "$repo_root"
     return 1
   fi
 
@@ -148,13 +188,13 @@ hivemind_open_ledger() {
   local canon_runs
   canon_runs="$(cd "$canon_repo_root/.hivemind/runs" && pwd -P)"
   if [ -z "$canon_runs" ]; then
-    printf 'failed to canonicalize %s/.hivemind/runs; ledger unchanged\n' "$canon_repo_root" >&2
+    printf 'failed to canonicalize %s/.hivemind/runs; ledger unchanged\n' "$canon_repo_root"
     return 1
   fi
   case "$canon_runs/$run_id/state.json/" in
     "$canon_runs/"*) : ;;
     *)
-      printf 'ledger resolves outside the checkout runs dir; ledger unchanged\n' >&2
+      printf 'ledger resolves outside the checkout runs dir; ledger unchanged\n'
       return 1
       ;;
   esac
@@ -162,18 +202,19 @@ hivemind_open_ledger() {
   # ── Ledger-read LEAF guard (shared helper) — rejects a symlinked state.json LEAF ──
   # The ancestor/runs-dir guard above proves the chain DOWN TO the <run_id> run-dir but does
   # NOT inspect the state.json leaf itself. This shared helper [ -L ]-rejects the leaf on the
-  # RAW path FIRST (firing even for a dangling target) before any [ -f ]/jq read.
+  # RAW path FIRST (firing even for a dangling target) before any [ -f ]/jq read. Its STDERR
+  # is left UNCAPTURED (only STDOUT `>/dev/null`'d) so its detail line flows to fd2 as the
+  # FIRST of the two byte-preserved lines for this reject.
   if ! hivemind_assert_ledger_contained "$repo_root" "$ledger" >/dev/null; then
-    printf 'refusing to read the ledger: %s resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged\n' "$ledger" >&2
-    return 1
+    return 6
   fi
 
   if [ ! -f "$ledger" ]; then
-    printf 'ledger file does not exist: %s\n' "$ledger" >&2
+    printf 'ledger file does not exist: %s\n' "$ledger"
     return 1
   fi
   if ! jq -e . "$ledger" >/dev/null 2>&1; then
-    printf 'ledger file is not valid JSON: %s\n' "$ledger" >&2
+    printf 'ledger file is not valid JSON: %s\n' "$ledger"
     return 1
   fi
 
@@ -181,7 +222,7 @@ hivemind_open_ledger() {
   local ledger_run_id
   ledger_run_id="$(jq -r '.run.id // ""' "$ledger")"
   if [ "$ledger_run_id" != "$run_id" ]; then
-    printf "ledger run.id '%s' does not match run_id '%s'; ledger unchanged\n" "$ledger_run_id" "$run_id" >&2
+    printf "ledger run.id '%s' does not match run_id '%s'; ledger unchanged\n" "$ledger_run_id" "$run_id"
     return 1
   fi
 
@@ -191,23 +232,23 @@ hivemind_open_ledger() {
   local canon_ledger_dir canon_ledger
   canon_ledger_dir="$(cd "$(dirname "$ledger")" && pwd -P)"
   if [ -z "$canon_ledger_dir" ]; then
-    printf 'failed to canonicalize the ledger directory; ledger unchanged\n' >&2
+    printf 'failed to canonicalize the ledger directory; ledger unchanged\n'
     return 1
   fi
   canon_ledger="$canon_ledger_dir/state.json"
   case "$canon_ledger/" in
     "$canon_runs/"*) : ;;
     *)
-      printf 'ledger resolves outside the checkout runs dir: %s; ledger unchanged\n' "$canon_ledger" >&2
+      printf 'ledger resolves outside the checkout runs dir: %s; ledger unchanged\n' "$canon_ledger"
       return 1
       ;;
   esac
   if [ "$(basename "$canon_ledger")" != "state.json" ]; then
-    printf 'canonical ledger leaf is not state.json: %s; ledger unchanged\n' "$canon_ledger" >&2
+    printf 'canonical ledger leaf is not state.json: %s; ledger unchanged\n' "$canon_ledger"
     return 1
   fi
   if [ "$(basename "$canon_ledger_dir")" != "$run_id" ]; then
-    printf "canonical ledger dir name does not match run_id '%s': %s; ledger unchanged\n" "$run_id" "$canon_ledger_dir" >&2
+    printf "canonical ledger dir name does not match run_id '%s': %s; ledger unchanged\n" "$run_id" "$canon_ledger_dir"
     return 1
   fi
 
