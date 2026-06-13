@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **spawn-brood now runs turn-start verification as a decoupled per-strain Pass 3 after the shared Pass-2 submit round-robin completes; each strain's verify/resend poll runs on its own independent deadline so a slow child can no longer consume another strain's readiness budget. Strains that exhaust their per-strain retry cap are marked failed-to-launch in the manifest (#271).**
+- **spawn-brood now runs turn-start verification as a decoupled per-strain Pass 3 after the shared Pass-2 submit round-robin completes; each strain's verify/resend poll runs on its own independent deadline so a slow child can no longer consume another strain's readiness budget. Strains that exhaust their per-strain retry cap are marked failed-to-launch in the manifest (#271). The confined child-ledger read used by Pass-3 verification is now single-sourced as a shared `_shared/ledger-project.sh` primitive shared with `brood-status`, eliminating the duplicated-confined-read drift class.**
 
 ## [2.31.0] - 2026-06-09
 
