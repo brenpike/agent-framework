@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.32.4] - 2026-06-13
+
+### Fixed
+
+- **triage-backlog now routes EVERY live read through the shared validated chokepoint — the deps-add lock-gate labels read fails closed on a continued page (`labels` connection now carries `pageInfo.hasNextPage`; a `triage:locked` label beyond page 1 can no longer project into an unlocked array and let `addBlockedBy` mutate a locked issue), and the `gh repo view` repo-name read is routed through `validate_response_shape` instead of pre-projecting with `--jq`. Closes #228.**
+
 ## [2.32.3] - 2026-06-13
 
 ### Changed
