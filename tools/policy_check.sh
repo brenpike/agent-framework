@@ -1103,8 +1103,13 @@ fi
 #       an invoked path elsewhere on the same line (the wait condition matches
 #       its own command line and never terminates).
 # Scope is plugin `*.md` guidance ONLY (governance/agents/skills) — *.sh scripts
-# are out of scope. Structural exclusions mirror CHECK 11/12 (YAML frontmatter,
-# fenced code blocks, markdown table rows) so the scan stays on guidance prose.
+# are out of scope. Structural exclusions are YAML frontmatter, markdown table
+# rows, and NON-SHELL fenced code blocks. UNLIKE CHECK 11/12, the BODIES of
+# `bash`/`sh`/`shell` fenced blocks ARE scanned: runtime docs prescribe copyable
+# commands inside those fences, so a forbidden wait-loop placed there must still
+# be linted (the fence DELIMITER lines themselves are always skipped). This is
+# the primary surface where prescribed commands actually live, so exempting it
+# would defeat the lint's purpose.
 #
 # SELF-EXEMPTION: the rule-definition bullets in plugin/governance/definitions.md
 # legitimately QUOTE these very anti-patterns as the thing being forbidden (the
@@ -1201,14 +1206,30 @@ while IFS= read -r -d '' md_file; do
             fi
         fi
     done < <(awk '
-        BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
+        BEGIN { in_fm = 0; fm_done = 0; in_fence = 0; shell_fence = 0 }
         {
             # YAML frontmatter: first line "---" opens, next "---" closes.
             if (!fm_done && NR == 1 && $0 == "---") { in_fm = 1; next }
             if (in_fm) { if ($0 == "---") { in_fm = 0; fm_done = 1 } next }
-            # Fenced code blocks toggle on lines starting with ```.
-            if ($0 ~ /^```/) { in_fence = !in_fence; next }
-            if (in_fence) next
+            # Fenced code blocks toggle on lines starting with ```. Unlike
+            # CHECK 11/12, CHECK 14 must SCAN the bodies of shell fences: runtime
+            # docs prescribe copyable commands inside ```bash / ```sh blocks, so
+            # a forbidden wait-loop placed there must still be linted. The fence
+            # DELIMITER lines are always skipped; only a SHELL fence emits its
+            # body. Detect the language from the opening fence info string
+            # (```bash, ```sh, ```shell, optionally with leading indentation).
+            if ($0 ~ /^[ \t]*```/) {
+                if (in_fence) { in_fence = 0; shell_fence = 0 }
+                else {
+                    in_fence = 1
+                    info = $0
+                    sub(/^[ \t]*```[ \t]*/, "", info)
+                    shell_fence = (info ~ /^(bash|sh|shell)([ \t]|$)/) ? 1 : 0
+                }
+                next
+            }
+            # Non-shell fence body is skipped; shell fence body is scanned.
+            if (in_fence && !shell_fence) next
             # Markdown table rows.
             if ($0 ~ /^[ \t]*\|/) next
             print NR "\t" $0
