@@ -464,6 +464,25 @@ else
   pass "deps-add:lock-read-null-elem-no-payload" "no {issueId} payload on null-elem response"
 fi
 
+# Case 4: continued page (hasNextPage==true) → root_pred fails, nonzero exit, no payload.
+# The page-1 nodes do NOT contain triage:locked, proving fail-closed on the pagination
+# signal itself rather than on a visible lock.
+LABELS_RESP_PAGINATED_TMP="$TMPDIR_TEST/labels-raw-paginated.json"
+cp "$TB_DIR/labels-raw-paginated.json" "$LABELS_RESP_PAGINATED_TMP"
+
+run_exit1_case "deps-add:lock-read-paginated-failclosed" -- \
+  deps-add --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_PAGINATED_TMP"
+
+LOCK_PAGINATED_OUT="$(TRIAGE_OPS_OFFLINE=1 bash "$OPS" deps-add \
+  --issue-id I_aaa --blocked-by-id I_bbb \
+  --issue-labels-response "$LABELS_RESP_PAGINATED_TMP" 2>/dev/null)" || true
+if printf '%s' "$LOCK_PAGINATED_OUT" | grep -qF '"issueId"'; then
+  failed "deps-add:lock-read-paginated-no-payload" "paginated body emitted a payload (stdout: $LOCK_PAGINATED_OUT)"
+else
+  pass "deps-add:lock-read-paginated-no-payload" "no {issueId} payload on continued-page response"
+fi
+
 # ── deps-add: lock-read CLEAN via --issue-labels-response (N004) ─────────────────
 # Proves the kernel passes clean bodies through to the lock gate correctly.
 

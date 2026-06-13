@@ -128,11 +128,25 @@
 #     envelope, null/missing entity at the expected root path, non-array collection,
 #     or a null/wrong-typed field on any element — FAILS CLOSED (nonzero, structured
 #     kind record to stderr) before any gate, decision, or mutation. Covered reads:
-#     deps-read's blockedBy response (via normalize_deps_read), deps-add's
-#     lock-label node(id:) read (before the addBlockedBy mutation — never mutate on
-#     unverifiable lock state), list-issues' gh issue list output (before the cap
-#     check and before emitting the backlog), and apply-labels' label read (before
-#     the lock gate and before the delta). No subcommand bypasses this kernel.
+#     deps-read's blockedBy response (via normalize_deps_read), deps-read's
+#     repo-name read (gh repo view — routed RAW through the kernel, no pre-`--jq`
+#     projection; an object read wrapped in a synthetic 1-element array to satisfy
+#     the kernel's array requirement), deps-add's lock-label node(id:) read (before
+#     the addBlockedBy mutation — never mutate on unverifiable lock state),
+#     list-issues' gh issue list output (before the cap check and before emitting
+#     the backlog), and apply-labels' label read (before the lock gate and before
+#     the delta). No subcommand bypasses this kernel — no live read pre-projects
+#     before the kernel.
+#   - DEPS-ADD LOCK-READ IS PAGINATION-COMPLETE (fail-closed). The node(id:) labels
+#     read requests labels(first: 100) with pageInfo { hasNextPage }; the shared
+#     kernel's root_pred requires (.labels.pageInfo.hasNextPage // false) == false,
+#     so a CONTINUED labels page (hasNextPage == true) FAILS CLOSED (nonzero,
+#     malformed-read) BEFORE assert_unlocked_live and BEFORE addBlockedBy — never
+#     mutate on a possibly-incomplete labels array whose later page could carry
+#     triage:locked. The `// false` default treats an ABSENT pageInfo as complete
+#     (clean single-page fixtures stay green), mirroring deps-read's blockedBy idiom.
+#     Both call sites (the LIVE node(id:) read and the OFFLINE --issue-labels-response
+#     seam) drive the identical predicate so live and offline cannot diverge.
 #   - PER-FAMILY MUTUAL EXCLUSION (clean reconcile): for each family in --targets,
 #     the delta REMOVES every existing "<family>:*" label that is not the chosen
 #     value and ADDS the chosen value if absent. End state: exactly the chosen
@@ -587,6 +601,7 @@ query($id: ID!) {
   node(id: $id) {
     ... on Issue {
       labels(first: 100) {
+        pageInfo { hasNextPage }
         nodes { name }
       }
     }
@@ -777,9 +792,22 @@ cmd_deps_read() {
   fi
   reject_fixture_flags_in_live_mode "deps-read" "--response-file=$response_file"
   require_gh "deps-read"
-  local owner_repo owner repo resp
-  owner_repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \
+  local repo_resp owner_repo owner repo resp
+  # Route the repo-name read through the SHARED kernel too (no pre-`--jq`
+  # projection): read the RAW object and let validate_response_shape gate its
+  # shape, then split owner/repo from the KERNEL-VALIDATED value. `gh repo view`
+  # returns an OBJECT, so wrap nameWithOwner in a synthetic 1-element array to
+  # satisfy the kernel's array-at-coll_path requirement.
+  repo_resp="$(gh repo view --json nameWithOwner)" \
     || die "deps-read: failed to resolve owner/repo" 1
+  owner_repo="$(validate_response_shape "$repo_resp" \
+    '.' \
+    '.nameWithOwner | type == "string" and length > 0' \
+    '[.nameWithOwner]' \
+    'type == "string" and length > 0' \
+    '.nameWithOwner')" \
+    || die "deps-read: failed to resolve owner/repo (unreadable/malformed repo response)" 1
+  owner_repo="$(printf '%s' "$owner_repo" | jq -r .)"
   owner="${owner_repo%%/*}"; repo="${owner_repo#*/}"
   resp="$(gh api graphql -f query="$DEPS_READ_QUERY" \
             -f owner="$owner" -f repo="$repo" -F number="$issue" 2>/dev/null)" \
@@ -832,7 +860,7 @@ cmd_deps_add() {
       raw_labels_resp="$(read_injected "$issue_labels_response")"
       injected_labels_json="$(validate_response_shape "$raw_labels_resp" \
         '.data.node' \
-        'true' \
+        '(.labels.pageInfo.hasNextPage // false) == false' \
         '.labels.nodes' \
         '(.name | type == "string" and length > 0)' \
         '[ .data.node.labels.nodes[].name ]')" \
@@ -875,7 +903,7 @@ cmd_deps_add() {
                    -f id="$issue_id" 2>/dev/null)" || true
   current_json="$(validate_response_shape "$labels_resp" \
     '.data.node' \
-    'true' \
+    '(.labels.pageInfo.hasNextPage // false) == false' \
     '.labels.nodes' \
     '(.name | type == "string" and length > 0)' \
     '[ .data.node.labels.nodes[].name ]')" \
