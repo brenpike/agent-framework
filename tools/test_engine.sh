@@ -243,6 +243,48 @@ FAIL_COUNT=0
 pass() { echo "PASS [$1] $2"; PASS_COUNT=$((PASS_COUNT + 1)); }
 failed() { echo "FAIL [$1] $2"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
 
+# ── Two-line containment-reject stderr oracle ────────────────────────────────
+# The shared ledger-engine-io contract (R-STEP-001/002) preserves a TWO-LINE stderr sequence on a
+# containment reject: the inner containment helper's OWN raw UNPREFIXED detail line on fd2, THEN
+# the engine's `blocker:` line. This oracle locks that ordering so a silent reorder/merge of the
+# two lines (e.g. a regression that prefixes the detail line, or drops the passthrough) is caught.
+#
+# assert_reject_detail_above_blocker <name> <stderr-file> <detail-substring>
+# Asserts, against the captured stderr file:
+#   (a) a line containing <detail-substring> exists and is UNPREFIXED (does NOT start with
+#       "blocker:") — i.e. it is the inner helper's own passthrough detail line, and
+#   (b) that detail line's line-number strictly PRECEDES the first "blocker:" line's line-number.
+assert_reject_detail_above_blocker() {
+    local name="$1" stderr="$2" detail="$3"
+    local detail_ln blocker_ln
+    # First UNPREFIXED line containing the inner-helper detail substring (exclude blocker: lines so
+    # a detail substring that also appears inside the blocker text cannot match the blocker line).
+    detail_ln="$(grep -nF -- "$detail" "$stderr" 2>/dev/null | grep -v ':blocker: ' | head -1 | cut -d: -f1)"
+    # First blocker: line.
+    blocker_ln="$(grep -n '^blocker: ' "$stderr" 2>/dev/null | head -1 | cut -d: -f1)"
+    if [[ -n "$detail_ln" && -n "$blocker_ln" && "$detail_ln" -lt "$blocker_ln" ]]; then
+        pass "$name" "inner-helper detail line (unprefixed, L$detail_ln) appears ABOVE the blocker line (L$blocker_ln)"
+    else
+        failed "$name" "expected unprefixed detail line containing '$detail' ABOVE the blocker line; detail_ln='$detail_ln' blocker_ln='$blocker_ln' stderr=$(tr '\n' '|' < "$stderr" 2>/dev/null)"
+    fi
+}
+
+# assert_single_blocker_no_detail <name> <stderr-file>
+# Guard for a NON-containment failure (e.g. coherence mismatch): stderr must carry EXACTLY ONE
+# `blocker:` line and NO extra unprefixed detail line above it — proving the SHAPE-B single-line
+# contract (one printed reason in, one blocker line out) did not grow a spurious passthrough line.
+assert_single_blocker_no_detail() {
+    local name="$1" stderr="$2"
+    local total_lines blocker_lines
+    total_lines="$(grep -c '' "$stderr" 2>/dev/null || echo 0)"
+    blocker_lines="$(grep -c '^blocker: ' "$stderr" 2>/dev/null || echo 0)"
+    if [[ "$blocker_lines" -eq 1 && "$total_lines" -eq 1 ]]; then
+        pass "$name" "stderr carries exactly one blocker line and no extra unprefixed detail line"
+    else
+        failed "$name" "expected exactly 1 blocker line and 1 total line; blocker_lines=$blocker_lines total_lines=$total_lines stderr=$(tr '\n' '|' < "$stderr" 2>/dev/null)"
+    fi
+}
+
 # ── Per-case git-root helpers ────────────────────────────────────────────────
 
 # new_gitroot <name> -> prints the path to a fresh throwaway git checkout under $WORKDIR.
@@ -1050,6 +1092,7 @@ assert_coherence_mismatch_unchanged() {
     # The engine's coherence check (ledger.run.id == run_id) fails: non-zero exit, ledger
     # byte-unchanged. Proves the on-disk run-dir name alone cannot satisfy identity.
     local gitroot run_id rundir ledger inputs before after rc=0
+    local stderr
     gitroot="$(new_gitroot s-git)"
     run_id="engine-case-s"
     rundir="$gitroot/.hivemind/runs/$run_id"
@@ -1070,7 +1113,8 @@ assert_coherence_mismatch_unchanged() {
         '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
         > "$inputs"
 
-    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    stderr="$gitroot/s-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
 
     after="$(sha256sum "$ledger" | awk '{print $1}')"
     if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
@@ -1078,6 +1122,11 @@ assert_coherence_mismatch_unchanged() {
     else
         failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
     fi
+    # SHAPE-B guard: coherence mismatch is a NON-containment failure — the engine emits its single
+    # `blocker:` line (re-emitting the function's printed stdout reason) and NO inner-helper
+    # passthrough detail line. Assert exactly one blocker line and no extra unprefixed line, so a
+    # regression that grew a spurious detail line here would be caught.
+    assert_single_blocker_no_detail "$name:stderr-single-blocker" "$stderr"
 }
 
 # ── T. init symlink-escape rejected: no ledger written outside the checkout ──
@@ -1195,6 +1244,10 @@ assert_record_symlink_escape_rejected() {
     else
         failed "$name" "expected non-zero exit + containment blocker + external ledger byte-unchanged + no temp; rc=$rc containment=$is_containment_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
     fi
+    # Two-line ordering oracle: the ancestor guard's inner helper emits its own UNPREFIXED detail
+    # line ("refusing symlinked component ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "refusing symlinked component"
 }
 
 # ── V. init nested symlink-escape rejected: symlinked <run_id> leaf, no external write ──
@@ -1366,6 +1419,10 @@ assert_init_inputs_external_rejected() {
     else
         failed "$name" "expected non-zero exit + containment blocker + unchanged inputs + no ledger; rc=$rc readguard=$is_readguard_blocker inputs_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
     fi
+    # Two-line ordering oracle: the inputs read-guard's inner helper emits its own UNPREFIXED detail
+    # line ("inputs file ... resolves outside the checkout: ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "resolves outside the checkout"
 }
 
 # ── Y. record inputs-file external-resolution rejected by the read-guard ─────
@@ -1436,6 +1493,10 @@ assert_record_inputs_external_rejected() {
     else
         failed "$name" "expected non-zero exit + containment blocker + unchanged inputs/ledger + no temp; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) inputs_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) leaked=$leaked"
     fi
+    # Two-line ordering oracle: the inputs read-guard's inner helper emits its own UNPREFIXED detail
+    # line ("inputs file ... resolves outside the checkout: ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "resolves outside the checkout"
 }
 
 # ── Z. init pre-ledger failure rolls back the claimed run dir; same-id retry succeeds ─
@@ -1784,6 +1845,7 @@ assert_intent_fallback_symlink_escape_rejected() {
     # file-absence. Mirrors record-state-result's case U precisely. Assert: non-zero exit, the
     # external ledger BYTE-UNCHANGED (sha256 before==after), and NO temp file leaked under it.
     local gitroot external run_id ext_ledger inputs before after rc=0
+    local stderr
     gitroot="$(new_gitroot ff-git)"
     run_id="engine-case-ff"
     external="$WORKDIR/ff-external"
@@ -1810,7 +1872,8 @@ assert_intent_fallback_symlink_escape_rejected() {
         '{run_id: $run_id, state: $state, summary: $summary}' \
         > "$inputs"
 
-    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    stderr="$gitroot/ff-stderr.txt"
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
 
     after="$(sha256sum "$ext_ledger" | awk '{print $1}')"
     # No engine temp file (.state.json.XXXXXX) may have leaked under the external runs dir.
@@ -1823,6 +1886,10 @@ assert_intent_fallback_symlink_escape_rejected() {
     else
         failed "$name" "expected non-zero exit + external ledger byte-unchanged + no temp; rc=$rc changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
     fi
+    # Two-line ordering oracle: the ancestor guard's inner helper emits its own UNPREFIXED detail
+    # line ("refusing symlinked component ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "refusing symlinked component"
 }
 
 # ── GG. closeout footgun guard: close_status on a non-running ledger rejected ─
@@ -1918,6 +1985,10 @@ assert_init_inputs_symlink_leaf_rejected() {
     else
         failed "$name" "expected non-zero exit + containment blocker + unchanged target + no ledger; rc=$rc readguard=$is_readguard_blocker target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
     fi
+    # Two-line ordering oracle: the leaf read-guard's inner helper emits its own UNPREFIXED detail
+    # line ("refusing symlinked inputs file leaf ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "refusing symlinked inputs file leaf"
 }
 
 # ── II. record inputs-file symlinked LEAF rejected by the read-guard ─────────
@@ -1971,6 +2042,10 @@ assert_record_inputs_symlink_leaf_rejected() {
     else
         failed "$name" "expected non-zero exit + containment blocker + unchanged ledger/target; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no)"
     fi
+    # Two-line ordering oracle: the leaf read-guard's inner helper emits its own UNPREFIXED detail
+    # line ("refusing symlinked inputs file leaf ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "refusing symlinked inputs file leaf"
 }
 
 # ── JJ. spawn-brood inputs-file symlinked LEAF rejected by the read-guard ────
@@ -2040,6 +2115,10 @@ assert_spawn_brood_inputs_symlink_leaf_rejected() {
     else
         failed "$name" "expected non-zero exit + containment blocker + unchanged target + no brood state; rc=$rc readguard=$is_readguard_blocker target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no) wrote=$wrote"
     fi
+    # Two-line ordering oracle: the leaf read-guard's inner helper emits its own UNPREFIXED detail
+    # line ("refusing symlinked inputs file leaf ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "refusing symlinked inputs file leaf"
 }
 
 # ── KK. intent-fallback inputs-file symlinked LEAF rejected by the read-guard ─
@@ -2091,6 +2170,10 @@ assert_intent_fallback_inputs_symlink_leaf_rejected() {
     else
         failed "$name" "expected non-zero exit + containment blocker + unchanged ledger/target; rc=$rc readguard=$is_readguard_blocker ledger_changed=$([[ "$before" != "$after" ]] && echo yes || echo no) target_changed=$([[ "$in_before" != "$in_after" ]] && echo yes || echo no)"
     fi
+    # Two-line ordering oracle: the leaf read-guard's inner helper emits its own UNPREFIXED detail
+    # line ("refusing symlinked inputs file leaf ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "refusing symlinked inputs file leaf"
 }
 
 # ── LL. record ledger-file symlinked LEAF rejected by the ledger-read guard ──
@@ -2153,6 +2236,10 @@ assert_record_ledger_symlink_leaf_rejected() {
     else
         failed "$name" "expected non-zero exit + ledger blocker + external ledger byte-unchanged; rc=$rc ledger_blocker=$is_ledger_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
     fi
+    # Two-line ordering oracle: the ledger-leaf guard's inner helper emits its own UNPREFIXED detail
+    # line ("refusing symlinked ledger file leaf ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "refusing symlinked ledger file leaf"
 }
 
 # ── MM. intent-fallback ledger-file symlinked LEAF rejected by the ledger guard ─
@@ -2212,6 +2299,10 @@ assert_intent_fallback_ledger_symlink_leaf_rejected() {
     else
         failed "$name" "expected non-zero exit + ledger blocker + external ledger byte-unchanged; rc=$rc ledger_blocker=$is_ledger_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
     fi
+    # Two-line ordering oracle: the ledger-leaf guard's inner helper emits its own UNPREFIXED detail
+    # line ("refusing symlinked ledger file leaf ...") ABOVE the engine's blocker line.
+    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
+        "refusing symlinked ledger file leaf"
 }
 
 # ── Drive all assertions ────────────────────────────────────────────────────

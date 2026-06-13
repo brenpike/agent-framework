@@ -1561,8 +1561,14 @@ if [ "$rif_missing_rc" -ne 0 ]; then
 else
   failed "engineio:rif-missing-rc" "empty inputs-file arg must return non-zero; got 0"
 fi
-assert_eq "engineio:rif-missing-msg" "missing required argument: path to run-ledger inputs JSON file (\$1)" \
-  "$rif_missing_err" "missing-arg blocker reproduces engine text with the label noun"
+# NEW CONTRACT (R-STEP-001/002): hivemind_read_inputs_file emits NO stderr of its OWN — it
+# signals the missing-arg branch via return code 2, and the ENGINE owns the blocker text. Assert
+# the EXACT return code AND that the function's own stderr (captured above as $rif_missing_err,
+# which is 2>&1 with stdout discarded — i.e. fd2 only) is EMPTY, proving no self-emission.
+assert_eq "engineio:rif-missing-rc-code" "2" "$rif_missing_rc" \
+  "missing-arg branch returns the distinct code 2 (engine maps it to its blocker)"
+assert_eq "engineio:rif-missing-no-self-stderr" "" "$rif_missing_err" \
+  "missing-arg branch emits NO stderr of its own (engine owns the blocker line)"
 
 # 11a-2: non-existent file → non-zero + the engine's exact does-not-exist blocker.
 rif_absent="$WORKDIR/engineio-absent-inputs.json"   # never created
@@ -1572,8 +1578,11 @@ if [ "$rif_absent_rc" -ne 0 ]; then
 else
   failed "engineio:rif-absent-rc" "non-existent inputs file must return non-zero; got 0"
 fi
-assert_eq "engineio:rif-absent-msg" "record-state-result inputs file $rif_absent does not exist" \
-  "$rif_absent_err" "does-not-exist blocker reproduces engine text with the label noun"
+# NEW CONTRACT: the does-not-exist branch signals via return code 3 and emits NO own stderr.
+assert_eq "engineio:rif-absent-rc-code" "3" "$rif_absent_rc" \
+  "non-existent-file branch returns the distinct code 3 (engine maps it to its blocker)"
+assert_eq "engineio:rif-absent-no-self-stderr" "" "$rif_absent_err" \
+  "non-existent-file branch emits NO stderr of its own (engine owns the blocker line)"
 
 # 11a-3: present-but-invalid JSON → non-zero + the engine's exact not-valid-JSON blocker. The file
 # MUST live inside the repo so it passes the read-guard and reaches the jq validity probe (an
@@ -1590,8 +1599,12 @@ if [ "$rif_badjson_rc" -ne 0 ]; then
 else
   failed "engineio:rif-badjson-rc" "invalid-JSON inputs file must return non-zero; got 0"
 fi
-assert_eq "engineio:rif-badjson-msg" "mark-intent-fallback inputs file $rif_badjson is not valid JSON" \
-  "$rif_badjson_err" "not-valid-JSON blocker reproduces engine text with the label noun"
+# NEW CONTRACT: the invalid-JSON branch signals via return code 5 and emits NO own stderr — the
+# internal `jq -e` probe runs with `2>&1` suppressed, so no jq diagnostic leaks to fd2 either.
+assert_eq "engineio:rif-badjson-rc-code" "5" "$rif_badjson_rc" \
+  "invalid-JSON branch returns the distinct code 5 (engine maps it to its blocker)"
+assert_eq "engineio:rif-badjson-no-self-stderr" "" "$rif_badjson_err" \
+  "invalid-JSON branch emits NO stderr of its own (jq diagnostic suppressed; engine owns the blocker)"
 
 # 11a-4: valid, contained JSON inputs file → returns 0 (read-guard passes, jq validity passes).
 rif_good="$ENGINEIO_SCRATCH/good-inputs.json"
@@ -1613,6 +1626,23 @@ if [ "$rif_link_rc" -ne 0 ]; then
 else
   failed "engineio:rif-symlink-ancestor-reject" "symlinked-ancestor inputs path must be rejected by the read-guard; got 0"
 fi
+# NEW CONTRACT: the containment reject is signalled by the DISTINCT code 4, and — unlike the other
+# branches — the INNER helper hivemind_assert_inputs_contained emits its OWN raw UNPREFIXED detail
+# line to fd2 (uncaptured passthrough); hivemind_read_inputs_file adds NO line of its own. The
+# engine maps code 4 to its blocker, so the detail line that reaches fd2 here is the inner helper's,
+# NOT a self-emitted message. Assert the exact code AND that the inner-helper detail line is present
+# on fd2 (captured above as $rif_link_err). The detail for an ancestor-escape is the helper's
+# "resolves outside the checkout" line (containment.sh), distinct from the engine's blocker text.
+assert_eq "engineio:rif-symlink-ancestor-rc-code" "4" "$rif_link_rc" \
+  "containment-reject branch returns the distinct code 4 (engine maps it to its blocker)"
+case "$rif_link_err" in
+  *"resolves outside the checkout"*)
+    pass "engineio:rif-symlink-ancestor-inner-detail-on-fd2" \
+      "inner-helper detail line reached fd2 as passthrough (uncaptured), proving read_inputs_file added none" ;;
+  *)
+    failed "engineio:rif-symlink-ancestor-inner-detail-on-fd2" \
+      "expected inner-helper detail line on fd2 containing 'resolves outside the checkout'; got: $rif_link_err" ;;
+esac
 
 # ── 11b. hivemind_open_ledger — derive / contain / read / coherence / canonical confirm ──
 # These take an EXPLICIT <repo_root>, so every fixture is a self-contained fake checkout in WORKDIR.
