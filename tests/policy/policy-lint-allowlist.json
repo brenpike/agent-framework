@@ -132,5 +132,11 @@
     "path": "plugin/skills/_shared/ledger-reconstruct-fold.sh",
     "line": 15,
     "reason": "P18 documented exception (ADR-0020): SOURCED library. set -e/pipefail and EXIT trap deliberately omitted — a sourced file mutates the SOURCING shell's option state and would corrupt every caller; carries no top-level set at all. Pure fold/gate/wrap-stage functions (normalized-to-findings fold, live parse gate, reconstruct wrap); callers own set -u, EXIT trap, and error routing."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/_shared/fetch-normalize-core.sh",
+    "line": 17,
+    "reason": "P18 documented exception (ADR-0020): SOURCED library. set -e/pipefail and EXIT trap deliberately omitted — a sourced file mutates the SOURCING shell's option state and would corrupt every caller; carries no top-level set at all. Pure normalize-core functions (overflow tripwire + normalized candidate-set union) whose jq pipelines fail-OPEN-on-CONTENT to []; set -e/pipefail would abort those guarded paths. Callers own set -u and error routing."
   }
 ]

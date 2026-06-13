@@ -10,7 +10,7 @@
 #
 # THIS FILE IS SOURCED, NOT EXECUTED. No shebang: the fetch-normalize entrypoint
 # sources it by absolute path derived from its OWN script_dir
-# (`. "$SCRIPT_DIR/../_shared/fetch-normalize-core.sh"`). It defines functions only;
+# (`. "$SCRIPT_DIR/../../_shared/fetch-normalize-core.sh"`). It defines functions only;
 # it runs no top-level statements and changes no caller state beyond defining the
 # functions below. `bash -n` validates it as a sourced fragment.
 #
