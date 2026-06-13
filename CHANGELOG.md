@@ -12,11 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Governance hardening (#279): the overlord and all Bash-running agents are now forbidden from hand-rolling `sleep`/`pgrep`/`until` poll-wait loops or self-matching process greps to wait for a long-running command; the only sanctioned wait is a `run_in_background` task completion or a Monitor on the genuine completion marker. New `policy_check.sh` CHECK 14 lint + a P3 safety fixture (`tests/policy/safety-bash-wait-loop-discipline.json`) make the anti-pattern non-regressable. Fixes a session where 5 immortal `until ! pgrep` waiter shells leaked.**
-
 ### Deferred
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
+
+## [2.32.2] - 2026-06-13
+
+### Fixed
+
+- **Governance hardening (#279): the overlord and all Bash-running agents are now forbidden from hand-rolling `sleep`/`pgrep`/`until` poll-wait loops or self-matching process greps to wait for a long-running command; the only sanctioned wait is a `run_in_background` task completion or a Monitor on the genuine completion marker. New `policy_check.sh` CHECK 14 lint + a P3 safety fixture (`tests/policy/safety-bash-wait-loop-discipline.json`) make the anti-pattern non-regressable. Fixes a session where 5 immortal `until ! pgrep` waiter shells leaked.**
 
 ## [2.32.1] - 2026-06-12
 
