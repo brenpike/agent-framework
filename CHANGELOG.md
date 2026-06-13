@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.32.6] - 2026-06-13
+
+### Changed
+
+- **Extract the shared inputs-bootstrap and ledger-read/containment core of the three engine scripts (init-run-ledger, record-state-result, mark-intent-fallback) into a sourced `_shared/ledger-engine-io.sh` library behind thin entrypoints (P21/ADR-0020, behavior-preserving). (#245)**
+
 ## [2.32.5] - 2026-06-13
 
 ### Changed
