@@ -142,6 +142,12 @@ workflows_dir="$plugin_root/workflows"
 # temp-write). Sourcing once here keeps a single load point for both call sites below.
 . "$plugin_root/skills/_shared/containment.sh"
 
+# Source the shared ledger engine-IO helper by the SAME self-located absolute path. It
+# provides hivemind_read_inputs_file (the inputs-file bootstrap) and hivemind_open_ledger
+# (the depth-complete ledger-read/containment/coherence/post-existence chain). Both functions
+# ORCHESTRATE the containment.sh helpers sourced above, so this MUST follow that source.
+. "$plugin_root/skills/_shared/ledger-engine-io.sh"
+
 # ── Dependency check ──────────────────────────────────────────────────────────
 command -v jq >/dev/null 2>&1 \
   || blocker "jq is required to read and write the run ledger but is not installed"
@@ -152,25 +158,18 @@ command -v jq >/dev/null 2>&1 \
 # the untrusted summary/outputs/plan_steps/plan_path) is read with jq into inert variables
 # below — never interpolated into bash source or the jq program SOURCE.
 INPUTS_FILE="${1:-}"
-[ -n "$INPUTS_FILE" ] \
-  || blocker "missing required argument: path to record-state-result inputs JSON file (\$1)"
-[ -f "$INPUTS_FILE" ] \
-  || blocker "record-state-result inputs file $INPUTS_FILE does not exist"
 
-# ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
-# Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
-# symlinked ancestor) — converting a silent external-read into a hard blocker BEFORE the
-# first jq read below (the JSON-validity probe AND every field read). Running this BEFORE the
-# `jq -e` validity probe is REQUIRED: `jq -e` opening an attacker-supplied external path is
-# itself an external-file JSON-validity read oracle, so the containment guard must gate it.
-# This guards the READ source; the later hivemind_assert_contained call guards the WRITE
-# chain — both are needed. The helper never exits; map non-zero to our blocker. The
-# authoritative not-in-a-repo gate remains the repo_root check further below.
-hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
-  || blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)"
-
-jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
-  || blocker "record-state-result inputs file $INPUTS_FILE is not valid JSON"
+# ── Inputs-file bootstrap (shared helper) ──────────────────────────────────────
+# hivemind_read_inputs_file performs, IN ORDER: the non-empty-arg check, the `[ -f ]`
+# existence check, the hivemind_assert_inputs_contained defense-in-depth read-guard (run
+# BEFORE the jq validity probe — `jq -e` on an attacker path is itself a JSON-validity read
+# oracle), and the `jq -e .` JSON-validity probe. The "record-state-result" label reproduces
+# this engine's EXACT current blocker strings. The helper never exits: it prints the reason
+# to stderr (no `blocker: ` prefix) and returns non-zero. We capture that reason and re-emit
+# it through blocker() so the on-screen bytes (the `blocker: ` prefix + exit 1) are identical
+# to the prior inline checks.
+inputs_err="$(hivemind_read_inputs_file "$INPUTS_FILE" "record-state-result" 2>&1)" \
+  || blocker "$inputs_err"
 
 # ── Parse fields into inert variables ─────────────────────────────────────────
 # Required strings via `jq -r '.field // ""'`. The presence bools derive from KEY-PRESENCE on
@@ -232,83 +231,42 @@ esac
 # arbitrary-file overwrite via a caller path is structurally impossible.
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -n "$repo_root" ] || blocker "not inside a git repository"
+# Raw textual ledger path (matches the prior inline derivation). The reads below
+# (workflow-derive, coherence already done by the helper, state.current / binding-guard
+# validation) all reference this raw path; the containment guards inside hivemind_open_ledger
+# proved that the raw path and its canonical form resolve to the same in-checkout file. The
+# atomic-write block below re-points $ledger at the CANONICAL path before any mktemp/mv.
 ledger="$repo_root/.hivemind/runs/$run_id/state.json"
 
-# ── Depth-complete canonical-containment guard (shared helper; refines ADR-0019) — BEFORE any ledger read ──
-# Derive-from-ground-truth (repo_root) must be PAIRED with canonicalize-and-verify-
-# containment, and that pairing MUST gate every ledger READ as well as the later write. The
-# ledger path is derived TEXTUALLY as "$repo_root/.hivemind/runs/<run_id>/state.json"; that
-# text does NOT confine access when ANY component of the chain is a SYMLINK pointing outside
-# the checkout. Run this guard immediately after deriving repo_root/run_id and BEFORE the
-# `[ -f "$ledger" ]` existence check, the `jq -e` JSON-validity probe, and the coherence read
-# — otherwise an externally-resolved state.json would be opened by jq (a JSON-validity read
-# oracle) and its `.run.id` could be echoed in the coherence blocker before rejection, and the
-# mktemp/mv below would temp-write and rename EXTERNALLY. The shared helper walks EVERY
-# component of the FULL chain (INCLUDING the <run_id> leaf) and rejects any existing symlink
-# component at ANY depth, then verifies the deepest existing prefix stays inside the
-# checkout — BEFORE any read, mktemp, or mv, so a rejection never opens or creates a file and
-# the on-disk ledger is byte-unchanged. The helper is portable (cd && pwd -P + [ -L ], no
-# realpath/readlink -f) and set -u-safe (empty canonical => non-zero return). All of record's
-# components (.hivemind, .hivemind/runs, .hivemind/runs/<run_id>) ALREADY EXIST (record
-# requires the ledger to exist), so the helper checks them all. We then KEEP record's
-# existing basename/parent/state.json-existence assertions on the canonicalized ledger dir
-# (after the existence check below) so net behavior is identical to today; only the
-# symlink-rejection primitive is now shared. The state.json LEAF itself (a symlinked ledger
-# file under a real run dir) is now [ -L ]-rejected by the dedicated
-# hivemind_assert_ledger_contained guard below, before any [ -f ]/jq read, completing
-# leaf-symmetry with the inputs-file and write-target leaves.
-# (containment.sh was sourced once early, just after plugin_root is computed.)
-canon_repo_root="$(hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id")" \
-  || blocker "refusing: ${canon_repo_root:-$repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged"
-[ -n "$canon_repo_root" ] || blocker "failed to canonicalize repo root $repo_root; ledger unchanged"
+# ── Ledger-open machinery (shared helper) — BEFORE any ledger read ─────────────
+# hivemind_open_ledger performs, IN THIS EXACT ORDER (a reordering silently breaks engine
+# determinism): ledger-path derivation, the hivemind_assert_contained ancestor guard, the
+# canonical-runs-dir canonicalization + trailing-slash prefix case-guard, the
+# hivemind_assert_ledger_contained leaf guard (rejects a symlinked state.json LEAF), the
+# `[ -f ]` existence + `jq -e .` validity reads, the coherence check (`.run.id == run_id`),
+# and the post-existence canonical ledger-dir confirmation (canon dir + state.json/run_id
+# basename asserts). On SUCCESS it echoes TWO stdout lines — line 1 = $canon_ledger,
+# line 2 = $canon_ledger_dir — which we read back below. The helper never exits: on failure it
+# prints the reason to stderr (no `blocker: ` prefix) and returns non-zero. We route stderr to
+# a temp file and re-emit any reason through blocker() so the on-screen bytes (the `blocker: `
+# prefix + exit 1) are identical to the prior inline guards. (containment.sh + the helper were
+# sourced once early, just after plugin_root is computed.)
+ledger_open_err="$(mktemp)" \
+  || blocker "failed to create temp file for ledger-open diagnostics"
+if ledger_open_out="$(hivemind_open_ledger "$repo_root" "$run_id" 2>"$ledger_open_err")"; then
+  rm -f "$ledger_open_err"
+else
+  ledger_open_reason="$(cat "$ledger_open_err")"
+  rm -f "$ledger_open_err"
+  blocker "$ledger_open_reason"
+fi
 
-# Canonicalize the contained runs dir, then require the ledger live at
-# "$canon_runs/<run_id>/state.json". Trailing-slash-guarded prefix so a sibling like
-# .hivemind/runs-evil cannot prefix-match. basename asserts confirm the leaf component is
-# exactly <run_id> and the file is exactly state.json. The ledger's own dir is canonicalized
-# only after its existence is confirmed below (cd into a not-yet-existing dir would fail), but
-# the runs-dir containment proof above already gates the read path against a symlinked ancestor.
-canon_runs="$(cd "$canon_repo_root/.hivemind/runs" && pwd -P)"
-[ -n "$canon_runs" ] || blocker "failed to canonicalize $canon_repo_root/.hivemind/runs; ledger unchanged"
-case "$canon_runs/$run_id/state.json/" in
-  "$canon_runs/"*) : ;;
-  *) blocker "ledger resolves outside the checkout runs dir; ledger unchanged" ;;
-esac
-
-# ── Ledger-read LEAF guard (shared helper) — rejects a symlinked state.json LEAF ──
-# The ancestor/runs-dir guard above proves the chain DOWN TO the <run_id> run-dir but does
-# NOT inspect the state.json leaf itself. When the run dir is real but state.json is a
-# SYMLINK, the `[ -f "$ledger" ]`/`jq -e .`/`jq -r '.run.id'` reads below would FOLLOW it to
-# an external target — a content/validity read oracle the ancestor guard never sees. This
-# shared helper [ -L ]-rejects the leaf on the RAW path FIRST (firing even for a dangling
-# target) before any [ -f ]/jq read, completing leaf-symmetry with the inputs-file and
-# write-target leaves. A legitimate regular-file ledger is [ -L ]-false and passes through.
-hivemind_assert_ledger_contained "$repo_root" "$ledger" >/dev/null \
-  || blocker "refusing to read the ledger: $ledger resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged"
-
-[ -f "$ledger" ] || blocker "ledger file does not exist: $ledger"
-jq -e . "$ledger" >/dev/null 2>&1 || blocker "ledger file is not valid JSON: $ledger"
-
-# ── COHERENCE CHECK: the on-disk ledger must self-identify with the passed run_id ──
-ledger_run_id="$(jq -r '.run.id // ""' "$ledger")"
-[ "$ledger_run_id" = "$run_id" ] \
-  || blocker "ledger run.id '$ledger_run_id' does not match run_id '$run_id'; ledger unchanged"
-
-# ── Post-existence canonical ledger-dir confirmation ───────────────────────────
-# Now that the ledger file is confirmed to exist, canonicalize its own dir and re-verify the
-# leaf/dir basenames against the contained runs dir. This pairs the containment proof above
-# (which gated the read) with a final byte-exact path identity before the mktemp/mv write.
-canon_ledger_dir="$(cd "$(dirname "$ledger")" && pwd -P)"
-[ -n "$canon_ledger_dir" ] || blocker "failed to canonicalize the ledger directory; ledger unchanged"
-canon_ledger="$canon_ledger_dir/state.json"
-case "$canon_ledger/" in
-  "$canon_runs/"*) : ;;
-  *) blocker "ledger resolves outside the checkout runs dir: $canon_ledger; ledger unchanged" ;;
-esac
-[ "$(basename "$canon_ledger")" = "state.json" ] \
-  || blocker "canonical ledger leaf is not state.json: $canon_ledger; ledger unchanged"
-[ "$(basename "$canon_ledger_dir")" = "$run_id" ] \
-  || blocker "canonical ledger dir name does not match run_id '$run_id': $canon_ledger_dir; ledger unchanged"
+# Read the helper's two stdout lines: line 1 = canonical ledger path, line 2 = canonical
+# ledger dir. Both are pwd -P paths under the checkout (no embedded newlines), so the
+# two-line protocol is byte-safe. These feed the atomic-write block below.
+{ IFS= read -r canon_ledger; IFS= read -r canon_ledger_dir; } <<EOF
+$ledger_open_out
+EOF
 
 # ── DERIVE the workflow definition from the (trusted) ledger's run.workflow ────
 # The definition is resolved against the self-located PACKAGED workflows dir, never a caller
