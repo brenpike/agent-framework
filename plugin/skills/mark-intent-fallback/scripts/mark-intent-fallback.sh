@@ -125,12 +125,22 @@ INPUTS_FILE="${1:-}"
 # existence check, the hivemind_assert_inputs_contained defense-in-depth read-guard (run
 # BEFORE the jq validity probe — `jq -e` on an attacker path is itself a JSON-validity read
 # oracle), and the `jq -e .` JSON-validity probe. The "mark-intent-fallback" label reproduces
-# this engine's EXACT current blocker strings. The helper never exits: it prints the reason
-# to stderr (no `blocker: ` prefix) and returns non-zero. We capture that reason and re-emit
-# it through blocker() so the on-screen bytes (the `blocker: ` prefix + exit 1) are identical
-# to the prior inline checks.
-inputs_err="$(hivemind_read_inputs_file "$INPUTS_FILE" "mark-intent-fallback" 2>&1)" \
-  || blocker "$inputs_err"
+# this engine's EXACT current blocker strings. The helper never exits and emits NO stderr of
+# its own: it signals WHICH failure occurred via a distinct return code (2 missing arg, 3
+# missing file, 4 containment reject, 5 invalid JSON) and we map each to its fixed blocker text
+# below. For the containment reject (4) the inner hivemind_assert_inputs_contained helper's own
+# UNPREFIXED detail line flows to fd2 UNCAPTURED (we do NOT redirect the call's stderr), so the
+# two-line shape — detail line ABOVE our `blocker:` line — is byte-preserved exactly as before
+# extraction. The non-containment cases (2/3/5) had no detail line pre-extraction and stay
+# single-line.
+hivemind_read_inputs_file "$INPUTS_FILE" "mark-intent-fallback"
+case $? in
+  0) : ;;
+  2) blocker "missing required argument: path to mark-intent-fallback inputs JSON file (\$1)" ;;
+  3) blocker "mark-intent-fallback inputs file $INPUTS_FILE does not exist" ;;
+  4) blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)" ;;
+  5) blocker "mark-intent-fallback inputs file $INPUTS_FILE is not valid JSON" ;;
+esac
 
 # ── Parse fields into inert variables ─────────────────────────────────────────
 # Required strings via `jq -r '.field // ""'`. The presence bools derive from KEY-PRESENCE on
@@ -195,20 +205,23 @@ ledger="$repo_root/.hivemind/runs/$run_id/state.json"
 # `[ -f ]` existence + `jq -e .` validity reads, the coherence check (`.run.id == run_id`),
 # and the post-existence canonical ledger-dir confirmation (canon dir + state.json/run_id
 # basename asserts). On SUCCESS it echoes TWO stdout lines — line 1 = $canon_ledger,
-# line 2 = $canon_ledger_dir — which we read back below. The helper never exits: on failure it
-# prints the reason to stderr (no `blocker: ` prefix) and returns non-zero. We route stderr to
-# a temp file and re-emit any reason through blocker() so the on-screen bytes (the `blocker: `
-# prefix + exit 1) are identical to the prior inline guards. (containment.sh + the helper were
-# sourced once early, just after plugin_root is computed.)
-ledger_open_err="$(mktemp)" \
-  || blocker "failed to create temp file for ledger-open diagnostics"
-if ledger_open_out="$(hivemind_open_ledger "$repo_root" "$run_id" 2>"$ledger_open_err")"; then
-  rm -f "$ledger_open_err"
-else
-  ledger_open_reason="$(cat "$ledger_open_err")"
-  rm -f "$ledger_open_err"
-  blocker "$ledger_open_reason"
-fi
+# line 2 = $canon_ledger_dir — which we read back below. The helper never exits. Two failure
+# shapes (byte-preserved from before extraction):
+#   - inner-helper containment rejects (return 2 = ancestor guard, 6 = leaf guard): the inner
+#     helper's UNPREFIXED detail line flows to fd2 UNCAPTURED (we capture only STDOUT, never
+#     `2>&1`), then we add our OWN fixed `blocker:` line below — the two-line shape.
+#   - every other failure (return 1): the helper PRINTS the single reason line to STDOUT, which
+#     we capture and re-emit through blocker() (adding the `blocker: ` prefix) — single-line.
+# Success and the return-1 reason are mutually exclusive, so the one stdout capture serves both.
+# (containment.sh + the helper were sourced once early, just after plugin_root is computed.)
+ledger_open_out="$(hivemind_open_ledger "$repo_root" "$run_id")"
+ledger_open_rc=$?
+case $ledger_open_rc in
+  0) : ;;
+  2) blocker "refusing: ${repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged" ;;
+  6) blocker "refusing to read the ledger: $ledger resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged" ;;
+  *) blocker "$ledger_open_out" ;;
+esac
 
 # Read the helper's two stdout lines: line 1 = canonical ledger path, line 2 = canonical
 # ledger dir. Both are pwd -P paths under the checkout (no embedded newlines), so the

@@ -178,13 +178,23 @@ INPUTS_FILE="${1:-}"
 # engine's EXACT current blocker strings (the inputs-guard string carries no label and is
 # already byte-identical across engines). This guards the READ source; the later
 # hivemind_assert_contained call guards the WRITE chain — both are needed. The helper never
-# exits: it prints the reason to stderr (no `blocker: ` prefix) and returns non-zero. We
-# capture that reason and re-emit it through blocker() so the on-screen bytes (the `blocker: `
-# prefix + exit 1) are identical to the prior inline checks. Empty git root (not inside a
+# exits and emits NO stderr of its own: it signals WHICH failure occurred via a distinct return
+# code (2 missing arg, 3 missing file, 4 containment reject, 5 invalid JSON) and we map each to
+# its fixed blocker text below. For the containment reject (4) the inner
+# hivemind_assert_inputs_contained helper's own UNPREFIXED detail line flows to fd2 UNCAPTURED
+# (we do NOT redirect the call's stderr), so the two-line shape — detail line ABOVE our
+# `blocker:` line — is byte-preserved exactly as before extraction. The non-containment cases
+# (2/3/5) had no detail line pre-extraction and stay single-line. Empty git root (not inside a
 # checkout) is tolerated by the helper's own canonical guard; the write-chain repo_root check
 # below remains the authoritative not-in-a-repo gate.
-inputs_err="$(hivemind_read_inputs_file "$INPUTS_FILE" "run-ledger" 2>&1)" \
-  || blocker "$inputs_err"
+hivemind_read_inputs_file "$INPUTS_FILE" "run-ledger"
+case $? in
+  0) : ;;
+  2) blocker "missing required argument: path to run-ledger inputs JSON file (\$1)" ;;
+  3) blocker "run-ledger inputs file $INPUTS_FILE does not exist" ;;
+  4) blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)" ;;
+  5) blocker "run-ledger inputs file $INPUTS_FILE is not valid JSON" ;;
+esac
 
 # Parse every field into the SAME inert variables the downstream logic already uses.
 # Strings via `jq -r '.field // ""'`; the workflow_version stays a JSON number (read as
