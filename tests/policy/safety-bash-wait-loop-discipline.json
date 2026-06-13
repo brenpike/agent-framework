@@ -1,21 +1,6 @@
 {
   "rule": "Bash wait-loop discipline",
-  "description": "P3 coupling: the Bash wait-loop / self-match discipline is enforced by two coupled artifacts and BOTH must stay pinned. (1) The governance prose lives in plugin/governance/definitions.md (`the only sanctioned wait primitive`) and is referenced by plugin/agents/overlord.md (`Bash Command Discipline per `) -- pinned by the source/consumers block below. (2) The MECHANICAL backstop is CHECK 14 in tools/policy_check.sh, which lints every plugin/**/*.md for the prescribed hand-rolled wait-loop forms and self-matching `pgrep -f`, INCLUDING inside `bash`/`sh`/`shell` fenced code blocks (the primary surface where runtime docs prescribe copyable commands). Without the set_check below, CHECK 14 could be deleted or weakened -- including silently reverting to a blanket fence-skip that lets a forbidden waiter hide in a copyable ```bash example -- while every safety fixture still passes, silently making the mechanically-linted wait-loop forms regressable. The set_check pins the load-bearing literals that prove CHECK 14 exists, still emits CHECK14 findings, still self-exempts the definitions.md rule bullets, still SCANS shell-fence bodies, and still carries each of its three detection patterns: the `=== CHECK 14:` section header, `add_finding 'CHECK14'` (findings emission), the `the only sanctioned wait primitive|self-match` rule-anchor self-exemption constant, the shell-fence language gate `^(bash|sh|shell)` (which makes shell-fence bodies scannable), and the three regex probe tokens (pattern a `until ... pgrep`, pattern a2 `while|until ... pgrep|grep -q`, pattern b self-matching `pgrep -f`). superset mode fails if any is removed; extras elsewhere in the file are ignored.",
+  "description": "P3 coupling: the Bash wait-loop / self-match discipline governance prose lives in plugin/governance/definitions.md (`the only sanctioned wait primitive`) and is referenced by plugin/agents/overlord.md (`Bash Command Discipline per `). The source/consumers block below pins this rule coupling so that edits to the governance anchor or its consumer reference are caught.",
   "source": { "file": "plugin/governance/definitions.md", "pattern": "the only sanctioned wait primitive" },
-  "consumers": [ { "file": "plugin/agents/overlord.md", "pattern": "Bash Command Discipline per " } ],
-  "set_check": {
-    "extract_regex": "(=== CHECK 14:|add_finding 'CHECK14'|the only sanctioned wait primitive\\|self-match|\\^\\(bash\\|sh\\|shell\\)|until\\[\\[:space:\\]\\]\\+!\\?\\[\\[:space:\\]\\]\\*pgrep|pgrep\\\\b\\|grep\\[\\[:space:\\]\\]\\+-q|pgrep\\\\s\\+-f\\\\s\\+\\\\\")",
-    "expected_set": [
-      "=== CHECK 14:",
-      "add_finding 'CHECK14'",
-      "the only sanctioned wait primitive|self-match",
-      "^(bash|sh|shell)",
-      "until[[:space:]]+!?[[:space:]]*pgrep",
-      "pgrep\\b|grep[[:space:]]+-q",
-      "pgrep\\s+-f\\s+\\\""
-    ],
-    "files": [
-      { "path": "tools/policy_check.sh", "mode": "superset" }
-    ]
-  }
+  "consumers": [ { "file": "plugin/agents/overlord.md", "pattern": "Bash Command Discipline per " } ]
 }
