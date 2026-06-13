@@ -1143,11 +1143,16 @@ while IFS= read -r -d '' md_file; do
     while IFS=$'\t' read -r line_num textline; do
         [[ -z "$line_num" ]] && continue
 
-        # Cheap fork-free pre-filter: only lines naming `pgrep` or `until` can
-        # match either pattern. The vast majority of body lines contain neither,
-        # so this bash-native substring gate skips the per-line subprocess work
+        # Cheap fork-free pre-filter: only lines naming a loop keyword
+        # (`until`/`while`) or a poll probe (`pgrep`/`grep`) can match any
+        # pattern. The vast majority of body lines contain none, so this
+        # bash-native substring gate skips the per-line subprocess work
         # (grep/sed) on them — keeping the scan over all plugin *.md fast.
-        if [[ "$textline" != *pgrep* && "$textline" != *until* ]]; then
+        # NOTE: `while` and `grep` MUST be admitted here, else the sibling
+        # `while grep -q ...; do sleep` form (no `pgrep`/`until` token) is
+        # silently skipped before per-line analysis ever runs.
+        if [[ "$textline" != *pgrep* && "$textline" != *until* \
+              && "$textline" != *while* && "$textline" != *grep* ]]; then
             continue
         fi
 
@@ -1162,6 +1167,21 @@ while IFS= read -r -d '' md_file; do
             check14_found=true
             add_finding 'CHECK14' "$md_file" "$line_num" \
                 "hand-rolled 'until ! pgrep' wait-loop prescribed in plugin prose -- wait via a run_in_background task completion or a Monitor (the only sanctioned wait primitive); see definitions.md Bash Command Discipline"
+            continue
+        fi
+
+        # Pattern (a2): sibling loop-condition forms. A `while`/`until` loop
+        # (optionally negated with `!`) whose CONDITION is a process/log poll
+        # probe — `pgrep ...` or `grep -q[FEx]* ...` — is the same hand-rolled
+        # wait-loop anti-pattern as (a), just spelled with `while` and/or a
+        # `grep` probe instead of `until pgrep`. The loop keyword MUST be
+        # adjacent to the probe: a bare `grep -q EXIT= log` with no `while`/
+        # `until` on the line is NOT a wait-loop and is deliberately not matched
+        # (no false positive on prose that merely mentions grep).
+        if echo "$textline" | grep -qE '(while|until)[[:space:]]+!?[[:space:]]*(pgrep\b|grep[[:space:]]+-q[FExe]*\b)'; then
+            check14_found=true
+            add_finding 'CHECK14' "$md_file" "$line_num" \
+                "hand-rolled 'while/until ... pgrep|grep -q' poll-loop prescribed in plugin prose -- wait via a run_in_background task completion or a Monitor (the only sanctioned wait primitive); see definitions.md Bash Command Discipline"
             continue
         fi
 
