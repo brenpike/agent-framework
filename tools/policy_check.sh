@@ -621,10 +621,15 @@ while IFS= read -r -d '' engine_script; do
     # hivemind_read_inputs_file helper call as the guard (it runs
     # hivemind_assert_inputs_contained internally; ADR-0020 / #245), so the
     # bootstrap helper-call line is neither a missing guard nor a counted read.
+    # EVERY GUARD_PATTERN is anchored to an EXECUTABLE line (^[[:space:]]*[^#]*)
+    # so a COMMENT that merely NAMES the guard helper (e.g. a `# hivemind_read_inputs_file
+    # "$INPUTS_FILE"` doc line above the first real read) is NOT miscounted as the
+    # guard — otherwise an engine reading $INPUTS_FILE/$MANIFEST with no real guard
+    # could pass on the strength of a comment mention.
     declare -a token_labels=('$INPUTS_FILE' '$MANIFEST' '$ledger' '$ledger-leaf')
     declare -a token_guards=(
-        '(hivemind_assert_inputs_contained|hivemind_read_inputs_file)[^#]*"\$INPUTS_FILE"'
-        '(hivemind_assert_inputs_contained|\[ -L )[^#]*"\$MANIFEST"'
+        '^[[:space:]]*[^#]*(hivemind_assert_inputs_contained|hivemind_read_inputs_file)[^#]*"\$INPUTS_FILE"'
+        '^[[:space:]]*[^#]*(hivemind_assert_inputs_contained|\[ -L )[^#]*"\$MANIFEST"'
         '^[[:space:]]*[^#]*hivemind_assert_contained[^#]*\.hivemind/runs/\$run_id'
         '^[[:space:]]*hivemind_assert_ledger_contained'
     )
