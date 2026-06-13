@@ -230,6 +230,12 @@ SHARED_ALLOWLIST="$REPO_ROOT/plugin/skills/_shared/allowlist.sh"
 [[ -f "$SHARED_ALLOWLIST" ]] \
     || { echo "FAIL: required input missing: $SHARED_ALLOWLIST" >&2; exit 2; }
 cp "$SHARED_ALLOWLIST" "$FAKEPLUGIN/skills/_shared/allowlist.sh"
+# init-run-ledger.sh, record-state-result.sh, and mark-intent-fallback.sh all source
+# ledger-engine-io.sh (new shared I/O dependency). Stage a copy so the sourced path resolves.
+SHARED_LEDGER_ENGINE_IO="$REPO_ROOT/plugin/skills/_shared/ledger-engine-io.sh"
+[[ -f "$SHARED_LEDGER_ENGINE_IO" ]] \
+    || { echo "FAIL: required input missing: $SHARED_LEDGER_ENGINE_IO" >&2; exit 2; }
+cp "$SHARED_LEDGER_ENGINE_IO" "$FAKEPLUGIN/skills/_shared/ledger-engine-io.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
