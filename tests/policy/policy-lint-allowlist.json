@@ -120,5 +120,17 @@
     "path": "plugin/skills/_shared/brood-status-derive.sh",
     "line": 18,
     "reason": "P18 documented exception (ADR-0020): SOURCED library carrying set -u ONLY. set -e/pipefail and EXIT trap deliberately omitted — a sourced file mutates the SOURCING shell's option state and would corrupt every caller; set -u alone is safe to inherit. Pure status-derivation/aggregation: inputs in, string out, no I/O, no exit."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/_shared/ledger-reconstruct-parse.sh",
+    "line": 14,
+    "reason": "P18 documented exception (ADR-0020): SOURCED library. set -e/pipefail and EXIT trap deliberately omitted — a sourced file mutates the SOURCING shell's option state and would corrupt every caller; carries no top-level set at all. Pure parse-stage functions (git-log tokenizer + jq fix-surface assembly); callers own set -u, EXIT trap, and error routing."
+  },
+  {
+    "rule": "CHECK13",
+    "path": "plugin/skills/_shared/ledger-reconstruct-fold.sh",
+    "line": 15,
+    "reason": "P18 documented exception (ADR-0020): SOURCED library. set -e/pipefail and EXIT trap deliberately omitted — a sourced file mutates the SOURCING shell's option state and would corrupt every caller; carries no top-level set at all. Pure fold/gate/wrap-stage functions (normalized-to-findings fold, live parse gate, reconstruct wrap); callers own set -u, EXIT trap, and error routing."
   }
 ]

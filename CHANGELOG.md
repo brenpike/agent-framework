@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.32.3] - 2026-06-13
+
+### Changed
+
+- **Factor `ledger-reconstruct.sh`'s pure reconstruction core (git-log tokenize/parse + jq fix-ledger assembly, oscillation status, thread folding) into two source-safe `_shared` libraries (`ledger-reconstruct-parse.sh`, `ledger-reconstruct-fold.sh`) behind a thin entrypoint, per ADR-0020; behavior-preserving (CLI, output schema, fail-closed/fail-open posture unchanged; existing entrypoint tests green); adds per-lib unit tests. Closes #224 (epic #201).**
+
 ## [2.32.2] - 2026-06-13
 
 ### Fixed
