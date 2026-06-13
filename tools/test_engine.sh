@@ -2305,6 +2305,137 @@ assert_intent_fallback_ledger_symlink_leaf_rejected() {
         "refusing symlinked ledger file leaf"
 }
 
+# ── NN. every engine fails CLOSED when ledger-engine-io.sh is absent/unsourceable ──
+
+assert_missing_ledger_engine_io_fails_closed() {
+    local name="NN:missing-ledger-engine-io-fails-closed"
+    # STRUCTURAL GUARANTEE (RR-STEP-001 lock): each engine source-or-dies on the shared
+    # ledger-engine-io.sh (`[ -f ] || blocker` + `. lib || blocker`) BEFORE any inputs/ledger
+    # read or write. PRE-RR-STEP-001 a missing ledger-engine-io.sh (source returning 127) fell
+    # THROUGH the inputs containment guard into unguarded `jq "$INPUTS_FILE"` reads (fail-OPEN).
+    # This case proves the fail-CLOSED behavior for record-state-result, init-run-ledger, AND
+    # mark-intent-fallback against a DEDICATED, per-case lib-less fakeplugin (the shared
+    # $FAKEPLUGIN used by the other 50 cases is NOT mutated).
+    #
+    # Per-engine assertions (ALL must hold):
+    #   (a) non-zero exit,
+    #   (b) the source-or-die `blocker:` line for the missing lib is emitted,
+    #   (c) the staged ledger + inputs are BYTE-UNCHANGED (sha256 before==after) — no unguarded
+    #       jq read/mutation occurred,
+    #   (d) no temp `.state.json.*` leaked under the run dir,
+    #   (e) the run did NOT advance (ledger .state.current unchanged).
+    #
+    # MUST FAIL pre-RR-STEP-001 (where the engine fell through to the inputs reads and either
+    # advanced the ledger or surfaced a DIFFERENT blocker than the missing-lib one) and PASS
+    # against the committed (60a675a) source-or-die engines.
+
+    # ── Dedicated lib-less fakeplugin (isolated copy; $FAKEPLUGIN untouched) ──
+    # Full copy of the shared fakeplugin tree, then REMOVE ledger-engine-io.sh so the engines'
+    # `[ -f ]` source-or-die guard fires. cp -a preserves the layout so self-location
+    # (BASH_SOURCE + pwd -P, 3 dirs up) still resolves <libless>/workflows + the OTHER shared
+    # libs (containment.sh, allowlist.sh) — proving the missing lib is the SOLE cause of the
+    # block, not a broken tree.
+    local libless="$WORKDIR/nn-libless-fakeplugin"
+    cp -a "$FAKEPLUGIN" "$libless"
+    rm -f "$libless/skills/_shared/ledger-engine-io.sh"
+    local libless_record="$libless/skills/record-state-result/scripts/record-state-result.sh"
+    local libless_init="$libless/skills/init-run-ledger/scripts/init-run-ledger.sh"
+    local libless_intent="$libless/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
+
+    # The exact source-or-die blocker text all three engines emit for the missing lib.
+    local missing_lib_blocker='required shared library missing: skills/_shared/ledger-engine-io.sh'
+
+    # ── record-state-result: staged ledger + valid inputs, lib-less engine ──
+    local r_gitroot r_run_id r_ledger r_inputs r_before r_after r_stderr r_rc=0 r_current_before r_current_after
+    r_gitroot="$(new_gitroot nn-record-git)"
+    r_run_id="engine-case-nn-record"
+    r_ledger="$(stage_record_ledger "$r_gitroot" "$r_run_id" "$LEDGER_AT_PLAN")"
+    r_current_before="$(jq -r '.state.current' "$r_ledger")"
+    r_before="$(sha256sum "$r_ledger" | awk '{print $1}')"
+    r_inputs="$r_gitroot/nn-record-inputs.json"
+    jq -n \
+        --arg run_id "$r_run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test missing ledger-engine-io record" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$r_inputs"
+    local r_in_before r_in_after
+    r_in_before="$(sha256sum "$r_inputs" | awk '{print $1}')"
+    r_stderr="$r_gitroot/nn-record-stderr.txt"
+    ( cd "$r_gitroot" && bash "$libless_record" "$r_inputs" ) >/dev/null 2>"$r_stderr" || r_rc=$?
+    r_after="$(sha256sum "$r_ledger" | awk '{print $1}')"
+    r_in_after="$(sha256sum "$r_inputs" | awk '{print $1}')"
+    r_current_after="$(jq -r '.state.current' "$r_ledger")"
+    local r_blocker=no
+    grep -qF "$missing_lib_blocker" "$r_stderr" && r_blocker=yes
+    local r_leaked=no
+    if find "$r_gitroot/.hivemind" -name '.state.json.*' -print 2>/dev/null | grep -q .; then r_leaked=yes; fi
+
+    # ── init-run-ledger: valid inputs, lib-less engine ──
+    local i_gitroot i_inputs i_stderr i_rc=0
+    i_gitroot="$(new_gitroot nn-init-git)"
+    i_inputs="$i_gitroot/nn-init-inputs.json"
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test missing ledger-engine-io init" \
+        --arg normalized "engine test missing ledger-engine-io init" \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized}' \
+        > "$i_inputs"
+    local i_in_before i_in_after
+    i_in_before="$(sha256sum "$i_inputs" | awk '{print $1}')"
+    i_stderr="$i_gitroot/nn-init-stderr.txt"
+    ( cd "$i_gitroot" && bash "$libless_init" "$i_inputs" ) >/dev/null 2>"$i_stderr" || i_rc=$?
+    i_in_after="$(sha256sum "$i_inputs" | awk '{print $1}')"
+    local i_blocker=no
+    grep -qF "$missing_lib_blocker" "$i_stderr" && i_blocker=yes
+    # init source-or-dies BEFORE any mkdir, so NO state.json may exist anywhere under the gitroot.
+    local i_wrote=no
+    if find "$i_gitroot/.hivemind" -name state.json -print 2>/dev/null | grep -q .; then i_wrote=yes; fi
+
+    # ── mark-intent-fallback: staged skew ledger + valid inputs, lib-less engine ──
+    local f_gitroot f_run_id f_ledger f_inputs f_before f_after f_stderr f_rc=0 f_current_before f_current_after
+    f_gitroot="$(new_gitroot nn-intent-git)"
+    f_run_id="engine-case-nn-intent"
+    f_ledger="$(stage_record_ledger "$f_gitroot" "$f_run_id" "$LEDGER_WRONG_VERSION")"
+    f_current_before="$(jq -r '.state.current' "$f_ledger")"
+    f_before="$(sha256sum "$f_ledger" | awk '{print $1}')"
+    f_inputs="$f_gitroot/nn-intent-inputs.json"
+    jq -n \
+        --arg run_id "$f_run_id" \
+        --arg state plan \
+        --arg summary "engine test missing ledger-engine-io intent" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$f_inputs"
+    local f_in_before f_in_after
+    f_in_before="$(sha256sum "$f_inputs" | awk '{print $1}')"
+    f_stderr="$f_gitroot/nn-intent-stderr.txt"
+    ( cd "$f_gitroot" && bash "$libless_intent" "$f_inputs" ) >/dev/null 2>"$f_stderr" || f_rc=$?
+    f_after="$(sha256sum "$f_ledger" | awk '{print $1}')"
+    f_in_after="$(sha256sum "$f_inputs" | awk '{print $1}')"
+    f_current_after="$(jq -r '.state.current' "$f_ledger")"
+    local f_blocker=no
+    grep -qF "$missing_lib_blocker" "$f_stderr" && f_blocker=yes
+    local f_leaked=no
+    if find "$f_gitroot/.hivemind" -name '.state.json.*' -print 2>/dev/null | grep -q .; then f_leaked=yes; fi
+
+    # ── Combined verdict: ALL three engines must have failed CLOSED ──
+    if [[ "$r_rc" -ne 0 && "$r_blocker" == "yes" && "$r_before" == "$r_after" \
+          && "$r_in_before" == "$r_in_after" && "$r_leaked" == "no" \
+          && "$r_current_before" == "$r_current_after" \
+          && "$i_rc" -ne 0 && "$i_blocker" == "yes" && "$i_in_before" == "$i_in_after" \
+          && "$i_wrote" == "no" \
+          && "$f_rc" -ne 0 && "$f_blocker" == "yes" && "$f_before" == "$f_after" \
+          && "$f_in_before" == "$f_in_after" && "$f_leaked" == "no" \
+          && "$f_current_before" == "$f_current_after" ]]; then
+        pass "$name" "all engines fail CLOSED on missing ledger-engine-io.sh (source-or-die blocker), no read/write/advance: record(exit $r_rc) init(exit $i_rc) intent(exit $f_rc)"
+    else
+        failed "$name" "expected every engine to fail closed on missing lib; record[rc=$r_rc blocker=$r_blocker ledger_changed=$([[ "$r_before" != "$r_after" ]] && echo yes || echo no) inputs_changed=$([[ "$r_in_before" != "$r_in_after" ]] && echo yes || echo no) leaked=$r_leaked advanced=$([[ "$r_current_before" != "$r_current_after" ]] && echo yes || echo no)] init[rc=$i_rc blocker=$i_blocker inputs_changed=$([[ "$i_in_before" != "$i_in_after" ]] && echo yes || echo no) wrote=$i_wrote] intent[rc=$f_rc blocker=$f_blocker ledger_changed=$([[ "$f_before" != "$f_after" ]] && echo yes || echo no) inputs_changed=$([[ "$f_in_before" != "$f_in_after" ]] && echo yes || echo no) leaked=$f_leaked advanced=$([[ "$f_current_before" != "$f_current_after" ]] && echo yes || echo no)]"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -2347,6 +2478,7 @@ assert_spawn_brood_inputs_symlink_leaf_rejected
 assert_intent_fallback_inputs_symlink_leaf_rejected
 assert_record_ledger_symlink_leaf_rejected
 assert_intent_fallback_ledger_symlink_leaf_rejected
+assert_missing_ledger_engine_io_fails_closed
 
 echo ''
 echo '=== Summary ==='
