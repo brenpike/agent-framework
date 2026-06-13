@@ -1174,7 +1174,7 @@ while IFS= read -r -d '' md_file; do
             # Remove the `pgrep -f "<token>"` span itself, then test whether the
             # same token survives elsewhere on the line (the self-substring).
             residual="$(echo "$textline" | sed -E "s/pgrep[[:space:]]+-f[[:space:]]+\"[^\"]*\"//")"
-            if echo "$residual" | grep -qF "$pgrep_token"; then
+            if echo "$residual" | grep -qF -- "$pgrep_token"; then
                 check14_found=true
                 add_finding 'CHECK14' "$md_file" "$line_num" \
                     "self-matching 'pgrep -f \"$pgrep_token\"' wait condition prescribed in plugin prose -- the watched token also appears as an invoked path on this line, so the poll matches its own command line and never terminates; see definitions.md Bash Command Discipline"
