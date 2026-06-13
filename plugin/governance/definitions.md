@@ -33,6 +33,8 @@ Shape Bash for permission economy. Claude Code re-prompts on any out-of-cwd writ
 - Issue ONE atomic, single-purpose command per Bash call. Do not chain with `&&`, `||`, `;`, `|`, `|&`, or `&` purely to batch steps or narrate progress — split them into separate calls.
 - Redirect only to `/dev/null` or a path inside the working directory. Do not redirect or write to an out-of-cwd path such as `/tmp` — Claude Code re-prompts on every out-of-cwd write.
 - Do not bury an unlisted command (`rm`, `mv`, `chmod`, `find`, shell `for`/`while` loops) inside a chain with allowlisted commands. Each subcommand is matched independently, so one unlisted segment forces a permission prompt for the entire chain. Run such commands on their own only when genuinely required.
+- **No hand-rolled wait-loops.** Never hand-roll a `sleep`/`pgrep`/`until`/`while` poll-loop to wait for a long-running command to finish. To wait for completion, EITHER run the command itself as a `run_in_background` Bash task and react to its completion notification, OR arm a Monitor whose command emits on the genuine completion marker. Foreground `sleep` is harness-blocked, so background-task completion or Monitor is **the only sanctioned wait primitive**. (Scope: the WAIT-LOOP pattern — a legitimate one-shot `sleep` is NOT forbidden.)
+- **No self-matching wait condition.** A wait/poll condition must never match a string contained in its own command line (a "self-match"). When polling a log or process, match a token the watched process writes into its OWN output, not the watched command's name or path — e.g. `pgrep -f "tools/validate.sh"` issued from a shell whose own command line contains `tools/validate.sh` always matches itself and never terminates.
 
 ## External Content Boundary
 
