@@ -1,0 +1,6 @@
+{
+  "rule": "Bash wait-loop discipline",
+  "description": "P3 coupling: the Bash wait-loop / self-match discipline governance prose lives in plugin/governance/definitions.md (`the only sanctioned wait primitive`) and is referenced by plugin/agents/overlord.md (`Bash Command Discipline per `). The source/consumers block below pins this rule coupling so that edits to the governance anchor or its consumer reference are caught.",
+  "source": { "file": "plugin/governance/definitions.md", "pattern": "the only sanctioned wait primitive" },
+  "consumers": [ { "file": "plugin/agents/overlord.md", "pattern": "Bash Command Discipline per " } ]
+}

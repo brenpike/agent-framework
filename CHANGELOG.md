@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.32.2] - 2026-06-13
+
+### Fixed
+
+- **Governance hardening (#279): Bash Command Discipline now explicitly forbids hand-rolled `sleep`/`pgrep`/`until`/`while` poll-wait loops and self-matching process greps; the only sanctioned wait for a long-running command is `run_in_background` task completion or a Monitor on the genuine completion marker. This is a behavioral mandate enforced by agent self-governance at runtime — no static lint is applied, because the failure mode is a runtime-generated tool call that doc/source linting cannot observe. A P3 safety fixture (`tests/policy/safety-bash-wait-loop-discipline.json`) pins the rule↔overlord coupling so the rule cannot silently regress. Fixes a session where 5 immortal `until ! pgrep` waiter shells leaked.**
+
 ## [2.32.1] - 2026-06-12
 
 ### Fixed
