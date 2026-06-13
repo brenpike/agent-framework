@@ -494,114 +494,26 @@ $branch_out
       state_out="MALFORMED"
       run_out="MALFORMED"
     else
-      # Confine the LEAF: hivemind_assert_file_contained rejects a symlinked / non-regular
-      # state.json leaf under the worktree root, and the depth-complete ancestor walk rejects a
-      # symlinked ancestor. The relative chain is .hivemind/runs/<suggested_id>/state.json.
+      # Confined single-snapshot child-ledger read, delegated to the shared primitive
+      # hivemind_read_confined_state_current (_shared/ledger-project.sh). It performs the
+      # 6-layer hardened confined read — leaf [ -L ] + non-regular reject AND depth-complete
+      # ancestor symlink walk under the worktree root, a [ -L ] re-check at the read, FILE-LEVEL
+      # NUL rejection, a single `cat` snapshot, the ITEM-4 post-read re-canonicalize + re-assert,
+      # and BOTH _content projections from that ONE snapshot — and is byte-equivalent to the
+      # inline block it replaced. The relative chain is .hivemind/runs/<suggested_id>/state.json.
+      # gt_worktree is the git-derived worktree ALREADY proven resident under CHECKOUT_ROOT by
+      # the canon_gt_wt / gt_resident link above (the shared function has no CHECKOUT_ROOT notion,
+      # so that link MUST stay inline here and run FIRST).
+      #
+      # OUTPUT GRAMMAR (exactly two lines): line 1 = state.current result, line 2 = run.status
+      # result, each ∈ { MISSING | MALFORMED | <validated value> }. On any guard/read failure both
+      # lines carry the SAME terminal token. Parse with a set-u-safe `read` pair from a process
+      # substitution so a short/empty read leaves the vars defined rather than tripping `set -u`.
       rel_chain=".hivemind/runs/$suggested_id/state.json"
-      if ! canon_wt="$(hivemind_assert_file_contained "$gt_worktree" "$rel_chain")"; then
-        # Leaf/ancestor symlink escape → MALFORMED, never read.
-        state_out="MALFORMED"
-        run_out="MALFORMED"
-      else
-        # Assert the canonical ledger sits under the canonical worktree (belt-and-suspenders:
-        # the file guard already canonicalized the parent; reconfirm the full path prefix).
-        canon_ledger="$canon_wt/$rel_chain"
-        case "$canon_ledger/" in
-          "$canon_wt/"*)
-            # Confined. Read the ledger EXACTLY ONCE into an in-memory snapshot, then project
-            # BOTH scalars from that one snapshot (mirrors the manifest single-snapshot pattern).
-            # The OLD code called the path-based projectors here, each of which independently
-            # re-stat'd + re-opened the leaf via jq (which FOLLOWS symlinks); a hostile child
-            # could swap the regular-file leaf to a symlink in the post-check window and the
-            # per-scalar reopens would follow it. One read collapses that multi-reopen window to
-            # a single open. (MISSING if file absent / empty — e.g. child has not initialized its
-            # ledger yet.)
-            #
-            # RESIDUAL (bounded, REQUIRED): bash has no portable O_NOFOLLOW, so an irreducible
-            # micro-TOCTOU remains between the [ -L ] re-check immediately below and the single
-            # `cat`. It is BOUNDED to near-zero impact: only the validated run.status enum +
-            # state.current charset ever surface — never raw bytes; projection is informational-
-            # only and never overrides observable status. The STRUCTURAL closure (no cross-worktree
-            # reads of hostile-child files) is per-brood isolation. Re-assert the
-            # leaf is not a symlink as close to the read as possible to narrow (not fully close)
-            # the window.
-            if [ -L "$canon_ledger" ]; then
-              state_out="MALFORMED"
-              run_out="MALFORMED"
-            elif hivemind_path_has_nul "$canon_ledger"; then
-              # FILE-LEVEL NUL REJECTION: the `cat` read below uses `$(...)`,
-              # which SILENTLY STRIPS NUL bytes — so a ledger whose on-disk bytes carry a literal
-              # NUL (e.g. NUL-padding around otherwise-valid JSON) would, after capture, parse as a
-              # different document than what is on disk. JSON never legitimately contains a literal
-              # NUL, so a NUL-bearing ledger is "present but invalid" → MALFORMED, never read into a
-              # snapshot. (A control byte arriving via a JSON ` ` ESCAPE is caught separately by the
-              # in-jq enum/charset gates in ledger-project.sh, which see the decoded bytes intact.)
-              # This adds one stat to the documented micro-TOCTOU window; the residual remains
-              # bounded (only validated enum/charset tokens ever surface, projection is
-              # informational-only), and rejecting a NUL-bearing leaf is strictly fail-closed.
-              state_out="MALFORMED"
-              run_out="MALFORMED"
-            elif ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"; then
-              # READ SUCCEEDED. Attempt the read IMMEDIATELY after the [ -L ] re-check — NO
-              # intervening filesystem stat — to keep the irreducible single-open micro-TOCTOU
-              # window (documented above) as NARROW as possible. An earlier draft
-              # inserted a `[ -e ]` existence probe BETWEEN the [ -L ] check and the read, which
-              # added an extra syscall to that window; ordering the `cat` first removes it and
-              # mirrors the safe ordering already used by the path-based wrappers in
-              # ledger-project.sh.
-              #
-              # ITEM-4 DEFENSE-IN-DEPTH (locked): after the read, resolve the ACTUAL
-              # read target — canonicalize the leaf's PARENT (cd && pwd -P resolves every symlink
-              # component) and re-append the basename — and RE-ASSERT it is STILL contained under the
-              # git-worktree (and, transitively, CHECKOUT_ROOT). Project the scalars ONLY if still
-              # contained; otherwise MALFORMED. This bounds the irreducible one-open micro-TOCTOU
-              # (the leaf's parent could have been swapped between the [ -L ] check and the cat) to an
-              # ACCEPTED residual — it is NOT a structural closure (bash has no portable O_NOFOLLOW;
-              # we deliberately do NOT over-engineer with one). canon_wt is the canonical git-worktree
-              # from hivemind_assert_file_contained above.
-              ledger_dir="$(cd "$(dirname -- "$canon_ledger")" 2>/dev/null && pwd -P)"
-              reread_target=""
-              [ -n "$ledger_dir" ] && reread_target="$ledger_dir/$(basename -- "$canon_ledger")"
-              ledger_still_contained=0
-              if [ -n "$reread_target" ]; then
-                case "$reread_target/" in
-                  "$canon_wt/"*) ledger_still_contained=1 ;;
-                esac
-              fi
-              if [ "$ledger_still_contained" -ne 1 ]; then
-                # The resolved read target escaped the git-worktree after the read -> fail closed.
-                state_out="MALFORMED"
-                run_out="MALFORMED"
-              else
-                run_out="$(hivemind_project_run_status_content "$ledger_content")"
-                state_out="$(hivemind_project_state_current_content "$ledger_content")"
-              fi
-            elif [ -e "$canon_ledger" ]; then
-              # READ FAILED on a leaf that STILL EXISTS → present-but-unreadable (unreadable
-              # perms, I/O error). "Present but cannot be read" → MALFORMED, never MISSING.
-              # `cat` returns the empty string AND a non-zero status on failure (the `2>/dev/null`
-              # silences only stderr, not the exit status the `if` tests). Collapsing this to
-              # MISSING would make a corrupted / attacker-influenced unreadable ledger
-              # indistinguishable from an uninitialized one; this restores the pre-single-snapshot
-              # jq-open-failure semantics. The existence re-test runs ONLY on the failure path,
-              # so it never enlarges the success-path read window above.
-              state_out="MALFORMED"
-              run_out="MALFORMED"
-            else
-              # READ FAILED and the leaf is ABSENT → genuine absence (the containment guard
-              # intentionally PASSES a non-existent leaf; the child may not have initialized its
-              # ledger yet, or it vanished). "Nothing to report" → MISSING, per the documented
-              # TOKEN SEMANTICS — distinct from the present-but-unreadable case above.
-              state_out="MISSING"
-              run_out="MISSING"
-            fi
-            ;;
-          *)
-            state_out="MALFORMED"
-            run_out="MALFORMED"
-            ;;
-        esac
-      fi
+      state_out=""
+      run_out=""
+      { IFS= read -r state_out; IFS= read -r run_out; } \
+        < <(hivemind_read_confined_state_current "$gt_worktree" "$rel_chain")
     fi
   fi
 

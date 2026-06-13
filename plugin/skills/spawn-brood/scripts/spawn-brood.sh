@@ -860,94 +860,31 @@ submit_strain() {
 # verify_started_evidence <idx>: CONFINED single-snapshot projection of the strain's child
 # run-ledger state.current. Echoes the validated state.current, or one of the fixed tokens
 # MISSING / MALFORMED. This is the read-side discipline mandated by the security policy for
-# hostile child-ledger reads, mirroring brood-status-project.sh's confined leaf read — the
-# legacy path-based hivemind_project_state_current projector is NOT used here because it
-# [ -f ]/cat-follows the child-controlled state.json leaf directly (a symlinked leaf swapped in
-# by a compromised child / hostile base could redirect the read to an external or oversized
-# file, an out-of-checkout read oracle, or accept forged started-evidence). We confine the leaf
-# BENEATH the strain's GROUND-TRUTH worktree (S_WT[$idx], script-derived from the canonical
-# repo_root + generated brood-id/short — never a manifest/child-supplied path), reject a
-# symlinked / non-regular leaf, file-level-reject NUL, read EXACTLY ONCE into an in-memory
-# snapshot, RE-ASSERT post-read containment (ITEM-4: re-canonicalize the leaf parent and reconfirm
-# it is still under canon_wt, bounding the ancestor-swap micro-TOCTOU between the guard and the cat),
-# then project from CONTENT via hivemind_project_state_current_content. We do NOT need
-# brood-status's `git worktree list` discovery: the write side already KNOWS the canonical
-# worktree it created for this strain, so S_WT[$idx] IS the trusted containment anchor.
+# hostile child-ledger reads. The confined read is now SINGLE-SOURCED from the shared
+# _shared/ledger-project.sh primitive hivemind_read_confined_state_current (shared with
+# brood-status) — the duplicate inline guard/read/ITEM-4 block that mirrored
+# brood-status-project.sh and absorbed two P1 findings is GONE, closing the duplicate-drift
+# class. That primitive confines the leaf BENEATH the strain's GROUND-TRUTH worktree
+# (S_WT[$idx], script-derived from the canonical repo_root + generated brood-id/short — never a
+# manifest/child-supplied path), rejects a symlinked / non-regular / NUL-bearing leaf, reads
+# EXACTLY ONCE into an in-memory snapshot, RE-ASSERTS post-read containment, and projects from
+# CONTENT via hivemind_project_state_current_content — never the path-based projector. It emits
+# TWO lines (state.current, then run.status) from ONE snapshot; spawn-brood consumes ONLY line1
+# (state.current). We confine on-disk run-ledger ground truth, NOT capture-pane (#213/#248): the
+# child writes state.current when its workflow actually starts; we never screen-scrape the TUI.
 verify_started_evidence() {
   local idx="$1"
-  local wt="${S_WT[$idx]}"
   # Relative ledger chain under the strain worktree (mirrors S_RUN_LEDGER derivation):
   #   .hivemind/runs/<run_id>/state.json
   local rel_chain=".hivemind/runs/${S_RUN_ID[$idx]}/state.json"
 
-  # Confine the leaf beneath the strain's ground-truth worktree. hivemind_assert_file_contained
-  # rejects a symlinked / non-regular state.json leaf ([ -L ] fires even on a dangling target)
-  # AND any symlinked ancestor of the .hivemind/runs/<run_id> chain, and echoes the CANONICAL
-  # worktree root. Non-existent leaf PASSES (the child may not have written its ledger yet) =>
-  # MISSING below. Reject (non-zero) => fail-closed MALFORMED, never read.
-  local canon_wt
-  if ! canon_wt="$(hivemind_assert_file_contained "$wt" "$rel_chain" 2>/dev/null)"; then
-    printf 'MALFORMED\n'
-    return 0
-  fi
-  local canon_ledger="$canon_wt/$rel_chain"
-
-  # Re-assert the leaf is not a symlink as close to the read as possible (narrows, does not
-  # close, the irreducible single-open micro-TOCTOU — bash has no portable O_NOFOLLOW). An
-  # ACCEPTED bounded residual, identical to brood-status-project.sh: only the validated
-  # state.current charset ever surfaces, never raw bytes.
-  if [ -L "$canon_ledger" ]; then
-    printf 'MALFORMED\n'
-    return 0
-  fi
-  # FILE-LEVEL NUL REJECTION: bash $(...) silently strips NUL; a NUL-bearing ledger would parse
-  # as a different document than what is on disk. JSON never legitimately carries a literal NUL
-  # => MALFORMED, rejected at the FILE level before the $(...) read can erase it.
-  if hivemind_path_has_nul "$canon_ledger"; then
-    printf 'MALFORMED\n'
-    return 0
-  fi
-  local ledger_content
-  if ledger_content="$(cat -- "$canon_ledger" 2>/dev/null)"; then
-    # READ SUCCEEDED.
-    # ITEM-4 DEFENSE-IN-DEPTH (locked, mirrors brood-status-project.sh): after the read, resolve
-    # the ACTUAL read target — canonicalize the leaf's PARENT (cd && pwd -P resolves every symlink
-    # component) and re-append the basename — and RE-ASSERT it is STILL contained under the strain's
-    # canonical worktree (canon_wt). An ANCESTOR such as .hivemind/runs/<run_id> can be swapped to a
-    # symlink AFTER hivemind_assert_file_contained returned but BEFORE this cat; without a post-read
-    # check the projection would accept the escaped target's bytes as started-evidence. Project ONLY
-    # if still contained; otherwise MALFORMED. This bounds (does NOT structurally close — bash has no
-    # portable O_NOFOLLOW) the irreducible one-open micro-TOCTOU to an ACCEPTED residual: only the
-    # validated state.current charset ever surfaces, never raw bytes.
-    local ledger_dir reread_target ledger_still_contained
-    ledger_dir="$(cd "$(dirname -- "$canon_ledger")" 2>/dev/null && pwd -P)"
-    reread_target=""
-    [ -n "$ledger_dir" ] && reread_target="$ledger_dir/$(basename -- "$canon_ledger")"
-    ledger_still_contained=0
-    if [ -n "$reread_target" ]; then
-      case "$reread_target/" in
-        "$canon_wt/"*) ledger_still_contained=1 ;;
-      esac
-    fi
-    if [ "$ledger_still_contained" -ne 1 ]; then
-      # The resolved read target escaped the strain worktree after the read => fail closed.
-      printf 'MALFORMED\n'
-      return 0
-    fi
-    # Confined post-read. Project from the single in-memory snapshot via the CONTENT projector — the
-    # same canonical validation the dashboard uses (single-document JSON, object shape,
-    # ^[a-z0-9_]+$ charset, <=64 length cap). Never the path-based projector.
-    hivemind_project_state_current_content "$ledger_content"
-    return 0
-  elif [ -e "$canon_ledger" ]; then
-    # Present but unreadable (perms / I/O) => present-but-invalid => MALFORMED, never MISSING.
-    printf 'MALFORMED\n'
-    return 0
-  else
-    # Absent leaf (child has not initialized its ledger yet, or it vanished) => MISSING.
-    printf 'MISSING\n'
-    return 0
-  fi
+  # Single-snapshot confined read via the shared primitive. It outputs two lines from one
+  # snapshot (line1 = state.current, line2 = run.status); spawn-brood needs only line1. Read
+  # both set-u-safely so an absent second line cannot trip a bad read.
+  local state_out="" _run_out=""
+  { IFS= read -r state_out; IFS= read -r _run_out; } \
+    < <(hivemind_read_confined_state_current "${S_WT[$idx]}" "$rel_chain")
+  printf '%s\n' "$state_out"
 }
 
 verify_strain() {
