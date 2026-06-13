@@ -26,7 +26,8 @@ LEDGER_PRESENT="$FIX_DIR/child-ledger-present.json"
 
 for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/allowlist.sh" "$SHARED_DIR/manifest-json.sh" "$SHARED_DIR/ledger-project.sh" \
-                "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh"; do
+                "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh" \
+                "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh"; do
   [ -f "$required" ] || { echo "FAIL: required fixture/lib missing: $required" >&2; exit 2; }
 done
 
@@ -43,6 +44,10 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 . "$SHARED_DIR/brood-status-derive.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/containment.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/ledger-reconstruct-parse.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/ledger-reconstruct-fold.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1226,6 +1231,193 @@ if [ "$c7d4_rc" -ne 0 ]; then
 else
   failed "c7d:symlinked-ancestor-reject" "ledger: symlinked ancestor must reject; got return 0"
 fi
+
+# ── Section 8: ledger-reconstruct-parse.sh — git_log_to_findings (PURE parse) ────
+echo ''
+echo '=== ledger-reconstruct-parse.sh: git_log_to_findings (git-log fix-surface parse) ==='
+#
+# DIRECT unit coverage for the lifted PURE git-log parse stage. git_log_to_findings reads the
+# machine-channel git-log payload on STDIN and emits a JSON ARRAY of fix-surface findings (one per
+# commit/file/hunk). It reads the caller-shell globals US (0x1e record start) / RS (0x1f field sep)
+# the entrypoint defines BEFORE sourcing — so this section SETS them first, mirroring the entrypoint
+# variable contract verbatim. Ground-truth inputs/outputs reuse the entrypoint oracle's canned
+# git-log fixtures (tests/ledger-reconstruct/) so these unit assertions agree with the 49-case
+# behavioral suite. Payloads are streamed from disposable WORKDIR files (US/RS/NUL bytes built via
+# printf) so NUL delimiters survive the read.
+US=$'\x1e'; RS=$'\x1f'; BASE=origin/main
+
+# 8a: qualifying remediation commit — one commit, two files (auth/db), one hunk each → two findings
+# with FACTUAL `status: "fixed"`, correct id/file/line arithmetic. The subject carries the literal
+# `address review feedback` phrase, so the prior-fix qualification gate ADMITS it.
+parse_one="$WORKDIR/parse-one-commit.txt"
+printf '%sCOMMIT%saaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%sfix(auth): address review feedback\x00\n' "$US" "$RS" "$RS" > "$parse_one"
+printf ':100644 100644 000aaaa 111aaaa M\x00src/auth.py\x00:100644 100644 000bbbb 111bbbb M\x00src/db.py\x00\x00' >> "$parse_one"
+printf 'diff --git a/src/auth.py b/src/auth.py\n@@ -10,3 +10,4 @@\n+x\n' >> "$parse_one"
+printf 'diff --git a/src/db.py b/src/db.py\n@@ -5 +5,2 @@\n+y\n' >> "$parse_one"
+parse_one_out="$(git_log_to_findings < "$parse_one")"
+assert_eq "parse:qualify-count" "2" \
+  "$(printf '%s' "$parse_one_out" | jq -c 'length')" "qualifying remediation commit → 2 findings (one per file/hunk)"
+assert_eq "parse:qualify-auth-id" "fix:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:src/auth.py:10" \
+  "$(printf '%s' "$parse_one_out" | jq -r '.[0].id')" "auth finding id"
+assert_eq "parse:qualify-auth-status" "fixed" \
+  "$(printf '%s' "$parse_one_out" | jq -r '.[0].status')" "auth finding status is FACTUAL fixed"
+assert_eq "parse:qualify-auth-title" "fix(auth): address review feedback" \
+  "$(printf '%s' "$parse_one_out" | jq -r '.[0].title')" "auth finding title = subject"
+assert_eq "parse:qualify-db-file" "src/db.py" \
+  "$(printf '%s' "$parse_one_out" | jq -r '.[1].file')" "db finding file (machine channel)"
+
+# 8b: @@ hunk line arithmetic — new-side `+c,d` → line_start=c, line_end=c+d-1; a bare `+c` (no
+# count) → d defaults to 1 → line_end==line_start. auth `@@ -10,3 +10,4 @@` → 10..13;
+# db `@@ -5 +5,2 @@` → 5..6.
+assert_eq "parse:hunk-auth-start" "10" \
+  "$(printf '%s' "$parse_one_out" | jq -r '.[0].line_start')" "auth @@ +10,4 → line_start 10"
+assert_eq "parse:hunk-auth-end" "13" \
+  "$(printf '%s' "$parse_one_out" | jq -r '.[0].line_end')" "auth @@ +10,4 → line_end 13 (10+4-1)"
+assert_eq "parse:hunk-db-start" "5" \
+  "$(printf '%s' "$parse_one_out" | jq -r '.[1].line_start')" "db @@ +5,2 → line_start 5"
+assert_eq "parse:hunk-db-end" "6" \
+  "$(printf '%s' "$parse_one_out" | jq -r '.[1].line_end')" "db @@ +5,2 → line_end 6 (5+2-1)"
+
+# 8c: prior-fix qualification gate — a NON-qualifying subject (ordinary `fix(parser):` dev bug-fix
+# with NO `address review feedback` phrase) emits ZERO findings. The gate keys ONLY on the literal
+# review-loop phrase, never on the bare conventional type.
+parse_nonqual="$WORKDIR/parse-nonqual.txt"
+printf '%sCOMMIT%sc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3%sfix(parser): correct off-by-one\x00\n' "$US" "$RS" "$RS" > "$parse_nonqual"
+printf ':100644 100644 000p1 111p2 M\x00src/parser.py\x00\x00' >> "$parse_nonqual"
+printf 'diff --git a/src/parser.py b/src/parser.py\n@@ -5,3 +5,3 @@\n+z\n' >> "$parse_nonqual"
+assert_eq "parse:gate-reject-nonqualifying" "[]" \
+  "$(git_log_to_findings < "$parse_nonqual")" "non-remediation fix subject → gate rejects → []"
+
+# 8d: C0-control-byte-in-subject escaping — subject carries 0x08 backspace, a double-quote, and a
+# backslash. jq owns ALL string emission, so the C0 byte is escaped (→ \b) and the finding is
+# NON-empty (old hand-rolled-JSON code collapsed to [] on a C0 byte). Title must round-trip escaped.
+parse_c0="$WORKDIR/parse-c0.txt"
+printf '%sCOMMIT%sdddddddddddddddddddddddddddddddddddddddd%sfix(x): address review feedback Fix\x08"bad\\path"\x00\n' "$US" "$RS" "$RS" > "$parse_c0"
+printf ':100644 100644 000fix1 111fix1 M\x00src/fix.py\x00\x00' >> "$parse_c0"
+printf 'diff --git a/src/fix.py b/src/fix.py\n@@ -1 +1,3 @@\n+a\n' >> "$parse_c0"
+parse_c0_out="$(git_log_to_findings < "$parse_c0")"
+assert_eq "parse:c0-count" "1" \
+  "$(printf '%s' "$parse_c0_out" | jq -c 'length')" "C0-byte subject → finding NON-empty (jq escapes the byte)"
+assert_eq "parse:c0-title-escaped" '"fix(x): address review feedback Fix\b\"bad\\path\""' \
+  "$(printf '%s' "$parse_c0_out" | jq -c '.[0].title')" "C0 0x08 escaped to \\b; quote/backslash escaped (jq -c form)"
+
+# 8e: ` b/`-bearing path + rename destination — entry (1) modifies a file whose path contains the
+# literal " b/" substring (old in-band ` b/` splitting would have corrupted it); entry (2) is a
+# rename (R100, two NUL-delimited paths) — the parser must take the DESTINATION (last path).
+parse_tricky="$WORKDIR/parse-tricky.txt"
+printf '%sCOMMIT%seeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee%sfix(paths): address review feedback\x00\n' "$US" "$RS" "$RS" > "$parse_tricky"
+printf ':100644 100644 000fbb1 111fbb1 M\x00foo b/bar.txt\x00:100644 100644 000old1 111new1 R100\x00old name.txt\x00new dir/new name.txt\x00\x00' >> "$parse_tricky"
+printf 'diff --git a/placeholder b/placeholder\n@@ -5 +5,2 @@\n+e\n' >> "$parse_tricky"
+printf 'diff --git a/old name.txt b/new dir/new name.txt\n@@ -1 +1,4 @@\n+r\n' >> "$parse_tricky"
+parse_tricky_out="$(git_log_to_findings < "$parse_tricky")"
+assert_eq "parse:space-b-path" "foo b/bar.txt" \
+  "$(printf '%s' "$parse_tricky_out" | jq -r '.[0].file')" "' b/'-bearing path is FULL, not split"
+assert_eq "parse:rename-destination" "new dir/new name.txt" \
+  "$(printf '%s' "$parse_tricky_out" | jq -r '.[1].file')" "rename → DESTINATION path (last NUL token)"
+
+# 8f: malformed input → `[]` fail-open coercion. A payload with no \x1eCOMMIT\x1f record marker is
+# garbage; git_log_to_findings yields `[]` (INJECTED FAIL-OPEN), never an error.
+parse_malformed="$WORKDIR/parse-malformed.txt"
+printf 'this is not a valid git log payload\nno commit headers here\n@@not-a-real-hunk\n' > "$parse_malformed"
+assert_eq "parse:malformed-fail-open" "[]" \
+  "$(git_log_to_findings < "$parse_malformed")" "malformed payload (no COMMIT marker) → [] fail-open"
+
+# ── Section 9: ledger-reconstruct-fold.sh — fold / gate / wrap (PURE) ────────────
+echo ''
+echo '=== ledger-reconstruct-fold.sh: normalized_to_findings / normalized_live_parse_gate / reconstruct_ledger ==='
+#
+# DIRECT unit coverage for the lifted fold/gate/wrap stage. These functions read the caller-shell
+# global BASE (reconstruct_ledger only) — set verbatim per the entrypoint contract. US/RS were set
+# in Section 8 above; BASE is (re)asserted here so this section stands on its own.
+US=$'\x1e'; RS=$'\x1f'; BASE=origin/main
+
+# 9a: normalized_to_findings — per-surface status derivation. Reuses the entrypoint oracle's
+# normalized-threads payload (4 review records + 1 ci-check-failure). Folding rules:
+#   thread(resolved=true) → status fixed, thread_resolved true;
+#   thread(resolved=false) → status open (thread_resolved // null → null);
+#   toplevel(handled) → status fixed FROM classification (non-thread cannot be GitHub-resolved);
+#   review(actionable) → status open FROM classification;
+#   ci-check-failure → SKIPPED (item_source != "review").
+NORM_THREADS='[
+  {"id":"PRRT_thread001resolved","thread_id":"PRRT_thread001resolved","item_source":"review","classification":"handled","thread_resolved":true,"surface":"thread"},
+  {"id":"PRRT_thread002open","thread_id":"PRRT_thread002open","item_source":"review","classification":"actionable","thread_resolved":false,"surface":"thread"},
+  {"id":"IC_toplevel001handled","thread_id":null,"item_source":"review","classification":"handled","thread_resolved":false,"surface":"toplevel"},
+  {"id":"PRR_review001actionable","thread_id":null,"item_source":"review","classification":"actionable","thread_resolved":false,"surface":"review"},
+  {"id":null,"item_source":"ci-check-failure","name":"policy-check","state":"FAILURE"}
+]'
+fold_out="$(normalized_to_findings "$NORM_THREADS")"
+assert_eq "fold:review-only-count" "4" \
+  "$(printf '%s' "$fold_out" | jq -c 'length')" "4 review records fold; ci-check-failure skipped"
+assert_eq "fold:thread-resolved-status" "fixed" \
+  "$(printf '%s' "$fold_out" | jq -r '.[] | select(.id=="PRRT_thread001resolved") | .status')" "resolved thread → status fixed"
+assert_eq "fold:thread-resolved-flag" "true" \
+  "$(printf '%s' "$fold_out" | jq -c '.[] | select(.id=="PRRT_thread001resolved") | .thread_resolved')" "resolved thread → thread_resolved true"
+assert_eq "fold:thread-unresolved-status" "open" \
+  "$(printf '%s' "$fold_out" | jq -r '.[] | select(.id=="PRRT_thread002open") | .status')" "unresolved thread → status open"
+assert_eq "fold:toplevel-handled-status" "fixed" \
+  "$(printf '%s' "$fold_out" | jq -r '.[] | select(.id=="IC_toplevel001handled") | .status')" "toplevel(handled) → status fixed from classification"
+assert_eq "fold:toplevel-thread-resolved-null" "null" \
+  "$(printf '%s' "$fold_out" | jq -c '.[] | select(.id=="IC_toplevel001handled") | .thread_resolved')" "toplevel → thread_resolved null (non-thread)"
+assert_eq "fold:review-actionable-status" "open" \
+  "$(printf '%s' "$fold_out" | jq -r '.[] | select(.id=="PRR_review001actionable") | .status')" "review(actionable) → status open from classification"
+# Non-array / unparseable payload → [] fail-open coercion (INJECTED path).
+assert_eq "fold:non-array-coerce" "[]" \
+  "$(normalized_to_findings '{"not":"an array"}')" "non-array payload → [] fail-open coercion"
+
+# 9b: normalized_live_parse_gate — LIVE FAIL-CLOSED return codes.
+#   empty payload (zero bytes) → 0 (legitimate "no thread findings");
+#   non-empty parseable JSON array → 0;
+#   non-array / garbage → non-zero AND emits LEDGERRECON_ERROR=normalized-parse-failed on stderr.
+normalized_live_parse_gate ""; gate_empty_rc=$?
+assert_eq "gate:empty-rc0" "0" "$gate_empty_rc" "empty live payload → exit 0 (no thread findings)"
+normalized_live_parse_gate '[{"id":"x"}]'; gate_array_rc=$?
+assert_eq "gate:array-rc0" "0" "$gate_array_rc" "non-empty JSON array → exit 0"
+gate_garbage_err="$(normalized_live_parse_gate 'this is not json' 2>&1 >/dev/null)"; gate_garbage_rc=$?
+if [ "$gate_garbage_rc" -ne 0 ]; then
+  pass "gate:garbage-rc-nonzero" "garbage payload → non-zero exit (fail closed)"
+else
+  failed "gate:garbage-rc-nonzero" "garbage payload must fail closed; got exit 0"
+fi
+if printf '%s' "$gate_garbage_err" | grep -qF "LEDGERRECON_ERROR=normalized-parse-failed"; then
+  pass "gate:garbage-marker" "garbage payload emits LEDGERRECON_ERROR=normalized-parse-failed"
+else
+  failed "gate:garbage-marker" "expected normalized-parse-failed marker; got: $gate_garbage_err"
+fi
+# A non-empty, parseable, but NON-array JSON value (object) also fails closed with the marker.
+gate_obj_err="$(normalized_live_parse_gate '{"a":1}' 2>&1 >/dev/null)"; gate_obj_rc=$?
+if [ "$gate_obj_rc" -ne 0 ]; then
+  pass "gate:object-rc-nonzero" "non-array JSON object → non-zero exit (fail closed)"
+else
+  failed "gate:object-rc-nonzero" "non-array JSON object must fail closed; got exit 0"
+fi
+if printf '%s' "$gate_obj_err" | grep -qF "LEDGERRECON_ERROR=normalized-parse-failed"; then
+  pass "gate:object-marker" "non-array object emits LEDGERRECON_ERROR=normalized-parse-failed"
+else
+  failed "gate:object-marker" "expected normalized-parse-failed marker for object; got: $gate_obj_err"
+fi
+
+# 9c: reconstruct_ledger — top-level fix-ledger JSON shape. Wraps the two finding families
+# (git + thread) into one iteration. BASE flows into both top-level `base` and the iteration's
+# `review_base_ref`. Findings array is the concatenation ($git_findings + $thread_findings).
+recon_out="$(reconstruct_ledger '[{"id":"g1"}]' '[{"id":"t1"}]')"
+assert_eq "recon:base" "origin/main" \
+  "$(printf '%s' "$recon_out" | jq -r '.base')" "BASE flows into top-level base"
+assert_eq "recon:max-iterations" "10" \
+  "$(printf '%s' "$recon_out" | jq -r '.max_iterations')" "max_iterations is 10"
+assert_eq "recon:iteration-count" "1" \
+  "$(printf '%s' "$recon_out" | jq -c '.iterations | length')" "exactly one iteration"
+assert_eq "recon:iteration-number" "1" \
+  "$(printf '%s' "$recon_out" | jq -r '.iterations[0].iteration')" "iteration number is 1"
+assert_eq "recon:verdict" "needs-attention" \
+  "$(printf '%s' "$recon_out" | jq -r '.iterations[0].verdict')" "iteration verdict needs-attention"
+assert_eq "recon:review-base-ref" "origin/main" \
+  "$(printf '%s' "$recon_out" | jq -r '.iterations[0].review_base_ref')" "BASE flows into review_base_ref"
+assert_eq "recon:findings-merge" "g1 t1" \
+  "$(printf '%s' "$recon_out" | jq -r '[.iterations[0].findings[].id] | join(" ")')" "git + thread findings concatenated"
+# Empty families → valid ledger with empty findings (the fail-open shape).
+recon_empty="$(reconstruct_ledger '[]' '[]')"
+assert_eq "recon:empty-findings" "0" \
+  "$(printf '%s' "$recon_empty" | jq -c '.iterations[0].findings | length')" "empty families → empty findings (fail-open shape)"
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
