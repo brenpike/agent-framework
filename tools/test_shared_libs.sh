@@ -1472,6 +1472,19 @@ fn_union_exp="$(jq -s 'add' "$FN_EXPECTED_REVIEW" "$FN_EXPECTED_CI" | fn_canon)"
 assert_eq "fncore:review-plus-ci-union" "$fn_union_exp" "$fn_union_out" \
   "build_normalized_candidate_set: review + ci → concatenated review-then-ci candidate set"
 
+# 10c-bis: ORDER-SENSITIVE union contract. fn_canon (above) sort_by-canonicalizes, which by design
+# erases element order so cross-family ordering noise never flakes the value comparison — but that
+# also means 10c can NOT catch a regression that REVERSES the union (ci records emitted before review
+# records). The behavior-preservation contract is explicit: review-surface records are emitted FIRST,
+# then ci-check-failure records (the `printf '%s\n%s\n' "$review_records" "$ci_records"` order). Assert
+# the RAW (un-sorted) item_source sequence to lock that order. This complements 10c, it does not
+# replace it.
+fn_union_order="$(build_normalized_candidate_set \
+  "$(cat "$FN_REVIEW_HANDLED")" "$(cat "$FN_CI_CHECKS")" "selfuser" "all" "$CLASSIFY_FILTER" \
+  | jq -c '[.[].item_source]')"
+assert_eq "fncore:union-order-review-then-ci" '["review","ci-check-failure","ci-check-failure"]' "$fn_union_order" \
+  "build_normalized_candidate_set: RAW union emits review record(s) BEFORE ci-check-failure records"
+
 # 10d: fail-OPEN on a malformed injected graphql payload → [] (NOT an error). The normalize core
 # never errors on a bad injected payload; the slurp canonicalizes the empty record streams to [].
 fn_malformed_out="$(build_normalized_candidate_set \
@@ -1492,6 +1505,16 @@ if printf '%s' "$fn_overflow_err" | grep -qF "OVERFLOW"; then
 else
   failed "fncore:overflow-fires" "expected >50 OVERFLOW diagnostic; got: $fn_overflow_err"
 fi
+
+# 10f-bis: FULL overflow diagnostic-TEXT contract. 10f only greps for the bare "OVERFLOW" needle, so a
+# regression that dropped/garbled the three counter values (reviewThreads/comments/reviews) or weakened
+# the diagnostic wording would still pass. The diagnostic IS the consumer's fail-open signal and its
+# exact counter payload is a behavior-preservation requirement, so assert the full line. The
+# overflow-threads fixture carries reviewThreads.totalCount=51 (comments=0 reviews=0). Exact-match the
+# whole stderr line (printf-captured, no needle grep).
+fn_overflow_exp='github-review-loop: OVERFLOW one or more connection totalCounts exceed 50 (reviewThreads=51 comments=0 reviews=0); in-page classification is untrustworthy on the overflowed axis — the consumer must fail open (DISPATCH) per its >50 tripwire.'
+assert_eq "fncore:overflow-full-diagnostic" "$fn_overflow_exp" "$fn_overflow_err" \
+  "emit_overflow_tripwire: full >50 diagnostic line incl. exact counter payload (reviewThreads=51 comments=0 reviews=0)"
 
 # 10g: emit_overflow_tripwire STAYS SILENT below the threshold. The case01 review fixture has small
 # connection counts (no axis exceeds 50), so NO OVERFLOW diagnostic must be emitted (control).
