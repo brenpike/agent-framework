@@ -140,13 +140,18 @@ workflows_dir="$plugin_root/workflows"
 # READ-guard (hivemind_assert_inputs_contained, used right after the inputs validity
 # checks) and the write-chain guard (hivemind_assert_contained, used before the ledger
 # temp-write). Sourcing once here keeps a single load point for both call sites below.
-. "$plugin_root/skills/_shared/containment.sh"
+# SOURCE-OR-DIE: a missing or unparseable shared library fails closed BEFORE any consumer
+# logic — every guard below (the inputs-containment read-guard, the ledger-open chain) lives
+# in these libs, so proceeding without them would silently disarm the containment guards.
+[ -f "$plugin_root/skills/_shared/containment.sh" ] || blocker "required shared library missing: skills/_shared/containment.sh; refusing to proceed"
+. "$plugin_root/skills/_shared/containment.sh" || blocker "failed to source skills/_shared/containment.sh (unparseable); refusing to proceed"
 
 # Source the shared ledger engine-IO helper by the SAME self-located absolute path. It
 # provides hivemind_read_inputs_file (the inputs-file bootstrap) and hivemind_open_ledger
 # (the depth-complete ledger-read/containment/coherence/post-existence chain). Both functions
 # ORCHESTRATE the containment.sh helpers sourced above, so this MUST follow that source.
-. "$plugin_root/skills/_shared/ledger-engine-io.sh"
+[ -f "$plugin_root/skills/_shared/ledger-engine-io.sh" ] || blocker "required shared library missing: skills/_shared/ledger-engine-io.sh; refusing to proceed"
+. "$plugin_root/skills/_shared/ledger-engine-io.sh" || blocker "failed to source skills/_shared/ledger-engine-io.sh (unparseable); refusing to proceed"
 
 # ── Dependency check ──────────────────────────────────────────────────────────
 command -v jq >/dev/null 2>&1 \
@@ -179,6 +184,7 @@ case $? in
   3) blocker "record-state-result inputs file $INPUTS_FILE does not exist" ;;
   4) blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)" ;;
   5) blocker "record-state-result inputs file $INPUTS_FILE is not valid JSON" ;;
+  *) blocker "record-state-result: hivemind_read_inputs_file returned an unmapped status (shared library unavailable or contract drift); ledger/inputs unchanged" ;;
 esac
 
 # ── Parse fields into inert variables ─────────────────────────────────────────
