@@ -444,6 +444,106 @@ for st in running complete blocked cancelled; do
     "$(hivemind_project_run_status "$enum_file")" "enum value $st"
 done
 
+# ── Section 3b: hivemind_read_confined_state_current — two-line confined read ────
+echo ''
+echo '=== ledger-project.sh: hivemind_read_confined_state_current (two-line confined read) ==='
+#
+# AUTHORITATIVE regression tests for the shared confined read primitive. This function is the
+# SINGLE source of the 6-layer hardened confined read consumed by both spawn-brood and
+# brood-status-project.sh. Each case builds a real temp worktree + ledger under WORKDIR and
+# asserts the two-line output (line1=state.current, line2=run.status).
+#
+# Parse helper — safe under set -u: reads exactly two lines from the function's stdout.
+# Usage: { IFS= read -r rcc_s; IFS= read -r rcc_r; } < <(hivemind_read_confined_state_current ...)
+# then assert_eq on $rcc_s / $rcc_r.
+
+# 3b-1: valid ledger — both scalars present and well-formed.
+rcc1_wt="$WORKDIR/rcc1/checkout"
+rcc1_run_id="2026-01-01T00-00-00Z--test"
+rcc1_rel=".hivemind/runs/$rcc1_run_id/state.json"
+mkdir -p "$rcc1_wt/.hivemind/runs/$rcc1_run_id"
+printf '{"state":{"current":"implement_step"},"run":{"status":"running"}}\n' \
+  > "$rcc1_wt/$rcc1_rel"
+{ IFS= read -r rcc_s; IFS= read -r rcc_r; } \
+  < <(hivemind_read_confined_state_current "$rcc1_wt" "$rcc1_rel")
+assert_eq "rcc:valid-state"  "implement_step" "$rcc_s" "valid ledger: line1 = state.current"
+assert_eq "rcc:valid-status" "running"        "$rcc_r" "valid ledger: line2 = run.status"
+
+# 3b-2: absent leaf — no state.json written yet → MISSING / MISSING.
+rcc2_wt="$WORKDIR/rcc2/checkout"
+rcc2_run_id="2026-01-01T00-00-00Z--test"
+rcc2_rel=".hivemind/runs/$rcc2_run_id/state.json"
+mkdir -p "$rcc2_wt/.hivemind/runs/$rcc2_run_id"
+# Do NOT create the leaf — child has not yet written its ledger.
+{ IFS= read -r rcc_s; IFS= read -r rcc_r; } \
+  < <(hivemind_read_confined_state_current "$rcc2_wt" "$rcc2_rel")
+assert_eq "rcc:absent-state"  "MISSING" "$rcc_s" "absent leaf: line1 = MISSING"
+assert_eq "rcc:absent-status" "MISSING" "$rcc_r" "absent leaf: line2 = MISSING"
+
+# 3b-3: symlinked leaf — state.json is a symlink → MALFORMED / MALFORMED.
+# hivemind_assert_file_contained fires [ -L ] on the leaf; any symlink leaf is rejected
+# before the read (LAYER 1).
+rcc3_wt="$WORKDIR/rcc3/checkout"
+rcc3_ext="$WORKDIR/rcc3/external"
+rcc3_run_id="2026-01-01T00-00-00Z--test"
+rcc3_rel=".hivemind/runs/$rcc3_run_id/state.json"
+mkdir -p "$rcc3_wt/.hivemind/runs/$rcc3_run_id" "$rcc3_ext"
+printf '{"state":{"current":"implement_step"},"run":{"status":"running"}}\n' \
+  > "$rcc3_ext/real-state.json"
+ln -s "$rcc3_ext/real-state.json" "$rcc3_wt/$rcc3_rel"
+{ IFS= read -r rcc_s; IFS= read -r rcc_r; } \
+  < <(hivemind_read_confined_state_current "$rcc3_wt" "$rcc3_rel" 2>/dev/null)
+assert_eq "rcc:symlink-leaf-state"  "MALFORMED" "$rcc_s" "symlinked leaf: line1 = MALFORMED"
+assert_eq "rcc:symlink-leaf-status" "MALFORMED" "$rcc_r" "symlinked leaf: line2 = MALFORMED"
+
+# 3b-4: NUL-bearing ledger — file exists, otherwise valid JSON, but contains a literal NUL byte.
+# hivemind_path_has_nul fires at LAYER 4, before the $(...) read strips the NUL → MALFORMED.
+rcc4_wt="$WORKDIR/rcc4/checkout"
+rcc4_run_id="2026-01-01T00-00-00Z--test"
+rcc4_rel=".hivemind/runs/$rcc4_run_id/state.json"
+mkdir -p "$rcc4_wt/.hivemind/runs/$rcc4_run_id"
+printf '{"state":{"current":"implement_step"},"run":{"status":"running"}}\000' \
+  > "$rcc4_wt/$rcc4_rel"
+{ IFS= read -r rcc_s; IFS= read -r rcc_r; } \
+  < <(hivemind_read_confined_state_current "$rcc4_wt" "$rcc4_rel")
+assert_eq "rcc:nul-ledger-state"  "MALFORMED" "$rcc_s" "NUL-bearing ledger: line1 = MALFORMED"
+assert_eq "rcc:nul-ledger-status" "MALFORMED" "$rcc_r" "NUL-bearing ledger: line2 = MALFORMED"
+
+# 3b-5: ancestor-symlink escape — a directory component of the ledger chain is a symlink that
+# resolves outside the worktree. hivemind_assert_file_contained walks every existing ancestor
+# and rejects on the first symlinked component (LAYER 1), so both scalars are MALFORMED.
+# NOTE: faithfully constructing a post-read ITEM-4 ancestor-swap race in a unit test is
+# impractical (it requires a concurrent writer between LAYER 1 and the cat). This case instead
+# asserts the LAYER 1 pre-read ancestor-symlink containment-reject path, which is the structural
+# defence (the ITEM-4 post-read check bounds the residual window that LAYER 1 cannot close).
+rcc5_wt="$WORKDIR/rcc5/checkout"
+rcc5_ext="$WORKDIR/rcc5/external"
+rcc5_run_id="2026-01-01T00-00-00Z--test"
+rcc5_rel=".hivemind/runs/$rcc5_run_id/state.json"
+mkdir -p "$rcc5_wt" "$rcc5_ext/runs/$rcc5_run_id"
+# .hivemind itself is a symlink to the external dir — every ancestor walk hits it and rejects.
+ln -s "$rcc5_ext" "$rcc5_wt/.hivemind"
+printf '{"state":{"current":"implement_step"},"run":{"status":"running"}}\n' \
+  > "$rcc5_wt/$rcc5_rel"
+{ IFS= read -r rcc_s; IFS= read -r rcc_r; } \
+  < <(hivemind_read_confined_state_current "$rcc5_wt" "$rcc5_rel" 2>/dev/null)
+assert_eq "rcc:ancestor-escape-state"  "MALFORMED" "$rcc_s" "ancestor symlink escape: line1 = MALFORMED"
+assert_eq "rcc:ancestor-escape-status" "MALFORMED" "$rcc_r" "ancestor symlink escape: line2 = MALFORMED"
+
+# 3b-6: present-but-unreadable leaf → MALFORMED / MALFORMED.
+# Technique: place a DIRECTORY at the state.json path (not chmod 000, which is bypassed by
+# root). `cat -- <dir>` fails (Is a directory), [ -e ] confirms presence → MALFORMED.
+# This is root-safe: no filesystem permission required; a directory is never a regular file.
+rcc6_wt="$WORKDIR/rcc6/checkout"
+rcc6_run_id="2026-01-01T00-00-00Z--test"
+rcc6_rel=".hivemind/runs/$rcc6_run_id/state.json"
+# mkdir -p creates the full chain INCLUDING the leaf, making state.json itself a directory.
+mkdir -p "$rcc6_wt/$rcc6_rel"
+{ IFS= read -r rcc_s; IFS= read -r rcc_r; } \
+  < <(hivemind_read_confined_state_current "$rcc6_wt" "$rcc6_rel" 2>/dev/null)
+assert_eq "rcc:dir-leaf-state"  "MALFORMED" "$rcc_s" "dir-typed leaf (present-but-unreadable): line1 = MALFORMED"
+assert_eq "rcc:dir-leaf-status" "MALFORMED" "$rcc_r" "dir-typed leaf (present-but-unreadable): line2 = MALFORMED"
+
 # ── Section 4: NUL / control-byte rejection + single-document discipline (Codex #172) ──
 echo ''
 echo '=== NUL + control-byte + single-document (Codex #172 root cluster) ==='

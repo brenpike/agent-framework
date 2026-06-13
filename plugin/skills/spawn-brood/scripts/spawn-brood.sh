@@ -105,6 +105,19 @@ POLL_INTERVAL=2
 # => starting) — not from capture-pane frames.
 INJECT_SETTLE=0.2
 
+# SPAWN-TIME RESEND TUNABLES (inject_strain turn-start verification): under load (many
+# concurrent claude bootstraps) a single submit Enter can race/drop at the pty and leave a
+# child sitting idle at the prompt forever. After the initial submit, inject_strain polls the
+# child run-ledger for started-evidence and resends a bare Enter if none appears within the
+# per-attempt budget. Cadence reuses POLL_INTERVAL above.
+#   RESEND_RETRIES:      max bare-Enter resends AFTER the initial submit before marking failed.
+#   RESEND_POLL_TIMEOUT: seconds to poll the run-ledger per attempt before resending. The total
+#                        verification budget is roughly (RESEND_RETRIES+1)*RESEND_POLL_TIMEOUT,
+#                        sized so a slow-but-healthy child that writes its ledger late is caught
+#                        by a poll rather than failed.
+RESEND_RETRIES=3
+RESEND_POLL_TIMEOUT=8
+
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
 # maintenance point — if the CLI chrome changes, update this substring. See
@@ -148,6 +161,12 @@ plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 # enforce the reader's contract at launch time so no child ever starts with a name the
 # dashboard cannot faithfully render.
 . "$plugin_root/skills/_shared/allowlist.sh"
+# Source the shared run-ledger scalar projector so spawn-time started-evidence is single-sourced
+# from the SAME validator the brood-status dashboard uses (hivemind_project_state_current). This
+# closes the prior divergence where an inline non-empty-string check accepted ledger values the
+# canonical projector rejects as MALFORMED (overlength, wrong charset, multi-document JSON),
+# producing split-brain launch evidence between spawn-brood and brood-status.
+. "$plugin_root/skills/_shared/ledger-project.sh"
 
 # ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
 # Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
@@ -765,18 +784,33 @@ for idx in $(seq 0 $((strain_count - 1))); do
   cur_session=""
 done
 
-# inject_strain: inject a ready strain's task via a per-strain NAMED buffer deleted on
-# paste (-d). Bracketed paste (-p) keeps the multiline preamble+description as ONE bounded
-# prompt. After the paste a short settle (INJECT_SETTLE) allows the closing ESC[201~ to
-# reach the TUI before the SINGLE submit keystroke, so Enter no longer races the paste and
-# is not absorbed inside the bracketed-paste window. Enter is sent ONCE and
-# the function returns success — spawn-brood does NOT verify turn-start by screen-scraping
-# the TUI. Whether the child actually began a turn is observed LATER by hivemind:brood-status
-# from run-ledger ground truth (child run state.current present => running, absent =>
-# starting), not by this script. Best-effort delete the buffer on EVERY failure path so an
-# untrusted task never persists in the shared tmux buffer. Returns 0 once the submit
-# keystroke is sent; 1 only on a tmux command failure (dead pane / load / paste / send error).
-inject_strain() {
+# THREE-PASS STRUCTURE (inject_strain SPLIT into submit_strain + verify_strain): the prior
+# inject_strain combined fast non-blocking submit with a BLOCKING bounded turn-start poll, and
+# was called from inside the Pass-2 readiness round-robin. That coupled a synchronous per-child
+# resend poll (up to (RESEND_RETRIES+1)*RESEND_POLL_TIMEOUT ≈ 32s) to the ONE shared
+# READY_TIMEOUT deadline the whole brood's round-robin runs against — so verifying one child
+# burned the shared wall-clock budget every still-pending strain depends on, and a strain that
+# became ready during that window got falsely marked failed (reviewer root class:
+# synchronous-turn-start-verification-coupled-to-shared-scheduler). The split makes the blocking
+# poll UNREACHABLE from the shared loop by construction:
+#   Pass 1 — spawn worktree + detached session per strain (above).
+#   Pass 2 — shared-deadline readiness round-robin + FAST submit_strain (no blocking poll).
+#   Pass 3 — per-strain verify_strain, each computing its OWN deadline at its Pass-3 entry, so
+#            no strain's verifier shares wall-clock with another's.
+# The turn-start evidence stays on-disk run-ledger state.current ground truth (#213/#248
+# direction), NEVER capture-pane — the split only moved the poll out of the shared loop, it did
+# not change WHAT is polled.
+
+# submit_strain: the FAST, non-blocking half of the former inject_strain. Inject a ready
+# strain's task via a per-strain NAMED buffer deleted on paste (-d). Bracketed paste (-p) keeps
+# the multiline preamble+description as ONE bounded prompt. After the paste a short settle
+# (INJECT_SETTLE) allows the closing ESC[201~ to reach the TUI before the SINGLE submit
+# keystroke, so Enter no longer races the paste and is not absorbed inside the bracketed-paste
+# window. Enter is sent ONCE and the function returns — turn-start is NOT verified here (that is
+# Pass 3's verify_strain). Best-effort delete the buffer on EVERY failure path so an untrusted
+# task never persists in the shared tmux buffer. Returns 0 once the submit keystroke is sent; 1
+# only on a tmux command failure (dead pane / load / paste / send error), marking failed first.
+submit_strain() {
   local idx="$1"
   local tmux_session="${S_TMUX[$idx]}"
   local wt="${S_WT[$idx]}"
@@ -804,40 +838,164 @@ inject_strain() {
   # the bracketed-paste window as an in-composer newline rather than a submit.
   sleep "$INJECT_SETTLE"
 
-  # Submit ONCE, after the settle. No turn-start verification, no corrective resend: the
-  # settle is what makes this single Enter land as a submit, and downstream liveness is
-  # judged by hivemind:brood-status from run-ledger evidence, not by capture-pane here. On a
-  # send-keys command failure (e.g. dead pane) clean up the buffer, mark the strain failed,
-  # and return 1.
+  # Submit ONCE, after the settle. The settle is what makes this single Enter land as a submit
+  # (not an in-composer newline). On a send-keys command failure (e.g. dead pane) clean up the
+  # buffer, mark the strain failed, and return 1.
   if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
     printf 'warning: tmux send-keys Enter failed for strain %s\n' "${S_NAME[$idx]}" >&2
     tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
     mark_failed "$idx"
     return 1
   fi
-
-  # Submit keystroke sent; buffer already deleted by paste-buffer -d; strain stays running.
   return 0
 }
 
-# ── Pass 2: wait ready + inject task (ONE shared deadline) ──────────────────────
+# verify_strain: the BLOCKING half of the former inject_strain — bounded turn-start verification
+# + idempotent resend, run ONCE PER STRAIN in Pass 3 (never inside the shared Pass-2 loop). Its
+# deadline is computed INSIDE this function at its own Pass-3 entry from RESEND_RETRIES /
+# RESEND_POLL_TIMEOUT, so no strain's verifier shares wall-clock with another's. Resend is
+# send-keys Enter ONLY — never a re-paste. On exhaustion (no started-evidence after all resends):
+# mark_failed + warning + return 1. On a dead-pane send-keys failure: fail-closed mark_failed +
+# return 1. Returns 0 the moment started-evidence appears.
+# verify_started_evidence <idx>: CONFINED single-snapshot projection of the strain's child
+# run-ledger state.current. Echoes the validated state.current, or one of the fixed tokens
+# MISSING / MALFORMED. This is the read-side discipline mandated by the security policy for
+# hostile child-ledger reads. The confined read is now SINGLE-SOURCED from the shared
+# _shared/ledger-project.sh primitive hivemind_read_confined_state_current (shared with
+# brood-status) — the duplicate inline guard/read/ITEM-4 block that mirrored
+# brood-status-project.sh and absorbed two P1 findings is GONE, closing the duplicate-drift
+# class. That primitive confines the leaf BENEATH the strain's GROUND-TRUTH worktree
+# (S_WT[$idx], script-derived from the canonical repo_root + generated brood-id/short — never a
+# manifest/child-supplied path), rejects a symlinked / non-regular / NUL-bearing leaf, reads
+# EXACTLY ONCE into an in-memory snapshot, RE-ASSERTS post-read containment, and projects from
+# CONTENT via hivemind_project_state_current_content — never the path-based projector. It emits
+# TWO lines (state.current, then run.status) from ONE snapshot; spawn-brood consumes ONLY line1
+# (state.current). We confine on-disk run-ledger ground truth, NOT capture-pane (#213/#248): the
+# child writes state.current when its workflow actually starts; we never screen-scrape the TUI.
+verify_started_evidence() {
+  local idx="$1"
+  # Relative ledger chain under the strain worktree (mirrors S_RUN_LEDGER derivation):
+  #   .hivemind/runs/<run_id>/state.json
+  local rel_chain=".hivemind/runs/${S_RUN_ID[$idx]}/state.json"
+
+  # Single-snapshot confined read via the shared primitive. It outputs two lines from one
+  # snapshot (line1 = state.current, line2 = run.status); spawn-brood needs only line1. Read
+  # both set-u-safely so an absent second line cannot trip a bad read.
+  local state_out="" _run_out=""
+  { IFS= read -r state_out; IFS= read -r _run_out; } \
+    < <(hivemind_read_confined_state_current "${S_WT[$idx]}" "$rel_chain")
+  printf '%s\n' "$state_out"
+}
+
+verify_strain() {
+  local idx="$1"
+  local tmux_session="${S_TMUX[$idx]}"
+  local buffer_name="$tmux_session"   # session-unique named buffer (brood-<short>)
+
+  # WHY read the on-disk run-ledger and
+  # NOT capture-pane: capture-pane turn-start verification was deliberately REMOVED in issue
+  # #213 / PR #248 because screen-scraping the TUI for a turn-started frame caused a break-fix
+  # review cluster (frame races, chrome coupling, false resends). The run-ledger
+  # (${S_RUN_LEDGER[$idx]}, .../.hivemind/runs/<run_id>/state.json) is GROUND TRUTH: the child
+  # writes .state.current when its workflow actually starts. We poll THAT file — never the
+  # pane — for started-evidence, and resend a bare Enter only if none appears.
+  #
+  # CONFINED READ (security-policy discipline for hostile child-ledger reads): the per-poll
+  # projection is delegated to verify_started_evidence above, which confines the ledger leaf
+  # beneath the strain's GROUND-TRUTH worktree, rejects a symlinked/non-regular/NUL-bearing
+  # leaf, reads ONCE into a snapshot, and projects via the CONTENT projector — mirroring
+  # brood-status-project.sh. The legacy path-based hivemind_project_state_current (which
+  # [ -f ]/cat-follows the child-controlled leaf directly) is deliberately NOT called here.
+  #
+  # Started-evidence MUST match the brood-status derive gate. It is single-sourced from the SAME
+  # canonical content projector the dashboard uses — hivemind_project_state_current_content in
+  # _shared/ledger-project.sh — so the two mechanisms cannot diverge: started-evidence is a
+  # state.current that projects to neither MISSING nor MALFORMED, which enforces single-document
+  # JSON, object shape, the ^[a-z0-9_]+$ charset, and the <=64 length cap. Absent file /
+  # unparseable / null / empty / non-string / overlength / wrong-charset / multi-document =>
+  # MISSING or MALFORMED => NOT started (fail-closed). Never hand-parse — the projector owns it.
+  local resends=0
+  while : ; do
+    # Poll the run-ledger for started-evidence up to the per-attempt deadline. Fast path: a
+    # child already started on the first poll returns immediately with zero resends.
+    local attempt_deadline=$(( $(date +%s) + RESEND_POLL_TIMEOUT ))
+    while [ "$(date +%s)" -lt "$attempt_deadline" ]; do
+      # Fail-closed projection: started ONLY when the CONFINED projector returns a validated
+      # state.current (neither MISSING nor MALFORMED). verify_started_evidence handles the
+      # confinement (leaf/ancestor symlink reject, NUL reject) AND the value-shape validation;
+      # absent file / unparseable / missing / null / non-string / empty / overlength /
+      # bad-charset / multi-doc / symlink-escape each yield a MISSING/MALFORMED sentinel =>
+      # keep polling.
+      local state_current
+      state_current="$(verify_started_evidence "$idx")"
+      if [ "$state_current" != "MISSING" ] && [ "$state_current" != "MALFORMED" ]; then
+        return 0
+      fi
+      sleep "$POLL_INTERVAL"
+    done
+
+    # Per-attempt deadline elapsed with no started-evidence. If retries remain, resend submit.
+    if [ "$resends" -ge "$RESEND_RETRIES" ]; then
+      break
+    fi
+    resends=$(( resends + 1 ))
+    # CRITICAL: resend is send-keys Enter ONLY — never re-run load-buffer/paste-buffer. The task
+    # text was pasted once and is already submitted/consumed; a re-paste would double-inject the
+    # task. A bare Enter on an already-submitted (empty) composer is a harmless no-op. A send-keys
+    # failure here means a dead pane => mark failed and return 1.
+    if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
+      printf 'warning: tmux send-keys Enter (resend) failed for strain %s\n' "${S_NAME[$idx]}" >&2
+      tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
+      mark_failed "$idx"
+      return 1
+    fi
+  done
+
+  # Exhausted all resends with still no started-evidence: this child failed to launch a turn.
+  printf 'warning: strain %s failed to launch (no started-evidence after %d resends)\n' \
+    "${S_NAME[$idx]}" "$RESEND_RETRIES" >&2
+  tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
+  mark_failed "$idx"
+  return 1
+}
+
+# ── Pass 2: wait ready + FAST submit (ONE shared deadline; NO blocking poll) ─────
 # All Pass-1 sessions boot concurrently. A single shared deadline (NOT N×timeout) is
 # what makes the total wait ≈ the slowest single strain: pending strains are polled
 # round-robin against one READY_TIMEOUT budget rather than each consuming its own.
+# The loop body now contains ONLY fast tmux ops — capture-pane readiness check +
+# submit_strain (load/paste/settle/send). The former synchronous turn-start verify
+# poll is GONE from here: it lived inside this shared loop and burned the shared
+# READY_TIMEOUT budget every still-pending strain depends on (reviewer starvation root:
+# synchronous-turn-start-verification-coupled-to-shared-scheduler). It now runs once
+# per strain in Pass 3 below, against each strain's OWN deadline. Turn-start evidence
+# stays on-disk run-ledger ground truth (#213/#248), unchanged — only its CALL SITE
+# moved out of the shared loop.
 deadline=$(( $(date +%s) + READY_TIMEOUT ))
 
-# pending = indices of strains that launched in Pass 1 and are not yet ready/injected.
+# pending = indices of strains that launched in Pass 1 and are not yet ready/submitted.
 declare -a pending=()
 for idx in $(seq 0 $((strain_count - 1))); do
   [ "${S_STATUS[$idx]}" = "running" ] && pending+=("$idx")
 done
+
+# submitted = indices whose submit_strain SUCCEEDED in Pass 2 — the exact set Pass 3 verifies.
+# A strain whose submit FAILED is already mark_failed inside submit_strain and is NOT enqueued
+# here, so it is never re-touched in Pass 3. A strain that times out in readiness below never
+# reaches submit_strain and is failed by the post-loop sweep, so it is likewise absent.
+declare -a submitted=()
 
 while [ "${#pending[@]}" -gt 0 ] && [ "$(date +%s)" -lt "$deadline" ]; do
   declare -a still_pending=()
   for idx in "${pending[@]}"; do
     tmux_session="${S_TMUX[$idx]}"
     if tmux capture-pane -t "$tmux_session" -p 2>/dev/null | grep -qF "$READY_SUBSTRING"; then
-      inject_strain "$idx"   # marks failed internally on tmux error; removed from pending either way
+      # Fast submit only (no blocking poll). On success enqueue for Pass-3 verification; on a
+      # tmux failure submit_strain has already mark_failed'd it — do not enqueue. Either way the
+      # strain leaves pending.
+      if submit_strain "$idx"; then
+        submitted+=("$idx")
+      fi
     else
       still_pending+=("$idx")
     fi
@@ -851,6 +1009,17 @@ done
 for idx in "${pending[@]+"${pending[@]}"}"; do
   printf 'warning: strain %s did not reach ready state within %ds\n' "${S_NAME[$idx]}" "$READY_TIMEOUT" >&2
   mark_failed "$idx"
+done
+
+# ── Pass 3: per-strain turn-start verify/resend (each its OWN deadline) ──────────
+# Verify ONLY the strains that successfully submitted in Pass 2. Each verify_strain computes its
+# own deadline at entry from RESEND_RETRIES/RESEND_POLL_TIMEOUT, so no strain's bounded poll
+# shares wall-clock with another's (this is the structural fix for the shared-scheduler
+# starvation root). Sequential is intentional — concurrency is explicitly deferred. This runs
+# BEFORE the INT/TERM trap is disarmed below, so the interruption guard stays armed across
+# Pass 1 → 2 → 3 and a signal mid-verify still reports leaked sessions for manual cleanup.
+for idx in "${submitted[@]+"${submitted[@]}"}"; do
+  verify_strain "$idx"   # marks failed internally on exhaustion / dead pane
 done
 
 # ── Manifest emission ───────────────────────────────────────────────────────────

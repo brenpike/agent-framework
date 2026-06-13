@@ -147,9 +147,13 @@ When deriving a strain's status, prefer sources in this order:
 
 External observables win because they reflect ground truth. Manifest static fields are the fallback. The child run ledger (tier 3) populates the `Strain State (claimed)` and `Strain Status (claimed)` display columns via `brood-status-project.sh`'s bounded projection, but it is strictly informational — a hostile child cannot hide a runaway session or alter the observable-derived `Hatchery Status (observed)` column through its ledger. The leaf symlink-swap micro-TOCTOU on the child-ledger read is an ACCEPTED BOUNDED RESIDUAL (not structurally closed by per-brood namespacing — per-brood namespacing isolates broods from each other, not the hatchery from its children): it is bounded by a post-read containment re-assert, never-echo-raw projection, and the informational-only contract (ADR-0021 §10; ADR-0019 amendment).
 
-#### Running gating on started-evidence
+#### Turn-start verification (two independent mechanisms)
 
-An alive tmux session alone is NOT proof a child started its workflow: a child can have its task pasted into a live session but never submit it, so the session is alive while no run ledger exists yet. To prevent that idle-but-unsubmitted child from masquerading as a healthy `running` strain, the running derivation is GATED on RUN-LEDGER EVIDENCE. The ground-truth started signal is a present, non-`MISSING`/non-`MALFORMED` `state.current` (the child wrote its run ledger). The rule table the derivation library ports is:
+Two independent mechanisms address a child that was injected but never started its workflow.
+
+**Mechanism 1 — spawn-time inject verification (spawn-brood).** After all strains are submitted in Pass 2, `spawn-brood` runs a separate Pass 3 in which each strain's turn-start verification executes on its OWN independent per-strain deadline — decoupled from the shared Pass-2 readiness scheduler so one slow child cannot consume another strain's readiness budget. Within its budget, `spawn-brood` polls the child's run-ledger `state.current` for started-evidence; on no started-evidence it resends `send-keys Enter` up to a retry cap. On retry-cap exhaustion with still no started-evidence, the strain is recorded in the manifest with `status: "failed"` (failed-to-launch); `brood-status` renders it via the existing `failed`-precedence rule. This is NOT a new manifest field and `manifest_version` stays 4.
+
+**Mechanism 2 — brood-status liveness projection (independent).** An alive tmux session alone is NOT proof a child started its workflow: a child can have its task pasted into a live session but never submit it, so the session is alive while no run ledger exists yet. To prevent that idle-but-unsubmitted child from masquerading as a healthy `running` strain, the running derivation is GATED on RUN-LEDGER EVIDENCE. The ground-truth started signal is a present, non-`MISSING`/non-`MALFORMED` `state.current` (the child wrote its run ledger). The rule table the derivation library ports is:
 
 ```text
 | tmux  | PR     | started-evidence (state.current present & non-MISSING/non-MALFORMED) | Status                                            |
