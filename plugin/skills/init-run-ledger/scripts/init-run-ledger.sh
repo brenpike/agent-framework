@@ -152,6 +152,13 @@ workflows_dir="$plugin_root/workflows"
 # create). Sourcing once here keeps a single load point for both call sites below.
 . "$plugin_root/skills/_shared/containment.sh"
 
+# Source the shared ledger engine-IO helper by the SAME self-located absolute path. It
+# provides hivemind_read_inputs_file (the inputs-file bootstrap). init CREATES a ledger
+# rather than opening an existing one, so it uses ONLY hivemind_read_inputs_file and NOT
+# hivemind_open_ledger. The helper ORCHESTRATES the containment.sh helper sourced above, so
+# this MUST follow that source.
+. "$plugin_root/skills/_shared/ledger-engine-io.sh"
+
 # ── Dependency check ──────────────────────────────────────────────────────────
 command -v jq >/dev/null 2>&1 \
   || blocker "jq is required to write the run ledger but is not installed"
@@ -162,26 +169,22 @@ command -v jq >/dev/null 2>&1 \
 # (including the untrusted ones) is read with jq into inert variables below — never
 # interpolated into bash source or the jq program SOURCE.
 INPUTS_FILE="${1:-}"
-[ -n "$INPUTS_FILE" ] \
-  || blocker "missing required argument: path to run-ledger inputs JSON file (\$1)"
-[ -f "$INPUTS_FILE" ] \
-  || blocker "run-ledger inputs file $INPUTS_FILE does not exist"
 
-# ── Defense-in-depth inputs READ-guard (shared helper) ─────────────────────────
-# Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
-# symlinked ancestor) — converting a silent external-read into a hard blocker BEFORE the
-# first jq read below (the JSON-validity probe AND every field read). Running this BEFORE the
-# `jq -e` validity probe is REQUIRED: `jq -e` opening an attacker-supplied external path is
-# itself an external-file JSON-validity read oracle, so the containment guard must gate it.
-# This guards the READ source; the later hivemind_assert_contained call guards the WRITE
-# chain — both are needed. The helper never exits; map non-zero to our blocker. Empty git root
-# (not inside a checkout) is tolerated by the helper's own canonical guard; the write-chain
-# repo_root check below remains the authoritative not-in-a-repo gate.
-hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
-  || blocker "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout (symlinked ancestor)"
-
-jq -e . "$INPUTS_FILE" >/dev/null 2>&1 \
-  || blocker "run-ledger inputs file $INPUTS_FILE is not valid JSON"
+# ── Inputs-file bootstrap (shared helper) ──────────────────────────────────────
+# hivemind_read_inputs_file performs, IN ORDER: the non-empty-arg check, the `[ -f ]`
+# existence check, the hivemind_assert_inputs_contained defense-in-depth read-guard (run
+# BEFORE the jq validity probe — `jq -e` on an attacker path is itself a JSON-validity read
+# oracle), and the `jq -e .` JSON-validity probe. The "run-ledger" label reproduces this
+# engine's EXACT current blocker strings (the inputs-guard string carries no label and is
+# already byte-identical across engines). This guards the READ source; the later
+# hivemind_assert_contained call guards the WRITE chain — both are needed. The helper never
+# exits: it prints the reason to stderr (no `blocker: ` prefix) and returns non-zero. We
+# capture that reason and re-emit it through blocker() so the on-screen bytes (the `blocker: `
+# prefix + exit 1) are identical to the prior inline checks. Empty git root (not inside a
+# checkout) is tolerated by the helper's own canonical guard; the write-chain repo_root check
+# below remains the authoritative not-in-a-repo gate.
+inputs_err="$(hivemind_read_inputs_file "$INPUTS_FILE" "run-ledger" 2>&1)" \
+  || blocker "$inputs_err"
 
 # Parse every field into the SAME inert variables the downstream logic already uses.
 # Strings via `jq -r '.field // ""'`; the workflow_version stays a JSON number (read as
