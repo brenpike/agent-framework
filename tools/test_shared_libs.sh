@@ -24,10 +24,22 @@ SHARED_DIR="$REPO_ROOT/plugin/skills/_shared"
 FIX_DIR="$REPO_ROOT/tests/brood"
 LEDGER_PRESENT="$FIX_DIR/child-ledger-present.json"
 
+CLASSIFY_FILTER="$REPO_ROOT/plugin/skills/github-review-loop/scripts/fix-history-classify.jq"
+FN_REVIEW_HANDLED="$REPO_ROOT/tests/fix-history/case01-handled-by-marker.json"
+FN_EXPECTED_REVIEW="$REPO_ROOT/tests/fetch-normalize/expected/review-thread-handled.json"
+FN_CI_CHECKS="$REPO_ROOT/tests/fetch-normalize/ci-checks.json"
+FN_EXPECTED_CI="$REPO_ROOT/tests/fetch-normalize/expected/ci-only.json"
+FN_OVERFLOW_THREADS="$REPO_ROOT/tests/fetch-normalize/overflow-threads.json"
+FN_MALFORMED="$REPO_ROOT/tests/fetch-normalize/malformed.json"
+
 for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/allowlist.sh" "$SHARED_DIR/manifest-json.sh" "$SHARED_DIR/ledger-project.sh" \
                 "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh" \
-                "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh"; do
+                "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh" \
+                "$SHARED_DIR/fetch-normalize-core.sh" \
+                "$CLASSIFY_FILTER" \
+                "$FN_REVIEW_HANDLED" "$FN_EXPECTED_REVIEW" "$FN_CI_CHECKS" "$FN_EXPECTED_CI" \
+                "$FN_OVERFLOW_THREADS" "$FN_MALFORMED"; do
   [ -f "$required" ] || { echo "FAIL: required fixture/lib missing: $required" >&2; exit 2; }
 done
 
@@ -48,6 +60,8 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 . "$SHARED_DIR/ledger-reconstruct-parse.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/ledger-reconstruct-fold.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/fetch-normalize-core.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1418,6 +1432,107 @@ assert_eq "recon:findings-merge" "g1 t1" \
 recon_empty="$(reconstruct_ledger '[]' '[]')"
 assert_eq "recon:empty-findings" "0" \
   "$(printf '%s' "$recon_empty" | jq -c '.iterations[0].findings | length')" "empty families → empty findings (fail-open shape)"
+
+# ── Section 10: fetch-normalize-core.sh — normalize core + overflow tripwire (PURE) ─
+echo ''
+echo '=== fetch-normalize-core.sh: build_normalized_candidate_set / emit_overflow_tripwire (#245) ==='
+#
+# DIRECT determinism coverage for the lifted PURE normalize core. build_normalized_candidate_set
+# takes EXPLICIT parameters (no caller globals) and emits the SINGLE compact normalized candidate
+# array on stdout; emit_overflow_tripwire reads the three connection totalCounts off the raw payload
+# and fires the >50 OVERFLOW diagnostic on stderr. Ground-truth inputs/outputs reuse the entrypoint
+# oracle's canned fixtures (tests/fix-history/, tests/fetch-normalize/) so these unit assertions
+# agree with the behavioral suite. SELF_LOGIN is "selfuser" to match the reused fix-history fixtures.
+# Canonicalization mirrors the behavioral suite's `canon` VERBATIM: `jq -S` recursive key-sort PLUS
+# a stable array sort_by the same key tuple, so element ORDER never makes a comparison brittle.
+fn_canon() { jq -S -c 'sort_by((.databaseId // -1), (.url // ""), (.thread_id // ""), (.name // ""), (.surface // ""), (.classification // ""), (.item_source // ""))' 2>/dev/null; }
+
+# 10a: review-surface-only union — the case01 review payload (handled by self fix-reply marker)
+# with NO ci payload folds to exactly the expected single review record (item_source: "review").
+fn_review_out="$(build_normalized_candidate_set \
+  "$(cat "$FN_REVIEW_HANDLED")" "" "selfuser" "all" "$CLASSIFY_FILTER" | fn_canon)"
+fn_review_exp="$(fn_canon < "$FN_EXPECTED_REVIEW")"
+assert_eq "fncore:review-only-union" "$fn_review_exp" "$fn_review_out" \
+  "build_normalized_candidate_set: review-only payload → expected normalized review record"
+
+# 10b: ci-only union — an empty graphql payload with the ci-checks fixture folds to exactly the two
+# bucket==fail records (item_source: "ci-check-failure", id:null), the pass/pending checks dropped.
+fn_ci_out="$(build_normalized_candidate_set \
+  "" "$(cat "$FN_CI_CHECKS")" "selfuser" "all" "$CLASSIFY_FILTER" | fn_canon)"
+fn_ci_exp="$(fn_canon < "$FN_EXPECTED_CI")"
+assert_eq "fncore:ci-only-union" "$fn_ci_exp" "$fn_ci_out" \
+  "build_normalized_candidate_set: ci-only payload → two bucket==fail records, id:null"
+
+# 10c: review + ci union — both families present → the concatenation of the review record family and
+# the ci-check-failure record family (review records first, then ci records). The expected union is
+# the jq -s concatenation of the two expected fixtures, canonicalized identically.
+fn_union_out="$(build_normalized_candidate_set \
+  "$(cat "$FN_REVIEW_HANDLED")" "$(cat "$FN_CI_CHECKS")" "selfuser" "all" "$CLASSIFY_FILTER" | fn_canon)"
+fn_union_exp="$(jq -s 'add' "$FN_EXPECTED_REVIEW" "$FN_EXPECTED_CI" | fn_canon)"
+assert_eq "fncore:review-plus-ci-union" "$fn_union_exp" "$fn_union_out" \
+  "build_normalized_candidate_set: review + ci → concatenated review-then-ci candidate set"
+
+# 10c-bis: ORDER-SENSITIVE union contract. fn_canon (above) sort_by-canonicalizes, which by design
+# erases element order so cross-family ordering noise never flakes the value comparison — but that
+# also means 10c can NOT catch a regression that REVERSES the union (ci records emitted before review
+# records). The behavior-preservation contract is explicit: review-surface records are emitted FIRST,
+# then ci-check-failure records (the `printf '%s\n%s\n' "$review_records" "$ci_records"` order). Assert
+# the RAW (un-sorted) item_source sequence to lock that order. This complements 10c, it does not
+# replace it.
+fn_union_order="$(build_normalized_candidate_set \
+  "$(cat "$FN_REVIEW_HANDLED")" "$(cat "$FN_CI_CHECKS")" "selfuser" "all" "$CLASSIFY_FILTER" \
+  | jq -c '[.[].item_source]')"
+assert_eq "fncore:union-order-review-then-ci" '["review","ci-check-failure","ci-check-failure"]' "$fn_union_order" \
+  "build_normalized_candidate_set: RAW union emits review record(s) BEFORE ci-check-failure records"
+
+# 10d: fail-OPEN on a malformed injected graphql payload → [] (NOT an error). The normalize core
+# never errors on a bad injected payload; the slurp canonicalizes the empty record streams to [].
+fn_malformed_out="$(build_normalized_candidate_set \
+  "$(cat "$FN_MALFORMED")" "" "selfuser" "all" "$CLASSIFY_FILTER")"
+assert_eq "fncore:malformed-fail-open" "[]" "$fn_malformed_out" \
+  "build_normalized_candidate_set: malformed graphql payload → [] fail-open"
+
+# 10e: fail-OPEN on an empty graphql payload AND empty ci payload → [] (both families empty).
+fn_empty_out="$(build_normalized_candidate_set "" "" "selfuser" "all" "$CLASSIFY_FILTER")"
+assert_eq "fncore:empty-fail-open" "[]" "$fn_empty_out" \
+  "build_normalized_candidate_set: empty graphql + empty ci → [] fail-open"
+
+# 10f: emit_overflow_tripwire FIRES on a >50 connection totalCount. The overflow-threads fixture
+# carries a reviewThreads.totalCount of 51, so the >50 OVERFLOW stderr diagnostic must appear.
+fn_overflow_err="$(emit_overflow_tripwire "$(cat "$FN_OVERFLOW_THREADS")" 2>&1 1>/dev/null)"
+if printf '%s' "$fn_overflow_err" | grep -qF "OVERFLOW"; then
+  pass "fncore:overflow-fires" "emit_overflow_tripwire emits >50 OVERFLOW diagnostic past threshold"
+else
+  failed "fncore:overflow-fires" "expected >50 OVERFLOW diagnostic; got: $fn_overflow_err"
+fi
+
+# 10f-bis: FULL overflow diagnostic-TEXT contract. 10f only greps for the bare "OVERFLOW" needle, so a
+# regression that dropped/garbled the three counter values (reviewThreads/comments/reviews) or weakened
+# the diagnostic wording would still pass. The diagnostic IS the consumer's fail-open signal and its
+# exact counter payload is a behavior-preservation requirement, so assert the full line. The
+# overflow-threads fixture carries reviewThreads.totalCount=51 (comments=0 reviews=0). Exact-match the
+# whole stderr line (printf-captured, no needle grep).
+fn_overflow_exp='github-review-loop: OVERFLOW one or more connection totalCounts exceed 50 (reviewThreads=51 comments=0 reviews=0); in-page classification is untrustworthy on the overflowed axis — the consumer must fail open (DISPATCH) per its >50 tripwire.'
+assert_eq "fncore:overflow-full-diagnostic" "$fn_overflow_exp" "$fn_overflow_err" \
+  "emit_overflow_tripwire: full >50 diagnostic line incl. exact counter payload (reviewThreads=51 comments=0 reviews=0)"
+
+# 10g: emit_overflow_tripwire STAYS SILENT below the threshold. The case01 review fixture has small
+# connection counts (no axis exceeds 50), so NO OVERFLOW diagnostic must be emitted (control).
+fn_nooverflow_err="$(emit_overflow_tripwire "$(cat "$FN_REVIEW_HANDLED")" 2>&1 1>/dev/null)"
+if printf '%s' "$fn_nooverflow_err" | grep -qF "OVERFLOW"; then
+  failed "fncore:overflow-silent" "emit_overflow_tripwire wrongly fired OVERFLOW below threshold: $fn_nooverflow_err"
+else
+  pass "fncore:overflow-silent" "emit_overflow_tripwire stays silent below the >50 threshold"
+fi
+
+# 10h: emit_overflow_tripwire on a malformed/empty payload behaves like a 0-node page (counts default
+# to 0) → NO OVERFLOW diagnostic (the overflow read fails OPEN to 0, never erroring).
+fn_overflow_malformed_err="$(emit_overflow_tripwire "" 2>&1 1>/dev/null)"
+if printf '%s' "$fn_overflow_malformed_err" | grep -qF "OVERFLOW"; then
+  failed "fncore:overflow-empty-silent" "emit_overflow_tripwire wrongly fired on an empty payload: $fn_overflow_malformed_err"
+else
+  pass "fncore:overflow-empty-silent" "emit_overflow_tripwire treats empty payload as 0-node page (no OVERFLOW)"
+fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''

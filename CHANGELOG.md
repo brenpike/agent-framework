@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.32.5] - 2026-06-13
+
+### Changed
+
+- **Extract the pure normalize core of github-review-loop's fetch-normalize.sh into a sourced `_shared/fetch-normalize-core.sh` library with explicit params and a direct determinism unit test (P21/ADR-0020, behavior-preserving). (#245)**
+
 ## [2.32.4] - 2026-06-13
 
 ### Fixed

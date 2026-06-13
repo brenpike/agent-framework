@@ -114,6 +114,47 @@ stderr_contains() {
   esac
 }
 
+# stderr_exact <case> <review-fixture> <expected-full-stderr-line>
+# Like stderr_contains but EXACT-MATCHES the full stderr line, not a substring needle. The OVERFLOW
+# diagnostic IS the consumer's fail-open signal and its exact counter payload (reviewThreads/comments/
+# reviews) is a behavior-preservation requirement: a bare "OVERFLOW" needle would still pass if a
+# refactor dropped/garbled the counter values or weakened the wording. This locks the whole line.
+stderr_exact() {
+  local case_name="$1" review_fix="$2" expected="$3"
+  if [ ! -f "$review_fix" ]; then failed "$case_name" "review fixture missing: $review_fix"; return; fi
+  local err
+  err="$(bash "$NORMALIZE" --payload-file "$review_fix" -- "" "" "" all selfuser 2>&1 1>/dev/null)"
+  if [ "$err" = "$expected" ]; then
+    pass "$case_name" "stderr exact-matches full diagnostic line"
+  else
+    failed "$case_name" "stderr diagnostic mismatch
+    expected: $expected
+    actual:   $err"
+  fi
+}
+
+# union_order <case> <review-fixture> <ci-fixture> <expected-item_source-json>
+# Assert the RAW (un-canonicalized) item_source sequence of the normalized array. run_case
+# canonicalizes via `canon` (sort_by), which by design erases element order — so it can NOT catch a
+# regression that REVERSES the union (ci records emitted before review records). The contract is
+# explicit: review-surface records FIRST, then ci-check-failure records. This locks that order through
+# the full entrypoint seam, complementing run_case (which still guards the canonical value).
+union_order() {
+  local case_name="$1" review_fix="$2" ci_fix="$3" expected="$4"
+  if [ ! -f "$review_fix" ]; then failed "$case_name" "review fixture missing: $review_fix"; return; fi
+  if [ ! -f "$ci_fix" ]; then failed "$case_name" "ci fixture missing: $ci_fix"; return; fi
+  local actual
+  actual="$(bash "$NORMALIZE" --payload-file "$review_fix" --ci-payload-file "$ci_fix" -- "" "" "" all selfuser 2>/dev/null \
+    | jq -c '[.[].item_source]')"
+  if [ "$actual" = "$expected" ]; then
+    pass "$case_name" "RAW union item_source order is $expected"
+  else
+    failed "$case_name" "union order mismatch
+    expected: $expected
+    actual:   $actual"
+  fi
+}
+
 # run_fail_case <case> <expected-reason> <arg...>
 # Run the normalize core with the given raw args, capturing stdout + exit code WITHOUT a pipe (so
 # the script's own exit status is observed, not a downstream filter's). Assert the script exited
@@ -222,6 +263,10 @@ run_case "tripwire:threads-stdout" \
   "$FN_DIR/overflow-threads.json" - all \
   "$EXPECTED_DIR/overflow-threads.json"
 stderr_contains "tripwire:threads-stderr" "$FN_DIR/overflow-threads.json" "OVERFLOW" present
+# Full diagnostic-text lock: assert the WHOLE stderr line incl. the exact counter payload
+# (reviewThreads=51 comments=0 reviews=0), not just the bare "OVERFLOW" needle above.
+stderr_exact "tripwire:threads-stderr-full" "$FN_DIR/overflow-threads.json" \
+  'github-review-loop: OVERFLOW one or more connection totalCounts exceed 50 (reviewThreads=51 comments=0 reviews=0); in-page classification is untrustworthy on the overflowed axis — the consumer must fail open (DISPATCH) per its >50 tripwire.'
 
 run_case "tripwire:comments-stdout" \
   "$FN_DIR/overflow-comments.json" - all \
@@ -270,6 +315,11 @@ run_case "ci:injection-only" \
 run_case "ci:union-with-review" \
   "$FIX_HISTORY_DIR/case01-handled-by-marker.json" "$FN_DIR/ci-checks.json" all \
   "$EXPECTED_DIR/review-plus-ci.json"
+# ORDER-SENSITIVE union lock: run_case above canonicalizes (sort_by), erasing element order. Assert
+# the RAW item_source sequence so a reversed union (ci-before-review) is caught — review records FIRST.
+union_order "ci:union-order-review-then-ci" \
+  "$FIX_HISTORY_DIR/case01-handled-by-marker.json" "$FN_DIR/ci-checks.json" \
+  '["review","ci-check-failure","ci-check-failure"]'
 
 # ── Empty / malformed payload CONTENT -> [] + explicit exit 0 (PRESERVED fail-open) ─
 # RS-001 hardened the LIVE-fetch / input-error path to fail CLOSED, but the malformed/empty injected
