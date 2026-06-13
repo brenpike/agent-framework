@@ -1,0 +1,5 @@
+{
+  "rule": "Bash wait-loop discipline",
+  "source": { "file": "plugin/governance/definitions.md", "pattern": "the only sanctioned wait primitive" },
+  "consumers": [ { "file": "plugin/agents/overlord.md", "pattern": "Bash Command Discipline per " } ]
+}
