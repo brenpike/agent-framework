@@ -1269,6 +1269,263 @@ LONGSTUB_EOF
     fi
 }
 
+# ── Assertion 12: TAIL-DEATH:starting-strain-dies-in-settle-window-reconciled (#291) ──
+# STEP-001 (spawn-brood.sh, commit 30e3cff) added a Pass-3 tail reconciliation sweep AFTER the
+# per-strain verify loop and BEFORE manifest emission. The defect it closes (#291): verify_strain
+# probes `tmux has-session` ONCE at each strain's grace exhaustion; because Pass-3 is SEQUENTIAL,
+# a strain alive AT its probe can DIE in the tail before manifest emission, yet be persisted
+# `starting` with spawn exiting 0 — breaking the exit-code ⇄ end-of-spawn-liveness contract. The
+# sweep re-probes every still-`starting` strain: started-evidence now present => running; session
+# now DEAD => failed (contributes exit 1); else stays `starting`.
+#
+# This case drives the DEAD-in-tail branch deterministically. A claude stub that:
+#   - emits READY_SUBSTRING (Pass-2 readiness passes, strain reaches Pass-3 verify),
+#   - stays ALIVE just past a LOW STARTED_EVIDENCE_TIMEOUT (so verify_strain's grace-exhaustion
+#     `has-session` probe observes the session ALIVE → classifies `starting`, NOT the dead-session
+#     `failed` branch),
+#   - then EXITS (session dies) while the sweep's one-shot RECONCILE_SETTLE sleep is still running,
+#   - and NEVER writes a run-ledger state.json (no started-evidence ever, so the sweep cannot
+#     promote to `running` — it must fall through to the DEAD branch).
+#
+# TIMING RATIONALE (concrete, non-racy — wall-clock measured from this strain's stub start):
+#   Ordering inside spawn-brood for one strain:
+#     Pass-2 readiness match: capture-pane polls every POLL_INTERVAL=2s; the stub prints READY at
+#       t≈0, so the match lands at t≈0..2s. Then submit_strain (fast tmux ops, ~0s).
+#     Pass-3 verify_strain: grace_deadline = match_time + STARTED_EVIDENCE_TIMEOUT. With
+#       STARTED_EVIDENCE_TIMEOUT=2, grace exhausts at ~t=2..5s. RESEND_POLL_TIMEOUT=8 > grace, so NO
+#       nudge fires inside the window — a clean grace-exhaustion. At exhaustion the stub is STILL
+#       ALIVE (it sleeps 8s) → `starting`.
+#     Reconciliation sweep: `sleep RECONCILE_SETTLE` (=14) runs ONCE, THEN the re-probe. The
+#       re-probe lands at ~t=(2..5)+14 = t≈16..19s.
+#   Stub lifetime: prints READY, sleeps 8s, exits → DEAD at t≈8s.
+#   Margins: ALIVE at verify probe — 8s lifetime vs ~5s worst-case exhaustion = ~3s slack. DEAD by
+#   re-probe — 8s lifetime vs ~16s earliest re-probe = ~8s slack. Both comfortably wide (no 1s
+#   races): the stub is reliably alive when verify classifies `starting` and reliably dead when the
+#   sweep re-probes → DEAD branch → failed → exit 1.
+#
+# Assert: the single strain's manifest status == `failed`, spawn exited 1, and a
+# `blocker: 1 of 1 strains failed to spawn` line was emitted (to stderr).
+#
+# DEPENDENCY GATING: identical to DEFECT-B — gated on tmux+jq (claude via the stub). SKIP cleanly
+# when any is absent.
+assert_spawn_brood_tail_death_reconciled() {
+    local name="TAIL-DEATH:starting-strain-dies-in-settle-window-reconciled-failed-exit1"
+    local missing=""
+    missing="$(spawn_deps_satisfied)" || {
+        skip "$name" "spawn-brood dep check precedes the reconciliation sweep; skipping (missing: $missing)"
+        return
+    }
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    git -C "$gitroot" config user.email test@example.com
+    git -C "$gitroot" config user.name test
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    git -C "$gitroot" commit -q --allow-empty -m "init"
+    # Pin the branch to `main` (the inputs base): git init's default branch is host-config
+    # dependent (master vs main), and spawn-brood blocks if `base` does not resolve to a commit.
+    git -C "$gitroot" branch -M main
+    local origin="$WORKDIR/brood-origin.git"
+    git init -q --bare "$origin"
+    git -C "$gitroot" remote add origin "$origin"
+
+    # DEDICATED tail-death stub: emit READY (Pass-2 match), stay alive past the low grace (so the
+    # verify probe sees ALIVE → starting), then EXIT — dying inside the RECONCILE_SETTLE window. It
+    # NEVER writes a run ledger, so the sweep cannot promote to running; the only remaining branch
+    # is the DEAD re-probe → failed. Prepended AHEAD of $STUB_BIN for this invocation; reaped with
+    # WORKDIR on EXIT. sleep 8: alive at verify exhaustion (~t<=5), dead before the re-probe (~t>=16).
+    local death_stub="$WORKDIR/death-stub"
+    mkdir -p "$death_stub"
+    cat > "$death_stub/claude" <<'DEATHSTUB_EOF'
+#!/usr/bin/env bash
+# Tail-death stub: emit readiness chrome, stay alive past the low grace, then exit (session dies)
+# during the reconciliation settle window. Never writes a run ledger.
+printf 'hivemind:overlord\n'
+sleep 8
+exit 0
+DEATHSTUB_EOF
+    chmod +x "$death_stub/claude"
+
+    local inputs="$gitroot/brood-inputs.json"
+    jq -n \
+        --arg base "main" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "tail-death reconciliation regression (#291): starting strain dies in settle window" \
+        --arg strain_name "api" \
+        --arg strain_desc "alive at verify probe, dies before the reconciliation re-probe" \
+        '{
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [ { name: $strain_name, description: $strain_desc } ]
+        }' \
+        > "$inputs"
+
+    local rc=0
+    local stderr_out="$WORKDIR/spawn-stderr.txt"
+    local marker="$WORKDIR/launch-marker.txt"
+    # STARTED_EVIDENCE_TIMEOUT=2 (low grace → verify exhausts while the 8s-sleeping stub is alive →
+    # starting). RECONCILE_SETTLE=14 (the one-shot settle outlasts the stub's death so the re-probe
+    # observes the session DEAD → failed). Capture stderr to assert the blocker line fired.
+    reap_brood_sessions
+    ( cd "$gitroot" && PATH="$death_stub:$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" \
+        STARTED_EVIDENCE_TIMEOUT=2 RECONCILE_SETTLE=14 bash "$SPAWN_SCRIPT" "$inputs" ) \
+        >/dev/null 2>"$stderr_out" || rc=$?
+    tmux kill-server 2>/dev/null || true
+
+    # Manifest status for the single strain must be `failed` (reconciled DEAD-in-tail). The manifest
+    # lands under the internally-generated brood-id dir, so discover it by glob.
+    local manifest manifest_status="" blocker_line=no
+    shopt -s nullglob
+    local m
+    for m in "$gitroot"/.hivemind/broods/*/manifest.json; do manifest="$m"; done
+    shopt -u nullglob
+    if [ -n "${manifest:-}" ]; then
+        manifest_status="$(jq -r '.strains[0].status // ""' "$manifest" 2>/dev/null)"
+    fi
+    # The failed-exit path prints `blocker: 1 of 1 strains failed to spawn` to stderr.
+    grep -q '^blocker: 1 of 1 strains failed to spawn$' "$stderr_out" 2>/dev/null && blocker_line=yes
+
+    if [[ "$rc" -eq 1 && "$manifest_status" == "failed" && "$blocker_line" == "yes" ]]; then
+        pass "$name" "starting strain that died in the settle window reconciled -> manifest status=failed; exit 1; blocker line emitted"
+    else
+        failed "$name" "expected exit 1 + status=failed + blocker line; rc=$rc status=$manifest_status blocker_line=$blocker_line manifest=${manifest:-<none>} stderr: $(cat "$stderr_out" 2>/dev/null)"
+    fi
+}
+
+# ── Assertion 13: TAIL-STARTED:starting-strain-writes-ledger-in-settle-window-promoted (#291) ──
+# The complementary reconciliation branch to Assertion 12: a strain `starting` at its verify probe
+# that CROSSES the started-evidence line (writes a valid run-ledger state.current) DURING the
+# RECONCILE_SETTLE window must be PROMOTED to `running` by the sweep, and spawn must exit 0.
+#
+# The stub launches with cwd = the child WORKTREE root (tmux runs `claude` there), so it resolves
+# its own ledger path the same way verify_started_evidence does: rel_chain =
+# .hivemind/runs/<run_id>/state.json, run_id == run.suggested_id. The internally-generated brood-id
+# (hence suggested_id) is unknown to the harness, but spawn-brood provisions task.md UNDER the
+# worktree at .hivemind/brood/task.md BEFORE launch, carrying `run.suggested_id` as a 4-space
+# block-scalar. The stub parses suggested_id from that task.md and writes a minimal valid ledger
+# ({"state":{"current":"implement_step"}}) at .hivemind/runs/<suggested_id>/state.json relative to
+# its cwd — exactly the leaf the confined reader projects.
+#
+# TIMING RATIONALE (measured from this strain's stub start; same Pass ordering as Assertion 12):
+#   Verify grace exhausts at ~t=2..5s (STARTED_EVIDENCE_TIMEOUT=2, POLL_INTERVAL=2). The ledger
+#   must be ABSENT at the verify probe (→ starting) and PRESENT at the re-probe (→ running). The
+#   stub sleeps 8s BEFORE writing the ledger, so the ledger does not exist until t≈8s — AFTER the
+#   verify probe (~t<=5; ~3s slack). RECONCILE_SETTLE=14 → re-probe at ~t=(2..5)+14 = t≈16..19s,
+#   well AFTER the ledger write at t≈8s (~8s slack). The stub then sleeps a long tail (40s) so the
+#   session stays ALIVE through manifest emission (the sweep's running-branch keys on evidence, not
+#   liveness, but a live session avoids any incidental dead-session interaction). Margins are wide
+#   on both sides → no 1s races.
+#
+# Assert: the single strain's manifest status == `running`, spawn exited 0.
+#
+# DEPENDENCY GATING: identical to Assertion 12.
+assert_spawn_brood_tail_started_promoted() {
+    local name="TAIL-STARTED:starting-strain-writes-ledger-in-settle-window-promoted-running-exit0"
+    local missing=""
+    missing="$(spawn_deps_satisfied)" || {
+        skip "$name" "spawn-brood dep check precedes the reconciliation sweep; skipping (missing: $missing)"
+        return
+    }
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    git -C "$gitroot" config user.email test@example.com
+    git -C "$gitroot" config user.name test
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    git -C "$gitroot" commit -q --allow-empty -m "init"
+    git -C "$gitroot" branch -M main
+    local origin="$WORKDIR/brood-origin.git"
+    git init -q --bare "$origin"
+    git -C "$gitroot" remote add origin "$origin"
+
+    # DEDICATED promotion stub: emit READY, stay un-started past the low grace (no ledger yet → the
+    # verify probe classifies `starting`), THEN parse run.suggested_id from the provisioned task.md
+    # (cwd = child worktree root) and write a minimal valid ledger at the EXACT confined-reader leaf
+    # (.hivemind/runs/<suggested_id>/state.json) DURING the settle window, then stay alive long past
+    # the re-probe. The 4-space block-scalar parse mirrors the suite's parse_task_field awk.
+    local promote_stub="$WORKDIR/promote-stub"
+    mkdir -p "$promote_stub"
+    cat > "$promote_stub/claude" <<'PROMOTESTUB_EOF'
+#!/usr/bin/env bash
+# Promotion stub: emit readiness chrome, stay un-started past the low grace, then cross the
+# started-evidence line DURING the reconciliation settle window by writing a valid run ledger at
+# the confined-reader leaf, then stay alive. cwd is the child worktree root.
+printf 'hivemind:overlord\n'
+# Stay un-started past the verify grace (ledger absent at the verify probe → starting).
+sleep 8
+# Resolve suggested_id from the provisioned task.md (run.suggested_id, 4-space block-scalar under
+# the top-level `run:` section). awk tracks the active top-level section so the `suggested_id` key
+# under `run:` is unambiguous.
+sid="$(awk '
+    $0 == "run:" { in_top=1; next }
+    /^[^[:space:]]/ { in_top=0 }
+    in_top && $0 == "  suggested_id: |-" { grab=1; next }
+    grab { sub(/^    /, ""); print; exit }
+' .hivemind/brood/task.md 2>/dev/null)"
+if [ -n "$sid" ]; then
+    mkdir -p ".hivemind/runs/$sid" 2>/dev/null || true
+    printf '{"state":{"current":"implement_step"},"run":{"status":"running"}}\n' \
+        > ".hivemind/runs/$sid/state.json" 2>/dev/null || true
+fi
+# Stay alive through manifest emission (re-probe + exit-code computation).
+sleep 40
+exit 0
+PROMOTESTUB_EOF
+    chmod +x "$promote_stub/claude"
+
+    local inputs="$gitroot/brood-inputs.json"
+    jq -n \
+        --arg base "main" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "tail-started reconciliation regression (#291): starting strain crosses started-evidence in settle window" \
+        --arg strain_name "api" \
+        --arg strain_desc "starting at verify probe, writes run ledger before the reconciliation re-probe" \
+        '{
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [ { name: $strain_name, description: $strain_desc } ]
+        }' \
+        > "$inputs"
+
+    local rc=0
+    local stdout_out="$WORKDIR/spawn-stdout.txt"
+    local marker="$WORKDIR/launch-marker.txt"
+    # STARTED_EVIDENCE_TIMEOUT=2 (verify exhausts while the stub is still un-started → starting).
+    # RECONCILE_SETTLE=14 (the settle outlasts the stub's t~8s ledger write so the re-probe observes
+    # started-evidence → promote to running).
+    reap_brood_sessions
+    ( cd "$gitroot" && PATH="$promote_stub:$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" \
+        STARTED_EVIDENCE_TIMEOUT=2 RECONCILE_SETTLE=14 bash "$SPAWN_SCRIPT" "$inputs" ) \
+        >"$stdout_out" 2>/dev/null || rc=$?
+    # Reap the launched session (the 40s sleep would otherwise outlive the case).
+    local launched_session
+    launched_session="$(sed -n 's/^attach: tmux attach -t \([^ ]*\).*/\1/p' "$stdout_out" 2>/dev/null | head -1)"
+    [ -n "$launched_session" ] && tmux kill-session -t "$launched_session" 2>/dev/null || true
+    tmux kill-server 2>/dev/null || true
+
+    # Manifest status for the single strain must be `running` (promoted from starting in the sweep).
+    local manifest manifest_status=""
+    shopt -s nullglob
+    local m
+    for m in "$gitroot"/.hivemind/broods/*/manifest.json; do manifest="$m"; done
+    shopt -u nullglob
+    if [ -n "${manifest:-}" ]; then
+        manifest_status="$(jq -r '.strains[0].status // ""' "$manifest" 2>/dev/null)"
+    fi
+
+    if [[ "$rc" -eq 0 && "$manifest_status" == "running" ]]; then
+        pass "$name" "starting strain that wrote its ledger in the settle window promoted -> manifest status=running; exit 0"
+    else
+        failed "$name" "expected exit 0 + status=running; rc=$rc status=$manifest_status manifest=${manifest:-<none>}"
+    fi
+}
+
 # ════════════════════════════════════════════════════════════════════════════════
 # brood-status-project.sh (read-side projection, #161)
 # ════════════════════════════════════════════════════════════════════════════════
@@ -2567,6 +2824,8 @@ assert_spawn_brood_child_leaf_settings_escape_blocked
 assert_spawn_brood_child_leaf_regular_ok
 assert_spawn_brood_task_identity_not_cross_wired
 assert_spawn_brood_alive_no_evidence_starting
+assert_spawn_brood_tail_death_reconciled
+assert_spawn_brood_tail_started_promoted
 
 echo ''
 echo '=== brood-status-project.sh read-side projection tests (#161) ==='
