@@ -792,7 +792,7 @@ cmd_deps_read() {
   fi
   reject_fixture_flags_in_live_mode "deps-read" "--response-file=$response_file"
   require_gh "deps-read"
-  local repo_resp owner_repo owner repo resp
+  local repo_resp owner_repo owner_repo_preview owner repo resp
   # Route the repo-name read through the SHARED kernel too (no pre-`--jq`
   # projection): read the RAW object and let validate_response_shape gate its
   # shape, then split owner/repo from the KERNEL-VALIDATED value. `gh repo view`
@@ -810,8 +810,15 @@ cmd_deps_read() {
   owner_repo="$(printf '%s' "$owner_repo" | jq -r .)"
   # Defense-in-depth: validate the kernel-projected token is exactly one owner/repo
   # shape before splitting (owner/repo still flow only as inert `gh -f` data flags).
-  [[ "$owner_repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] \
-    || die "deps-read: resolved owner/repo is not a valid 'owner/repo' token (got '$owner_repo')" 1
+  # The rejected value crosses a trust boundary, so the diagnostic emits only a
+  # JSON-escaped, length-bounded preview of it (never the raw bytes) per ADR-0019 —
+  # control bytes / newlines / terminal escapes cannot reach the log raw.
+  if [[ ! "$owner_repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+    owner_repo_preview="$(printf '%s' "$owner_repo" \
+      | jq -Rs '.[0:80] | tojson' 2>/dev/null)" \
+      || owner_repo_preview='"<unprintable>"'
+    die "deps-read: resolved owner/repo is not a valid 'owner/repo' token (got ${owner_repo_preview})" 1
+  fi
   owner="${owner_repo%%/*}"; repo="${owner_repo#*/}"
   resp="$(gh api graphql -f query="$DEPS_READ_QUERY" \
             -f owner="$owner" -f repo="$repo" -F number="$issue" 2>/dev/null)" \
