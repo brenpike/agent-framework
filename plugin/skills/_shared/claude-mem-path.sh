@@ -52,11 +52,14 @@
 # CONDITIONAL NEVER-CLOBBER WRITE (mirror SKILL.md step 11b-f, EXACT wording):
 #   - target file MISSING            → `skipped (claude-mem not installed)`, write NOTHING.
 #   - target NOT valid JSON          → `skipped (malformed json)`, write NOTHING, file unchanged.
-#   - `CLAUDE_CODE_PATH` already a NON-EMPTY string → `already set`, write NOTHING (never
-#     overwrite a user-provided value, even a now-invalid one).
-#   - `CLAUDE_CODE_PATH` MISSING or an EMPTY string → resolve the binary; if none → `skipped
-#     (claude binary not found)`; otherwise set ONLY that key (every other key preserved
-#     byte-for-byte via jq's structural set) and report `set`. Written with two-space
+#   - `CLAUDE_CODE_PATH` PRESENT (a NON-EMPTY string, OR a non-string value — boolean/null/
+#     number/object/array) → `already set`, write NOTHING (never overwrite a user-provided value,
+#     even a now-invalid one). A present non-string is PRESENT-MALFORMED and is treated as
+#     never-clobber-skip, NOT clobbered. An explicitly-present JSON null counts as PRESENT here
+#     (a literal null is a user-provided value), so it too is skipped — it is NOT treated as ABSENT.
+#   - `CLAUDE_CODE_PATH` ABSENT (key MISSING or an EMPTY string `""`) → resolve the binary; if
+#     none → `skipped (claude binary not found)`; otherwise set ONLY that key (every other key
+#     preserved byte-for-byte via jq's structural set) and report `set`. Written with two-space
 #     indentation and a trailing newline (matching SKILL.md step 11f).
 #
 # OUTPUT CONTRACT (consumed by the seed-hive entrypoint, future step): each function emits ONE
@@ -135,9 +138,17 @@ hivemind_claude_mem_provision_path() {
     return 0
   fi
 
-  # Key ALREADY a NON-EMPTY string → already set; write NOTHING (SKILL.md step 11d). Only a
-  # missing key or an empty string is a candidate for the write.
-  if jq -e '(.CLAUDE_CODE_PATH // "") | type == "string" and length > 0' "$settings_file" >/dev/null 2>&1; then
+  # Key value-state normalization (never-clobber). The key is PRESENT-CANONICAL (a non-empty
+  # string) OR PRESENT-MALFORMED (present but a non-string: boolean/null/number/object/array) →
+  # `already set`, write NOTHING. Both are user-provided values that must NEVER be overwritten,
+  # even a now-invalid one (SKILL.md step 11d header). ABSENT (key missing OR empty string `""`)
+  # is the ONLY candidate for the write and falls through below.
+  # INVARIANT: an explicitly-present JSON null is PRESENT-MALFORMED (skip), not ABSENT — a literal
+  # null IS a user-provided value, so never-clobber treats it like any other present non-string.
+  # `has("CLAUDE_CODE_PATH") and .CLAUDE_CODE_PATH != ""` is TRUE for any non-empty string and for
+  # every present non-string (false/null/0/{}/[] all compare `!= ""`); only key-missing or the
+  # empty string `""` is FALSE and falls through to the resolve+write ABSENT branch.
+  if jq -e 'has("CLAUDE_CODE_PATH") and .CLAUDE_CODE_PATH != ""' "$settings_file" >/dev/null 2>&1; then
     printf '%s\n' "already set"
     return 0
   fi
