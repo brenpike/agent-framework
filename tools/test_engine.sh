@@ -2436,6 +2436,78 @@ assert_missing_ledger_engine_io_fails_closed() {
     fi
 }
 
+# ── OO. locally-derived canon_ledger feeds the atomic write to the CANONICAL path ──
+
+assert_canon_ledger_round_trips_to_routed_path() {
+    local name="OO:canon-ledger-round-trips-to-routed-path"
+    # R-STEP-002/003 LOCK (derive-in-consumer): hivemind_open_ledger now returns 0 with NO stdout
+    # on success; each consumer LOCALLY derives canon_ledger_dir via `cd "$(dirname "$ledger")" &&
+    # pwd -P` and feeds canon_ledger to the atomic mktemp+mv. The original break symptom of a botched
+    # derivation was an EMPTY canon_ledger_dir => the temp file mktemp'd under `/` and the mv writing
+    # OUTSIDE the run dir, so the on-disk runs/<id>/state.json was NEVER mutated. This positive case
+    # round-trips BOTH live consumers (record-state-result AND mark-intent-fallback): it captures the
+    # `ledger:` routing line off stdout, asserts it equals the CANONICALIZED expected on-disk path
+    # (`cd ... pwd -P` for macOS /tmp portability), and asserts the file AT THAT routed path was
+    # actually mutated. NON-VACUOUS: a wrong/empty derived dir would route the mv elsewhere, leaving
+    # the canonical state.json unmutated (record would not advance plan->build; intent would not set
+    # run.mode=intent_fallback) — either failure trips this assertion.
+
+    # ── record-state-result: valid transition, capture ledger: routing line, assert canonical write ──
+    local r_gitroot r_run_id r_ledger r_inputs r_rc=0 r_out
+    r_gitroot="$(new_gitroot oo-record-git)"
+    r_run_id="engine-case-oo-record"
+    r_ledger="$(stage_record_ledger "$r_gitroot" "$r_run_id" "$LEDGER_AT_PLAN")"
+    r_inputs="$r_gitroot/oo-record-inputs.json"
+    jq -n \
+        --arg run_id "$r_run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test canon ledger round-trip record" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$r_inputs"
+    # Capture stdout (carries the `ledger:` routing line); the routed path is the consumer's own
+    # locally-derived canon_ledger.
+    r_out="$(cd "$r_gitroot" && bash "$FAKE_ENGINE" "$r_inputs" 2>/dev/null)" || r_rc=$?
+    local r_routed r_expected r_current
+    r_routed="$(printf '%s\n' "$r_out" | sed -n 's/^ledger: //p')"
+    # Canonicalize the EXPECTED on-disk path the same way the consumer does (cd dirname && pwd -P)
+    # so a /tmp -> /private/tmp realpath divergence on macOS does not produce a spurious mismatch.
+    r_expected="$(cd "$(dirname "$r_ledger")" && pwd -P)/state.json"
+    r_current="$(jq -r '.state.current' "$r_ledger" 2>/dev/null)"
+
+    # ── mark-intent-fallback: skew ledger, capture ledger: routing line, assert canonical write ──
+    local f_gitroot f_run_id f_ledger f_inputs f_rc=0 f_out
+    f_gitroot="$(new_gitroot oo-intent-git)"
+    f_run_id="engine-case-oo-intent"
+    f_ledger="$(stage_record_ledger "$f_gitroot" "$f_run_id" "$LEDGER_WRONG_VERSION")"
+    f_inputs="$f_gitroot/oo-intent-inputs.json"
+    jq -n \
+        --arg run_id "$f_run_id" \
+        --arg state plan \
+        --arg summary "engine test canon ledger round-trip intent" \
+        '{run_id: $run_id, state: $state, summary: $summary}' \
+        > "$f_inputs"
+    f_out="$(cd "$f_gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$f_inputs" 2>/dev/null)" || f_rc=$?
+    local f_routed f_expected f_mode
+    f_routed="$(printf '%s\n' "$f_out" | sed -n 's/^ledger: //p')"
+    f_expected="$(cd "$(dirname "$f_ledger")" && pwd -P)/state.json"
+    f_mode="$(jq -r '.run.mode' "$f_ledger" 2>/dev/null)"
+
+    # ── Combined verdict: BOTH consumers routed to the canonical path AND mutated the file there ──
+    # `[ -f "$r_routed" ]`/`[ -f "$f_routed" ]` proves the routed path is a real file (not a mktemp
+    # leak under `/`); the path-equality proves it is the canonical run-dir state.json; the on-disk
+    # mutation (record advanced plan->build; intent set run.mode=intent_fallback) proves the atomic
+    # mv landed THERE rather than at a wrong/empty-derived destination.
+    if [[ "$r_rc" -eq 0 && -n "$r_routed" && "$r_routed" == "$r_expected" && -f "$r_routed" \
+          && "$r_current" == "build" \
+          && "$f_rc" -eq 0 && -n "$f_routed" && "$f_routed" == "$f_expected" && -f "$f_routed" \
+          && "$f_mode" == "intent_fallback" ]]; then
+        pass "$name" "both consumers' locally-derived canon_ledger fed the atomic write to the canonical path: record routed=$r_routed (advanced->build); intent routed=$f_routed (run.mode=intent_fallback)"
+    else
+        failed "$name" "expected both consumers to route to the canonical state.json and mutate it; record[rc=$r_rc routed=$r_routed expected=$r_expected is_file=$([[ -f "$r_routed" ]] && echo yes || echo no) current=$r_current] intent[rc=$f_rc routed=$f_routed expected=$f_expected is_file=$([[ -f "$f_routed" ]] && echo yes || echo no) mode=$f_mode]"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -2479,6 +2551,7 @@ assert_intent_fallback_inputs_symlink_leaf_rejected
 assert_record_ledger_symlink_leaf_rejected
 assert_intent_fallback_ledger_symlink_leaf_rejected
 assert_missing_ledger_engine_io_fails_closed
+assert_canon_ledger_round_trips_to_routed_path
 
 echo ''
 echo '=== Summary ==='
