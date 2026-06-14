@@ -37,7 +37,7 @@ for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh" \
                 "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh" \
                 "$SHARED_DIR/fetch-normalize-core.sh" "$SHARED_DIR/ledger-engine-io.sh" \
-                "$SHARED_DIR/settings-merge.sh" \
+                "$SHARED_DIR/settings-merge.sh" "$SHARED_DIR/claude-mem-path.sh" \
                 "$CLASSIFY_FILTER" \
                 "$FN_REVIEW_HANDLED" "$FN_EXPECTED_REVIEW" "$FN_CI_CHECKS" "$FN_EXPECTED_CI" \
                 "$FN_OVERFLOW_THREADS" "$FN_MALFORMED"; do
@@ -70,6 +70,8 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 . "$SHARED_DIR/ledger-engine-io.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/settings-merge.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/claude-mem-path.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1913,6 +1915,128 @@ if [ -e "$PWN_MARKER" ]; then
 else
   pass "settings:inert-no-side-effect" "no settings value triggered command substitution"
 fi
+
+# ── Section 13: claude-mem-path.sh — dynamic binary resolution + never-clobber single-key write ─
+echo ''
+echo '=== claude-mem-path.sh: CLAUDE_CODE_PATH dynamic resolution + conditional single-key write ==='
+#
+# AUTHORITATIVE regression tests for the seed-hive claude-mem `CLAUDE_CODE_PATH` provisioning core
+# (SKILL.md step 11). The provision function reads claude-mem's OWN config, decides under
+# never-clobber + malformed-safe semantics, and writes ONLY that one key. Every case is HERMETIC:
+# it runs against a tmp HOME + tmp candidate bin dirs inside $WORKDIR and NEVER reads or writes the
+# developer's real `~/.claude-mem` or `~/.local/bin`. Each case builds its own fixture HOME so the
+# resolution + write are isolated.
+
+# HERMETIC PATH: step 11e candidate (1) is `command -v claude`, which honors the ambient PATH —
+# a developer with a real `claude` on PATH would otherwise shadow every fixture's home-dir
+# fallback and make resolution non-hermetic. Build a CLEAN PATH that keeps the system bins
+# (so `mktemp`/`mv`/`jq` still work) but DROPS any directory that actually contains an executable
+# `claude`, so `command -v claude` resolves to nothing and the per-fixture `home_dir` fallbacks
+# (candidates 2/3) govern. Every Section 13 case runs under this CLEAN PATH.
+CM_CLEAN_PATH=""
+IFS=':' read -r -a cm_path_dirs <<< "$PATH"
+for cm_dir in "${cm_path_dirs[@]}"; do
+  [ -n "$cm_dir" ] || continue
+  [ -x "$cm_dir/claude" ] && continue   # drop any dir holding a real claude binary
+  CM_CLEAN_PATH="${CM_CLEAN_PATH:+$CM_CLEAN_PATH:}$cm_dir"
+done
+
+# cm_setup_home <subdir> — create a hermetic tmp HOME under $WORKDIR and a fake executable
+# `claude` at ~/.local/bin/claude inside it (so binary resolution succeeds without touching the
+# real filesystem). Echoes the HOME path; the claude-mem settings file is NOT created here (each
+# case stages its own target so it can exercise the missing/malformed/present permutations).
+cm_setup_home() {
+  local home_dir="$WORKDIR/$1"
+  mkdir -p "$home_dir/.local/bin" "$home_dir/.claude-mem"
+  printf '#!/usr/bin/env bash\necho claude-stub\n' > "$home_dir/.local/bin/claude"
+  chmod +x "$home_dir/.local/bin/claude"
+  printf '%s\n' "$home_dir"
+}
+
+# 13a. Missing target file → skipped (claude-mem not installed); nothing created.
+cm_home_missing="$(cm_setup_home cm-missing)"
+rm -f "$cm_home_missing/.claude-mem/settings.json"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_home_missing/.claude-mem/settings.json" "$cm_home_missing")"
+assert_eq "claude-mem:missing-status" "skipped (claude-mem not installed)" "$cm_status" \
+  "absent settings file → not installed"
+if [ -e "$cm_home_missing/.claude-mem/settings.json" ]; then
+  failed "claude-mem:missing-no-create" "provision created the settings file when it should not have"
+else
+  pass "claude-mem:missing-no-create" "missing settings file is NOT created"
+fi
+
+# 13b. Empty/missing CLAUDE_CODE_PATH (key absent) → set, value = resolved binary path.
+cm_home_set="$(cm_setup_home cm-set)"
+cm_file_set="$cm_home_set/.claude-mem/settings.json"
+printf '{\n  "logLevel": "info",\n  "CLAUDE_CODE_PATH": ""\n}\n' > "$cm_file_set"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_set" "$cm_home_set")"
+assert_eq "claude-mem:empty-status" "set" "$cm_status" "empty CLAUDE_CODE_PATH → set"
+assert_eq "claude-mem:empty-value" "$cm_home_set/.local/bin/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_set")" "CLAUDE_CODE_PATH set to resolved binary path"
+# Every OTHER key is byte-preserved after the write.
+assert_eq "claude-mem:empty-other-key" "info" \
+  "$(jq -r '.logLevel' "$cm_file_set")" "sibling key (logLevel) preserved after a write"
+
+# Key entirely ABSENT (not just empty) → also set.
+cm_home_absent="$(cm_setup_home cm-absent)"
+cm_file_absent="$cm_home_absent/.claude-mem/settings.json"
+printf '{\n  "logLevel": "debug"\n}\n' > "$cm_file_absent"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_absent" "$cm_home_absent")"
+assert_eq "claude-mem:absent-key-status" "set" "$cm_status" "absent CLAUDE_CODE_PATH key → set"
+assert_eq "claude-mem:absent-key-value" "$cm_home_absent/.local/bin/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_absent")" "absent key gets the resolved binary path"
+assert_eq "claude-mem:absent-key-other" "debug" \
+  "$(jq -r '.logLevel' "$cm_file_absent")" "sibling key preserved when key was absent"
+
+# 13c. Non-empty CLAUDE_CODE_PATH → already set; NOTHING written, value preserved.
+cm_home_present="$(cm_setup_home cm-present)"
+cm_file_present="$cm_home_present/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": "/user/provided/claude",\n  "logLevel": "warn"\n}\n' > "$cm_file_present"
+cm_before="$(cat "$cm_file_present")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_present" "$cm_home_present")"
+assert_eq "claude-mem:present-status" "already set" "$cm_status" "non-empty CLAUDE_CODE_PATH → already set"
+assert_eq "claude-mem:present-value" "/user/provided/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_present")" "user-provided value never overwritten"
+cm_after="$(cat "$cm_file_present")"
+assert_eq "claude-mem:present-bytes" "$cm_before" "$cm_after" "already-set file is byte-unchanged (no write)"
+
+# 13d. Malformed JSON target → skipped (malformed json); no write, file byte-unchanged.
+cm_home_bad="$(cm_setup_home cm-bad)"
+cm_file_bad="$cm_home_bad/.claude-mem/settings.json"
+printf 'not json{ CLAUDE_CODE_PATH' > "$cm_file_bad"
+cm_before="$(cat "$cm_file_bad")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_bad" "$cm_home_bad")"
+assert_eq "claude-mem:malformed-status" "skipped (malformed json)" "$cm_status" "unparseable target → malformed skip"
+cm_after="$(cat "$cm_file_bad")"
+assert_eq "claude-mem:malformed-bytes" "$cm_before" "$cm_after" "malformed file is byte-unchanged (never clobbered)"
+
+# 13e. No claude binary resolvable → skipped (claude binary not found); empty key untouched.
+# Hermetic: a tmp HOME with NO ~/.local/bin/claude and NO ~/.claude/local/claude, run under the
+# CLEAN PATH (no real `claude`), so all three resolution candidates fail without reading the
+# developer's filesystem.
+cm_home_nobin="$WORKDIR/cm-nobin"
+mkdir -p "$cm_home_nobin/.claude-mem"
+cm_file_nobin="$cm_home_nobin/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": "",\n  "logLevel": "info"\n}\n' > "$cm_file_nobin"
+cm_before="$(cat "$cm_file_nobin")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_nobin" "$cm_home_nobin")"
+assert_eq "claude-mem:nobin-status" "skipped (claude binary not found)" "$cm_status" \
+  "no resolvable binary → not found skip"
+cm_after="$(cat "$cm_file_nobin")"
+assert_eq "claude-mem:nobin-bytes" "$cm_before" "$cm_after" "no-binary case writes NOTHING (file unchanged)"
+
+# 13f. Resolution order: when ~/.local/bin/claude is absent, the ~/.claude/local/claude fallback
+# is used (proves the EXACT fallback list + order from SKILL.md step 11e).
+cm_home_fallback="$WORKDIR/cm-fallback"
+mkdir -p "$cm_home_fallback/.claude/local" "$cm_home_fallback/.claude-mem"
+printf '#!/usr/bin/env bash\necho stub\n' > "$cm_home_fallback/.claude/local/claude"
+chmod +x "$cm_home_fallback/.claude/local/claude"
+cm_file_fallback="$cm_home_fallback/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": ""\n}\n' > "$cm_file_fallback"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_fallback" "$cm_home_fallback")"
+assert_eq "claude-mem:fallback-status" "set" "$cm_status" "second fallback resolves → set"
+assert_eq "claude-mem:fallback-value" "$cm_home_fallback/.claude/local/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_fallback")" "~/.claude/local/claude fallback used when ~/.local/bin absent"
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
