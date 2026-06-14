@@ -42,6 +42,7 @@ SUITE_TEST_REACT_MARKER='test_react_marker.sh'
 SUITE_TEST_LEDGER_RECONSTRUCT='test_ledger_reconstruct.sh'
 SUITE_TEST_TRIAGE_OPS='test_triage_ops.sh'
 SUITE_TEST_SUBISSUE_OPS='test_subissue_ops.sh'
+SUITE_TEST_SEED_HIVE='test_seed_hive.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -62,6 +63,7 @@ ALL_SUITES=(
   "$SUITE_TEST_LEDGER_RECONSTRUCT"
   "$SUITE_TEST_TRIAGE_OPS"
   "$SUITE_TEST_SUBISSUE_OPS"
+  "$SUITE_TEST_SEED_HIVE"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -83,6 +85,7 @@ KNOWN_SUITES=(
   test_ledger_reconstruct.sh
   test_triage_ops.sh
   test_subissue_ops.sh
+  test_seed_hive.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -400,6 +403,19 @@ map_path() {
     matched=1
   fi
 
+  # test_seed_hive: the seed-hive entrypoint (composes the four sourced settings/companion libs)
+  # + its integration fixtures. The entrypoint is ALSO a plugin/* file (policy_check prose-lints
+  # it via the wholesale rule below), but policy_check NEVER EXECUTES bash — so without this rule
+  # an entrypoint edit would only be prose-linted, never behaviorally exercised. test_seed_hive.sh
+  # is the integration oracle that drives detect/apply end-to-end against tmp project roots, so an
+  # edit to the entrypoint must trigger it or seed-hive regressions go untested under --changed.
+  # (The four _shared libs it composes already route to test_shared_libs via the _shared/*.sh rule
+  # below — their unit oracle; tools/test_seed_hive.sh itself is covered by the tools/** leg.)
+  if [[ "$p" == plugin/skills/seed-hive/scripts/* ]]; then
+    add_selected "$SUITE_TEST_SEED_HIVE" "$p (seed-hive entrypoint)"
+    matched=1
+  fi
+
   # policy_check: all plugin/.claude-plugin runtime + policy/plugin/workflows fixtures.
   if [[ "$p" == plugin/* \
      || "$p" == .claude-plugin/* \
@@ -595,6 +611,7 @@ self_test() {
     ["test_ledger_reconstruct.sh"]="tests/ledger-reconstruct/README.md"
     ["test_triage_ops.sh"]="tests/triage-backlog/case-x.json"
     ["test_subissue_ops.sh"]="tests/prd-to-issues/case-x.json"
+    ["test_seed_hive.sh"]="plugin/skills/seed-hive/scripts/seed-hive.sh"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do
