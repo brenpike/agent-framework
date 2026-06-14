@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.34.0] - 2026-06-14
+
+### Changed
+
+- spawn-brood: added a final reconciliation sweep that re-probes every `starting` strain before manifest emission — a strain whose session died in the Pass-3 tail is now reclassified `failed` (spawn exits 1) and a strain that reached started-evidence in the tail is promoted to `running`, tightening the spawn exit code to end-of-spawn liveness (#291).
+
 ## [2.33.0] - 2026-06-14
 
 ### Added

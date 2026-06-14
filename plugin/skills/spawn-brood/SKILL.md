@@ -64,6 +64,11 @@ After:
       child actually completed turn-start is also observed independently by
       `hivemind:brood-status` from run-ledger ground truth (`state.current`
       present => `running`, absent => `starting`), not only by spawn-brood.
+      After Pass-3 completes and BEFORE manifest emission, a FINAL reconciliation
+      sweep re-probes every `starting` strain once: a strain whose tmux session
+      died in the Pass-3 tail is reclassified `failed` (contributing to exit 1),
+      and a strain that reached started-evidence in the tail is promoted to
+      `running` — tightening the spawn exit code to end-of-spawn liveness.
 - [ ] `.claude/worktrees/` is excluded from git (the script self-guards).
 - [ ] Final action is the Bash script call. Exit 0 = brood spawned successfully
       (all strains `running`, OR all non-running strains are `starting` — a slow
