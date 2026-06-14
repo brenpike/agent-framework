@@ -1124,8 +1124,10 @@ done
 # disarm below) so a signal mid-sweep still reports leaked sessions. It introduces NO shared
 # deadline / scheduler / poll loop: each strain is re-probed exactly once, independently
 # (per-strain independence #213/#248). Outcome table, acting ONLY on `starting`:
-#   a. started-evidence now present  => running  (slow boot crossed the line after its probe).
-#   b. else session now DEAD         => mark_failed (Pass-3 tail death; now counts toward exit 1).
+#   a. started-evidence present AND session still alive => running (slow boot crossed the line).
+#   b. session now DEAD (regardless of stale started-evidence) => mark_failed (Pass-3 tail death;
+#      now counts toward exit 1). started-evidence is a stale on-disk artifact and MUST NOT
+#      promote a dead session — end-of-spawn liveness wins (#291).
 #   c. else still alive, no evidence => leave `starting` UNCHANGED (#290 slow-cold-boot contract).
 # No "has PR" probe: at spawn time a child cannot have opened a PR yet — PR creation is far
 # downstream in the child's own workflow — so a PR check here would be vacuous; do not add one.
@@ -1139,17 +1141,28 @@ for idx in $(seq 0 $((strain_count - 1))); do
   # projection is neither MISSING nor MALFORMED (single-document JSON, object shape, ^[a-z0-9_]+$,
   # <=64 cap — all owned by the shared canonical projector). Never hand-parse the ledger here.
   reconcile_state="$(verify_started_evidence "$idx")"
-  if [ "$reconcile_state" != "MISSING" ] && [ "$reconcile_state" != "MALFORMED" ]; then
+  # END-OF-SPAWN liveness is probed ONCE here and gates BOTH branches below. started-evidence is a
+  # STALE on-disk artifact: a strain that wrote state.current earlier but whose tmux session has
+  # since DIED in the Pass-3 tail must NOT be promoted to `running` on that stale evidence — the
+  # exit-code ⇄ end-of-spawn liveness contract (#291) requires a dead session at end-of-spawn to
+  # count toward exit 1 regardless of started-evidence. So re-probe liveness before promoting.
+  if tmux has-session -t "$tmux_session" 2>/dev/null; then
+    is_alive=1
+  else
+    is_alive=0
+  fi
+  # (a) started-evidence present AND session still alive => running (slow boot crossed the line).
+  if [ "$is_alive" -eq 1 ] && [ "$reconcile_state" != "MISSING" ] && [ "$reconcile_state" != "MALFORMED" ]; then
     S_STATUS[$idx]="running"
     printf 'running: strain %s reached started-evidence during reconciliation\n' "${S_NAME[$idx]}" >&2
     continue
   fi
-  # (b) No evidence yet — branch on END-OF-SPAWN session liveness. A session that has DIED since
-  # its verify_strain probe is a genuine Pass-3 tail-death launch failure: reclassify failed so it
-  # now flows to failed_count + exit 1.
-  if ! tmux has-session -t "$tmux_session" 2>/dev/null; then
+  # (b) Session has DIED since its verify_strain probe — a genuine Pass-3 tail-death launch failure
+  # (whether or not stale started-evidence is on disk): reclassify failed so it now flows to
+  # failed_count + exit 1.
+  if [ "$is_alive" -eq 0 ]; then
     mark_failed "$idx"
-    printf 'warning: strain %s session died after launch (no started-evidence); reclassified failed\n' "${S_NAME[$idx]}" >&2
+    printf 'warning: strain %s session died after launch; reclassified failed\n' "${S_NAME[$idx]}" >&2
     continue
   fi
   # (c) Still alive, still no evidence => genuinely slow-but-healthy cold boot. Leave `starting`
