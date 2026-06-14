@@ -1028,6 +1028,247 @@ assert_spawn_brood_child_leaf_regular_ok() {
     fi
 }
 
+# ── Assertion 10: DEFECT-A:task.md-identity-not-cross-wired (#290 regression) ─────
+# Defect A (#290): spawn-brood.sh's task.md emitter sourced strain.id from a LEAKED loop var
+# (`$short`/`$name` left dangling by the derive loop) instead of the index-pinned S_SHORT[$idx].
+# Because the derive loop runs to completion before the provisioning loop, every strain's leaked
+# `$short` held the LAST strain's value — so EARLIER strains' task.md emitted the LAST strain's
+# strain.id while run.suggested_id (already index-pinned to S_RUN_ID[$idx]) stayed correct. The
+# two then DISAGREED: strain.id != the short component of run.suggested_id. STEP-001 re-binds
+# short="${S_SHORT[$idx]}" / name="${S_NAME[$idx]}" per provisioning iteration, so each task.md
+# emits its OWN identity.
+#
+# REGRESSION KEYING (mutation reasoning): run.suggested_id is `<brood_id_safe>--<short>`, built
+# ONLY from index-pinned S_RUN_ID[$idx] (never leaked) — so it is correct on BOTH the buggy and
+# fixed code. strain.id is the field the bug corrupted. The assertion compares, per strain,
+# strain.id against the substring of run.suggested_id AFTER the final `--`. On the FIXED code they
+# match for every strain. On the PRE-STEP-001 code, every non-last strain's strain.id would be the
+# LAST strain's short while its suggested_id kept its own short → mismatch → FAIL. Spawning >=3
+# strains with DISTINCT sanitized shorts (alpha-one/bravo-two/charlie-three) means at least TWO
+# non-last strains would be cross-wired pre-fix, so the assertion catches the bug across multiple
+# strains, not just one.
+#
+# task.md is authored in Pass 1 (per-strain provisioning) BEFORE any readiness/started-evidence
+# wait, so the assertion holds on task.md CONTENT regardless of how far the stub child boots. A
+# LOW STARTED_EVIDENCE_TIMEOUT keeps Pass 3 from burning the full default 180s grace (the stub
+# never writes a ledger, so each strain lands in `starting` quickly), keeping the case fast and
+# deterministic.
+#
+# DEPENDENCY GATING: identical to the escape cases — gated on tmux+jq (claude via the stub). SKIP
+# cleanly when any is absent.
+assert_spawn_brood_task_identity_not_cross_wired() {
+    local name="DEFECT-A:task.md-strain-id-not-cross-wired"
+    local missing=""
+    missing="$(spawn_deps_satisfied)" || {
+        skip "$name" "spawn-brood dep check precedes provisioning; skipping (missing: $missing)"
+        return
+    }
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    git -C "$gitroot" config user.email test@example.com
+    git -C "$gitroot" config user.name test
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    git -C "$gitroot" commit -q --allow-empty -m "init"
+    # Pin the branch to `main` (the inputs base): `git init`'s default branch is host-config
+    # dependent (master vs main), and spawn-brood blocks if `base` does not resolve to a commit.
+    git -C "$gitroot" branch -M main
+    # Reachable bare origin: the per-strain remote branch-collision check (git ls-remote) fails
+    # closed on an unreachable origin and would blocker before provisioning — the case would not
+    # reach the task.md write. With this origin present ls-remote returns "no such ref" cleanly.
+    local origin="$WORKDIR/brood-origin.git"
+    git init -q --bare "$origin"
+    git -C "$gitroot" remote add origin "$origin"
+
+    # >=3 strains whose names sanitize to DISTINCT shorts. The pre-fix bug bled the LAST strain's
+    # short (charlie-three) into the earlier strains' task.md strain.id; with three strains, TWO
+    # non-last strains (alpha-one, bravo-two) would be cross-wired — caught below per strain.
+    local inputs="$gitroot/brood-inputs.json"
+    jq -n \
+        --arg base "main" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "defect-A task.md identity cross-wiring regression" \
+        '{
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [
+                { name: "alpha-one",     description: "first strain" },
+                { name: "bravo-two",     description: "second strain" },
+                { name: "charlie-three", description: "third (last) strain" }
+            ]
+        }' \
+        > "$inputs"
+
+    local rc=0
+    local marker="$WORKDIR/launch-marker.txt"
+    # LOW STARTED_EVIDENCE_TIMEOUT: the stub never writes a run ledger, so each strain exhausts the
+    # cold-boot grace and lands in `starting`. A 1s grace keeps Pass 3 fast and deterministic while
+    # leaving task.md (authored in Pass 1) untouched — the assertion target.
+    reap_brood_sessions
+    ( cd "$gitroot" && PATH="$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" \
+        STARTED_EVIDENCE_TIMEOUT=1 bash "$SPAWN_SCRIPT" "$inputs" ) >/dev/null 2>&1 || rc=$?
+    # Reap every launched session (v4 sessions are <brood-id>-<short>, NOT the literal brood-api the
+    # default reap targets). The default stub sleeps then exits, but reap defensively so no detached
+    # session leaks past this case; the EXIT kill-server is the final net.
+    tmux kill-server 2>/dev/null || true
+
+    # parse_task_field <task.md> <top-key> <sub-key>: extract a 4-space-indented block-scalar value.
+    # task.md emits each identity field as `  <sub>: |-\n    <value>` under a top-level `<top>:`
+    # line. Track the active top-level section, and on the target `  <sub>: |-` line capture the
+    # NEXT line with its 4-space indent stripped. Restricting to the matching top-level section
+    # disambiguates `id` under `strain:` from any like-named key elsewhere.
+    parse_task_field() {
+        awk -v top="$2" -v subkey="$3" '
+            $0 == top":" { in_top=1; next }
+            /^[^[:space:]]/ { in_top=0 }
+            in_top && $0 == "  "subkey": |-" { grab=1; next }
+            grab { sub(/^    /, ""); print; exit }
+        ' "$1"
+    }
+
+    # For each strain worktree, parse strain.id and run.suggested_id from its task.md and assert
+    # strain.id == the short component of suggested_id (everything after the final `--`). The
+    # brood-id is internally generated, so DISCOVER the worktrees by glob rather than a literal path.
+    local checked=0 crossed=0 detail=""
+    local task_md
+    shopt -s nullglob
+    for task_md in "$gitroot"/.claude/worktrees/*/*/.hivemind/brood/task.md; do
+        local sid_field run_sid run_short
+        sid_field="$(parse_task_field "$task_md" "strain" "id")"
+        run_sid="$(parse_task_field "$task_md" "run" "suggested_id")"
+        # short component of suggested_id = substring after the final `--`.
+        run_short="${run_sid##*--}"
+        checked=$((checked + 1))
+        if [[ -z "$sid_field" || -z "$run_sid" || "$sid_field" != "$run_short" ]]; then
+            crossed=$((crossed + 1))
+            detail="$detail [strain.id=$sid_field suggested_id=$run_sid short=$run_short]"
+        fi
+    done
+    shopt -u nullglob
+
+    # Require >=3 task.md files discovered (all strains provisioned) AND zero cross-wired. <3 means
+    # provisioning was torn down before authoring all task.md files — assert non-vacuity explicitly.
+    if [[ "$checked" -ge 3 && "$crossed" -eq 0 ]]; then
+        pass "$name" "all $checked strain task.md files: strain.id matches its OWN run.suggested_id short (no cross-wiring)"
+    else
+        failed "$name" "expected >=3 task.md with strain.id==suggested_id short; checked=$checked crossed=$crossed mismatches:$detail"
+    fi
+}
+
+# ── Assertion 11: DEFECT-B:alive-no-evidence-starting-exit0 (#290 regression) ────
+# Defect B (#290): when a strain's child session is ALIVE but no started-evidence (run-ledger
+# state.current) appears within the cold-boot grace, the OLD code marked the strain `failed` and
+# spawn-brood exited 1 — falsely declaring a slow-but-healthy cold boot a failure. STEP-002
+# distinguishes liveness: on grace exhaustion an ALIVE tmux session ⇒ manifest status `starting`
+# (a transient, NOT `failed`), `starting` is EXCLUDED from failed_count, and spawn-brood exits 0;
+# only a DEAD session ⇒ `failed`/exit 1.
+#
+# This case drives that path deterministically: a claude stub that emits the READY_SUBSTRING (so
+# Pass-2 readiness passes and the strain reaches Pass-3 verify), stays ALIVE well past the grace,
+# and NEVER writes a run ledger (no started-evidence). A LOW STARTED_EVIDENCE_TIMEOUT makes the
+# grace expire WHILE the stub session is still alive (the stub's sleep far outlasts the grace, so
+# the verifier observes `has-session` true at exhaustion — the `starting` branch, never the
+# dead-session `failed` branch). Assert: the strain's manifest status == `starting`, spawn-brood
+# exited 0, a `brood_id:` line was printed, and an `attach:` line exists for the starting strain.
+#
+# DEPENDENCY GATING: identical to the escape cases — gated on tmux+jq (claude via the stub). SKIP
+# cleanly when any is absent.
+assert_spawn_brood_alive_no_evidence_starting() {
+    local name="DEFECT-B:alive-no-evidence-derives-starting-exit0"
+    local missing=""
+    missing="$(spawn_deps_satisfied)" || {
+        skip "$name" "spawn-brood dep check precedes verify; skipping (missing: $missing)"
+        return
+    }
+
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-compat-test.XXXXXX")"
+    local gitroot="$WORKDIR/brood-git"
+    mkdir -p "$gitroot"
+    git -C "$gitroot" init -q
+    git -C "$gitroot" config user.email test@example.com
+    git -C "$gitroot" config user.name test
+    mkdir -p "$gitroot/.hivemind" "$gitroot/.claude"
+    git -C "$gitroot" commit -q --allow-empty -m "init"
+    # Pin the branch to `main` (the inputs base): `git init`'s default branch is host-config
+    # dependent (master vs main), and spawn-brood blocks if `base` does not resolve to a commit.
+    git -C "$gitroot" branch -M main
+    local origin="$WORKDIR/brood-origin.git"
+    git init -q --bare "$origin"
+    git -C "$gitroot" remote add origin "$origin"
+
+    # A DEDICATED long-lived stub for THIS case: the suite-wide stub sleeps only ~4s, which can be
+    # shorter than the ready-wait + grace window, risking a flake into the dead-session `failed`
+    # branch. This stub emits READY_SUBSTRING (so Pass-2 capture-pane matches) then sleeps far
+    # longer than any plausible ready-wait + low grace, guaranteeing the session is ALIVE when the
+    # grace exhausts. It NEVER writes a run ledger, so no started-evidence ever appears. It is
+    # prepended AHEAD of $STUB_BIN on PATH for this invocation only (shadowing the default stub),
+    # and reaped with WORKDIR on EXIT.
+    local long_stub="$WORKDIR/long-stub"
+    mkdir -p "$long_stub"
+    cat > "$long_stub/claude" <<'LONGSTUB_EOF'
+#!/usr/bin/env bash
+# Defect-B stub: emit readiness chrome, stay alive far past the low grace, never write a ledger.
+printf 'hivemind:overlord\n'
+sleep 45
+exit 0
+LONGSTUB_EOF
+    chmod +x "$long_stub/claude"
+
+    local inputs="$gitroot/brood-inputs.json"
+    jq -n \
+        --arg base "main" \
+        --arg overlap_risk "low" \
+        --arg overlap_details "defect-B alive-no-evidence starting classification regression" \
+        --arg strain_name "api" \
+        --arg strain_desc "alive but never starts its workflow" \
+        '{
+            base: $base,
+            overlap_risk: $overlap_risk,
+            overlap_details: $overlap_details,
+            strains: [ { name: $strain_name, description: $strain_desc } ]
+        }' \
+        > "$inputs"
+
+    local rc=0
+    local stdout_out="$WORKDIR/spawn-stdout.txt"
+    local marker="$WORKDIR/launch-marker.txt"
+    # LOW STARTED_EVIDENCE_TIMEOUT (3s): the grace exhausts quickly while the 45s-sleeping stub
+    # session is still alive → the `starting` branch. RESEND_POLL_TIMEOUT (8s) exceeds the grace,
+    # so no bare-Enter nudge fires within the window — the path is a clean grace-exhaustion.
+    reap_brood_sessions
+    ( cd "$gitroot" && PATH="$long_stub:$STUB_BIN:$PATH" HIVEMIND_STUB_MARKER="$marker" \
+        STARTED_EVIDENCE_TIMEOUT=3 bash "$SPAWN_SCRIPT" "$inputs" ) >"$stdout_out" 2>/dev/null || rc=$?
+    # Reap the launched <brood-id>-api session (the 45s sleep would otherwise outlive the case).
+    local launched_session
+    launched_session="$(sed -n 's/^attach: tmux attach -t \([^ ]*\).*/\1/p' "$stdout_out" 2>/dev/null | head -1)"
+    [ -n "$launched_session" ] && tmux kill-session -t "$launched_session" 2>/dev/null || true
+    tmux kill-server 2>/dev/null || true
+
+    # Manifest status for the single strain must be `starting` (NOT `failed`). The manifest lands
+    # under the internally-generated brood-id dir, so discover it by glob.
+    local manifest manifest_status="" brood_id_line=no attach_line=no
+    shopt -s nullglob
+    local m
+    for m in "$gitroot"/.hivemind/broods/*/manifest.json; do manifest="$m"; done
+    shopt -u nullglob
+    if [ -n "${manifest:-}" ]; then
+        manifest_status="$(jq -r '.strains[0].status // ""' "$manifest" 2>/dev/null)"
+    fi
+    # A `brood_id:` line on the success path (exit 0 prints brood_id then manifest then attach).
+    grep -q '^brood_id: ' "$stdout_out" 2>/dev/null && brood_id_line=yes
+    # An `attach:` line for the starting strain (emit_attach_lines covers running|starting).
+    grep -q '^attach: tmux attach -t ' "$stdout_out" 2>/dev/null && attach_line=yes
+
+    if [[ "$rc" -eq 0 && "$manifest_status" == "starting" && "$brood_id_line" == "yes" && "$attach_line" == "yes" ]]; then
+        pass "$name" "alive session + no started-evidence within grace -> manifest status=starting; exit 0; brood_id+attach printed"
+    else
+        failed "$name" "expected exit 0 + status=starting + brood_id + attach; rc=$rc status=$manifest_status brood_id_line=$brood_id_line attach_line=$attach_line manifest=${manifest:-<none>}"
+    fi
+}
+
 # ════════════════════════════════════════════════════════════════════════════════
 # brood-status-project.sh (read-side projection, #161)
 # ════════════════════════════════════════════════════════════════════════════════
@@ -2324,6 +2565,8 @@ assert_spawn_brood_child_worktree_symlink_escape_blocked
 assert_spawn_brood_child_leaf_task_escape_blocked
 assert_spawn_brood_child_leaf_settings_escape_blocked
 assert_spawn_brood_child_leaf_regular_ok
+assert_spawn_brood_task_identity_not_cross_wired
+assert_spawn_brood_alive_no_evidence_starting
 
 echo ''
 echo '=== brood-status-project.sh read-side projection tests (#161) ==='
