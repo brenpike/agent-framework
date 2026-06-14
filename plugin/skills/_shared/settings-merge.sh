@@ -41,8 +41,14 @@
 #   - enabledPlugins["hivemind@brenpike"] = true — add-if-absent; idempotent.
 #   - enabledPlugins["caveman@caveman"] / ["claude-mem@thedotmack"] / ["codex@openai-codex"]
 #     = true — written ONLY when the matching companion flag resolves yes; add-if-absent.
-#   - agent = "<agent_target>" — add-if-absent. CONFLICT DETECTION: if `agent` already holds a
-#     DIFFERENT non-empty value, behavior is GATED by the 7th arg <agent_conflict_approved>:
+#   - agent = "<agent_target>" — add-if-absent. VALUE-STATE NORMALIZATION (ABSENT detection): an
+#     existing `agent` that is missing, `null`, or a string that is EMPTY or WHITESPACE-ONLY ("",
+#     " ", "\t") normalizes to ABSENT → classified `added` and the target is written. An empty /
+#     whitespace agent is NOT a real conflicting value; it never blocks. A present NON-STRING value
+#     (number/bool/object/array) is a real wrong-type value the user set and stays in the conflict
+#     branch (NOT normalized to absent). CONFLICT DETECTION: if `agent` already holds a real
+#     non-empty value DIFFERENT from the target, behavior is GATED by the 7th arg
+#     <agent_conflict_approved>:
 #       * approved != "yes" (default): the merge does NOT overwrite; it flags `agent_conflict`
 #         with the existing value, returns `status: conflict`, and keeps the existing `agent`
 #         byte-unchanged so the caller can stop blocked and seek user approval (SKILL.md Merge
@@ -99,11 +105,13 @@
 #         ...                                                          // seed_allowlist=no
 #       ]
 #     }
-#   `agent` classification: `added` (was absent), `already present`/`unchanged` (already equal
-#   to the target — both map here; SKILL.md output allows either token), `conflict` (different
-#   existing value AND not approved; the conflict block is populated and `.settings.agent` is the
-#   existing value), `overwritten` (different existing value AND approved=="yes"; `.settings.agent`
-#   is the target and the conflict block is null).
+#   `agent` classification: `added` (was absent — key missing/null, OR an empty/whitespace-only
+#   string, which normalizes to ABSENT and the target is written), `already present`/`unchanged`
+#   (already equal to the target — both map here; SKILL.md output allows either token), `conflict`
+#   (a real non-empty value, OR a present non-string value, differing from the target AND not
+#   approved; the conflict block is populated and `.settings.agent` is the existing value),
+#   `overwritten` (differing real value AND approved=="yes"; `.settings.agent` is the target and
+#   the conflict block is null).
 #
 # DEPENDENCY: jq only (POSIX + jq). No yq, no sed/awk.
 
@@ -222,11 +230,21 @@ hivemind_settings_merge() {
     | (($s.permissions) // {}) as $perm
     | (($perm.allow) // null) as $existing_allow
 
+    # ── agent value-state normalization (ABSENT / PRESENT-CANONICAL / PRESENT-MALFORMED) ──
+    # An existing `agent` is ABSENT when the key is missing/null OR is a string that is empty or
+    # whitespace-only — an empty/whitespace string is not a real conflicting value the user chose,
+    # so it normalizes to ABSENT and the target is written (classified "added"), NOT "conflict".
+    # A real non-empty string equal to the target is PRESENT-CANONICAL ("already present"); a real
+    # non-empty string DIFFERING from the target is the genuine conflict, gated by approval below.
+    # A present NON-STRING value (number/bool/object/array) is a real wrong-type value the user set
+    # and is NOT in the normalized-ABSENT set: it is treated as a differing value (conflict branch).
+    | ($s.agent) as $cur_agent
+    | (($cur_agent | type) == "string"
+       and (($cur_agent | gsub("^\\s+|\\s+$"; "")) == "")) as $agent_is_blank
     # ── agent conflict detection (PRESERVE-EXISTING; overwrite ONLY with explicit approval) ──
     # Differing existing agent: classify "overwritten" when the caller passed approved=="yes"
     # (the navigator sets this ONLY after user approval), else "conflict" (never overwrite).
-    | ($s.agent) as $cur_agent
-    | (if ($cur_agent == null) then "added"
+    | (if ($cur_agent == null or $agent_is_blank) then "added"
        elif ($cur_agent == $agent) then "already present"
        elif ($agent_approved == "yes") then "overwritten"
        else "conflict" end) as $agent_class
