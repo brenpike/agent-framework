@@ -135,6 +135,20 @@ esac
 [ "$STARTED_EVIDENCE_TIMEOUT" -gt 0 ] \
   || blocker "STARTED_EVIDENCE_TIMEOUT must be a positive integer (seconds); got '$STARTED_EVIDENCE_TIMEOUT'"
 
+# RECONCILE_SETTLE: TEST-ONLY deterministic hook (seconds), default 0. A SINGLE one-shot
+# sleep executed ONCE at the very top of the final reconciliation sweep (Pass-3 tail), BEFORE
+# the per-strain re-probe loop — it lets a test deterministically open the Pass-3 tail-death
+# window (a strain alive at its verify_strain probe but dying before manifest emission) so the
+# sweep's liveness re-probe can observe the death. Default 0 = ZERO production behavior change /
+# zero added latency. UNLIKE STARTED_EVIDENCE_TIMEOUT this FAILS OPEN: an empty / non-numeric
+# value coerces to 0 rather than blocking — it is a deterministic test seam, and an operator
+# typo must never become a production blocker. (No poll loop: this is a single settle, not a
+# scheduler — per-strain independence #213/#248 is preserved by the sweep below.)
+: "${RECONCILE_SETTLE:=0}"
+case "$RECONCILE_SETTLE" in
+  *[!0-9]* | '') RECONCILE_SETTLE=0 ;;
+esac
+
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
 # maintenance point — if the CLI chrome changes, update this substring. See
@@ -1080,6 +1094,49 @@ done
 # Pass 1 → 2 → 3 and a signal mid-verify still reports leaked sessions for manual cleanup.
 for idx in "${submitted[@]+"${submitted[@]}"}"; do
   verify_strain "$idx"   # marks failed internally on exhaustion / dead pane
+done
+
+# ── Pass-3 tail reconciliation sweep (exit-code ⇄ end-of-spawn liveness) ─────────
+# verify_strain's `starting` vs `failed` classification probes `tmux has-session` ONCE at each
+# strain's OWN grace exhaustion. Pass-3 is SEQUENTIAL, so the wall-clock gap between an early
+# strain's probe and manifest emission can span every LATER strain's full grace window — a strain
+# alive at its probe but dying in that tail is persisted `starting` and spawn exits 0, breaking the
+# exit-code ⇄ liveness contract (#291). This O(n) single re-probe per strain reconciles every
+# still-`starting` strain against END-OF-SPAWN liveness, just before the manifest is built and the
+# exit code computed. It runs UNDER the still-armed INT/TERM trap (before the `trap - INT TERM`
+# disarm below) so a signal mid-sweep still reports leaked sessions. It introduces NO shared
+# deadline / scheduler / poll loop: each strain is re-probed exactly once, independently
+# (per-strain independence #213/#248). Outcome table, acting ONLY on `starting`:
+#   a. started-evidence now present  => running  (slow boot crossed the line after its probe).
+#   b. else session now DEAD         => mark_failed (Pass-3 tail death; now counts toward exit 1).
+#   c. else still alive, no evidence => leave `starting` UNCHANGED (#290 slow-cold-boot contract).
+# No "has PR" probe: at spawn time a child cannot have opened a PR yet — PR creation is far
+# downstream in the child's own workflow — so a PR check here would be vacuous; do not add one.
+# RECONCILE_SETTLE (default 0) is a single one-shot settle here, NOT a per-strain wait — its only
+# purpose is a deterministic test hook for the tail-death window above (zero production latency).
+sleep "$RECONCILE_SETTLE"
+for idx in $(seq 0 $((strain_count - 1))); do
+  [ "${S_STATUS[$idx]}" = "starting" ] || continue
+  tmux_session="${S_TMUX[$idx]}"
+  # (a) Reuse the EXACT confined started-evidence reader verify_strain uses: started ⇔ the
+  # projection is neither MISSING nor MALFORMED (single-document JSON, object shape, ^[a-z0-9_]+$,
+  # <=64 cap — all owned by the shared canonical projector). Never hand-parse the ledger here.
+  reconcile_state="$(verify_started_evidence "$idx")"
+  if [ "$reconcile_state" != "MISSING" ] && [ "$reconcile_state" != "MALFORMED" ]; then
+    S_STATUS[$idx]="running"
+    printf 'running: strain %s reached started-evidence during reconciliation\n' "${S_NAME[$idx]}" >&2
+    continue
+  fi
+  # (b) No evidence yet — branch on END-OF-SPAWN session liveness. A session that has DIED since
+  # its verify_strain probe is a genuine Pass-3 tail-death launch failure: reclassify failed so it
+  # now flows to failed_count + exit 1.
+  if ! tmux has-session -t "$tmux_session" 2>/dev/null; then
+    mark_failed "$idx"
+    printf 'warning: strain %s session died after launch (no started-evidence); reclassified failed\n' "${S_NAME[$idx]}" >&2
+    continue
+  fi
+  # (c) Still alive, still no evidence => genuinely slow-but-healthy cold boot. Leave `starting`
+  # UNCHANGED so the #290 slow-cold-boot contract holds (alive-unstarted stays `starting`, exit 0).
 done
 
 # ── Manifest emission ───────────────────────────────────────────────────────────
