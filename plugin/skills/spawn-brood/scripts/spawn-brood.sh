@@ -118,6 +118,23 @@ INJECT_SETTLE=0.2
 RESEND_RETRIES=3
 RESEND_POLL_TIMEOUT=8
 
+# STARTED_EVIDENCE_TIMEOUT: cold-boot first-evidence grace window (seconds) for Pass-3
+# per-strain turn-start verification. A cold `claude` boot → route-workflow → init-run-ledger
+# chain can take >2min on a loaded host before the child writes run-ledger state.current, so the
+# legacy (RESEND_RETRIES+1)*RESEND_POLL_TIMEOUT (~32s) budget falsely failed LIVE, progressing
+# strains. verify_strain now polls started-evidence against THIS deadline (computed per-strain at
+# its own Pass-3 entry — never a shared scheduler), nudging with bare-Enter resends every
+# ~RESEND_POLL_TIMEOUT within the window. On exhaustion with the tmux session still ALIVE the
+# strain is recorded `starting` (transient, NOT failed) so a slow-but-healthy child is not torn
+# down. 180s default covers the observed cold-boot repro (needed >120s). Env-overridable; a
+# positive integer is REQUIRED (empty / non-numeric / <=0 fails closed below).
+: "${STARTED_EVIDENCE_TIMEOUT:=180}"
+case "$STARTED_EVIDENCE_TIMEOUT" in
+  *[!0-9]* | '') blocker "STARTED_EVIDENCE_TIMEOUT must be a positive integer (seconds); got '$STARTED_EVIDENCE_TIMEOUT'" ;;
+esac
+[ "$STARTED_EVIDENCE_TIMEOUT" -gt 0 ] \
+  || blocker "STARTED_EVIDENCE_TIMEOUT must be a positive integer (seconds); got '$STARTED_EVIDENCE_TIMEOUT'"
+
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
 # maintenance point — if the CLI chrome changes, update this substring. See
@@ -562,6 +579,12 @@ for idx in $(seq 0 $((strain_count - 1))); do
   wt="${S_WT[$idx]}"
   tmux_session="${S_TMUX[$idx]}"
   desc="${S_DESC[$idx]}"
+  # INVARIANT: every task.md identity field MUST source from the index-pinned arrays, NOT
+  # from the bare $short/$name leaked out of the earlier derive loop (those hold the LAST
+  # strain's values). Re-bind per-iteration here so the task.md heredoc below emits each
+  # strain's OWN id/name and stays coherent with run.suggested_id (${S_RUN_ID[$idx]}).
+  short="${S_SHORT[$idx]}"
+  name="${S_NAME[$idx]}"
 
   created_worktree=false
   created_session=false
@@ -750,6 +773,27 @@ for idx in $(seq 0 $((strain_count - 1))); do
     continue
   fi
 
+  # 3c-guard: SPAWN-TIME IDENTITY COHERENCE (defense-in-depth, Defect A). task.md is now
+  # authored. Assert its strain.id ($short) and run.suggested_id (${S_RUN_ID[$idx]}) describe
+  # the SAME strain before a privileged child boots: ${S_RUN_ID[$idx]} MUST equal the
+  # brood-id-safe prefix + "--" + $short, the exact construction the derive loop used for
+  # S_RUN_ID. With the per-iteration index-pinned re-bind above this can never fire, but it
+  # GUARANTEES no crossed-identity child ever launches. On mismatch this is a HARD per-strain
+  # pre-launch failure: mirror the task-provisioning-failure cleanup (remove OUR worktree+branch,
+  # clear markers) and skip the launch.
+  if [ "${S_RUN_ID[$idx]}" != "$brood_id_safe--$short" ]; then
+    printf 'warning: strain %s: task.md identity guard failed (strain.id=%s vs run.suggested_id=%s); refusing to launch\n' "${S_NAME[$idx]}" "$short" "${S_RUN_ID[$idx]}" >&2
+    mark_failed "$idx"
+    if [ "$created_worktree" = true ]; then
+      git worktree remove --force "$wt" >/dev/null 2>&1 || true
+      git branch -D "$branch" >/dev/null 2>&1 || true
+    fi
+    # Worktree+branch removed; clear so the trap does not report them as a leak.
+    cur_wt=""
+    cur_branch=""
+    continue
+  fi
+
   # 3d: launch a DETACHED tmux session running claude (tmux supplies the pty the
   # Bash context lacks). Pre-accept the bypass-permissions trust gate.
   # MARK-BEFORE-MUTATE: set cur_session IMMEDIATELY BEFORE new-session so an interrupt
@@ -852,11 +896,17 @@ submit_strain() {
 
 # verify_strain: the BLOCKING half of the former inject_strain — bounded turn-start verification
 # + idempotent resend, run ONCE PER STRAIN in Pass 3 (never inside the shared Pass-2 loop). Its
-# deadline is computed INSIDE this function at its own Pass-3 entry from RESEND_RETRIES /
-# RESEND_POLL_TIMEOUT, so no strain's verifier shares wall-clock with another's. Resend is
-# send-keys Enter ONLY — never a re-paste. On exhaustion (no started-evidence after all resends):
-# mark_failed + warning + return 1. On a dead-pane send-keys failure: fail-closed mark_failed +
-# return 1. Returns 0 the moment started-evidence appears.
+# grace deadline is computed INSIDE this function at its own Pass-3 entry from
+# STARTED_EVIDENCE_TIMEOUT, so no strain's verifier shares wall-clock with another's (the
+# three-pass design #213/#248 deliberately decoupled per-strain deadlines — do NOT reintroduce a
+# shared scheduler). Within that single grace window the loop polls started-evidence and, every
+# ~RESEND_POLL_TIMEOUT, NUDGES with a bare send-keys Enter (never a re-paste). The cap is the time
+# budget, NOT a hard resend count: a cold `claude` boot can take >2min to write its ledger, and
+# the legacy ~32s budget falsely failed those LIVE strains. On grace exhaustion the outcome
+# branches on tmux session liveness: session ALIVE => record `starting` (transient, NOT failed) +
+# informational line + return 0; session DEAD => fail-closed mark_failed + warning + return 1. A
+# dead-pane send-keys failure mid-nudge is likewise mark_failed + return 1. Returns 0 the moment
+# started-evidence appears.
 # verify_started_evidence <idx>: CONFINED single-snapshot projection of the strain's child
 # run-ledger state.current. Echoes the validated state.current, or one of the fixed tokens
 # MISSING / MALFORMED. This is the read-side discipline mandated by the security policy for
@@ -914,47 +964,57 @@ verify_strain() {
   # JSON, object shape, the ^[a-z0-9_]+$ charset, and the <=64 length cap. Absent file /
   # unparseable / null / empty / non-string / overlength / wrong-charset / multi-document =>
   # MISSING or MALFORMED => NOT started (fail-closed). Never hand-parse — the projector owns it.
-  local resends=0
-  while : ; do
-    # Poll the run-ledger for started-evidence up to the per-attempt deadline. Fast path: a
-    # child already started on the first poll returns immediately with zero resends.
-    local attempt_deadline=$(( $(date +%s) + RESEND_POLL_TIMEOUT ))
-    while [ "$(date +%s)" -lt "$attempt_deadline" ]; do
-      # Fail-closed projection: started ONLY when the CONFINED projector returns a validated
-      # state.current (neither MISSING nor MALFORMED). verify_started_evidence handles the
-      # confinement (leaf/ancestor symlink reject, NUL reject) AND the value-shape validation;
-      # absent file / unparseable / missing / null / non-string / empty / overlength /
-      # bad-charset / multi-doc / symlink-escape each yield a MISSING/MALFORMED sentinel =>
-      # keep polling.
-      local state_current
-      state_current="$(verify_started_evidence "$idx")"
-      if [ "$state_current" != "MISSING" ] && [ "$state_current" != "MALFORMED" ]; then
-        return 0
-      fi
-      sleep "$POLL_INTERVAL"
-    done
-
-    # Per-attempt deadline elapsed with no started-evidence. If retries remain, resend submit.
-    if [ "$resends" -ge "$RESEND_RETRIES" ]; then
-      break
+  # Per-strain grace deadline, computed HERE at this strain's own Pass-3 entry (independent of
+  # every other strain's verifier — never a shared scheduler). The cap is now this single time
+  # budget; bare-Enter nudges are periodic WITHIN it (every ~RESEND_POLL_TIMEOUT) rather than a
+  # hard resend count.
+  local grace_deadline=$(( $(date +%s) + STARTED_EVIDENCE_TIMEOUT ))
+  local next_nudge=$(( $(date +%s) + RESEND_POLL_TIMEOUT ))
+  while [ "$(date +%s)" -lt "$grace_deadline" ]; do
+    # Fail-closed projection: started ONLY when the CONFINED projector returns a validated
+    # state.current (neither MISSING nor MALFORMED). verify_started_evidence handles the
+    # confinement (leaf/ancestor symlink reject, NUL reject) AND the value-shape validation;
+    # absent file / unparseable / missing / null / non-string / empty / overlength /
+    # bad-charset / multi-doc / symlink-escape each yield a MISSING/MALFORMED sentinel =>
+    # keep polling. Fast path: a child already started on the first poll returns immediately.
+    local state_current
+    state_current="$(verify_started_evidence "$idx")"
+    if [ "$state_current" != "MISSING" ] && [ "$state_current" != "MALFORMED" ]; then
+      return 0
     fi
-    resends=$(( resends + 1 ))
+
+    # Periodic NUDGE: if a nudge interval has elapsed and grace remains, resend a bare Enter.
     # CRITICAL: resend is send-keys Enter ONLY — never re-run load-buffer/paste-buffer. The task
     # text was pasted once and is already submitted/consumed; a re-paste would double-inject the
     # task. A bare Enter on an already-submitted (empty) composer is a harmless no-op. A send-keys
     # failure here means a dead pane => mark failed and return 1.
-    if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
-      printf 'warning: tmux send-keys Enter (resend) failed for strain %s\n' "${S_NAME[$idx]}" >&2
-      tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
-      mark_failed "$idx"
-      return 1
+    if [ "$(date +%s)" -ge "$next_nudge" ]; then
+      if ! tmux send-keys -t "$tmux_session" Enter 2>/dev/null; then
+        printf 'warning: tmux send-keys Enter (nudge) failed for strain %s\n' "${S_NAME[$idx]}" >&2
+        tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
+        mark_failed "$idx"
+        return 1
+      fi
+      next_nudge=$(( $(date +%s) + RESEND_POLL_TIMEOUT ))
     fi
+    sleep "$POLL_INTERVAL"
   done
 
-  # Exhausted all resends with still no started-evidence: this child failed to launch a turn.
-  printf 'warning: strain %s failed to launch (no started-evidence after %d resends)\n' \
-    "${S_NAME[$idx]}" "$RESEND_RETRIES" >&2
+  # Grace exhausted with still no started-evidence. Branch on tmux session liveness:
+  #   ALIVE => the child is a slow-but-healthy cold boot that has not yet written its ledger.
+  #            Record the TRANSIENT `starting` status (NOT failed): it falls through the
+  #            brood-status derive table as a non-failed observable, the manifest persists
+  #            `starting`, and the FINAL exit contract excludes it from failed_count. No teardown.
+  #   DEAD  => the session is gone; this is a genuine launch failure => fail-closed mark_failed.
   tmux delete-buffer -b "$buffer_name" 2>/dev/null || true
+  if tmux has-session -t "$tmux_session" 2>/dev/null; then
+    S_STATUS[$idx]="starting"
+    printf 'starting: strain %s launched but workflow not yet started within %ds (session alive)\n' \
+      "${S_NAME[$idx]}" "$STARTED_EVIDENCE_TIMEOUT" >&2
+    return 0
+  fi
+  printf 'warning: strain %s failed to launch (no started-evidence within %ds; session dead)\n' \
+    "${S_NAME[$idx]}" "$STARTED_EVIDENCE_TIMEOUT" >&2
   mark_failed "$idx"
   return 1
 }
@@ -1155,17 +1215,26 @@ if ! printf '%s\n' "$manifest_json" > "$manifest_tmp" 2>/dev/null \
 fi
 
 # ── Final contract ──────────────────────────────────────────────────────────────
-# Emit a ready-to-paste tmux attach command (stdout) for every strain that is still
-# running, so the operator can watch a live brood child. Skips failed strains; emits
-# nothing (no header, no empty line) when no strain is running.
+# Emit a ready-to-paste tmux attach command (stdout) for every strain whose session is still
+# live, so the operator can watch a live brood child. That is BOTH `running` strains and
+# `starting` strains (slow-but-healthy cold boots with a live session whose ledger has not yet
+# appeared) — both have an attachable session. Skips `failed` strains; emits nothing (no header,
+# no empty line) when no strain is running or starting.
 emit_attach_lines() {
   local idx
   for idx in $(seq 0 $((strain_count - 1))); do
-    [ "${S_STATUS[$idx]}" = "running" ] || continue
+    case "${S_STATUS[$idx]}" in
+      running|starting) ;;
+      *) continue ;;
+    esac
     printf 'attach: tmux attach -t %s   # %s\n' "${S_TMUX[$idx]}" "${S_NAME[$idx]}"
   done
 }
 
+# failed_count counts ONLY genuinely-`failed` strains (dead session / pre-launch guard). The
+# transient `starting` status (alive session, ledger not yet written within the cold-boot grace)
+# is DELIBERATELY excluded: a brood whose only non-`running` strains are `starting` is SUCCESS and
+# must NOT trigger the `blocker: ... failed to spawn` teardown path below.
 failed_count=0
 for idx in $(seq 0 $((strain_count - 1))); do
   [ "${S_STATUS[$idx]}" = "failed" ] && failed_count=$((failed_count + 1))

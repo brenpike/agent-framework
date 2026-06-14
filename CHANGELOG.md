@@ -16,6 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.33.0] - 2026-06-14
+
+### Added
+
+- **`STARTED_EVIDENCE_TIMEOUT` env tunable (default 180s) — governs the per-strain cold-boot grace period before a started-evidence-absent alive session is classified `failed` rather than `starting`. (#290)**
+
+### Changed
+
+- **spawn-brood cold-boot classification: alive-but-unstarted strains are now `starting` (not `failed`) during the `STARTED_EVIDENCE_TIMEOUT` window; spawn-brood exits 0 instead of false-failing on slow cold boots. (#290)**
+
+### Fixed
+
+- **spawn-brood task.md strain-identity cross-wiring: non-last strains inherited the last strain's `strain.id` due to a shared-variable capture; identity is now sourced from index-pinned arrays with a pre-launch identity guard that fails closed if the guard does not match the expected strain. (#290)**
+
 ## [2.32.7] - 2026-06-13
 
 ### Fixed
