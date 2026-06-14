@@ -1672,22 +1672,32 @@ else
   failed "engineio:ol-coherence-mismatch-rc" "coherence mismatch must return non-zero; got 0"
 fi
 
-# 11b-3: valid ledger — coherent .run.id, contained leaf → returns 0 AND echoes the two canonical
-# lines (line1 = canonical ledger path ending /state.json; line2 = the canonical run dir).
+# 11b-3: valid ledger — coherent .run.id, contained leaf → returns 0 with EMPTY stdout (new
+# contract: the lib no longer echoes the canonical ledger path / run dir; the consumer derives
+# them). We assert (a) rc == 0, (b) no stdout, and (c) that the consumer-side derivation
+# reproduces the exact canonical path the lib previously emitted (locks derive-in-consumer).
 ol3_root="$WORKDIR/ol3/checkout"
 ol3_run_id="2026-01-01T00-00-00Z--ol3"
 mkdir -p "$ol3_root/.hivemind/runs/$ol3_run_id"
 printf '{"run":{"id":"%s"},"state":{"current":"implement_step"}}\n' "$ol3_run_id" \
   > "$ol3_root/.hivemind/runs/$ol3_run_id/state.json"
-{ IFS= read -r ol3_ledger; IFS= read -r ol3_dir; } \
-  < <(hivemind_open_ledger "$ol3_root" "$ol3_run_id"); ol3_rc=$?
+ol3_out="$(hivemind_open_ledger "$ol3_root" "$ol3_run_id")"; ol3_rc=$?
 assert_eq "engineio:ol-valid-rc" "0" "$ol3_rc" "valid coherent ledger → return 0"
-# Canonical expectations: cd && pwd -P the on-disk run dir (handles a symlinked /tmp prefix on macOS).
+if [ -z "$ol3_out" ]; then
+  pass "engineio:ol-valid-empty-stdout" "valid ledger → empty stdout (no canonical lines emitted)"
+else
+  failed "engineio:ol-valid-empty-stdout" \
+    "valid ledger must emit empty stdout; got: $ol3_out"
+fi
+# Consumer-side derivation must reproduce the canonical path the lib previously returned.
+# Canonical expectation: cd && pwd -P the on-disk run dir (handles a symlinked /tmp prefix on macOS).
 ol3_canon_dir="$(cd "$ol3_root/.hivemind/runs/$ol3_run_id" && pwd -P)"
-assert_eq "engineio:ol-valid-line1-ledger" "$ol3_canon_dir/state.json" "$ol3_ledger" \
-  "valid ledger: line1 = canonical ledger path ending /state.json"
-assert_eq "engineio:ol-valid-line2-dir" "$ol3_canon_dir" "$ol3_dir" \
-  "valid ledger: line2 = canonical run dir"
+ol3_derived_dir="$(cd "$ol3_root/.hivemind/runs/$ol3_run_id" && pwd -P)"
+ol3_derived_ledger="$ol3_derived_dir/state.json"
+assert_eq "engineio:ol-valid-derived-dir" "$ol3_canon_dir" "$ol3_derived_dir" \
+  "consumer derivation reproduces canonical run dir"
+assert_eq "engineio:ol-valid-derived-ledger" "$ol3_canon_dir/state.json" "$ol3_derived_ledger" \
+  "consumer derivation reproduces canonical ledger path ending /state.json"
 
 # 11b-4: containment reject staged with a REAL symlink — the state.json LEAF is a symlink to an
 # external (out-of-checkout) target. hivemind_assert_ledger_contained [ -L ]-rejects the leaf

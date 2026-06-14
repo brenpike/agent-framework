@@ -244,6 +244,9 @@ map_path() {
   fi
 
   # test_engine: engine scripts + engine fixtures (validate_workflows also reads tests/engine).
+  # The three engine scripts (record-state-result, init-run-ledger, mark-intent-fallback) are the
+  # engine oracle's subjects: test_engine.sh is the behavior oracle for all three, so an edit to
+  # any of them must trigger test_engine or engine regressions go untested under --changed.
   # Also containment.sh: test_engine.sh copies the shared containment guard into its fake plugin
   # and exercises engine symlink/external-path containment cases, so a containment.sh change must
   # trigger test_engine or record/init engine containment regressions go untested under --changed.
@@ -252,6 +255,7 @@ map_path() {
   # regressions go untested under --changed (test_shared_libs alone is not sufficient).
   if [[ "$p" == plugin/skills/record-state-result/scripts/* \
      || "$p" == plugin/skills/init-run-ledger/scripts/* \
+     || "$p" == plugin/skills/mark-intent-fallback/scripts/* \
      || "$p" == plugin/skills/_shared/containment.sh \
      || "$p" == plugin/skills/_shared/ledger-engine-io.sh \
      || "$p" == tests/engine/* ]]; then
@@ -708,6 +712,29 @@ self_test() {
     echo "FAIL: .github/workflows/** did NOT FAIL-CLOSED (selected ${#SELECTED[@]} suites)"
     fails=$((fails + 1))
   fi
+
+  # 8. All THREE engine SCRIPT paths must route to test_engine.sh. The KNOWN_SUITES probe (#1)
+  #    reaches test_engine.sh via a tests/engine/* fixture, so it would stay green even if a
+  #    script->oracle leg were dropped. Probe the three concrete engine-script paths directly so
+  #    that removing any one selector glob (especially the mark-intent-fallback leg) FAILS here.
+  local engine_script
+  for engine_script in \
+    "plugin/skills/record-state-result/scripts/record-state-result.sh" \
+    "plugin/skills/init-run-ledger/scripts/init-run-ledger.sh" \
+    "plugin/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"; do
+    SELECTED=(); FORCE_FULL=0; FORCE_FULL_REASON=''
+    map_path "$engine_script" >/dev/null
+    hit=0
+    for entry in "${SELECTED[@]:-}"; do
+      if [[ "${entry%%$'\t'*}" == "$SUITE_TEST_ENGINE"* ]]; then hit=1; break; fi
+    done
+    if [[ "$hit" -eq 1 ]]; then
+      echo "PASS: engine script $engine_script -> test_engine.sh"
+    else
+      echo "FAIL: engine script $engine_script did NOT route to test_engine.sh"
+      fails=$((fails + 1))
+    fi
+  done
 
   echo
   if [[ "$fails" -eq 0 ]]; then
