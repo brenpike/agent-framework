@@ -125,12 +125,20 @@ hivemind_read_inputs_file() {
 # The two blocks (incl. every blocker string) were byte-identical, so no label parameter is
 # needed — the blocker text below reproduces both engines' exact current strings.
 #
-# On SUCCESS: echoes TWO lines on stdout for the engine to read back —
-#   line 1 = the canonical ledger path  ($canon_ledger)
-#   line 2 = the canonical ledger dir   ($canon_ledger_dir)
-# The engine reads them with `IFS= read -r canon_ledger; IFS= read -r canon_ledger_dir`.
-# Two newline-separated lines are byte-safe here: both values are canonical filesystem paths
-# under the checkout (no embedded newlines possible — pwd -P output, and run_id is SAFE_ID_RE).
+# On SUCCESS: returns 0 with NO stdout. The full validation chain above (containment,
+# canonicalization, leaf guard, existence, JSON validity, coherence, post-existence canonical
+# confirmation) is asserted via the return CODE alone; the function emits no path values. The
+# locals $canon_ledger / $canon_ledger_dir computed by the post-existence confirmation block are
+# confirmation-only and are NOT serialized. Consumers DERIVE the canonical ledger path locally
+# after observing return 0 (the derivation is `"$repo_root/.hivemind/runs/$run_id/state.json"`
+# plus the same canonicalization, which this function has already proven coherent).
+#
+# ELIMINATED CLASS (issue #285): the former success-path TWO-LINE positional stdout protocol
+# (`printf '%s\n%s\n' "$canon_ledger" "$canon_ledger_dir"`, read back positionally by the engine
+# with `IFS= read -r canon_ledger; IFS= read -r canon_ledger_dir`) is REMOVED. That newline- and
+# ordering-fragile multi-value channel is closed by construction: success now carries zero stdout
+# and consumers derive the path locally, so there is no positional protocol left to desync.
+#
 # STDERR / RETURN-CODE CONTRACT (byte-preservation):
 #   Two failure SHAPES, distinguished by return code:
 #
@@ -151,13 +159,15 @@ hivemind_read_inputs_file() {
 #   so this function PRINTS the exact reason text (UNPREFIXED, no `blocker: `) to STDOUT and
 #   returns 1; the engine captures that stdout and re-emits it through blocker() (adding the
 #   `blocker: ` prefix + exit 1). One printed line in, one `blocker:` line out — matching the
-#   pre-extraction single-line shape exactly.
+#   pre-extraction single-line shape exactly. This SINGLE-LINE failure-reason channel is ONE
+#   value (not the eliminated positional multi-line success protocol) and STAYS.
 #
-#   The SUCCESS path's two stdout lines are unchanged; success and SHAPE-B failure are mutually
-#   exclusive by return, so the engine's single stdout capture serves both. No `2>&1` is used on
-#   any read, so inner-helper / SHAPE-B stderr never leaks onto the success stdout. NEVER exits.
-#   Return codes: 0 success (two stdout lines); 2 ancestor-guard reject (stdout empty);
-#   6 leaf-guard reject (stdout empty); 1 any SHAPE-B failure (reason on stdout).
+#   Success emits no stdout; SHAPE-B failure emits exactly one reason line; the two are mutually
+#   exclusive by return, so the engine's single stdout capture is non-empty IFF a SHAPE-B failure
+#   occurred. No `2>&1` is used on any read, so inner-helper / SHAPE-B stderr never leaks onto
+#   stdout. NEVER exits.
+#   Return codes: 0 success (NO stdout); 2 ancestor-guard reject (stdout empty);
+#   6 leaf-guard reject (stdout empty); 1 any SHAPE-B failure (single reason line on stdout).
 hivemind_open_ledger() {
   local repo_root="$1"
   local run_id="$2"
@@ -252,7 +262,8 @@ hivemind_open_ledger() {
     return 1
   fi
 
-  # SUCCESS: echo the canonical ledger path + canonical ledger dir as two stable lines.
-  printf '%s\n%s\n' "$canon_ledger" "$canon_ledger_dir"
+  # SUCCESS: all validation passed. Return 0 with NO stdout — the engine derives the
+  # canonical ledger path locally post-return-0 (see header contract). The locals
+  # $canon_ledger / $canon_ledger_dir above are confirmation-only and no longer echoed.
   return 0
 }
