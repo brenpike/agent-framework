@@ -1,5 +1,7 @@
 # Self-owning delegation model for reviewer agents
 
+> Active end-state: ADR-0005.
+
 **Status:** superseded by ADR-0005 — 2026-05-18
 
 Reviewer agents delegate coder/designer fixes directly (at sonnet tier) rather than returning to the orchestrator for every fix delegation. Reviewers return to the orchestrator only on terminal conditions: loop complete, planner-routed findings, injection suspects, user-input-required, max iterations reached, or blocked.

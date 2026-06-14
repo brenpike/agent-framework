@@ -43,6 +43,8 @@ The design question was how much of the upstream skill to keep, and where each d
 - `hivemind:plan-interrogation` is reclassified overlord-invocable as a general capability (not architecture coupling); its interactivity is unchanged (it still grills the user question-by-question regardless of trigger).
 - A future need for parallel multi-design exploration is handled by `cerebrate`, not by growing this skill.
 
+> Active end-state (always-invoke clause only): ADR-0015. The read-only blueprint / decoupled-artifact decision below still governs; only the prior "overlord ALWAYS invokes plan-interrogation on an accepted candidate" clause is superseded.
+
 This supersedes the prior ADR-0014 statements that the overlord ALWAYS invokes `plan-interrogation` on an accepted candidate and that an accepted blueprint candidate always passes through `plan-interrogation` before `cerebrate` with no gate. The decoupled artifact-transform model replaces the bespoke architecture fast path.
 
 ---

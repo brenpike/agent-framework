@@ -1,5 +1,7 @@
 # Immediate stop on planner escalation during review loops
 
+> Active end-state: ADR-0006.
+
 **Status:** superseded by ADR-0006 — 2026-05-18
 
 Superseded by the intent-based governance rewrite (ADR-0006). Intent-based reviewers judge per-finding whether a finding is too complex to fix themselves. The rigid mechanical rule (always stop immediately on planner-classified finding, even if simpler findings remain) is replaced by model judgment: fix what's simple, escalate what's complex, return when the loop is clean or blocked.
