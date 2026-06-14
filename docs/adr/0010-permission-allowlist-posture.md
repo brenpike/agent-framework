@@ -54,6 +54,8 @@ CONSEQUENCE: a `Bash(cmd *)` read/output-helper grant is NOT an arbitrary-file-w
 
 ## Amendment — 2026-05-25
 
+> Active end-state (Decision #4 echo-banner suppression lever only): the compound-command-batching attribution in this 2026-05-25 amendment. The allowlist-posture decision in this ADR still governs; only Decision #4's agent-prose suppression lever is superseded.
+
 This amendment refines the DIAGNOSIS recorded above. It does not rewrite the accepted record: the False-premise narrative, the engine Findings, the Considered Options, and the Consequences all stand. A 2026-05-25 24h log study (93 Bash calls) corrected the root-cause attribution and a remediation shipped accordingly.
 
 - **Corrected attribution.** The 2026-05-24 framing that "decorative `echo` banners are the single largest source" of permission prompts was a misattribution. `echo` was ALREADY allowlisted, so banner echos never triggered a prompt on their own — the banner is a CORRELATED SYMPTOM, not the cause. Decision #4's agent-prose suppression lever therefore could not reduce the prompts and is SUPERSEDED for that purpose.
