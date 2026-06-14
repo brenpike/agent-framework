@@ -142,22 +142,29 @@ esac
 # sweep's liveness re-probe can observe the death. Default 0 = ZERO production behavior change /
 # zero added latency. UNLIKE STARTED_EVIDENCE_TIMEOUT this FAILS OPEN: an empty / non-numeric
 # value coerces to 0 rather than blocking — it is a deterministic test seam, and an operator
-# typo must never become a production blocker. To keep that typo-safety promise TOTAL, the
-# honored value is also CLAMPED to RECONCILE_SETTLE_MAX (default 60s): an all-digit fat-finger
-# (e.g. a stray-zeros 999999999) degrades to a bounded test-only delay, never an unbounded
-# stall before manifest emission. Coverage of every legitimate test window stays intact (tests
-# use ~14s). The clamp ceiling itself fails open the same way (empty/non-numeric => 60). (No
-# poll loop: this is a single settle, not a scheduler — per-strain independence #213/#248 is
+# typo must never become a production blocker.
+#
+# Structural digit-LENGTH gate (closes the unbounded-sleep class BY CONSTRUCTION): after the
+# coerce above, RECONCILE_SETTLE is provably all-digits (or "0"). We bound it by its STRING
+# LENGTH (${#...} — always a tiny in-range integer) against a SINGLE HARD-CODED literal ceiling
+# of 60s (= 2 digits) BEFORE any value-arithmetic runs. Any string wider than the cap's digit
+# width collapses straight to the literal cap, so the ONLY operand the `-gt` comparison ever
+# touches is already proven <=2 digits (well within 64-bit range) and can never form an
+# over-range expression. There is NO ceiling VARIABLE to itself go unbounded (RECONCILE_SETTLE_MAX
+# is gone) and NO third per-variable clamp. Legitimate test windows (<=14s, 2 digits) pass
+# untouched; an all-digit fat-finger (999999999, a 100-digit string, or a value >2^63) degrades
+# to the bounded 60s test delay WITHOUT erroring — never an unbounded stall, never a blocker.
+# (No poll loop: this is a single settle, not a scheduler — per-strain independence #213/#248 is
 # preserved by the sweep below.)
 : "${RECONCILE_SETTLE:=0}"
 case "$RECONCILE_SETTLE" in
   *[!0-9]* | '') RECONCILE_SETTLE=0 ;;
 esac
-: "${RECONCILE_SETTLE_MAX:=60}"
-case "$RECONCILE_SETTLE_MAX" in
-  *[!0-9]* | '') RECONCILE_SETTLE_MAX=60 ;;
-esac
-[ "$RECONCILE_SETTLE" -le "$RECONCILE_SETTLE_MAX" ] || RECONCILE_SETTLE="$RECONCILE_SETTLE_MAX"
+if [ "${#RECONCILE_SETTLE}" -gt 2 ]; then
+  RECONCILE_SETTLE=60
+elif [ "$RECONCILE_SETTLE" -gt 60 ]; then # operand now provably <=2 digits, in 64-bit range
+  RECONCILE_SETTLE=60
+fi
 
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling
