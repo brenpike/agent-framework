@@ -546,6 +546,68 @@ else
   failed "list-issues:null-elem-row-fail-closed" "expected nonzero exit on null-elem row, got 0"
 fi
 
+# ── deps-read: owner/repo shape guard — fail-closed on malformed NWO token ───────
+# STEP-001 guard: after `gh repo view --json nameWithOwner` returns, the kernel-projected
+# token must match ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ or die exit 1.  We exercise the
+# LIVE path (no TRIAGE_OPS_OFFLINE) with a PATH-shadowed gh stub that answers
+# `repo view --json nameWithOwner` with a synthetic {"nameWithOwner":"<TOKEN>"}.
+# The stub is parameterized via STUB_NWO so one script covers all cases.
+# The stub need not handle `gh api graphql` — the guard die()s before that call.
+#
+# Positive happy-path: the existing offline deps-read:normalize case locks the well-formed
+# path.  If a clean live positive assertion is desired it would require a full graphql stub;
+# instead we omit it and note that coverage above is sufficient.
+
+STUBBIN_DIR="$TMPDIR_TEST/stubbin"
+mkdir -p "$STUBBIN_DIR"
+cat > "$STUBBIN_DIR/gh" <<'STUB_EOF'
+#!/usr/bin/env bash
+# Minimal gh stub: answers `repo view --json nameWithOwner` only.
+# All other invocations exit 1 so any unexpected gh call surfaces loudly.
+for arg in "$@"; do
+  case "$arg" in
+    nameWithOwner)
+      printf '{"nameWithOwner":"%s"}\n' "${STUB_NWO:-ownerrepo}"
+      exit 0
+      ;;
+  esac
+done
+exit 1
+STUB_EOF
+chmod +x "$STUBBIN_DIR/gh"
+
+# Case 1: no slash — token "ownerrepo" must fire the guard (exit nonzero).
+# Also verify the guard message appears on stderr so we know the RIGHT guard fired.
+NWO_NOSTUB_STDERR="$TMPDIR_TEST/nostub-stderr.txt"
+NWO_NOSTUB_STATUS=0
+STUB_NWO="ownerrepo" PATH="$STUBBIN_DIR:$PATH" \
+  bash "$OPS" deps-read 5 >"$TMPDIR_TEST/nostub-out.txt" 2>"$NWO_NOSTUB_STDERR" \
+  || NWO_NOSTUB_STATUS=$?
+if [ "$NWO_NOSTUB_STATUS" -ne 0 ]; then
+  pass "deps-read:malformed-no-slash-failclosed" "exit=$NWO_NOSTUB_STATUS (token: ownerrepo)"
+else
+  failed "deps-read:malformed-no-slash-failclosed" "expected nonzero exit, got 0 (token: ownerrepo)"
+fi
+# Confirm the guard message is present — failure here means a DIFFERENT guard fired.
+if grep -qF "is not a valid 'owner/repo' token" "$NWO_NOSTUB_STDERR"; then
+  pass "deps-read:malformed-no-slash-guard-message" "guard message found in stderr"
+else
+  failed "deps-read:malformed-no-slash-guard-message" \
+    "guard message absent from stderr (stderr: $(cat "$NWO_NOSTUB_STDERR"))"
+fi
+
+# Case 2: extra slash — token "owner/repo/extra" must fire the guard (exit nonzero).
+NWO_EXTRA_STDERR="$TMPDIR_TEST/extra-stderr.txt"
+NWO_EXTRA_STATUS=0
+STUB_NWO="owner/repo/extra" PATH="$STUBBIN_DIR:$PATH" \
+  bash "$OPS" deps-read 5 >"$TMPDIR_TEST/extra-out.txt" 2>"$NWO_EXTRA_STDERR" \
+  || NWO_EXTRA_STATUS=$?
+if [ "$NWO_EXTRA_STATUS" -ne 0 ]; then
+  pass "deps-read:malformed-extra-slash-failclosed" "exit=$NWO_EXTRA_STATUS (token: owner/repo/extra)"
+else
+  failed "deps-read:malformed-extra-slash-failclosed" "expected nonzero exit, got 0 (token: owner/repo/extra)"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────────
 echo
 echo "triage-ops: $PASS_COUNT passed, $FAIL_COUNT failed"
