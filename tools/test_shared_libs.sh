@@ -36,7 +36,7 @@ for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/allowlist.sh" "$SHARED_DIR/manifest-json.sh" "$SHARED_DIR/ledger-project.sh" \
                 "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh" \
                 "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh" \
-                "$SHARED_DIR/fetch-normalize-core.sh" \
+                "$SHARED_DIR/fetch-normalize-core.sh" "$SHARED_DIR/ledger-engine-io.sh" \
                 "$CLASSIFY_FILTER" \
                 "$FN_REVIEW_HANDLED" "$FN_EXPECTED_REVIEW" "$FN_CI_CHECKS" "$FN_EXPECTED_CI" \
                 "$FN_OVERFLOW_THREADS" "$FN_MALFORMED"; do
@@ -62,6 +62,11 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 . "$SHARED_DIR/ledger-reconstruct-fold.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/fetch-normalize-core.sh"
+# ledger-engine-io.sh ORCHESTRATES the containment.sh helpers at call time and does NOT source
+# them itself — containment.sh is sourced above (L58), satisfying the dependency contract before
+# this source line.
+# shellcheck source=/dev/null
+. "$SHARED_DIR/ledger-engine-io.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1532,6 +1537,173 @@ if printf '%s' "$fn_overflow_malformed_err" | grep -qF "OVERFLOW"; then
   failed "fncore:overflow-empty-silent" "emit_overflow_tripwire wrongly fired on an empty payload: $fn_overflow_malformed_err"
 else
   pass "fncore:overflow-empty-silent" "emit_overflow_tripwire treats empty payload as 0-node page (no OVERFLOW)"
+fi
+
+# ── Section 11: ledger-engine-io.sh — inputs-file bootstrap + ledger-open machinery ─
+echo ''
+echo '=== ledger-engine-io.sh: hivemind_read_inputs_file / hivemind_open_ledger ==='
+#
+# DIRECT unit coverage for the two shared engine-IO functions lifted VERBATIM from the three
+# ledger engines (init-run-ledger, record-state-result, mark-intent-fallback). Both functions
+# ORCHESTRATE the containment.sh helpers (sourced above) and NEVER exit — each returns non-zero
+# with a stderr message on failure. hivemind_read_inputs_file's read-guard resolves the checkout
+# via `git rev-parse --show-toplevel` INTERNALLY, so its contained-file ACCEPT case stages a real
+# inputs file UNDER the live repo root (cleaned up explicitly — the EXIT trap only removes the
+# /tmp WORKDIR). hivemind_open_ledger takes an EXPLICIT <repo_root>, so its fixtures live in
+# WORKDIR. Each containment-reject case is staged with a REAL on-disk symlink (mirroring the
+# Section 7 / engine-oracle symlink-escape staging).
+
+# ── 11a. hivemind_read_inputs_file — arg / existence / read-guard / JSON-validity ──
+# 11a-1: missing/empty arg → non-zero + the engine's exact missing-argument blocker.
+rif_missing_err="$(hivemind_read_inputs_file "" "run-ledger" 2>&1 >/dev/null)"; rif_missing_rc=$?
+if [ "$rif_missing_rc" -ne 0 ]; then
+  pass "engineio:rif-missing-rc" "empty inputs-file arg → non-zero return"
+else
+  failed "engineio:rif-missing-rc" "empty inputs-file arg must return non-zero; got 0"
+fi
+# NEW CONTRACT (R-STEP-001/002): hivemind_read_inputs_file emits NO stderr of its OWN — it
+# signals the missing-arg branch via return code 2, and the ENGINE owns the blocker text. Assert
+# the EXACT return code AND that the function's own stderr (captured above as $rif_missing_err,
+# which is 2>&1 with stdout discarded — i.e. fd2 only) is EMPTY, proving no self-emission.
+assert_eq "engineio:rif-missing-rc-code" "2" "$rif_missing_rc" \
+  "missing-arg branch returns the distinct code 2 (engine maps it to its blocker)"
+assert_eq "engineio:rif-missing-no-self-stderr" "" "$rif_missing_err" \
+  "missing-arg branch emits NO stderr of its own (engine owns the blocker line)"
+
+# 11a-2: non-existent file → non-zero + the engine's exact does-not-exist blocker.
+rif_absent="$WORKDIR/engineio-absent-inputs.json"   # never created
+rif_absent_err="$(hivemind_read_inputs_file "$rif_absent" "record-state-result" 2>&1 >/dev/null)"; rif_absent_rc=$?
+if [ "$rif_absent_rc" -ne 0 ]; then
+  pass "engineio:rif-absent-rc" "non-existent inputs file → non-zero return"
+else
+  failed "engineio:rif-absent-rc" "non-existent inputs file must return non-zero; got 0"
+fi
+# NEW CONTRACT: the does-not-exist branch signals via return code 3 and emits NO own stderr.
+assert_eq "engineio:rif-absent-rc-code" "3" "$rif_absent_rc" \
+  "non-existent-file branch returns the distinct code 3 (engine maps it to its blocker)"
+assert_eq "engineio:rif-absent-no-self-stderr" "" "$rif_absent_err" \
+  "non-existent-file branch emits NO stderr of its own (engine owns the blocker line)"
+
+# 11a-3: present-but-invalid JSON → non-zero + the engine's exact not-valid-JSON blocker. The file
+# MUST live inside the repo so it passes the read-guard and reaches the jq validity probe (an
+# external path would be rejected by the read-guard first, masking the JSON-validity branch).
+ENGINEIO_SCRATCH="$REPO_ROOT/.hivemind-engineio-test.$$"
+mkdir -p "$ENGINEIO_SCRATCH"
+engineio_scratch_cleanup() { rm -rf "$ENGINEIO_SCRATCH"; return 0; }
+trap 'cleanup; engineio_scratch_cleanup' EXIT
+rif_badjson="$ENGINEIO_SCRATCH/bad-inputs.json"
+printf '{"this is": not valid json\n' > "$rif_badjson"
+rif_badjson_err="$(hivemind_read_inputs_file "$rif_badjson" "mark-intent-fallback" 2>&1 >/dev/null)"; rif_badjson_rc=$?
+if [ "$rif_badjson_rc" -ne 0 ]; then
+  pass "engineio:rif-badjson-rc" "invalid-JSON inputs file → non-zero return"
+else
+  failed "engineio:rif-badjson-rc" "invalid-JSON inputs file must return non-zero; got 0"
+fi
+# NEW CONTRACT: the invalid-JSON branch signals via return code 5 and emits NO own stderr — the
+# internal `jq -e` probe runs with `2>&1` suppressed, so no jq diagnostic leaks to fd2 either.
+assert_eq "engineio:rif-badjson-rc-code" "5" "$rif_badjson_rc" \
+  "invalid-JSON branch returns the distinct code 5 (engine maps it to its blocker)"
+assert_eq "engineio:rif-badjson-no-self-stderr" "" "$rif_badjson_err" \
+  "invalid-JSON branch emits NO stderr of its own (jq diagnostic suppressed; engine owns the blocker)"
+
+# 11a-4: valid, contained JSON inputs file → returns 0 (read-guard passes, jq validity passes).
+rif_good="$ENGINEIO_SCRATCH/good-inputs.json"
+printf '{"run":{"id":"2026-01-01T00-00-00Z--ok"}}\n' > "$rif_good"
+hivemind_read_inputs_file "$rif_good" "run-ledger"; rif_good_rc=$?
+assert_eq "engineio:rif-valid-rc" "0" "$rif_good_rc" "valid contained JSON inputs file → return 0"
+
+# 11a-5: symlinked-ANCESTOR inputs path → rejected by the read-guard (mirrors the engine oracle).
+# A directory component of the inputs path is a REAL symlink resolving outside the repo; the
+# hivemind_assert_inputs_contained read-guard inside hivemind_read_inputs_file rejects BEFORE the
+# jq validity probe. The leaf target is valid JSON, proving the rejection is the read-guard, not jq.
+rif_link_dir="$ENGINEIO_SCRATCH/linkdir"
+ln -s "$WORKDIR" "$rif_link_dir"   # symlinked ancestor escaping the repo into /tmp WORKDIR
+printf '{"run":{"id":"x"}}\n' > "$WORKDIR/engineio-symlinked-inputs.json"
+rif_link_inputs="$rif_link_dir/engineio-symlinked-inputs.json"
+rif_link_err="$(hivemind_read_inputs_file "$rif_link_inputs" "run-ledger" 2>&1 >/dev/null)"; rif_link_rc=$?
+if [ "$rif_link_rc" -ne 0 ]; then
+  pass "engineio:rif-symlink-ancestor-reject" "symlinked-ancestor inputs path → read-guard rejects (non-zero)"
+else
+  failed "engineio:rif-symlink-ancestor-reject" "symlinked-ancestor inputs path must be rejected by the read-guard; got 0"
+fi
+# NEW CONTRACT: the containment reject is signalled by the DISTINCT code 4, and — unlike the other
+# branches — the INNER helper hivemind_assert_inputs_contained emits its OWN raw UNPREFIXED detail
+# line to fd2 (uncaptured passthrough); hivemind_read_inputs_file adds NO line of its own. The
+# engine maps code 4 to its blocker, so the detail line that reaches fd2 here is the inner helper's,
+# NOT a self-emitted message. Assert the exact code AND that the inner-helper detail line is present
+# on fd2 (captured above as $rif_link_err). The detail for an ancestor-escape is the helper's
+# "resolves outside the checkout" line (containment.sh), distinct from the engine's blocker text.
+assert_eq "engineio:rif-symlink-ancestor-rc-code" "4" "$rif_link_rc" \
+  "containment-reject branch returns the distinct code 4 (engine maps it to its blocker)"
+case "$rif_link_err" in
+  *"resolves outside the checkout"*)
+    pass "engineio:rif-symlink-ancestor-inner-detail-on-fd2" \
+      "inner-helper detail line reached fd2 as passthrough (uncaptured), proving read_inputs_file added none" ;;
+  *)
+    failed "engineio:rif-symlink-ancestor-inner-detail-on-fd2" \
+      "expected inner-helper detail line on fd2 containing 'resolves outside the checkout'; got: $rif_link_err" ;;
+esac
+
+# ── 11b. hivemind_open_ledger — derive / contain / read / coherence / canonical confirm ──
+# These take an EXPLICIT <repo_root>, so every fixture is a self-contained fake checkout in WORKDIR.
+
+# 11b-1: missing ledger file — the run dir exists but state.json was never written → non-zero.
+ol1_root="$WORKDIR/ol1/checkout"
+ol1_run_id="2026-01-01T00-00-00Z--ol1"
+mkdir -p "$ol1_root/.hivemind/runs/$ol1_run_id"
+# Do NOT create state.json.
+ol1_err="$(hivemind_open_ledger "$ol1_root" "$ol1_run_id" 2>&1 >/dev/null)"; ol1_rc=$?
+if [ "$ol1_rc" -ne 0 ]; then
+  pass "engineio:ol-missing-ledger-rc" "missing ledger file → non-zero return"
+else
+  failed "engineio:ol-missing-ledger-rc" "missing ledger file must return non-zero; got 0"
+fi
+
+# 11b-2: coherence mismatch — ledger .run.id differs from the passed run_id → non-zero.
+ol2_root="$WORKDIR/ol2/checkout"
+ol2_run_id="2026-01-01T00-00-00Z--ol2"
+mkdir -p "$ol2_root/.hivemind/runs/$ol2_run_id"
+printf '{"run":{"id":"2026-01-01T00-00-00Z--DIFFERENT"},"state":{"current":"plan"}}\n' \
+  > "$ol2_root/.hivemind/runs/$ol2_run_id/state.json"
+ol2_err="$(hivemind_open_ledger "$ol2_root" "$ol2_run_id" 2>&1 >/dev/null)"; ol2_rc=$?
+if [ "$ol2_rc" -ne 0 ]; then
+  pass "engineio:ol-coherence-mismatch-rc" "ledger .run.id != run_id → non-zero return"
+else
+  failed "engineio:ol-coherence-mismatch-rc" "coherence mismatch must return non-zero; got 0"
+fi
+
+# 11b-3: valid ledger — coherent .run.id, contained leaf → returns 0 AND echoes the two canonical
+# lines (line1 = canonical ledger path ending /state.json; line2 = the canonical run dir).
+ol3_root="$WORKDIR/ol3/checkout"
+ol3_run_id="2026-01-01T00-00-00Z--ol3"
+mkdir -p "$ol3_root/.hivemind/runs/$ol3_run_id"
+printf '{"run":{"id":"%s"},"state":{"current":"implement_step"}}\n' "$ol3_run_id" \
+  > "$ol3_root/.hivemind/runs/$ol3_run_id/state.json"
+{ IFS= read -r ol3_ledger; IFS= read -r ol3_dir; } \
+  < <(hivemind_open_ledger "$ol3_root" "$ol3_run_id"); ol3_rc=$?
+assert_eq "engineio:ol-valid-rc" "0" "$ol3_rc" "valid coherent ledger → return 0"
+# Canonical expectations: cd && pwd -P the on-disk run dir (handles a symlinked /tmp prefix on macOS).
+ol3_canon_dir="$(cd "$ol3_root/.hivemind/runs/$ol3_run_id" && pwd -P)"
+assert_eq "engineio:ol-valid-line1-ledger" "$ol3_canon_dir/state.json" "$ol3_ledger" \
+  "valid ledger: line1 = canonical ledger path ending /state.json"
+assert_eq "engineio:ol-valid-line2-dir" "$ol3_canon_dir" "$ol3_dir" \
+  "valid ledger: line2 = canonical run dir"
+
+# 11b-4: containment reject staged with a REAL symlink — the state.json LEAF is a symlink to an
+# external (out-of-checkout) target. hivemind_assert_ledger_contained [ -L ]-rejects the leaf
+# BEFORE any read → non-zero, and the on-disk ledger is never followed.
+ol4_root="$WORKDIR/ol4/checkout"
+ol4_ext="$WORKDIR/ol4/external"
+ol4_run_id="2026-01-01T00-00-00Z--ol4"
+mkdir -p "$ol4_root/.hivemind/runs/$ol4_run_id" "$ol4_ext"
+printf '{"run":{"id":"%s"},"state":{"current":"plan"}}\n' "$ol4_run_id" \
+  > "$ol4_ext/secret-state.json"
+ln -s "$ol4_ext/secret-state.json" "$ol4_root/.hivemind/runs/$ol4_run_id/state.json"
+ol4_err="$(hivemind_open_ledger "$ol4_root" "$ol4_run_id" 2>&1 >/dev/null)"; ol4_rc=$?
+if [ "$ol4_rc" -ne 0 ]; then
+  pass "engineio:ol-symlinked-leaf-reject" "symlinked state.json leaf → containment reject (non-zero)"
+else
+  failed "engineio:ol-symlinked-leaf-reject" "symlinked state.json leaf must be rejected; got 0"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────

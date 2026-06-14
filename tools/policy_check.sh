@@ -539,6 +539,14 @@ fi
 # We FIRE when a token is read but (a) has NO guard at all, or (b) its first
 # dangerous read occurs at a line number BEFORE the guard.
 #
+# The $INPUTS_FILE containment guard may be satisfied EITHER by an inline
+# hivemind_assert_inputs_contained call OR by delegation to the
+# hivemind_read_inputs_file shared helper, which performs that assertion
+# internally (per the ADR-0020 engine-IO extraction, issue #245). Both forms
+# are recognized as the guard line. This recognizes a real guard and does NOT
+# weaken the check: a script that reads $INPUTS_FILE with NEITHER an inline
+# assertion NOR the helper call still fires a missing-guard finding.
+#
 # Deliberate exclusions to avoid false positives:
 #   * the GUARD line itself names the token as an argument — never counted as a read.
 #   * `[ -f "$INPUTS_FILE" ]` / `[ -n "$INPUTS_FILE" ]` are pure existence/arg
@@ -608,11 +616,20 @@ while IFS= read -r -d '' engine_script; do
 
     # Token table: TOKEN | GUARD_PATTERN | READ_PATTERN | READ_EXCLUDE
     # READ_EXCLUDE removes existence/arg-presence/symlink probes that legitimately
-    # precede the guard so they are not mistaken for the gated open.
+    # precede the guard so they are not mistaken for the gated open. For
+    # $INPUTS_FILE the GUARD_PATTERN and READ_EXCLUDE both accept the
+    # hivemind_read_inputs_file helper call as the guard (it runs
+    # hivemind_assert_inputs_contained internally; ADR-0020 / #245), so the
+    # bootstrap helper-call line is neither a missing guard nor a counted read.
+    # EVERY GUARD_PATTERN is anchored to an EXECUTABLE line (^[[:space:]]*[^#]*)
+    # so a COMMENT that merely NAMES the guard helper (e.g. a `# hivemind_read_inputs_file
+    # "$INPUTS_FILE"` doc line above the first real read) is NOT miscounted as the
+    # guard — otherwise an engine reading $INPUTS_FILE/$MANIFEST with no real guard
+    # could pass on the strength of a comment mention.
     declare -a token_labels=('$INPUTS_FILE' '$MANIFEST' '$ledger' '$ledger-leaf')
     declare -a token_guards=(
-        'hivemind_assert_inputs_contained[^#]*"\$INPUTS_FILE"'
-        '(hivemind_assert_inputs_contained|\[ -L )[^#]*"\$MANIFEST"'
+        '^[[:space:]]*[^#]*(hivemind_assert_inputs_contained|hivemind_read_inputs_file)[^#]*"\$INPUTS_FILE"'
+        '^[[:space:]]*[^#]*(hivemind_assert_inputs_contained|\[ -L )[^#]*"\$MANIFEST"'
         '^[[:space:]]*[^#]*hivemind_assert_contained[^#]*\.hivemind/runs/\$run_id'
         '^[[:space:]]*hivemind_assert_ledger_contained'
     )
@@ -623,7 +640,7 @@ while IFS= read -r -d '' engine_script; do
         '^[[:space:]]*(jq |cat |\[ -f )[^#]*"\$ledger"'
     )
     declare -a token_read_excludes=(
-        'hivemind_assert_inputs_contained|\[ -[fnL] '
+        'hivemind_assert_inputs_contained|hivemind_read_inputs_file|\[ -[fnL] '
         'hivemind_assert_inputs_contained|\[ -[fnL] '
         'hivemind_assert(_contained|_ledger_contained)'
         'hivemind_assert(_contained|_ledger_contained)'

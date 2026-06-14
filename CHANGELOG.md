@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.32.6] - 2026-06-13
+
+### Changed
+
+- **Extract the shared inputs-bootstrap and ledger-read/containment core of the three engine scripts (init-run-ledger, record-state-result, mark-intent-fallback) into a sourced `_shared/ledger-engine-io.sh` library behind thin entrypoints (P21/ADR-0020, behavior-preserving). (#245)**
+
+### Security
+
+- **Close a fail-open in the engine inputs-containment guard: the three engine scripts (init-run-ledger, record-state-result, mark-intent-fallback) now fail closed if a required `_shared` library is missing/unparseable (source-or-die at both bare-source sites) and on any unmapped `hivemind_read_inputs_file` status (fail-closed default case arm), so the inputs containment guard can no longer be bypassed by library unavailability. (#245)**
+
 ## [2.32.5] - 2026-06-13
 
 ### Changed
