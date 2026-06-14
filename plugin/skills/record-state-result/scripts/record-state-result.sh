@@ -261,31 +261,32 @@ ledger="$repo_root/.hivemind/runs/$run_id/state.json"
 # hivemind_assert_ledger_contained leaf guard (rejects a symlinked state.json LEAF), the
 # `[ -f ]` existence + `jq -e .` validity reads, the coherence check (`.run.id == run_id`),
 # and the post-existence canonical ledger-dir confirmation (canon dir + state.json/run_id
-# basename asserts). On SUCCESS it echoes TWO stdout lines — line 1 = $canon_ledger,
-# line 2 = $canon_ledger_dir — which we read back below. The helper never exits. Two failure
-# shapes (byte-preserved from before extraction):
+# basename asserts). On SUCCESS it returns 0 with NO stdout — containment/coherence are
+# proven by the return code alone, so the consumer DERIVES the canonical paths locally in
+# the 0) arm below. The helper never exits. Two failure shapes (byte-preserved):
 #   - inner-helper containment rejects (return 2 = ancestor guard, 6 = leaf guard): the inner
 #     helper's UNPREFIXED detail line flows to fd2 UNCAPTURED (we capture only STDOUT, never
 #     `2>&1`), then we add our OWN fixed `blocker:` line below — the two-line shape.
 #   - every other failure (return 1): the helper PRINTS the single reason line to STDOUT, which
 #     we capture and re-emit through blocker() (adding the `blocker: ` prefix) — single-line.
-# Success and the return-1 reason are mutually exclusive, so the one stdout capture serves both.
+# The return-1 reason is the ONLY stdout the helper ever emits, so the one stdout capture
+# (single-value channel) serves the *) failure arm.
 # (containment.sh + the helper were sourced once early, just after plugin_root is computed.)
 ledger_open_out="$(hivemind_open_ledger "$repo_root" "$run_id")"
 ledger_open_rc=$?
 case $ledger_open_rc in
-  0) : ;;
+  0)
+    # Containment/coherence proven by return 0. DERIVE the canonical paths LOCALLY now —
+    # ONLY in this arm, AFTER the wrapper validated the path (never canonicalize an
+    # unvalidated path). This mirrors EXACTLY what the lib used to compute on success:
+    # canon dir via `cd "$(dirname "$ledger")" && pwd -P`, then state.json beneath it.
+    canon_ledger_dir="$(cd "$(dirname "$ledger")" && pwd -P)"
+    canon_ledger="$canon_ledger_dir/state.json"
+    ;;
   2) blocker "refusing: ${repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged" ;;
   6) blocker "refusing to read the ledger: $ledger resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged" ;;
   *) blocker "$ledger_open_out" ;;
 esac
-
-# Read the helper's two stdout lines: line 1 = canonical ledger path, line 2 = canonical
-# ledger dir. Both are pwd -P paths under the checkout (no embedded newlines), so the
-# two-line protocol is byte-safe. These feed the atomic-write block below.
-{ IFS= read -r canon_ledger; IFS= read -r canon_ledger_dir; } <<EOF
-$ledger_open_out
-EOF
 
 # ── DERIVE the workflow definition from the (trusted) ledger's run.workflow ────
 # The definition is resolved against the self-located PACKAGED workflows dir, never a caller
