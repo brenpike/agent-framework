@@ -562,6 +562,12 @@ for idx in $(seq 0 $((strain_count - 1))); do
   wt="${S_WT[$idx]}"
   tmux_session="${S_TMUX[$idx]}"
   desc="${S_DESC[$idx]}"
+  # INVARIANT: every task.md identity field MUST source from the index-pinned arrays, NOT
+  # from the bare $short/$name leaked out of the earlier derive loop (those hold the LAST
+  # strain's values). Re-bind per-iteration here so the task.md heredoc below emits each
+  # strain's OWN id/name and stays coherent with run.suggested_id (${S_RUN_ID[$idx]}).
+  short="${S_SHORT[$idx]}"
+  name="${S_NAME[$idx]}"
 
   created_worktree=false
   created_session=false
@@ -739,6 +745,27 @@ for idx in $(seq 0 $((strain_count - 1))); do
   if ! mkdir -p "$wt/.hivemind/brood" 2>/dev/null \
      || ! printf '%s\n\n%s\n' "$PREAMBLE" "$brood_meta" > "$task_file" 2>/dev/null; then
     printf 'warning: task-file provisioning failed for strain %s\n' "${S_NAME[$idx]}" >&2
+    mark_failed "$idx"
+    if [ "$created_worktree" = true ]; then
+      git worktree remove --force "$wt" >/dev/null 2>&1 || true
+      git branch -D "$branch" >/dev/null 2>&1 || true
+    fi
+    # Worktree+branch removed; clear so the trap does not report them as a leak.
+    cur_wt=""
+    cur_branch=""
+    continue
+  fi
+
+  # 3c-guard: SPAWN-TIME IDENTITY COHERENCE (defense-in-depth, Defect A). task.md is now
+  # authored. Assert its strain.id ($short) and run.suggested_id (${S_RUN_ID[$idx]}) describe
+  # the SAME strain before a privileged child boots: ${S_RUN_ID[$idx]} MUST equal the
+  # brood-id-safe prefix + "--" + $short, the exact construction the derive loop used for
+  # S_RUN_ID. With the per-iteration index-pinned re-bind above this can never fire, but it
+  # GUARANTEES no crossed-identity child ever launches. On mismatch this is a HARD per-strain
+  # pre-launch failure: mirror the task-provisioning-failure cleanup (remove OUR worktree+branch,
+  # clear markers) and skip the launch.
+  if [ "${S_RUN_ID[$idx]}" != "$brood_id_safe--$short" ]; then
+    printf 'warning: strain %s: task.md identity guard failed (strain.id=%s vs run.suggested_id=%s); refusing to launch\n' "${S_NAME[$idx]}" "$short" "${S_RUN_ID[$idx]}" >&2
     mark_failed "$idx"
     if [ "$created_worktree" = true ]; then
       git worktree remove --force "$wt" >/dev/null 2>&1 || true
