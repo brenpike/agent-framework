@@ -212,6 +212,13 @@ assert_contains "caveman:envrc"    "- .envrc: created" "$OUT4"
 assert_contains "caveman:hookfile" "- .claude/hooks/caveman-ultra-subagent.sh: created" "$OUT4"
 assert_contains "caveman:hookwire" "- hooks.SubagentStart in settings.json: added" "$OUT4"
 assert_contains "caveman:keypcfg"  '- pluginConfigs["caveman@caveman"]: added' "$OUT4"
+# `resolved` is sourced from the TOP-LEVEL caveman/claude_mem/codex flags, NOT from the companions
+# facts (which here are absent). With caveman=yes top-level, the caveman companion reports
+# `resolved: yes` and the off companions `resolved: no` — even though no `companions` block was
+# supplied. Guards the regression where `resolved` keyed off the (absent) companions.resolved field
+# and always printed `resolved: unknown`.
+assert_contains "caveman:resolved-yes" "- caveman@caveman: detected: unknown, source: unknown, resolved: yes, via: unknown" "$OUT4"
+assert_contains "caveman:resolved-no"  "- claude-mem@thedotmack: detected: unknown, source: unknown, resolved: no, via: unknown" "$OUT4"
 assert_eq "caveman:envrc-content" "export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$ROOT4/.envrc")" ".envrc content"
 [ -x "$ROOT4/.claude/hooks/caveman-ultra-subagent.sh" ] \
   && pass "caveman:hook-exec" "hook file is executable" \

@@ -1826,6 +1826,26 @@ assert_eq "settings:cave-pcfg-off-absent" "null" \
 assert_eq "settings:cave-hook-off-absent" "null" \
   "$(printf '%s' "$sm_no_companions" | jq -r '.settings.hooks // "null"')" "caveman=no → no hooks"
 
+# 12c-bis. caveman hook APPENDS to an existing UNRELATED SubagentStart array (add-if-absent on the
+# SPECIFIC command, not on the presence of the SubagentStart key). The existing entry is preserved,
+# the caveman entry appended, classified `added`; and a re-merge is idempotent (no duplicate).
+sm_pre_hook='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":".claude/hooks/other.sh"}]}]}}'
+sm_existing_hook="$(hivemind_settings_merge "$sm_pre_hook" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-existing-class" "added" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.keys["hooks.SubagentStart"]')" "caveman hook absent from existing SubagentStart → added"
+assert_eq "settings:cave-hook-existing-count" "2" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart | length')" "existing SubagentStart entry preserved + caveman appended"
+assert_eq "settings:cave-hook-existing-preserved" ".claude/hooks/other.sh" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "existing unrelated hook command preserved at index 0"
+assert_eq "settings:cave-hook-existing-appended" ".claude/hooks/caveman-ultra-subagent.sh" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "caveman hook appended at index 1"
+sm_existing_hook_settings="$(printf '%s' "$sm_existing_hook" | jq -c '.settings')"
+sm_existing_hook_twice="$(hivemind_settings_merge "$sm_existing_hook_settings" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-existing-idem-class" "already present" \
+  "$(printf '%s' "$sm_existing_hook_twice" | jq -r '.keys["hooks.SubagentStart"]')" "re-merge with caveman hook wired → already present"
+assert_eq "settings:cave-hook-existing-idem-count" "2" \
+  "$(printf '%s' "$sm_existing_hook_twice" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge does not duplicate the caveman hook"
+
 # 12d. IDEMPOTENT re-merge of an already-seeded object = no-op, BYTE-STABLE settings.
 sm_once="$(hivemind_settings_merge '' 'hivemind:overlord' 'yes' 'yes' 'yes' 'yes')"
 sm_once_settings="$(printf '%s' "$sm_once" | jq -cS '.settings')"

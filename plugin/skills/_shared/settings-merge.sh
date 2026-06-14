@@ -57,7 +57,10 @@
 #     to the no-approval path. The approval gate is the conflict branch ONLY; an absent or
 #     already-equal `agent` makes approval inert (normal add / already-present classification).
 #   - pluginConfigs["caveman@caveman"].options.defaultLevel = "ultra" — caveman=yes only.
-#   - hooks.SubagentStart — the caveman ultra-mode hook entry (caveman=yes only), add-if-absent.
+#   - hooks.SubagentStart — the caveman ultra-mode hook entry (caveman=yes only), add-if-absent
+#     on the SPECIFIC `.claude/hooks/caveman-ultra-subagent.sh` command, NOT on the presence of
+#     the SubagentStart key. An existing unrelated SubagentStart array is PRESERVED and the
+#     caveman entry is appended to it; `already present` requires that exact command be wired.
 #   - permissions.allow — union/append-if-absent of the frozen template (seed_allowlist=yes):
 #     keep every existing entry in its original order, then append each template rule whose
 #     exact string is NOT already present. NEVER overwrite, remove, dedupe, or reorder existing
@@ -257,7 +260,9 @@ hivemind_settings_merge() {
        elif (($s.pluginConfigs) // {} | has("caveman@caveman")) then "already present"
        else "added" end) as $c_pcfg
     | (if $caveman != "yes" then "resolved no"
-       elif (($s.hooks) // {} | has("SubagentStart")) then "already present"
+       elif ((($s.hooks) // {} | .SubagentStart) // [])
+            | any(.hooks // [] | any(.command == ".claude/hooks/caveman-ultra-subagent.sh"))
+         then "already present"
        else "added" end) as $c_hook
 
     # ── build the merged settings (PRESERVE-EXISTING) ────────────────────────────
@@ -278,13 +283,20 @@ hivemind_settings_merge() {
               | if has("caveman@caveman") then .
                 else . + {"caveman@caveman": {options: {defaultLevel: "ultra"}}} end)
        else . end)
+    # caveman SubagentStart hook (add-if-absent on the SPECIFIC command, NOT on the presence of
+    # the SubagentStart key): an existing unrelated SubagentStart array is PRESERVED and the
+    # caveman entry is APPENDED to it. Already-present requires that exact command be wired, so
+    # re-merge stays byte-stable and idempotent.
     | (if $caveman == "yes"
        then .hooks = (((.hooks) // {})
-              | if has("SubagentStart") then .
-                else . + {"SubagentStart": [ { hooks: [ {
+              | (.SubagentStart // []) as $existing_subagent
+              | if ($existing_subagent
+                     | any(.hooks // [] | any(.command == ".claude/hooks/caveman-ultra-subagent.sh")))
+                then .
+                else .SubagentStart = ($existing_subagent + [ { hooks: [ {
                        type: "command",
                        command: ".claude/hooks/caveman-ultra-subagent.sh"
-                     } ] } ]} end)
+                     } ] } ]) end)
        else . end)
     # permissions.allow union (seed_allowlist = yes): preserve sibling permissions keys.
     | (if $seed_allow == "yes"

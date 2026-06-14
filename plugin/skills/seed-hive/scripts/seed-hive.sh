@@ -387,22 +387,32 @@ phase_apply() {
     "$overall_status" "$project_root" "$target_result" "$gitignore_result" \
     "$envrc_result" "$hook_file_result" "$hook_settings_result" \
     "$companions_json" "$claude_mem_path_result" "$merge_out" \
-    "$seed_allowlist" "$test_command_line"
+    "$seed_allowlist" "$test_command_line" \
+    "$caveman" "$claude_mem" "$codex"
 }
 
 # ── Output emitters ─────────────────────────────────────────────────────────────
-# emit_companions_block <companions_json>
-# Render the Output companions: lines from the threaded facts. Missing fields → "unknown".
+# emit_companions_block <companions_json> <caveman_resolved> <claude_mem_resolved> <codex_resolved>
+# Render the Output companions: lines from the threaded facts. The `resolved` yes/no value is NOT
+# carried inside the companions facts block — the inputs schema keeps it at the TOP LEVEL caveman /
+# claude_mem / codex fields, not inside each companion object — so it is supplied here from the
+# three resolved top-level flags the caller already parsed, positional in SEED_COMPANIONS order
+# (caveman, claude-mem, codex). detected/source/via still come from the threaded facts; missing
+# facts fields → "unknown".
 emit_companions_block() {
-  local companions_json="$1" key fields detected source resolved via
+  local companions_json="$1"
+  # Resolved yes/no flags, positional in SEED_COMPANIONS order (caveman, claude-mem, codex).
+  local -a resolved_flags=("${2:-unknown}" "${3:-unknown}" "${4:-unknown}")
+  local key fields detected source via resolved idx
   printf 'companions:\n'
-  for key in "${SEED_COMPANIONS[@]}"; do
+  for idx in "${!SEED_COMPANIONS[@]}"; do
+    key="${SEED_COMPANIONS[$idx]}"
     fields="$(jq -r --arg k "$key" '
       (.[$k] // {}) as $c
-      | [($c.detected // "unknown"), ($c.source // "unknown"),
-         ($c.resolved // "unknown"), ($c.via // "unknown")] | @tsv
+      | [($c.detected // "unknown"), ($c.source // "unknown"), ($c.via // "unknown")] | @tsv
     ' <<<"$companions_json")"
-    IFS=$'\t' read -r detected source resolved via <<<"$fields"
+    IFS=$'\t' read -r detected source via <<<"$fields"
+    resolved="${resolved_flags[$idx]}"
     printf -- '- %s: detected: %s, source: %s, resolved: %s, via: %s\n' \
       "$key" "$detected" "$source" "$resolved" "$via"
   done
@@ -439,13 +449,17 @@ emit_keys_block() {
 
 # emit_complete_output <status> <project_root> <target_result> <gitignore_result> \
 #   <envrc_result> <hook_file_result> <hook_settings_result> <companions_json> \
-#   <claude_mem_path_result> <merge_out> <seed_allowlist> <test_command_line>
-# Emit the full SKILL.md `## Output` block for the complete/partial (settings-written) path.
+#   <claude_mem_path_result> <merge_out> <seed_allowlist> <test_command_line> \
+#   <caveman_resolved> <claude_mem_resolved> <codex_resolved>
+# Emit the full SKILL.md `## Output` block for the complete/partial (settings-written) path. The
+# three trailing resolved yes/no flags feed the companions: block's `resolved` column — that value
+# lives at the inputs TOP LEVEL, not inside the companions facts, so it is threaded through here.
 emit_complete_output() {
   local status="$1" project_root="$2" target_result="$3" gitignore_result="$4"
   local envrc_result="$5" hook_file_result="$6" hook_settings_result="$7"
   local companions_json="$8" claude_mem_path_result="$9" merge_out="${10}"
   local seed_allowlist="${11}" test_command_line="${12}"
+  local caveman_resolved="${13}" claude_mem_resolved="${14}" codex_resolved="${15}"
 
   printf 'status: %s\n\n' "$status"
   printf 'project_root:\n- %s\n\n' "$project_root"
@@ -455,7 +469,8 @@ emit_complete_output() {
   printf 'hooks:\n'
   printf -- '- .claude/hooks/caveman-ultra-subagent.sh: %s\n' "$hook_file_result"
   printf -- '- hooks.SubagentStart in settings.json: %s\n\n' "$hook_settings_result"
-  emit_companions_block "$companions_json"
+  emit_companions_block "$companions_json" \
+    "$caveman_resolved" "$claude_mem_resolved" "$codex_resolved"
   printf '\n'
   printf 'claude_mem_path:\n'
   printf -- '- ~/.claude-mem/settings.json CLAUDE_CODE_PATH: %s\n\n' "$claude_mem_path_result"

@@ -3,6 +3,7 @@ name: seed-hive
 description: Applies required .claude/settings.json keys to make the overlord the session default agent and gitignores .hivemind/ and .claude/worktrees/. Use when adopting the plugin in a new project or repairing plugin setup.
 allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh *)
+  - Bash(git rev-parse *)   # navigator resolves the project root (git rev-parse --show-toplevel) before calling detect/apply — Procedure step 1
   - Read
   - Write   # inert inputs-file only: authors the resolved-values inputs JSON the apply phase reads; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0020
   - Skill   # hivemind:creep-spread orchestration step — a skill cannot be invoked from bash (P5)
