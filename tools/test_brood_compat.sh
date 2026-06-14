@@ -1671,59 +1671,94 @@ count_strain_lines() {
     printf '%s\n' "$1" | grep -c '^STRAIN	' || true
 }
 
-# ── Assertion 14: RECONCILE-SETTLE-CLAMP: huge digit override is bounded, not unbounded (#291) ──
-# The RECONCILE_SETTLE test seam coerces empty/non-numeric => 0 (fail-open) but accepts any
-# all-digit value, which is passed directly to `sleep`. Without a clamp an all-digit fat-finger
-# (e.g. a stray-zeros 999999999) would `sleep` for ~31 years, stalling spawn before manifest
-# emission — defeating the seam's own "operator typo must never become a production blocker"
-# promise. STEP-001's clamp bounds the HONORED value to RECONCILE_SETTLE_MAX (default 60).
+# ── Assertion 14: RECONCILE-SETTLE class closure: oversized digit string can never reach `sleep` ──
+# ELIMINATED CLASS: an unvalidated/oversized all-digit RECONCILE_SETTLE override reaching `sleep`.
+# The test seam coerces empty/non-numeric => 0 (fail-open) but historically passed ANY all-digit
+# value straight to `sleep`. Two failure modes lived in that class: (a) a giant in-range digit run
+# (e.g. 999999999) sleeping for ~31 years, stalling spawn before manifest emission; (b) an
+# over-2^63 digit run (e.g. 99999999999999999999) reaching the arithmetic `-gt` test and aborting
+# with `integer expression expected`. RR-STEP-001 closed BOTH by replacing the value-comparison
+# clamp (and the now-deleted ceiling ENV var) with a pure-STRING digit-LENGTH gate:
+# any value of length > 2 is forced to 60 BEFORE any arithmetic runs, so the `-gt 60` operand is
+# provably <=2 digits and always in 64-bit range.
 #
-# This is a DEPENDENCY-FREE unit assertion: the clamp is pure shell arithmetic at the top of the
-# script, BEFORE any tmux/jq/claude use, so it needs no spawn invocation, no stub, and no real
-# sleep. It EXTRACTS the live clamp region from the script (the RECONCILE_SETTLE default + the
-# coerce case + the RECONCILE_SETTLE_MAX default/coerce + the clamp comparison) and evaluates it in
-# a clean subshell under a controlled env, then asserts the resulting RECONCILE_SETTLE.
+# DEPENDENCY-FREE unit assertion: the gate is pure shell at the top of the script, BEFORE any
+# tmux/jq/claude/sleep use, so it needs no spawn, no stub, and no real sleep. It EXTRACTS the live
+# normalization region (the RECONCILE_SETTLE default + coerce case + the digit-LENGTH gate) and
+# evals it in a clean subshell per hostile input, asserting the resulting RECONCILE_SETTLE, rc 0,
+# and NO `integer expression expected` on stderr.
 #
-# NON-VACUITY: the region is sliced from the LIVE script by anchor, and the test asserts BOTH that
-# the clamp line is present AND that a huge override is bounded. Reverting the clamp (removing the
-# RECONCILE_SETTLE_MAX comparison) makes the slice omit the clamp, the huge value passes through
-# unchanged, and the bounded assertion FAILS. No timing assumption => not flaky.
+# NON-VACUITY: the region is sliced from the LIVE script between two anchors — the default-assign
+# line and the closing `fi` of the length gate. The slice MUST contain a `RECONCILE_SETTLE=60`
+# assignment (the gate body); if the structural gate were reverted/removed the slice would omit it,
+# the 100-digit and >2^63 inputs would pass through unbounded (or hit the arithmetic error), and the
+# bounded assertions below would FAIL. No timing assumption => not flaky.
 assert_reconcile_settle_clamp_bounds_huge_override() {
-    local name="RECONCILE-SETTLE-CLAMP:huge-digit-override-bounded-not-unbounded"
-    # Slice the contiguous clamp region: from the RECONCILE_SETTLE default assignment through the
-    # clamp comparison line. awk prints the inclusive span between the two anchors.
-    local clamp_region
-    clamp_region="$(awk '
+    local name="RECONCILE-SETTLE-CLASS:oversized-digit-string-never-reaches-sleep"
+    # Slice the contiguous normalization region: from the RECONCILE_SETTLE default assignment through
+    # the closing `fi` of the digit-length gate. awk prints the inclusive span; the gate's closing
+    # `fi` is the FIRST bare `fi` line at or after the default anchor.
+    local gate_region
+    gate_region="$(awk '
         /^: "\$\{RECONCILE_SETTLE:=0\}"/ { grab=1 }
         grab { print }
-        /RECONCILE_SETTLE="\$RECONCILE_SETTLE_MAX"/ { exit }
+        grab && /^fi$/ { exit }
     ' "$SPAWN_SCRIPT")"
 
-    if ! printf '%s\n' "$clamp_region" | grep -q 'RECONCILE_SETTLE="\$RECONCILE_SETTLE_MAX"'; then
-        failed "$name" "clamp region not found in $SPAWN_SCRIPT (clamp reverted/missing?) -- region: $clamp_region"
+    # Non-vacuity guard: the gate body MUST be present in the slice. If the structural length gate is
+    # reverted/removed this assignment vanishes and we fail loudly rather than silently passing a
+    # gate-less region (which would let oversized digit strings through).
+    if ! printf '%s\n' "$gate_region" | grep -q 'RECONCILE_SETTLE=60'; then
+        failed "$name" "digit-length gate not found in $SPAWN_SCRIPT (gate reverted/missing?) -- region: $gate_region"
         return
     fi
 
-    # Evaluate the sliced region under a HUGE all-digit override and a small ceiling. The clamp must
-    # bound the honored value to the ceiling (5), never let 999999999 through to `sleep`.
-    local result
-    result="$(RECONCILE_SETTLE=999999999 RECONCILE_SETTLE_MAX=5 bash -c "
-        $clamp_region
-        printf '%s' \"\$RECONCILE_SETTLE\"
-    ")"
+    # Hostile/legitimate input vectors: "input|expected". A 100-char all-digit string and an
+    # over-2^63 digit run are the eliminated-class cases — both must land on 60 (length-gated),
+    # rc 0, with NO arithmetic over-range error on stderr.
+    local hundred_digits
+    hundred_digits="$(printf '9%.0s' $(seq 1 100))"
+    local -a vectors=(
+        "|0"
+        "abc|0"
+        "0|0"
+        "14|14"
+        "60|60"
+        "99|60"
+        "${hundred_digits}|60"
+        "99999999999999999999|60"
+    )
 
-    # And confirm a normal in-range test window (14) is preserved unchanged (clamp doesn't truncate
-    # legitimate windows when the ceiling is the default 60).
-    local in_range
-    in_range="$(RECONCILE_SETTLE=14 bash -c "
-        $clamp_region
-        printf '%s' \"\$RECONCILE_SETTLE\"
-    ")"
+    local vec input expect out rc stderr_file failures=0
+    stderr_file="$(mktemp)"
+    for vec in "${vectors[@]}"; do
+        input="${vec%%|*}"
+        expect="${vec##*|}"
+        rc=0
+        out="$(RECONCILE_SETTLE="$input" bash -c "
+            $gate_region
+            printf '%s' \"\$RECONCILE_SETTLE\"
+        " 2>"$stderr_file")" || rc=$?
+        if [[ "$rc" -ne 0 ]]; then
+            failures=$((failures + 1))
+            failed "$name" "input '${input:0:24}' (len ${#input}) -> rc=$rc (expected 0); stderr: $(cat "$stderr_file")"
+            continue
+        fi
+        if grep -qi 'integer expression expected' "$stderr_file"; then
+            failures=$((failures + 1))
+            failed "$name" "input '${input:0:24}' (len ${#input}) -> 'integer expression expected' on stderr (over-range operand reached arithmetic)"
+            continue
+        fi
+        if [[ "$out" != "$expect" ]]; then
+            failures=$((failures + 1))
+            failed "$name" "input '${input:0:24}' (len ${#input}) -> RECONCILE_SETTLE='$out' (expected '$expect')"
+            continue
+        fi
+    done
+    rm -f "$stderr_file"
 
-    if [[ "$result" == "5" && "$in_range" == "14" ]]; then
-        pass "$name" "huge override 999999999 clamped to ceiling 5 (bounded); in-range 14 preserved under default ceiling"
-    else
-        failed "$name" "expected clamped=5 and in_range=14; got clamped=$result in_range=$in_range"
+    if [[ "$failures" -eq 0 ]]; then
+        pass "$name" "all ${#vectors[@]} vectors honored: empty/non-numeric=>0, 14/60 preserved, 99=>60, 100-digit & >2^63 length-gated to 60 with no arithmetic over-range error"
     fi
 }
 
