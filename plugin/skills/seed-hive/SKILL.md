@@ -141,17 +141,20 @@ inputs file. The engine writes nothing for a companion resolved `no`.
 ## Conflict Resolution (judgment)
 
 The engine never overwrites a different existing `agent` value: when `.claude/settings.json`
-already holds a DIFFERENT `agent`, apply returns `status: blocked`, writes the conflict into
-the Output `conflicts:` block, and writes NOTHING to any file. The navigator OWNS the
-recovery — surface the conflict to the user and obtain EXPLICIT approval to overwrite. On
-explicit user approval, the navigator re-runs apply with `agent_conflict_approved: "yes"`
-authored into the inputs file; the engine then classifies the agent as `overwritten`, returns
-`status: ok`, and produces normal `complete`/`updated` Output. Without approval the skill
-stays blocked and no file is changed. There is no silent-overwrite path; the navigator is
-the ONLY route that may proceed past a conflict, and only with the user's go-ahead. On
-`malformed` settings (unparseable existing file) the engine fails closed regardless of
-`agent_conflict_approved` — approval authorizes an agent overwrite, never clobbering a
-malformed file.
+already holds a DIFFERENT, non-empty `agent` (a real string with non-whitespace content, or a
+non-string value such as a number, bool, object, or array), apply returns `status: blocked`,
+writes the conflict into the Output `conflicts:` block, and writes NOTHING to any file. An
+existing `agent` that is missing, `null`, an empty string `""`, or a whitespace-only string
+normalizes to ABSENT — the engine classifies it `added` and writes the target value as a
+normal write, not a conflict. The navigator OWNS the recovery for real conflicts — surface the
+conflict to the user and obtain EXPLICIT approval to overwrite. On explicit user approval, the
+navigator re-runs apply with `agent_conflict_approved: "yes"` authored into the inputs file;
+the engine then classifies the agent as `overwritten`, returns `status: ok`, and produces
+normal `complete`/`updated` Output. Without approval the skill stays blocked and no file is
+changed. There is no silent-overwrite path; the navigator is the ONLY route that may proceed
+past a conflict, and only with the user's go-ahead. On `malformed` settings (unparseable
+existing file) the engine fails closed regardless of `agent_conflict_approved` — approval
+authorizes an agent overwrite, never clobbering a malformed file.
 
 ## Inputs JSON (apply)
 
@@ -240,11 +243,16 @@ Output `companions:` block; an absent field is reported `unknown`.
   created or modified by `hivemind:creep-spread`.
 - install, scaffold, or invent a test harness; run the detected test command; or overwrite,
   reorder, or replace an existing documented test/validation command in repo-root `CLAUDE.md`
-  — the engine detects and records append-if-absent only.
+  — the engine detects and records append-if-absent only; a `## Validation` section counts as
+  already-documented only when it carries a real command body (a fenced block under the
+  heading); a heading-only stub with no body is treated as absent and the detected command is
+  appended.
 - modify `~/.claude-mem/settings.json` beyond the single `CLAUDE_CODE_PATH` key the engine
   provisions (and only when `claude_mem` resolves to `yes`, the file exists, the key is
-  empty/missing, and a `claude` binary resolves); never overwrite an existing non-empty
-  value, and never touch any other key.
+  empty/missing, and a `claude` binary resolves); never overwrite an existing present value
+  (a non-empty string, a non-string such as a boolean/null/number/object/array, or any other
+  non-absent form — all are reported `already set` and left untouched), and never touch any
+  other key.
 - remove or disable an existing `enabledPlugins` companion entry — detection only ever adds;
   an entry already present is preserved and reported `already present` even if detection missed it.
 - overwrite a conflicting `agent` value without EXPLICIT user approval — the engine reports
