@@ -41,10 +41,16 @@
 #     kernel; only the PRESENCE predicate differs. This is a genuine variant (a different
 #     predicate), expressed by parameterizing the kernel's matcher — NOT a near-duplicate body.
 #   - `hivemind_guard_validation_section` (CLAUDE.md `## Validation`, SKILL.md step 14c/d/e):
-#     a SECTION-aware append — the unit appended is a whole `## Validation` markdown section, and
-#     the presence predicate is "a `## Validation` heading already exists" rather than a single
-#     standalone line. Same append-if-absent SHAPE as the kernel (test presence, else append a
-#     trailing-newline-guarded block, report added/already), with the section-scoped predicate.
+#     a SECTION-aware append keyed on a VALUE-STATE NORMALIZATION of the `## Validation` section
+#     (ABSENT / PRESENT-CANONICAL), NOT on the bare presence of the heading. The presence
+#     predicate is BODY-presence: a `## Validation` section counts as already-handled only when it
+#     carries a real COMMAND BODY (a fenced ```` ``` ```` command block under the heading) — a
+#     heading-only stub (the `## Validation` line with no fenced block beneath it before the next
+#     sibling/parent heading or EOF; blank lines or comments do NOT count as a body) is ABSENT and
+#     gets the assembled command body. This closes the predicate gap where a heading-only stub was
+#     mis-reported `already documented` and the detected command was silently dropped. Same
+#     append-if-absent SHAPE as the kernel (test the value-state, else write a trailing-newline-
+#     guarded section, report added/already), with the section-scoped BODY predicate.
 #
 # THE HOOK SCAFFOLD IS NOT A LINE GUARD (different op, lives here for cohesion):
 #   `hivemind_scaffold_hook_file` is a CREATE-IF-ABSENT file scaffold for the caveman
@@ -250,49 +256,141 @@ hivemind_scaffold_hook_file() {
   printf '%s\n' "created"
 }
 
+# _hivemind_is_section_heading <trimmed_line>
+# Return 0 when <trimmed_line> is an ATX `#`-prefixed markdown heading (one or more `#` then a
+# space then text). Used to bound the `## Validation` section: the section runs from its heading
+# to the NEXT such heading (any `#` level — a sibling `## X` or a parent `# X`) or EOF.
+_hivemind_is_section_heading() {
+  case "$1" in
+    '#'*' '*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# _hivemind_is_validation_heading <trimmed_line>
+# Return 0 when <trimmed_line> is the `## Validation` heading (allowing trailing whitespace/text
+# after the word, matching the caller's assembled heading line).
+_hivemind_is_validation_heading() {
+  case "$1" in
+    '## Validation'|'## Validation '*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # hivemind_guard_validation_section <claude_md_file> <section_body>
 # SECTION-aware append-if-absent for the repo-root CLAUDE.md `## Validation` section (SKILL.md
-# step 14c/d/e). If <claude_md_file> ALREADY contains a `## Validation` heading, this is a no-op
-# and reports `already documented` — the existing prose is left byte-untouched (SKILL.md step
-# 14c: "record NOTHING, leave the existing prose untouched"). Otherwise <section_body> is
-# appended as a whole section (with the kernel's trailing-newline guard so the heading starts on
-# its own line) and reports `added`. The file is created with <section_body> if absent (SKILL.md
-# step 14e). This is the kernel's append-if-absent SHAPE with a SECTION-scoped presence predicate
-# (a `## Validation` heading) instead of a single-line predicate; STEP-004's test-detector calls
-# this once it has assembled the section body.
+# step 14c/d/e), keyed on a VALUE-STATE NORMALIZATION of the section rather than bare heading
+# presence:
+#
+#   ABSENT            — no `## Validation` heading at all, OR a `## Validation` heading with NO
+#                       command body (no fenced ```` ``` ```` block under the heading before the
+#                       next sibling/parent `#`-heading or EOF; blank lines and comment lines do
+#                       NOT count as a body). The assembled command body is written and the result
+#                       reports `added`.
+#   PRESENT-CANONICAL — a `## Validation` heading WITH a real command body (a fenced block already
+#                       present under it). No-op: reports `already documented`, existing prose
+#                       left byte-untouched (SKILL.md step 14c: "leave the existing prose
+#                       untouched").
+#
+# This replaces the prior HEADING-ONLY predicate ("a `## Validation` heading exists ⇒
+# already documented"), which mis-classified a heading-only stub as handled and silently dropped
+# the detected command. The predicate now keys on BODY-presence (a fenced command block).
+#
+# HEADING-ONLY EDGE (ABSENT with a stub heading already present): to guarantee the result is ONE
+# `## Validation` section carrying the command body — never two competing headings — the existing
+# heading-only stub (heading line plus any blank/comment lines in its range) is REPLACED IN PLACE
+# by <section_body>. Replacement is chosen over append-under-heading because <section_body> itself
+# begins with the `## Validation` heading, so dropping the stub and writing the full assembled
+# section yields exactly one heading + the body while leaving every other line of the file
+# byte-unchanged (only the stub's own range is rewritten). The stub's blank/comment lines are not
+# a body and carry no information, so discarding them is lossless.
 #
 # ARGUMENTS
 #   <claude_md_file>  absolute path to repo-root CLAUDE.md. Created if absent.
 #   <section_body>    the full `## Validation` section text to append (heading + fenced command
 #                     block(s)), assembled by the caller. Written verbatim; never interpreted.
-#                     MUST begin with the `## Validation` heading line so the presence predicate
-#                     and the appended content agree.
+#                     MUST begin with the `## Validation` heading line so the BODY predicate and
+#                     the written content agree.
 hivemind_guard_validation_section() {
   local file="$1" section_body="$2"
 
-  # Presence predicate: a `## Validation` heading already exists (ATX heading, allowing trailing
-  # whitespace after the word). Comment/heading match is line-oriented over the existing file.
-  if [ -f "$file" ]; then
-    local line trimmed
-    while IFS= read -r line || [ -n "$line" ]; do
-      trimmed="$(_hivemind_trim "$line")"
-      case "$trimmed" in
-        '## Validation'|'## Validation '*)
-          printf '%s\n' "already documented"
-          return 0
-          ;;
-      esac
-    done < "$file"
-  fi
-
+  # Absent file → write the whole section (SKILL.md step 14e).
   if [ ! -e "$file" ]; then
     printf '%s\n' "$section_body" > "$file"
     printf '%s\n' "added"
     return 0
   fi
 
-  # Append the section after a trailing-newline guard so the heading is never glued onto the
-  # file's last unterminated line. Reuse the kernel's newline-guard test for single-sourcing.
+  # Read the file into a line array so the section's value-state can be classified and, in the
+  # heading-only edge, the stub range rewritten in place. Read is pure text (no interpretation).
+  local lines=()
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    lines+=("$line")
+  done < "$file"
+
+  # Locate the `## Validation` heading and its section range [heading_idx, end_idx). end_idx is
+  # the index of the next sibling/parent `#`-heading after the heading, or the array length (EOF).
+  # Within that range, detect a command body: a fenced ``` block line.
+  local n="${#lines[@]}"
+  local heading_idx=-1 end_idx="$n" has_body="no"
+  local i trimmed
+  for (( i = 0; i < n; i++ )); do
+    trimmed="$(_hivemind_trim "${lines[$i]}")"
+    if _hivemind_is_validation_heading "$trimmed"; then
+      heading_idx="$i"
+      break
+    fi
+  done
+
+  if [ "$heading_idx" -ge 0 ]; then
+    # Scan from the line after the heading to the next sibling/parent heading or EOF.
+    for (( i = heading_idx + 1; i < n; i++ )); do
+      trimmed="$(_hivemind_trim "${lines[$i]}")"
+      if _hivemind_is_section_heading "$trimmed"; then
+        end_idx="$i"
+        break
+      fi
+      # A fenced code block under the heading is the canonical command body. Blank lines and
+      # comment lines (`#`-leading but not a heading) do NOT count.
+      case "$trimmed" in
+        '```'*) has_body="yes" ;;
+      esac
+    done
+  fi
+
+  # PRESENT-CANONICAL: heading with a real command body → no-op, byte-unchanged.
+  if [ "$heading_idx" -ge 0 ] && [ "$has_body" = "yes" ]; then
+    printf '%s\n' "already documented"
+    return 0
+  fi
+
+  # ABSENT with a heading-only stub: REPLACE the stub range [heading_idx, end_idx) with the
+  # assembled section in place, leaving every other line byte-unchanged → ONE section with a body.
+  if [ "$heading_idx" -ge 0 ]; then
+    local out=()
+    for (( i = 0; i < heading_idx; i++ )); do
+      out+=("${lines[$i]}")
+    done
+    # Expand the assembled section_body into its constituent lines.
+    local body_line
+    while IFS= read -r body_line || [ -n "$body_line" ]; do
+      out+=("$body_line")
+    done <<< "$section_body"
+    for (( i = end_idx; i < n; i++ )); do
+      out+=("${lines[$i]}")
+    done
+    # Rewrite the file from the rebuilt line array (newline-terminated lines).
+    : > "$file"
+    for (( i = 0; i < "${#out[@]}"; i++ )); do
+      printf '%s\n' "${out[$i]}" >> "$file"
+    done
+    printf '%s\n' "added"
+    return 0
+  fi
+
+  # ABSENT with NO heading at all: append the whole section after a trailing-newline guard so the
+  # heading is never glued onto the file's last unterminated line (kernel newline-guard reuse).
   if [ -s "$file" ] && ! _hivemind_file_has_trailing_newline "$file"; then
     printf '\n' >> "$file"
   fi
