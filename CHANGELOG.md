@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.32.7] - 2026-06-13
+
+### Fixed
+
+- **triage-ops deps-read: fail closed on malformed owner/repo (nameWithOwner) token before the split (defense-in-depth, #282).**
+
 ## [2.32.6] - 2026-06-13
 
 ### Changed

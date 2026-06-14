@@ -546,6 +546,100 @@ else
   failed "list-issues:null-elem-row-fail-closed" "expected nonzero exit on null-elem row, got 0"
 fi
 
+# ── deps-read: owner/repo shape guard — fail-closed on malformed NWO token ───────
+# STEP-001 guard: after `gh repo view --json nameWithOwner` returns, the kernel-projected
+# token must match ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ or die exit 1.  We exercise the
+# LIVE path (no TRIAGE_OPS_OFFLINE) with a PATH-shadowed gh stub that answers
+# `repo view --json nameWithOwner` with a synthetic {"nameWithOwner":"<TOKEN>"}.
+# The stub is parameterized via STUB_NWO so one script covers all cases.
+# The stub need not handle `gh api graphql` — the guard die()s before that call.
+#
+# Positive happy-path: the existing offline deps-read:normalize case locks the well-formed
+# path.  If a clean live positive assertion is desired it would require a full graphql stub;
+# instead we omit it and note that coverage above is sufficient.
+
+STUBBIN_DIR="$TMPDIR_TEST/stubbin"
+mkdir -p "$STUBBIN_DIR"
+cat > "$STUBBIN_DIR/gh" <<'STUB_EOF'
+#!/usr/bin/env bash
+# Minimal gh stub: answers `repo view --json nameWithOwner` only.
+# If `api graphql` is reached, the malformed token slipped PAST the shape guard.
+# The caller invokes `gh api graphql ... 2>/dev/null`, so a stderr marker would be
+# swallowed — drop a SENTINEL FILE next to this stub (a path it derives from $0,
+# unaffected by the caller's stderr redirection) so the test can observe whether
+# the split was ever reached. This makes the guard-before-split property load-bearing
+# rather than vacuous.
+if [ "${1:-}" = "api" ] && [ "${2:-}" = "graphql" ]; then
+  printf 'reached gh api graphql — shape guard did NOT fire before the split\n' \
+    > "$(dirname "$0")/STUB_REACHED_GRAPHQL"
+  exit 1
+fi
+for arg in "$@"; do
+  case "$arg" in
+    nameWithOwner)
+      printf '{"nameWithOwner":"%s"}\n' "${STUB_NWO:-ownerrepo}"
+      exit 0
+      ;;
+  esac
+done
+exit 1
+STUB_EOF
+chmod +x "$STUBBIN_DIR/gh"
+
+# Case 1: no slash — token "ownerrepo" must fire the guard (exit nonzero).
+# Also verify the guard message appears on stderr so we know the RIGHT guard fired.
+NWO_NOSTUB_STDERR="$TMPDIR_TEST/nostub-stderr.txt"
+NWO_NOSTUB_STATUS=0
+STUB_NWO="ownerrepo" PATH="$STUBBIN_DIR:$PATH" \
+  bash "$OPS" deps-read 5 >"$TMPDIR_TEST/nostub-out.txt" 2>"$NWO_NOSTUB_STDERR" \
+  || NWO_NOSTUB_STATUS=$?
+if [ "$NWO_NOSTUB_STATUS" -ne 0 ]; then
+  pass "deps-read:malformed-no-slash-failclosed" "exit=$NWO_NOSTUB_STATUS (token: ownerrepo)"
+else
+  failed "deps-read:malformed-no-slash-failclosed" "expected nonzero exit, got 0 (token: ownerrepo)"
+fi
+# Confirm the guard message is present — failure here means a DIFFERENT guard fired.
+if grep -qF "is not a valid 'owner/repo' token" "$NWO_NOSTUB_STDERR"; then
+  pass "deps-read:malformed-no-slash-guard-message" "guard message found in stderr"
+else
+  failed "deps-read:malformed-no-slash-guard-message" \
+    "guard message absent from stderr (stderr: $(cat "$NWO_NOSTUB_STDERR"))"
+fi
+
+# Case 2: extra slash — token "owner/repo/extra" must fire the guard (exit nonzero).
+# Pre-fix, owner/repo/extra would split (owner=owner, repo=repo/extra) and REACH
+# gh api graphql; the stub now marks that path loudly, so this case proves the
+# shape guard fires BEFORE the split rather than passing vacuously on the stub's
+# generic exit 1. Assert: nonzero exit + guard message present + GraphQL NOT reached.
+NWO_EXTRA_STDERR="$TMPDIR_TEST/extra-stderr.txt"
+NWO_EXTRA_STATUS=0
+rm -f "$STUBBIN_DIR/STUB_REACHED_GRAPHQL"  # clear any stale sentinel before the run
+STUB_NWO="owner/repo/extra" PATH="$STUBBIN_DIR:$PATH" \
+  bash "$OPS" deps-read 5 >"$TMPDIR_TEST/extra-out.txt" 2>"$NWO_EXTRA_STDERR" \
+  || NWO_EXTRA_STATUS=$?
+if [ "$NWO_EXTRA_STATUS" -ne 0 ]; then
+  pass "deps-read:malformed-extra-slash-failclosed" "exit=$NWO_EXTRA_STATUS (token: owner/repo/extra)"
+else
+  failed "deps-read:malformed-extra-slash-failclosed" "expected nonzero exit, got 0 (token: owner/repo/extra)"
+fi
+# Confirm the SHAPE guard fired (not some other failure) — same guard message as case 1.
+if grep -qF "is not a valid 'owner/repo' token" "$NWO_EXTRA_STDERR"; then
+  pass "deps-read:malformed-extra-slash-guard-message" "guard message found in stderr"
+else
+  failed "deps-read:malformed-extra-slash-guard-message" \
+    "guard message absent from stderr (stderr: $(cat "$NWO_EXTRA_STDERR"))"
+fi
+# Confirm the split was NEVER reached: the stub's sentinel file must be ABSENT.
+# This is the property the guard exists to enforce — fail-closed BEFORE the split.
+# (The caller's `gh api graphql ... 2>/dev/null` swallows stderr, so the stub
+# signals via a sentinel file that the redirection cannot suppress.)
+if [ -e "$STUBBIN_DIR/STUB_REACHED_GRAPHQL" ]; then
+  failed "deps-read:malformed-extra-slash-guard-before-split" \
+    "owner/repo split reached gh api graphql — guard did NOT fire before the split"
+else
+  pass "deps-read:malformed-extra-slash-guard-before-split" "graphql not reached; guard fired before split"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────────
 echo
 echo "triage-ops: $PASS_COUNT passed, $FAIL_COUNT failed"
