@@ -1882,6 +1882,29 @@ assert_eq "settings:same-agent-class" "already present" \
 assert_eq "settings:same-agent-no-conflict" "null" \
   "$(printf '%s' "$sm_same_agent" | jq -r '.agent_conflict // "null"')" "agent already equal → no conflict block"
 
+# 12e-empty. ROOT-CLUSTER EDGE (RR3-STEP-005): an existing `agent` that is an EMPTY string ("") or
+# WHITESPACE-ONLY ("  ") normalizes to ABSENT — it is NOT a real conflicting value. Classified
+# `added` (NOT conflict), `.settings.agent` written to the target, status `ok`, NO conflict block.
+# Non-vacuous: if the value-state normalization reverted (any present string treated as a real
+# value), "" / "  " would land in the conflict branch → status conflict + class conflict, and every
+# assertion below would flip.
+sm_empty_agent="$(hivemind_settings_merge '{"agent":""}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:empty-agent-status" "ok" \
+  "$(printf '%s' "$sm_empty_agent" | jq -r '.status')" "empty-string agent → status ok (not conflict)"
+assert_eq "settings:empty-agent-class-added" "added" \
+  "$(printf '%s' "$sm_empty_agent" | jq -r '.keys.agent')" "empty-string agent normalizes to ABSENT → added"
+assert_eq "settings:empty-agent-value-written" "hivemind:overlord" \
+  "$(printf '%s' "$sm_empty_agent" | jq -r '.settings.agent')" "empty-string agent → target written"
+assert_eq "settings:empty-agent-no-conflict" "null" \
+  "$(printf '%s' "$sm_empty_agent" | jq -r '.agent_conflict // "null"')" "empty-string agent → no conflict block"
+sm_ws_agent="$(hivemind_settings_merge '{"agent":"  "}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:ws-agent-class-added" "added" \
+  "$(printf '%s' "$sm_ws_agent" | jq -r '.keys.agent')" "whitespace-only agent normalizes to ABSENT → added"
+assert_eq "settings:ws-agent-value-written" "hivemind:overlord" \
+  "$(printf '%s' "$sm_ws_agent" | jq -r '.settings.agent')" "whitespace-only agent → target written"
+assert_eq "settings:ws-agent-status" "ok" \
+  "$(printf '%s' "$sm_ws_agent" | jq -r '.status')" "whitespace-only agent → status ok (not conflict)"
+
 # 12e-approve. APPROVAL OVERWRITE (7th arg "yes"): a DIFFERENT existing agent WITH explicit
 # approval → status ok, agent OVERWRITTEN to the target, classified `overwritten`, NO conflict
 # block. This locks the restored base-prose contract: overwrite is permitted ONLY WITH approval.
@@ -2078,6 +2101,40 @@ assert_eq "claude-mem:present-value" "/user/provided/claude" \
 cm_after="$(cat "$cm_file_present")"
 assert_eq "claude-mem:present-bytes" "$cm_before" "$cm_after" "already-set file is byte-unchanged (no write)"
 
+# 13c-nonstring. ROOT-CLUSTER EDGE (RR3-STEP-005): a PRESENT NON-STRING `CLAUDE_CODE_PATH`
+# (boolean/number/object/array) is PRESENT-MALFORMED — a user-provided value that must NEVER be
+# clobbered → `already set`, file BYTE-UNCHANGED. Asserted for each non-string JSON shape.
+# Non-vacuous: if the predicate normalized non-strings to ABSENT (e.g. an `== ""`-only test that
+# mis-handled type), each of these would resolve+write → status `set` and the file bytes would
+# change, flipping both assertions per shape.
+# Each shape carries an explicit slug (the `{}`/`[]` JSON literals strip to nothing under a
+# charset filter, so name them rather than risk duplicate/empty case ids).
+for cm_ns_pair in 'false:bool' '42:number' '{}:object' '[]:array'; do
+  cm_ns="${cm_ns_pair%%:*}"
+  cm_ns_slug="${cm_ns_pair##*:}"
+  cm_home_ns="$(cm_setup_home "cm-nonstring-$cm_ns_slug")"
+  cm_file_ns="$cm_home_ns/.claude-mem/settings.json"
+  printf '{\n  "CLAUDE_CODE_PATH": %s,\n  "logLevel": "info"\n}\n' "$cm_ns" > "$cm_file_ns"
+  cm_before="$(cat "$cm_file_ns")"
+  cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_ns" "$cm_home_ns")"
+  assert_eq "claude-mem:nonstring-$cm_ns_slug-status" "already set" "$cm_status" \
+    "present non-string CLAUDE_CODE_PATH ($cm_ns) → already set (never clobbered)"
+  assert_eq "claude-mem:nonstring-$cm_ns_slug-bytes" "$cm_before" "$(cat "$cm_file_ns")" \
+    "present non-string ($cm_ns) → file byte-unchanged"
+done
+
+# 13c-null. PRESENT-NULL EDGE (RR3-STEP-005): an explicitly-present JSON `null` is a user-provided
+# value → PRESENT-MALFORMED → `already set`, file byte-unchanged (NOT treated as ABSENT). Non-vacuous:
+# if present-null were normalized to ABSENT, the binary would resolve and the key be overwritten →
+# status `set`, bytes changed.
+cm_home_null="$(cm_setup_home cm-null)"
+cm_file_null="$cm_home_null/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": null,\n  "logLevel": "info"\n}\n' > "$cm_file_null"
+cm_before="$(cat "$cm_file_null")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_null" "$cm_home_null")"
+assert_eq "claude-mem:present-null-status" "already set" "$cm_status" "present null CLAUDE_CODE_PATH → already set (skip, not absent)"
+assert_eq "claude-mem:present-null-bytes" "$cm_before" "$(cat "$cm_file_null")" "present null → file byte-unchanged"
+
 # 13d. Malformed JSON target → skipped (malformed json); no write, file byte-unchanged.
 cm_home_bad="$(cm_setup_home cm-bad)"
 cm_file_bad="$cm_home_bad/.claude-mem/settings.json"
@@ -2256,6 +2313,46 @@ fg_present_before="$(cat "$fg_claude_present")"
 fg_vp="$(hivemind_guard_validation_section "$fg_claude_present" "$FG_VALIDATION_BODY")"
 assert_eq "file-guard:validation-present-documented" "already documented" "$fg_vp" "existing ## Validation → already documented"
 assert_eq "file-guard:validation-present-bytes" "$fg_present_before" "$(cat "$fg_claude_present")" "existing ## Validation prose left byte-unchanged"
+
+# 14g-stub. ROOT-CLUSTER EDGE (RR3-STEP-005): a HEADING-ONLY `## Validation` (the heading line
+# present but NO fenced command body beneath it) normalizes to ABSENT under the BODY-presence
+# predicate → `added`, the heading-only stub is REPLACED IN PLACE with the assembled command
+# body, the result carries the fenced ```bash block, has EXACTLY ONE `## Validation` heading, and
+# every SIBLING section is byte-preserved. Non-vacuous: if the predicate reverted to bare-heading
+# presence, the stub would be mis-reported `already documented`, the file would stay byte-unchanged
+# (no fenced block, the `go test ./...` body never written) and every assertion below would fail.
+fg_claude_stub="$WORKDIR/fg-claude-stub.md"
+printf '# Project\n\n## Setup\n\nRun the installer.\n\n## Validation\n\n## License\n\nMIT.\n' > "$fg_claude_stub"
+fg_vs="$(hivemind_guard_validation_section "$fg_claude_stub" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-stub-added" "added" "$fg_vs" "heading-only ## Validation stub → ABSENT → added"
+# Fence pattern built via printf (octal 140 = backtick) so the literal backticks never enter the
+# shell tokenizer inside a command substitution.
+fg_fence_re="$(printf '^\140\140\140bash$')"
+assert_eq "file-guard:validation-stub-has-body" "1" \
+  "$(grep -c "$fg_fence_re" "$fg_claude_stub")" "command body (fenced bash block) written into the stub section"
+assert_eq "file-guard:validation-stub-cmd" "go test ./..." \
+  "$(grep -F 'go test ./...' "$fg_claude_stub")" "assembled command landed in the section"
+assert_eq "file-guard:validation-stub-one-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_stub")" "exactly ONE ## Validation heading (stub replaced in place, not duplicated)"
+# Sibling sections are byte-preserved (only the stub's own range was rewritten).
+assert_eq "file-guard:validation-stub-sibling-setup" "Run the installer." \
+  "$(grep -F 'Run the installer.' "$fg_claude_stub")" "preceding ## Setup sibling byte-preserved"
+assert_eq "file-guard:validation-stub-sibling-license" "MIT." \
+  "$(grep -F 'MIT.' "$fg_claude_stub")" "following ## License sibling byte-preserved"
+assert_eq "file-guard:validation-stub-license-heading" "1" \
+  "$(grep -c '^## License$' "$fg_claude_stub")" "following ## License heading byte-preserved"
+
+# 14g-bodyregress. REGRESSION GUARD (RR3-STEP-005): a `## Validation` heading WITH a real fenced
+# command body is PRESENT-CANONICAL → still `already documented`, file byte-unchanged. This is the
+# inverse-edge guard ensuring the body-presence predicate did not over-correct into always-append.
+# Non-vacuous: if the predicate dropped the body check (treating every heading as absent), this
+# would return `added` and rewrite the file, breaking both assertions.
+fg_claude_body="$WORKDIR/fg-claude-body.md"
+printf '# Project\n\n## Validation\n\n```bash\nmake check\n```\n\n## Notes\n\nkeep.\n' > "$fg_claude_body"
+fg_body_before="$(cat "$fg_claude_body")"
+fg_vb="$(hivemind_guard_validation_section "$fg_claude_body" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-body-documented" "already documented" "$fg_vb" "heading WITH fenced body → already documented"
+assert_eq "file-guard:validation-body-bytes" "$fg_body_before" "$(cat "$fg_claude_body")" "heading-with-body file byte-unchanged"
 
 # 14h. INERT: a hostile entry value crafted as a command-substitution payload is written as plain
 # text, never executed (proves the text guards never eval/source the entry).
@@ -2445,6 +2542,53 @@ rm -f "$td_mono_claude"
 hivemind_record_validation "$td_mono_rec" "$td_mono_claude" >/dev/null
 assert_eq "test-detect:monorepo-recorder-js" "1" "$(grep -cF 'npm test' "$td_mono_claude")" "npm test fenced block present"
 assert_eq "test-detect:monorepo-recorder-go" "1" "$(grep -cF 'go test ./...' "$td_mono_claude")" "go test ./... fenced block present"
+
+# ── Section 16: root-cluster class-locking matrix (RR3-STEP-005) ────────────────────
+echo ''
+echo '=== root-cluster class-locking matrix: seed-hive merge-predicate-gap regression lock ==='
+#
+# CLASS LOCK for the seed-hive MERGE-PREDICATE-GAP cluster (PR #297). The three site fixes that
+# closed the cluster each replaced a presence-only predicate with a VALUE-STATE NORMALIZATION:
+#   (1) file-guard `## Validation`  — bare-heading presence → BODY presence (heading-only stub is ABSENT)
+#   (2) settings-merge `agent`      — any-present-string → empty/whitespace normalizes to ABSENT
+#   (3) claude-mem CLAUDE_CODE_PATH — present-non-empty-string → present-non-string/null is NEVER clobbered
+# This single test asserts ALL THREE together as the NAMED root-cluster lock so a future
+# single-SITE regression (reverting just one predicate) trips it. It is NON-VACUOUS: each clause
+# below fails independently if its corresponding site fix reverts, so no one site can silently
+# regress while the other two hold.
+mx_fail=0
+
+# Matrix clause (1): heading-only `## Validation` → command appended (file-guard body-presence).
+# Reverts-as: a bare-heading predicate would report `already documented` and write no fenced block.
+mx_claude="$WORKDIR/mx-claude.md"
+printf '# Project\n\n## Validation\n' > "$mx_claude"
+mx_v="$(hivemind_guard_validation_section "$mx_claude" "$FG_VALIDATION_BODY")"
+[ "$mx_v" = "added" ] || { mx_fail=1; echo "  matrix-1 FAIL: heading-only stub status=$mx_v (want added)"; }
+grep -q "$(printf '^\140\140\140bash$')" "$mx_claude" || { mx_fail=1; echo "  matrix-1 FAIL: command body not appended into stub"; }
+
+# Matrix clause (2): `agent:""` → `added` not conflict (settings-merge value-state normalization).
+# Reverts-as: an any-present-string predicate would classify "" as a real value → conflict.
+mx_sm="$(hivemind_settings_merge '{"agent":""}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+mx_sm_class="$(printf '%s' "$mx_sm" | jq -r '.keys.agent')"
+mx_sm_status="$(printf '%s' "$mx_sm" | jq -r '.status')"
+[ "$mx_sm_class" = "added" ] || { mx_fail=1; echo "  matrix-2 FAIL: empty agent class=$mx_sm_class (want added)"; }
+[ "$mx_sm_status" = "ok" ] || { mx_fail=1; echo "  matrix-2 FAIL: empty agent status=$mx_sm_status (want ok)"; }
+
+# Matrix clause (3): present non-string CLAUDE_CODE_PATH → skipped-not-clobbered (claude-mem never-clobber).
+# Reverts-as: a normalize-non-string-to-absent predicate would resolve+write → status `set`, bytes change.
+mx_home="$(cm_setup_home mx-claude-mem)"
+mx_cm_file="$mx_home/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": false,\n  "logLevel": "info"\n}\n' > "$mx_cm_file"
+mx_cm_before="$(cat "$mx_cm_file")"
+mx_cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$mx_cm_file" "$mx_home")"
+[ "$mx_cm_status" = "already set" ] || { mx_fail=1; echo "  matrix-3 FAIL: non-string status=$mx_cm_status (want already set)"; }
+[ "$mx_cm_before" = "$(cat "$mx_cm_file")" ] || { mx_fail=1; echo "  matrix-3 FAIL: non-string file was clobbered"; }
+
+if [ "$mx_fail" -eq 0 ]; then
+  pass "matrix:root-cluster-class-lock" "all three merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered)"
+else
+  failed "matrix:root-cluster-class-lock" "a seed-hive merge-predicate-gap site fix regressed (see matrix-N FAIL lines above)"
+fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
