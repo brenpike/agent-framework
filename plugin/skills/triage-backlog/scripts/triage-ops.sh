@@ -808,6 +808,10 @@ cmd_deps_read() {
     '.nameWithOwner')" \
     || die "deps-read: failed to resolve owner/repo (unreadable/malformed repo response)" 1
   owner_repo="$(printf '%s' "$owner_repo" | jq -r .)"
+  # Defense-in-depth: validate the kernel-projected token is exactly one owner/repo
+  # shape before splitting (owner/repo still flow only as inert `gh -f` data flags).
+  [[ "$owner_repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] \
+    || die "deps-read: resolved owner/repo is not a valid 'owner/repo' token (got '$owner_repo')" 1
   owner="${owner_repo%%/*}"; repo="${owner_repo#*/}"
   resp="$(gh api graphql -f query="$DEPS_READ_QUERY" \
             -f owner="$owner" -f repo="$repo" -F number="$issue" 2>/dev/null)" \
