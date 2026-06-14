@@ -280,7 +280,14 @@ case $ledger_open_rc in
     # ONLY in this arm, AFTER the wrapper validated the path (never canonicalize an
     # unvalidated path). This mirrors EXACTLY what the lib used to compute on success:
     # canon dir via `cd "$(dirname "$ledger")" && pwd -P`, then state.json beneath it.
-    canon_ledger_dir="$(cd "$(dirname "$ledger")" && pwd -P)"
+    # FAIL-CLOSED: these scripts run without `set -e`, so a `cd` that fails (e.g. the run dir
+    # vanished between the helper's post-existence confirmation and this derivation) would
+    # otherwise leave canon_ledger_dir EMPTY and fall through to mktemp under "/". Guard the
+    # status AND emptiness here, mirroring hivemind_open_ledger's own `[ -z ]` check, so an
+    # empty/failed derivation can never reach the atomic mktemp/mv.
+    if ! canon_ledger_dir="$(cd "$(dirname "$ledger")" && pwd -P)" || [ -z "$canon_ledger_dir" ]; then
+      blocker "failed to canonicalize the ledger directory; ledger unchanged"
+    fi
     canon_ledger="$canon_ledger_dir/state.json"
     ;;
   2) blocker "refusing: ${repo_root}/.hivemind/runs/$run_id resolves outside the checkout (symlinked ancestor or leaf); ledger unchanged" ;;
