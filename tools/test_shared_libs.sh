@@ -37,6 +37,7 @@ for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh" \
                 "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh" \
                 "$SHARED_DIR/fetch-normalize-core.sh" "$SHARED_DIR/ledger-engine-io.sh" \
+                "$SHARED_DIR/settings-merge.sh" \
                 "$CLASSIFY_FILTER" \
                 "$FN_REVIEW_HANDLED" "$FN_EXPECTED_REVIEW" "$FN_CI_CHECKS" "$FN_EXPECTED_CI" \
                 "$FN_OVERFLOW_THREADS" "$FN_MALFORMED"; do
@@ -67,6 +68,8 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 # this source line.
 # shellcheck source=/dev/null
 . "$SHARED_DIR/ledger-engine-io.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/settings-merge.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1714,6 +1717,201 @@ if [ "$ol4_rc" -ne 0 ]; then
   pass "engineio:ol-symlinked-leaf-reject" "symlinked state.json leaf → containment reject (non-zero)"
 else
   failed "engineio:ol-symlinked-leaf-reject" "symlinked state.json leaf must be rejected; got 0"
+fi
+
+# ── Section 12: settings-merge.sh ───────────────────────────────────────────────
+echo ''
+echo '=== settings-merge.sh: frozen template + required-key merge core ==='
+#
+# AUTHORITATIVE regression tests for the seed-hive `.claude/settings.json` merge core. The
+# merge function takes the settings JSON as a STRING and emits the OUTPUT CONTRACT JSON object;
+# it performs NO file I/O. Each case feeds an inline settings string and asserts the emitted
+# classification, the merged settings, and the conflict/idempotency/union invariants from
+# seed-hive/SKILL.md step 6 + Merge Rules.
+
+# 12a. Frozen template is the SINGLE DATA source and matches SKILL.md byte-for-byte (modulo the
+# SKILL.md fenced block's CRLF line endings — the lib emits LF; JSON values must not carry CR).
+SM_SKILL_TEMPLATE="$WORKDIR/skill-template.txt"
+SM_LIB_TEMPLATE="$WORKDIR/lib-template.txt"
+# Extract the fenced frozen block from SKILL.md (the 20 indented rule lines). The SKILL.md fenced
+# block carries CRLF line endings, so FIRST strip every trailing CR (`tr -d '\r'`), THEN range-match
+# the block (so the `$` anchors land), THEN strip the leading 5-space fence indent. Content-only.
+tr -d '\r' < "$REPO_ROOT/plugin/skills/seed-hive/SKILL.md" \
+  | sed -n '/^     Bash(echo \*)$/,/^     Bash(node /p' \
+  | sed 's/^     //; s/[[:space:]]*$//' > "$SM_SKILL_TEMPLATE"
+hivemind_settings_permissions_template | sed 's/[[:space:]]*$//' > "$SM_LIB_TEMPLATE"
+assert_eq "settings:template-rule-count" "20" \
+  "$(wc -l < "$SM_LIB_TEMPLATE" | tr -d ' ')" "frozen template has 20 rules"
+if diff "$SM_SKILL_TEMPLATE" "$SM_LIB_TEMPLATE" >/dev/null 2>&1; then
+  pass "settings:template-matches-skill" "frozen template byte-matches SKILL.md (content)"
+else
+  failed "settings:template-matches-skill" "frozen template DRIFTED from SKILL.md step 6"
+fi
+
+# Merge helper: run the merge and capture the JSON result for jq assertions.
+# Usage: sm_result="$(hivemind_settings_merge "$settings" "$agent" caveman mem codex allow)"
+# then: assert_eq <case> <expected> "$(printf '%s' "$sm_result" | jq -r '<filter>')" <msg>
+
+# 12b. Merge from {} (absent-file case): every required key `added`, agent set, full template.
+sm_from_empty="$(hivemind_settings_merge '' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:empty-status" "ok" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.status')" "empty input → ok"
+assert_eq "settings:empty-agent-class" "added" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.keys.agent')" "agent added from {}"
+assert_eq "settings:empty-agent-value" "hivemind:overlord" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.agent')" "agent value written"
+assert_eq "settings:empty-hive-class" "added" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.keys["enabledPlugins.hivemind@brenpike"]')" "hivemind enabledPlugin added"
+assert_eq "settings:empty-hive-value" "true" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')" "hivemind enabledPlugin = true"
+# 12b: absent permissions.allow → created in template ORDER (first rule = Bash(echo *)).
+assert_eq "settings:empty-allow-count" "20" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow | length')" "absent allow → 20 template rules created"
+assert_eq "settings:empty-allow-first" "Bash(echo *)" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow[0]')" "created allow is in template order (first rule)"
+assert_eq "settings:empty-allow-last" "Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow[-1]')" "created allow is in template order (last rule)"
+assert_eq "settings:empty-allow-report-count" "20" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.permissions_allow | length')" "permissions_allow reports one entry per template rule"
+assert_eq "settings:empty-allow-all-added" "added" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '[.permissions_allow[].result] | unique | .[0]')" "every template rule reported added from {}"
+
+# 12c. companion toggles: yes writes the keys; no classifies `resolved no` and writes nothing.
+sm_companions="$(hivemind_settings_merge '' 'hivemind:overlord' 'yes' 'yes' 'yes' 'no')"
+assert_eq "settings:cave-on-class" "added" \
+  "$(printf '%s' "$sm_companions" | jq -r '.keys["enabledPlugins.caveman@caveman"]')" "caveman=yes → added"
+assert_eq "settings:cave-on-value" "true" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.enabledPlugins["caveman@caveman"]')" "caveman enabledPlugin = true"
+assert_eq "settings:cave-pcfg-level" "ultra" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "caveman pluginConfig defaultLevel = ultra"
+assert_eq "settings:cave-hook-cmd" ".claude/hooks/caveman-ultra-subagent.sh" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "SubagentStart hook command wired"
+assert_eq "settings:cave-hook-type" "command" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].type')" "SubagentStart hook type = command"
+assert_eq "settings:mem-on-value" "true" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.enabledPlugins["claude-mem@thedotmack"]')" "claude_mem=yes → enabledPlugin true"
+assert_eq "settings:codex-on-value" "true" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.enabledPlugins["codex@openai-codex"]')" "codex=yes → enabledPlugin true"
+# All companions off → classified `resolved no`, NONE written.
+sm_no_companions="$(hivemind_settings_merge '' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:cave-off-class" "resolved no" \
+  "$(printf '%s' "$sm_no_companions" | jq -r '.keys["enabledPlugins.caveman@caveman"]')" "caveman=no → resolved no"
+assert_eq "settings:cave-off-absent" "null" \
+  "$(printf '%s' "$sm_no_companions" | jq -r '.settings.enabledPlugins["caveman@caveman"] // "null"')" "caveman=no → key not written"
+assert_eq "settings:cave-pcfg-off-absent" "null" \
+  "$(printf '%s' "$sm_no_companions" | jq -r '.settings.pluginConfigs // "null"')" "caveman=no → no pluginConfigs"
+assert_eq "settings:cave-hook-off-absent" "null" \
+  "$(printf '%s' "$sm_no_companions" | jq -r '.settings.hooks // "null"')" "caveman=no → no hooks"
+
+# 12d. IDEMPOTENT re-merge of an already-seeded object = no-op, BYTE-STABLE settings.
+sm_once="$(hivemind_settings_merge '' 'hivemind:overlord' 'yes' 'yes' 'yes' 'yes')"
+sm_once_settings="$(printf '%s' "$sm_once" | jq -cS '.settings')"
+sm_twice="$(hivemind_settings_merge "$(printf '%s' "$sm_once" | jq -c '.settings')" 'hivemind:overlord' 'yes' 'yes' 'yes' 'yes')"
+sm_twice_settings="$(printf '%s' "$sm_twice" | jq -cS '.settings')"
+assert_eq "settings:idempotent-byte-stable" "$sm_once_settings" "$sm_twice_settings" \
+  "re-merge of seeded object is byte-stable (no-op)"
+assert_eq "settings:idempotent-all-present" "already present" \
+  "$(printf '%s' "$sm_twice" | jq -r '[.keys | to_entries[] | .value] | unique | .[0]')" "re-merge → every key already present"
+assert_eq "settings:idempotent-allow-present" "already present" \
+  "$(printf '%s' "$sm_twice" | jq -r '[.permissions_allow[].result] | unique | .[0]')" "re-merge → every template rule already present"
+assert_eq "settings:idempotent-status" "ok" \
+  "$(printf '%s' "$sm_twice" | jq -r '.status')" "re-merge status ok"
+
+# 12e. agent CONFLICT detection: a DIFFERENT existing agent → status conflict, value preserved.
+sm_conflict="$(hivemind_settings_merge '{"agent":"other:agent"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:conflict-status" "conflict" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.status')" "different existing agent → status conflict"
+assert_eq "settings:conflict-agent-class" "conflict" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.keys.agent')" "agent classified conflict"
+assert_eq "settings:conflict-existing" "other:agent" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.agent_conflict.existing')" "conflict reports existing value"
+assert_eq "settings:conflict-required" "hivemind:overlord" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.agent_conflict.required')" "conflict reports required value"
+# CRITICAL: the existing agent is NOT overwritten on conflict (byte-preserved for user approval).
+assert_eq "settings:conflict-not-overwritten" "other:agent" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.settings.agent')" "conflicting agent left unchanged (never silently overwritten)"
+# An agent already EQUAL to the target is NOT a conflict (already present, no conflict block).
+sm_same_agent="$(hivemind_settings_merge '{"agent":"hivemind:overlord"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:same-agent-status" "ok" \
+  "$(printf '%s' "$sm_same_agent" | jq -r '.status')" "agent already equal → ok, not conflict"
+assert_eq "settings:same-agent-class" "already present" \
+  "$(printf '%s' "$sm_same_agent" | jq -r '.keys.agent')" "agent already equal → already present"
+assert_eq "settings:same-agent-no-conflict" "null" \
+  "$(printf '%s' "$sm_same_agent" | jq -r '.agent_conflict // "null"')" "agent already equal → no conflict block"
+
+# 12f. permissions.allow UNION preserves existing ORDER, appends only ABSENT rules.
+# Existing: a custom rule + one template rule (Bash(jq *)). Union must keep both in place, then
+# append the 19 absent template rules; Bash(jq *) reported already present, Bash(echo *) added.
+sm_union="$(hivemind_settings_merge '{"permissions":{"allow":["Bash(custom *)","Bash(jq *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:union-first" "Bash(custom *)" \
+  "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow[0]')" "union preserves existing first entry order"
+assert_eq "settings:union-second" "Bash(jq *)" \
+  "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow[1]')" "union preserves existing second entry order"
+assert_eq "settings:union-total" "21" \
+  "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow | length')" "union = 2 existing + 19 absent template rules"
+assert_eq "settings:union-existing-present" "already present" \
+  "$(printf '%s' "$sm_union" | jq -r '.permissions_allow[] | select(.rule=="Bash(jq *)") | .result')" "template rule already in array → already present"
+assert_eq "settings:union-absent-added" "added" \
+  "$(printf '%s' "$sm_union" | jq -r '.permissions_allow[] | select(.rule=="Bash(echo *)") | .result')" "absent template rule → added"
+# A user's custom (non-template) rule is NEVER removed or duplicated by the union.
+assert_eq "settings:union-custom-kept" "1" \
+  "$(printf '%s' "$sm_union" | jq -r '[.settings.permissions.allow[] | select(. == "Bash(custom *)")] | length')" "user custom rule kept exactly once"
+
+# 12g. permissions present WITHOUT allow → allow added, sibling permissions keys preserved.
+sm_sibling="$(hivemind_settings_merge '{"permissions":{"deny":["Bash(rm *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:sibling-deny-kept" "Bash(rm *)" \
+  "$(printf '%s' "$sm_sibling" | jq -r '.settings.permissions.deny[0]')" "sibling permissions.deny preserved"
+assert_eq "settings:sibling-allow-created" "20" \
+  "$(printf '%s' "$sm_sibling" | jq -r '.settings.permissions.allow | length')" "permissions without allow → allow created with 20 rules"
+
+# 12h. seed_allowlist=no → permissions.allow left UNTOUCHED, permissions_allow report empty.
+sm_no_allow="$(hivemind_settings_merge '{"permissions":{"allow":["Bash(x *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:noallow-untouched-len" "1" \
+  "$(printf '%s' "$sm_no_allow" | jq -r '.settings.permissions.allow | length')" "seed_allowlist=no → existing allow untouched"
+assert_eq "settings:noallow-untouched-val" "Bash(x *)" \
+  "$(printf '%s' "$sm_no_allow" | jq -r '.settings.permissions.allow[0]')" "seed_allowlist=no → existing allow value unchanged"
+assert_eq "settings:noallow-report-empty" "0" \
+  "$(printf '%s' "$sm_no_allow" | jq -r '.permissions_allow | length')" "seed_allowlist=no → empty permissions_allow report"
+
+# 12i. PRESERVE-EXISTING: an unrelated pre-existing key the user had is kept untouched.
+sm_preserve="$(hivemind_settings_merge '{"theme":"dark","model":"opus"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:preserve-theme" "dark" \
+  "$(printf '%s' "$sm_preserve" | jq -r '.settings.theme')" "unrelated existing key (theme) preserved"
+assert_eq "settings:preserve-model" "opus" \
+  "$(printf '%s' "$sm_preserve" | jq -r '.settings.model')" "unrelated existing key (model) preserved"
+# A pre-existing companion entry is preserved + reported already present even when its toggle is no
+# (SKILL.md: detection only ever adds; an entry already present is preserved and `already present`).
+sm_pre_companion="$(hivemind_settings_merge '{"enabledPlugins":{"caveman@caveman":true}}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:preserve-companion-kept" "true" \
+  "$(printf '%s' "$sm_pre_companion" | jq -r '.settings.enabledPlugins["caveman@caveman"]')" "pre-existing companion entry preserved even when toggle is no"
+
+# 12j. MALFORMED non-empty input → status malformed, settings null, NO merge (fail-closed).
+# An EMPTY string is the absent-file case (treated as {}), NOT malformed.
+sm_malformed="$(hivemind_settings_merge 'not json{' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:malformed-status" "malformed" \
+  "$(printf '%s' "$sm_malformed" | jq -r '.status')" "unparseable non-empty input → status malformed"
+assert_eq "settings:malformed-settings-null" "null" \
+  "$(printf '%s' "$sm_malformed" | jq -r '.settings // "null"')" "malformed input → settings not echoed (null)"
+# Valid JSON that is NOT an object (a bare array) is likewise malformed (a settings file is an object).
+sm_array="$(hivemind_settings_merge '[1,2,3]' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:nonobject-malformed" "malformed" \
+  "$(printf '%s' "$sm_array" | jq -r '.status')" "non-object JSON (array) → status malformed"
+# Empty string is NOT malformed — it is the absent-file {} case.
+sm_empty_ok="$(hivemind_settings_merge '' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:empty-not-malformed" "ok" \
+  "$(printf '%s' "$sm_empty_ok" | jq -r '.status')" "empty input is absent-file case, not malformed"
+
+# 12k. INERT BINDING: a settings value crafted to look like a jq-program fragment or a
+# command-substitution payload is treated as plain data (passed via --argjson), never executed.
+rm -f "$PWN_MARKER"
+sm_inert="$(hivemind_settings_merge "{\"agent\":\"\$(touch $PWN_MARKER)\"}" 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+# The crafted agent string is a DIFFERENT value than the target → conflict, value preserved verbatim.
+assert_eq "settings:inert-status" "conflict" \
+  "$(printf '%s' "$sm_inert" | jq -r '.status')" "crafted agent value is inert data → conflict, not executed"
+if [ -e "$PWN_MARKER" ]; then
+  failed "settings:inert-no-side-effect" "a settings value triggered command substitution: $PWN_MARKER created"
+else
+  pass "settings:inert-no-side-effect" "no settings value triggered command substitution"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
