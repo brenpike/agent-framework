@@ -45,6 +45,13 @@
 #           "claude_mem":     "yes"|"no",   // RESOLVED
 #           "codex":          "yes"|"no",   // RESOLVED
 #           "seed_allowlist": "yes"|"no",   // default yes
+#           "agent_conflict_approved": "yes"|"no", // OPTIONAL, default "no". The navigator sets
+#                              "yes" ONLY when re-running apply after the user explicitly approved
+#                              overwriting a CONFLICTING existing `agent` value. Threaded as the
+#                              7th positional arg into hivemind_settings_merge: "yes" authorizes
+#                              the overwrite (merge returns ok → normal complete/updated Output);
+#                              any other value / absent → conflict stays blocked. Inert when no
+#                              agent conflict exists. NEVER authorizes clobbering a malformed file.
 #           // companion detection FACTS (detected/source/via) the navigator gathered, echoed
 #           // verbatim into the Output `companions:` block. Optional; absent → reported unknown.
 #           "companions": {
@@ -120,11 +127,11 @@ for lib in settings-merge.sh claude-mem-path.sh file-guard.sh test-detect.sh; do
   . "$shared_dir/$lib" || fail "failed to source skills/_shared/$lib (unparseable); refusing to proceed"
 done
 
-# ── Dependency check ──────────────────────────────────────────────────────────
-command -v jq >/dev/null 2>&1 \
-  || fail "jq is required to merge settings and detect companions but is not installed"
-
 # ── Companion detection (READ-ONLY) ────────────────────────────────────────────
+# NO global jq gate: the read-only `detect` phase MUST run on a jq-less machine (SKILL.md
+# Companion Detection: "treat jq-unavailable like an unparseable manifest; never crash"). The
+# jq REQUIREMENT is scoped to `phase_apply` (which genuinely needs jq for the settings merge
+# and Output render); detect degrades to the cache-dir probe and emits its facts via printf.
 # The three companion plugin@marketplace keys, in the canonical Output order.
 SEED_COMPANIONS=("caveman@caveman" "claude-mem@thedotmack" "codex@openai-codex")
 
@@ -132,13 +139,16 @@ SEED_COMPANIONS=("caveman@caveman" "claude-mem@thedotmack" "codex@openai-codex")
 # Classify ONE companion's install state (SKILL.md Companion Detection), READ-ONLY. Emits two
 # space-separated words on stdout: "<detected> <source>" where detected is installed|absent and
 # source is manifest|cache|none. Resolution order:
-#   1. Manifest authoritative: when ~/.claude/plugins/installed_plugins.json is readable valid
-#      JSON, a top-level .plugins["<key>"] entry → installed/manifest; absent key → absent/manifest
-#      (the manifest is authoritative even if a cache dir happens to exist).
-#   2. Cache fallback: manifest absent/unparseable → check ~/.claude/plugins/cache/<mkt>/<plugin>/.
-#      Directory present → installed/cache; absent → absent/cache.
-#   3. Neither: manifest unparseable AND no cache dir → absent/none.
-# $HOME is honored so a test harness can point detection at a tmp HOME.
+#   1. Manifest authoritative: when jq is available AND ~/.claude/plugins/installed_plugins.json
+#      is readable valid JSON, a top-level .plugins["<key>"] entry → installed/manifest; absent
+#      key → absent/manifest (the manifest is authoritative even if a cache dir happens to exist).
+#   2. Cache fallback: jq absent, OR manifest absent/unparseable → check
+#      ~/.claude/plugins/cache/<mkt>/<plugin>/. Directory present → installed/cache.
+#   3. Neither: (jq absent OR manifest unparseable) AND no cache dir → absent/none.
+# jq-UNAVAILABLE is treated EXACTLY like an unparseable manifest (SKILL.md Companion Detection):
+# the manifest probe is skipped entirely and resolution degrades to the cache-dir branch; this
+# function NEVER crashes and NEVER clobbers. $HOME is honored so a test harness can point
+# detection at a tmp HOME.
 hivemind_seed_detect_one() {
   local key="$1"
   local manifest="$HOME/.claude/plugins/installed_plugins.json"
@@ -146,8 +156,11 @@ hivemind_seed_detect_one() {
   local marketplace="${key#*@}"
   local cache_dir="$HOME/.claude/plugins/cache/$marketplace/$plugin"
 
-  # Manifest authoritative when readable + valid JSON object.
-  if [ -f "$manifest" ] && jq -e 'type == "object"' "$manifest" >/dev/null 2>&1; then
+  # Manifest authoritative ONLY when jq is available AND the file is readable + valid JSON object.
+  # When jq is ABSENT this whole branch is skipped (jq-unavailable == unparseable manifest), so
+  # detection degrades to the cache-dir probe below — never a crash.
+  if command -v jq >/dev/null 2>&1 \
+     && [ -f "$manifest" ] && jq -e 'type == "object"' "$manifest" >/dev/null 2>&1; then
     if jq -e --arg k "$key" '(.plugins // {}) | has($k)' "$manifest" >/dev/null 2>&1; then
       printf '%s %s\n' "installed" "manifest"
     else
@@ -165,29 +178,37 @@ hivemind_seed_detect_one() {
 }
 
 # phase_detect <project_root>
-# Emit the companion-detection facts JSON the navigator consumes. READ-ONLY.
+# Emit the companion-detection facts JSON the navigator consumes. READ-ONLY, and DELIBERATELY
+# jq-FREE: detect MUST run to completion on a fully jq-less machine (FINDING 2). The output is a
+# small FIXED-SHAPE structure — keys are the fixed literals in SEED_COMPANIONS, values are fixed
+# enums (detected: installed|absent; source: manifest|cache|none) produced by
+# hivemind_seed_detect_one. Because every emitted byte is a controlled literal (never an
+# untrusted interpolation), the object is assembled with printf — no jq, no injection surface.
 phase_detect() {
   local project_root="${1:-}"
   [ -n "$project_root" ] || fail "detect requires a project root argument"
   [ -d "$project_root" ] || fail "detect project root is not a directory: $project_root"
 
-  # Build the companions object key-by-key. Each classification enters jq as inert --arg
-  # bindings, never interpolated into the program source.
-  local companions_json='{}'
-  local key fields detected source
-  for key in "${SEED_COMPANIONS[@]}"; do
+  # printf-assemble the SAME shape jq used to emit:
+  #   { "companions": { "<key>": { "detected": "...", "source": "..." }, ... } }
+  # `detected`/`source` are constrained to fixed enums by hivemind_seed_detect_one, and each
+  # <key> is a fixed literal from SEED_COMPANIONS — no value here is attacker-controlled, so
+  # direct embedding is safe and jq is not required to build (or escape) the document.
+  local key fields detected source idx last
+  last=$(( ${#SEED_COMPANIONS[@]} - 1 ))
+  printf '{\n'
+  printf '  "companions": {\n'
+  for idx in "${!SEED_COMPANIONS[@]}"; do
+    key="${SEED_COMPANIONS[$idx]}"
     fields="$(hivemind_seed_detect_one "$key")"
     detected="${fields%% *}"
     source="${fields##* }"
-    companions_json="$(jq -n \
-      --argjson acc "$companions_json" \
-      --arg k "$key" \
-      --arg detected "$detected" \
-      --arg source "$source" \
-      '$acc + { ($k): { detected: $detected, source: $source } }')"
+    printf '    "%s": { "detected": "%s", "source": "%s" }' "$key" "$detected" "$source"
+    if [ "$idx" -lt "$last" ]; then printf ','; fi
+    printf '\n'
   done
-
-  jq -n --argjson companions "$companions_json" '{ companions: $companions }'
+  printf '  }\n'
+  printf '}\n'
 }
 
 # ── APPLY phase ─────────────────────────────────────────────────────────────────
@@ -196,6 +217,11 @@ phase_detect() {
 # block. The inputs file is the ONLY command-line value; every field is read with jq into inert
 # variables below — never interpolated into program source.
 phase_apply() {
+  # jq is REQUIRED for apply (the settings merge and every Output render run through jq). detect
+  # degrades without jq; apply genuinely cannot — fail closed here rather than mid-merge.
+  command -v jq >/dev/null 2>&1 \
+    || fail "jq is required to merge settings and render the apply Output but is not installed"
+
   local inputs_file="${1:-}"
   [ -n "$inputs_file" ] || fail "apply requires an inputs JSON file argument"
   [ -f "$inputs_file" ] || fail "apply inputs file does not exist: $inputs_file"
@@ -203,13 +229,17 @@ phase_apply() {
     || fail "apply inputs file is not a valid JSON object: $inputs_file"
 
   # Parse every field into inert variables.
-  local project_root agent_target caveman claude_mem codex seed_allowlist
+  local project_root agent_target caveman claude_mem codex seed_allowlist agent_conflict_approved
   project_root="$(jq -r '.project_root // ""' "$inputs_file")"
   agent_target="$(jq -r '.agent_target // "hivemind:overlord"' "$inputs_file")"
   caveman="$(jq -r '.caveman // "no"' "$inputs_file")"
   claude_mem="$(jq -r '.claude_mem // "no"' "$inputs_file")"
   codex="$(jq -r '.codex // "no"' "$inputs_file")"
   seed_allowlist="$(jq -r '.seed_allowlist // "yes"' "$inputs_file")"
+  # OPTIONAL inert input: when the navigator re-runs apply after the user approved an agent
+  # overwrite, it sets this to "yes". Read inertly via jq (never spliced into program source);
+  # default "no" preserves the never-overwrite-on-conflict behavior for every existing caller.
+  agent_conflict_approved="$(jq -r '.agent_conflict_approved // "no"' "$inputs_file")"
 
   [ -n "$project_root" ] || fail "apply inputs file is missing required project_root"
   [ -d "$project_root" ] || fail "apply project_root is not a directory: $project_root"
@@ -238,7 +268,7 @@ phase_apply() {
 
   local merge_out merge_status
   merge_out="$(hivemind_settings_merge "$current_settings" "$agent_target" \
-    "$caveman" "$claude_mem" "$codex" "$seed_allowlist")"
+    "$caveman" "$claude_mem" "$codex" "$seed_allowlist" "$agent_conflict_approved")"
   merge_status="$(printf '%s' "$merge_out" | jq -r '.status')"
 
   # BRANCH on the in-band merge status. conflict/malformed → blocked Output, write NOTHING.
@@ -448,36 +478,39 @@ emit_complete_output() {
 }
 
 # emit_blocked_output <project_root> <merge_status> <merge_out> <companions_json>
-# Emit the blocked Output block when settings-merge returned conflict/malformed. No settings
-# were written; the target_file is reported unchanged and the cause goes in conflicts:/issues:.
+# Emit the BLOCKED terminal when settings-merge returned conflict/malformed. No settings were
+# written (the merge left the file byte-unchanged). This conforms to the canonical Worker Report
+# — Blocked schema (${CLAUDE_PLUGIN_ROOT}/governance/report-format.md, referenced by SKILL.md
+# ## Output: "Use the Worker Report — Blocked schema ... for blocked states"): every emitted
+# field is a schema-valid token. It carries the agent-conflict cause via a `conflicts:` /
+# `existing vs required` line so the navigator can present the conflict to the user, then re-run
+# apply with agent_conflict_approved="yes". The out-of-schema `## Output` tokens the prior
+# version emitted (`unchanged`, `not invoked`, `not recorded`, `unchanged (settings not
+# written)`) are GONE — none are members of any schema enum. The conflict and malformed branches
+# remain distinct via the blocker reason. companions_json is accepted for signature symmetry
+# with the complete emitter; the blocked report carries no companions block.
 emit_blocked_output() {
   local project_root="$1" merge_status="$2" merge_out="$3" companions_json="$4"
 
-  printf 'status: blocked\n\n'
-  printf 'project_root:\n- %s\n\n' "$project_root"
-  printf 'target_file:\n- .claude/settings.json: unchanged\n\n'
-  printf 'gitignore:\n- .gitignore: unchanged\n\n'
-  printf 'envrc:\n- .envrc: unchanged\n\n'
-  printf 'hooks:\n'
-  printf -- '- .claude/hooks/caveman-ultra-subagent.sh: unchanged\n'
-  printf -- '- hooks.SubagentStart in settings.json: unchanged\n\n'
-  emit_companions_block "$companions_json"
-  printf '\n'
-  printf 'claude_mem_path:\n'
-  printf -- '- ~/.claude-mem/settings.json CLAUDE_CODE_PATH: unchanged\n\n'
-  printf 'keys_applied:\n- unchanged (settings not written)\n\n'
-  printf 'permissions_allow:\n- unchanged (settings not written)\n\n'
-  printf 'context_bootstrap:\n- creep-spread: not invoked\n\n'
-  printf 'test_command:\n- repo-root CLAUDE.md ## Validation: not recorded\n\n'
+  printf 'status: blocked\n'
+  printf 'stage: implementation\n'
+  if [ "$merge_status" = "conflict" ]; then
+    printf 'blocker: .claude/settings.json already sets a different agent; overwrite needs explicit user approval\n'
+  else
+    printf 'blocker: .claude/settings.json is not valid JSON; refusing to overwrite without user approval\n'
+  fi
+  printf 'retry: not attempted\n'
+  printf 'impact: settings not written; no project files mutated (settings.json byte-unchanged)\n'
+  printf 'project_root:\n- %s\n' "$project_root"
   if [ "$merge_status" = "conflict" ]; then
     printf 'conflicts:\n'
     printf '%s' "$merge_out" | jq -r '
       .agent_conflict as $c
       | "- agent: \($c.existing) vs \($c.required)"'
-    printf '\nissues:\n- None\n'
+    printf 'next: present the agent conflict to the user; on approval, re-run apply with agent_conflict_approved="yes"\n'
   else
-    printf 'conflicts:\n- None\n\n'
-    printf 'issues:\n- .claude/settings.json is not valid JSON; refusing to overwrite without user approval\n'
+    printf 'conflicts:\n- None\n'
+    printf 'next: ask the user to repair or remove the malformed .claude/settings.json, then re-run apply\n'
   fi
 }
 
