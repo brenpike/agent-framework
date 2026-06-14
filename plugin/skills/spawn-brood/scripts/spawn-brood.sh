@@ -142,12 +142,22 @@ esac
 # sweep's liveness re-probe can observe the death. Default 0 = ZERO production behavior change /
 # zero added latency. UNLIKE STARTED_EVIDENCE_TIMEOUT this FAILS OPEN: an empty / non-numeric
 # value coerces to 0 rather than blocking — it is a deterministic test seam, and an operator
-# typo must never become a production blocker. (No poll loop: this is a single settle, not a
-# scheduler — per-strain independence #213/#248 is preserved by the sweep below.)
+# typo must never become a production blocker. To keep that typo-safety promise TOTAL, the
+# honored value is also CLAMPED to RECONCILE_SETTLE_MAX (default 60s): an all-digit fat-finger
+# (e.g. a stray-zeros 999999999) degrades to a bounded test-only delay, never an unbounded
+# stall before manifest emission. Coverage of every legitimate test window stays intact (tests
+# use ~14s). The clamp ceiling itself fails open the same way (empty/non-numeric => 60). (No
+# poll loop: this is a single settle, not a scheduler — per-strain independence #213/#248 is
+# preserved by the sweep below.)
 : "${RECONCILE_SETTLE:=0}"
 case "$RECONCILE_SETTLE" in
   *[!0-9]* | '') RECONCILE_SETTLE=0 ;;
 esac
+: "${RECONCILE_SETTLE_MAX:=60}"
+case "$RECONCILE_SETTLE_MAX" in
+  *[!0-9]* | '') RECONCILE_SETTLE_MAX=60 ;;
+esac
+[ "$RECONCILE_SETTLE" -le "$RECONCILE_SETTLE_MAX" ] || RECONCILE_SETTLE="$RECONCILE_SETTLE_MAX"
 
 # READY_SUBSTRING: stable claude-CLI TUI chrome rendered once the session prompt is
 # interactive (the default-agent header). This is the ONE documented TUI-coupling

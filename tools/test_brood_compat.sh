@@ -1671,6 +1671,62 @@ count_strain_lines() {
     printf '%s\n' "$1" | grep -c '^STRAIN	' || true
 }
 
+# ── Assertion 14: RECONCILE-SETTLE-CLAMP: huge digit override is bounded, not unbounded (#291) ──
+# The RECONCILE_SETTLE test seam coerces empty/non-numeric => 0 (fail-open) but accepts any
+# all-digit value, which is passed directly to `sleep`. Without a clamp an all-digit fat-finger
+# (e.g. a stray-zeros 999999999) would `sleep` for ~31 years, stalling spawn before manifest
+# emission — defeating the seam's own "operator typo must never become a production blocker"
+# promise. STEP-001's clamp bounds the HONORED value to RECONCILE_SETTLE_MAX (default 60).
+#
+# This is a DEPENDENCY-FREE unit assertion: the clamp is pure shell arithmetic at the top of the
+# script, BEFORE any tmux/jq/claude use, so it needs no spawn invocation, no stub, and no real
+# sleep. It EXTRACTS the live clamp region from the script (the RECONCILE_SETTLE default + the
+# coerce case + the RECONCILE_SETTLE_MAX default/coerce + the clamp comparison) and evaluates it in
+# a clean subshell under a controlled env, then asserts the resulting RECONCILE_SETTLE.
+#
+# NON-VACUITY: the region is sliced from the LIVE script by anchor, and the test asserts BOTH that
+# the clamp line is present AND that a huge override is bounded. Reverting the clamp (removing the
+# RECONCILE_SETTLE_MAX comparison) makes the slice omit the clamp, the huge value passes through
+# unchanged, and the bounded assertion FAILS. No timing assumption => not flaky.
+assert_reconcile_settle_clamp_bounds_huge_override() {
+    local name="RECONCILE-SETTLE-CLAMP:huge-digit-override-bounded-not-unbounded"
+    # Slice the contiguous clamp region: from the RECONCILE_SETTLE default assignment through the
+    # clamp comparison line. awk prints the inclusive span between the two anchors.
+    local clamp_region
+    clamp_region="$(awk '
+        /^: "\$\{RECONCILE_SETTLE:=0\}"/ { grab=1 }
+        grab { print }
+        /RECONCILE_SETTLE="\$RECONCILE_SETTLE_MAX"/ { exit }
+    ' "$SPAWN_SCRIPT")"
+
+    if ! printf '%s\n' "$clamp_region" | grep -q 'RECONCILE_SETTLE="\$RECONCILE_SETTLE_MAX"'; then
+        failed "$name" "clamp region not found in $SPAWN_SCRIPT (clamp reverted/missing?) -- region: $clamp_region"
+        return
+    fi
+
+    # Evaluate the sliced region under a HUGE all-digit override and a small ceiling. The clamp must
+    # bound the honored value to the ceiling (5), never let 999999999 through to `sleep`.
+    local result
+    result="$(RECONCILE_SETTLE=999999999 RECONCILE_SETTLE_MAX=5 bash -c "
+        $clamp_region
+        printf '%s' \"\$RECONCILE_SETTLE\"
+    ")"
+
+    # And confirm a normal in-range test window (14) is preserved unchanged (clamp doesn't truncate
+    # legitimate windows when the ceiling is the default 60).
+    local in_range
+    in_range="$(RECONCILE_SETTLE=14 bash -c "
+        $clamp_region
+        printf '%s' \"\$RECONCILE_SETTLE\"
+    ")"
+
+    if [[ "$result" == "5" && "$in_range" == "14" ]]; then
+        pass "$name" "huge override 999999999 clamped to ceiling 5 (bounded); in-range 14 preserved under default ceiling"
+    else
+        failed "$name" "expected clamped=5 and in_range=14; got clamped=$result in_range=$in_range"
+    fi
+}
+
 # ── GROUND-TRUTH WORKTREE DISCOVERY (#168, locked OQ3) ───────────────────────────
 # Under #168 the engine NO LONGER anchors the child ledger on the manifest's untrusted
 # worktree_path (now display-only). It discovers each strain's REAL worktree from
@@ -2826,6 +2882,7 @@ assert_spawn_brood_task_identity_not_cross_wired
 assert_spawn_brood_alive_no_evidence_starting
 assert_spawn_brood_tail_death_reconciled
 assert_spawn_brood_tail_started_promoted
+assert_reconcile_settle_clamp_bounds_huge_override
 
 echo ''
 echo '=== brood-status-project.sh read-side projection tests (#161) ==='
