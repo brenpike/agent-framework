@@ -1,22 +1,12 @@
 [
   {
     "rule": "CHECK11",
-    "path": "plugin/skills/seed-hive/SKILL.md",
-    "line": 42
-  },
-  {
-    "rule": "CHECK11",
     "path": "plugin/skills/injection-scan/SKILL.md",
     "line": 105
   },
   {
     "rule": "CHECK11",
     "path": "plugin/skills/github-review-loop/SKILL.md",
-    "line": 3
-  },
-  {
-    "rule": "CHECK11",
-    "path": "plugin/skills/seed-hive/SKILL.md",
     "line": 3
   },
   {

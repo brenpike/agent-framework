@@ -1739,24 +1739,37 @@ echo '=== settings-merge.sh: frozen template + required-key merge core ==='
 # classification, the merged settings, and the conflict/idempotency/union invariants from
 # seed-hive/SKILL.md step 6 + Merge Rules.
 
-# 12a. Frozen template is the SINGLE DATA source and matches SKILL.md byte-for-byte (modulo the
-# SKILL.md fenced block's CRLF line endings — the lib emits LF; JSON values must not carry CR).
-SM_SKILL_TEMPLATE="$WORKDIR/skill-template.txt"
+# 12a. Frozen template is the SINGLE DATA source (P1): `hivemind_settings_permissions_template`
+# is the sole place the 20 rules live, so this case locks its literal content/order self-contained
+# — no SKILL.md mirror. The lib emits LF; trailing whitespace is stripped for a clean compare.
 SM_LIB_TEMPLATE="$WORKDIR/lib-template.txt"
-# Extract the fenced frozen block from SKILL.md (the 20 indented rule lines). The SKILL.md fenced
-# block carries CRLF line endings, so FIRST strip every trailing CR (`tr -d '\r'`), THEN range-match
-# the block (so the `$` anchors land), THEN strip the leading 5-space fence indent. Content-only.
-tr -d '\r' < "$REPO_ROOT/plugin/skills/seed-hive/SKILL.md" \
-  | sed -n '/^     Bash(echo \*)$/,/^     Bash(node /p' \
-  | sed 's/^     //; s/[[:space:]]*$//' > "$SM_SKILL_TEMPLATE"
 hivemind_settings_permissions_template | sed 's/[[:space:]]*$//' > "$SM_LIB_TEMPLATE"
 assert_eq "settings:template-rule-count" "20" \
   "$(wc -l < "$SM_LIB_TEMPLATE" | tr -d ' ')" "frozen template has 20 rules"
-if diff "$SM_SKILL_TEMPLATE" "$SM_LIB_TEMPLATE" >/dev/null 2>&1; then
-  pass "settings:template-matches-skill" "frozen template byte-matches SKILL.md (content)"
-else
-  failed "settings:template-matches-skill" "frozen template DRIFTED from SKILL.md step 6"
-fi
+read -r -d '' SM_EXPECTED_TEMPLATE <<'TEMPLATE'
+Bash(echo *)
+Bash(printf *)
+Bash(cat *)
+Bash(grep *)
+Bash(jq *)
+Bash(head *)
+Bash(tail *)
+Bash(ls *)
+Bash(wc *)
+Bash(sort *)
+Bash(uniq *)
+Bash(git ls-files *)
+Bash(git ls-tree *)
+Bash(git grep *)
+Bash(git tag)
+Bash(git tag -l*)
+Bash(git tag --list*)
+Bash(git stash list)
+Bash(git stash show *)
+Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
+TEMPLATE
+assert_eq "settings:template-content-order" "$SM_EXPECTED_TEMPLATE" \
+  "$(cat "$SM_LIB_TEMPLATE")" "frozen template emits the expected 20 rules in order"
 
 # Merge helper: run the merge and capture the JSON result for jq assertions.
 # Usage: sm_result="$(hivemind_settings_merge "$settings" "$agent" caveman mem codex allow)"

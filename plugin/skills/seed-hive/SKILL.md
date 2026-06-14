@@ -2,19 +2,40 @@
 name: seed-hive
 description: Applies required .claude/settings.json keys to make the overlord the session default agent and gitignores .hivemind/ and .claude/worktrees/. Use when adopting the plugin in a new project or repairing plugin setup.
 allowed-tools:
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh *)
   - Read
-  - Write
-  - Bash(git rev-parse *)
-  - Bash(test *)
-  - Bash(ls *)
-  - Bash(grep *)
-  - Bash(jq *)
-  - Bash(command -v *)
-  - Bash(mkdir -p *)
-  - Bash(chmod +x *)
-  - Skill
+  - Write   # inert inputs-file only: authors the resolved-values inputs JSON the apply phase reads; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0020
+  - Skill   # hivemind:creep-spread orchestration step — a skill cannot be invoked from bash (P5)
 shell: bash
 ---
+
+# Setup Project
+
+Apply the hivemind plugin's required project settings to `.claude/settings.json` so the
+session default agent becomes `hivemind:overlord`, gitignore the runtime dirs, and bootstrap
+project context. The deterministic engine is the committed two-phase script
+`${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh`; this body is a navigator that
+OWNS the judgment — companion detection reasoning, interactive confirmation, and conflict
+approval — then authors a single resolved-values inputs file and runs the script once. The
+script performs NO judgment: given resolved `yes`/`no` inputs it is purely deterministic.
+
+This skill is the user-invoked alternative to manually editing `.claude/settings.json` per
+the README. It is not auto-invoked by the plugin; the user must explicitly request it.
+
+Rules: ADR-0020 (engine is the committed two-phase script; the navigator resolves every
+tri-state input before calling apply). The mechanism moved to four sourced `_shared` libs and
+the entrypoint, each carrying its own P2 contract header:
+
+- settings-merge.sh — the `.claude/settings.json` required-key merge, the frozen
+  `permissions.allow` template (single-source DATA), and the `agent`-conflict detector.
+- file-guard.sh — the append-if-absent kernel for the `.gitignore`, `.envrc`, caveman-hook,
+  and `## Validation` text guards (idempotency mechanics live here).
+- claude-mem-path.sh — the never-clobber, malformed-safe `CLAUDE_CODE_PATH` provisioning into
+  claude-mem's OWN `~/.claude-mem/settings.json`.
+- test-detect.sh — the root-level ecosystem signal→command projector that feeds the
+  `## Validation` section guard.
+
+This body references those by intent; it does NOT re-narrate their mechanics.
 
 ## Quick Reference
 
@@ -23,7 +44,7 @@ Before:
 - [ ] `.claude/settings.json` read or default `{}` established
 - [ ] No conflicting `agent` value exists (or user approved override)
 - [ ] `.gitignore` read or default absence noted
-- [ ] Companions detected (`caveman@caveman`, `claude-mem@thedotmack`, `codex@openai-codex`) via `~/.claude/plugins/installed_plugins.json` for any input left at `detect`
+- [ ] Companions detected (`caveman@caveman`, `claude-mem@thedotmack`, `codex@openai-codex`) via the `detect` phase for any input left at `detect`
 - [ ] Companions confirmed/overridden by user (or auto-enabled in headless mode) for any input left at `detect`
 - [ ] If `claude_mem` resolves to `yes`: `~/.claude-mem/settings.json` existence checked and (if present) read
 
@@ -37,182 +58,193 @@ After:
 - [ ] `hivemind:creep-spread` invoked
 - [ ] Test command detected and recorded under `## Validation` in repo-root `CLAUDE.md` if absent (or `already documented` / `none detected`)
 
-# Setup Project
-
-Apply the hivemind plugin's required project settings to `.claude/settings.json` so the overlord becomes the session default agent.
-
-This skill is the user-invoked alternative to manually editing `.claude/settings.json` per the README. It is not auto-invoked by the plugin; the user must explicitly request it.
-
 ## When to Use
 
 - new project adopting the plugin
 - existing project missing the `agent` default
 - repairing settings after manual edits broke routing
 
-Do not use this skill to change unrelated settings or to write keys not listed below.
+Do not use this skill to change unrelated settings or to write keys not listed in the
+engine's merge contract.
 
 ## Required Inputs
 
-None. Operates on the current project root resolved via `git rev-parse --show-toplevel`.
+None. The navigator resolves the project root via `git rev-parse --show-toplevel` and passes
+it to the engine. Stop blocked if not a git repository or path resolution fails.
 
 ## Optional Inputs
 
-- `caveman`: `yes`|`no`|`detect` (default `detect`) — enable `caveman@caveman`, configure `pluginConfigs`, set up `.envrc`, and install the SubagentStart hook for caveman ultra mode. Tri-state: when omitted (`detect`), detection runs against `~/.claude/plugins/installed_plugins.json` for the `caveman@caveman` key and the user is prompted with a recommended default (`yes` if installed, `no` if absent); an explicit `yes` or `no` skips both detection and the prompt and is honored verbatim.
-- `claude_mem`: `yes`|`no`|`detect` (default `detect`) — enable `claude-mem@thedotmack`. Tri-state: when omitted (`detect`), detection runs against `~/.claude/plugins/installed_plugins.json` for the `claude-mem@thedotmack` key and the user is prompted with a recommended default; an explicit `yes` or `no` skips detection and the prompt and is honored verbatim.
-- `codex`: `yes`|`no`|`detect` (default `detect`) — enable `codex@openai-codex`. Tri-state: when omitted (`detect`), detection runs against `~/.claude/plugins/installed_plugins.json` for the `codex@openai-codex` key and the user is prompted with a recommended default; an explicit `yes` or `no` skips detection and the prompt and is honored verbatim.
-- `seed_allowlist`: `yes`|`no` (default `yes`) — merge a recommended least-privilege `permissions.allow` template into the project `.claude/settings.json`. NOT detected and NOT interactive — an explicit `yes`/`no` flag only. When omitted (default `yes`), the template is merged via union/append-if-absent. Explicit `no` leaves `permissions.allow` untouched. Union/append-if-absent only: never overwrites, removes, or reorders the user's existing `permissions.allow` entries.
+These are tri-state knobs the navigator RESOLVES to a final `yes`/`no` before calling apply:
 
-## Companion Detection
+- `caveman`: `yes`|`no`|`detect` (default `detect`) — enable `caveman@caveman`, configure
+  `pluginConfigs`, set up `.envrc`, and install the SubagentStart hook for caveman ultra mode.
+  When omitted (`detect`), the navigator runs detection + confirmation (below); an explicit
+  `yes`/`no` skips both and is honored verbatim.
+- `claude_mem`: `yes`|`no`|`detect` (default `detect`) — enable `claude-mem@thedotmack` and
+  provision its `CLAUDE_CODE_PATH`. Same tri-state resolution as `caveman`.
+- `codex`: `yes`|`no`|`detect` (default `detect`) — enable `codex@openai-codex`. Same
+  tri-state resolution.
+- `seed_allowlist`: `yes`|`no` (default `yes`) — merge a recommended least-privilege
+  `permissions.allow` template into `.claude/settings.json`. NOT detected and NOT interactive
+  — an explicit flag only, threaded into apply verbatim. The template DATA and its
+  union/append-if-absent merge semantics live in settings-merge.sh.
 
-For each companion input left at `detect` (`caveman@caveman`, `claude-mem@thedotmack`, `codex@openai-codex`), determine install state before the merge step. An explicit `yes`/`no` input skips detection entirely for that companion.
+## Companion Detection (judgment)
 
-- **jq availability guard.** Before parsing the manifest, confirm `jq` is available via `command -v jq`. If `jq` is NOT installed, do NOT attempt the `jq` parse (it would fail with `jq: command not found` and could block setup before settings are written). Instead either parse `~/.claude/plugins/installed_plugins.json` via `Read` / model JSON parsing, or — when that is not possible — drop straight to the **Cache-dir fallback** below. Treat "`jq` unavailable" exactly like an unparseable manifest: never crash, never clobber.
-- **Authoritative source — manifest.** When `jq` is available, parse `~/.claude/plugins/installed_plugins.json` with `jq` for a top-level `.plugins["<plugin>@<marketplace>"]` key (`caveman@caveman`, `claude-mem@thedotmack`, `codex@openai-codex`). "installed" = ANY entry exists for that `plugin@marketplace` key. This is a machine-level check — do NOT filter by scope or `projectPath`. When the key is present → `detected: installed`, `source: manifest`. When the manifest is readable, valid JSON, but the key is absent → `detected: absent`, `source: manifest` (even if a cache directory happens to exist — the manifest is authoritative).
-- **Cache-dir fallback.** Use when `~/.claude/plugins/installed_plugins.json` is absent, is not valid JSON, OR cannot be parsed because `jq` is unavailable and `Read`/model JSON parsing did not resolve the key (mirror the non-crash discipline used for claude-mem malformed JSON in the claude_mem step — never crash, never clobber). In that case check `test -d ~/.claude/plugins/cache/<marketplace>/<plugin>/`. When the cache directory exists → `detected: installed`, `source: cache`. When it does not → `detected: absent`, `source: cache`.
-- **Neither.** When the manifest is absent/malformed/unparseable AND no cache directory exists → `detected: absent`, `source: none`.
+For each companion input left at `detect` (`caveman@caveman`, `claude-mem@thedotmack`,
+`codex@openai-codex`), run the engine's `detect` phase to obtain the FACTS, then REASON about
+them. An explicit `yes`/`no` input needs no detection for that companion.
 
-Report each companion's `detected` and `source` in the Output `companions:` block.
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh detect <project_root>
+```
 
-## Interactive Confirmation
+`detect` is READ-ONLY (it mutates nothing) and emits one JSON object on stdout:
 
-After Companion Detection, resolve each companion input to a final `yes`/`no` value:
+```json
+{
+  "companions": {
+    "caveman@caveman":       { "detected": "installed"|"absent", "source": "manifest"|"cache"|"none" },
+    "claude-mem@thedotmack": { "detected": "...", "source": "..." },
+    "codex@openai-codex":    { "detected": "...", "source": "..." }
+  }
+}
+```
 
-- **Explicit input (`yes`/`no`).** Resolves to that value verbatim. No detection, no prompt. Report `via: explicit-input`.
-- **Omitted input (`detect`) — interactive.** Present ONE consolidated in-conversation confirmation message listing every detected companion's status and recommended default (recommended `yes` if `detected: installed`, recommended `no` if `detected: absent`). This is the model pausing to ask the user in the conversation — NOT a Bash `read`. Read the user's reply and resolve each companion to its confirmed or overridden value. Report `via: prompt-confirmed` when the user accepts the recommended default, `via: prompt-overridden` when the user chooses the opposite.
-- **Omitted input (`detect`) — headless fallback.** When the skill is invoked where no user turn is available (no interactive conversation), do NOT hang on the prompt. Auto-enable detected companions (`detected: installed` → resolved `yes`), skip absent ones (`detected: absent` → resolved `no`), and report `via: auto-detect-no-prompt`.
+The engine owns the resolution mechanics (manifest authoritative via `jq` → cache-dir
+fallback → none, honoring `$HOME`); the navigator consumes the `detected`/`source` facts to
+build its confirmation prompt and to populate the Output `companions:` block. Carry each
+companion's `detected` and `source` forward into the inputs file you author for apply.
 
-The resolved `yes`/`no` value (not the raw input) drives every write in the merge step and the caveman/claude_mem sub-steps.
+## Interactive Confirmation (judgment)
+
+After Companion Detection, resolve each `detect` companion to a final `yes`/`no`:
+
+- **Explicit input (`yes`/`no`).** Resolves to that value verbatim. No detection, no prompt.
+  Record `via: explicit-input`.
+- **Omitted input (`detect`) — interactive.** Present ONE consolidated in-conversation
+  confirmation message listing every detected companion's status and recommended default
+  (recommended `yes` if `detected: installed`, recommended `no` if `detected: absent`). This
+  is the model PAUSING to ask the user in the conversation — NOT a Bash `read`. Read the
+  user's reply and resolve each companion to its confirmed or overridden value. Record
+  `via: prompt-confirmed` when the user accepts the recommended default, `via: prompt-overridden`
+  when the user chooses the opposite.
+- **Omitted input (`detect`) — headless fallback.** When the skill is invoked where no user
+  turn is available (no interactive conversation), do NOT hang on the prompt. Auto-enable
+  detected companions (`detected: installed` → resolved `yes`), skip absent ones
+  (`detected: absent` → resolved `no`), and record `via: auto-detect-no-prompt`.
+
+The resolved `yes`/`no` value — never the raw `detect` input — is what you thread into the
+inputs file. The engine writes nothing for a companion resolved `no`.
+
+## Conflict Resolution (judgment)
+
+The engine never overwrites a different existing `agent` value: when `.claude/settings.json`
+already holds a DIFFERENT `agent`, apply REPORTS `status: blocked` with the conflict in the
+Output `conflicts:` block and writes NOTHING. The navigator OWNS the recovery — surface the
+conflict to the user, obtain EXPLICIT approval to overwrite, and only then re-run apply with
+the approval reflected in your reasoning. There is no silent-overwrite path; the navigator is
+the ONLY route that may proceed past a conflict, and only with the user's go-ahead.
+
+## Inputs JSON (apply)
+
+Once every tri-state is resolved, author ONE inputs file (via the Write tool) carrying the
+RESOLVED values and the detection facts, and pass its path to the `apply` phase. Every value
+is inert data — the engine reads each field with `jq` into a shell variable and never
+interpolates it into shell or jq program source. Shape (authoritative: the entrypoint header):
+
+```json
+{
+  "project_root":   "<required> absolute repo root (resolve via git rev-parse --show-toplevel)",
+  "agent_target":   "<optional> required agent value; default hivemind:overlord",
+  "caveman":        "yes | no",
+  "claude_mem":     "yes | no",
+  "codex":          "yes | no",
+  "seed_allowlist": "yes | no",
+  "companions": {
+    "caveman@caveman":       { "detected": "...", "source": "...", "via": "..." },
+    "claude-mem@thedotmack": { "detected": "...", "source": "...", "via": "..." },
+    "codex@openai-codex":    { "detected": "...", "source": "...", "via": "..." }
+  }
+}
+```
+
+`caveman` / `claude_mem` / `codex` carry the RESOLVED `yes`/`no` (detect+confirm already
+done); `seed_allowlist` is the explicit flag (default `yes`). The `companions` block echoes
+the detection facts you gathered — `detected`/`source` from `detect`, `via` from the
+confirmation resolution — verbatim into the Output `companions:` block; an absent field is
+reported `unknown`.
 
 ## Procedure
 
-1. Resolve project root via `git rev-parse --show-toplevel`. Stop blocked if not a git repository or path resolution fails.
-2. Determine target file path: `<project root>/.claude/settings.json`.
-3. If `<project root>/.claude/` does not exist, create it (`mkdir -p`).
-4. If `.claude/settings.json` exists, read it; otherwise treat existing settings as `{}`.
-5. Run **Companion Detection** then **Interactive Confirmation** to resolve `caveman`, `claude_mem`, and `codex` to final `yes`/`no` values. Explicit inputs bypass both.
-6. Merge required keys, preserving every existing key the user already had:
-   - `enabledPlugins["hivemind@brenpike"]` = `true`
-   - `agent` = `"hivemind:overlord"`
-   - if `caveman` resolves to `yes`: `enabledPlugins["caveman@caveman"]` = `true`
-   - if `claude_mem` resolves to `yes`: `enabledPlugins["claude-mem@thedotmack"]` = `true`
-   - if `codex` resolves to `yes`: `enabledPlugins["codex@openai-codex"]` = `true`
-   - if `caveman` resolves to `yes`: `pluginConfigs["caveman@caveman"].options.defaultLevel` = `"ultra"`
-   - if `caveman` resolves to `yes`: `hooks.SubagentStart` entry pointing to `.claude/hooks/caveman-ultra-subagent.sh` (see step 9d for hook structure)
-   - if `seed_allowlist` = `yes` (the default): merge the recommended least-privilege template below into `permissions.allow` using union/append-if-absent semantics (see Merge Rules) — append only rules not already present, preserving the user's existing entries and their order. The frozen template rule set (mirror exactly; do not add, drop, or reword entries):
-     ```
-     Bash(echo *)
-     Bash(printf *)
-     Bash(cat *)
-     Bash(grep *)
-     Bash(jq *)
-     Bash(head *)
-     Bash(tail *)
-     Bash(ls *)
-     Bash(wc *)
-     Bash(sort *)
-     Bash(uniq *)
-     Bash(git ls-files *)
-     Bash(git ls-tree *)
-     Bash(git grep *)
-     Bash(git tag)
-     Bash(git tag -l*)
-     Bash(git tag --list*)
-     Bash(git stash list)
-     Bash(git stash show *)
-     Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
-     ```
-     The template grants read/output helper Bash commands (`echo`, `printf`, `cat`, `grep`, `jq`, `head`, `tail`, `ls`, `wc`, `sort`, `uniq`), scoped git read subcommands (`git ls-files *`, `git ls-tree *` — both read-only object/working-tree listers; `git tag` is list-only via the three `git tag` / `git tag -l*` / `git tag --list*` forms — never broad `git tag *`, which would permit creating tags), and the codex-companion node entry. These read/output helpers are safe to auto-approve because Claude Code re-prompts (ask/deny) on any command that writes or redirects to a path OUTSIDE the session working directory (only `> /dev/null` is exempt) and splits compound commands (`&&`/`||`/`;`/`|`/newline), requiring each subcommand to match a rule independently. Granting `Bash(echo *)`/`Bash(printf *)`/`Bash(cat *)`/`Bash(sort *)` therefore does NOT create an arbitrary-file-write vector — `echo evil > /etc/passwd`, `printf x > ~/.bashrc`, `sort -o /etc/x`, and `cmd && rm -rf y` all re-prompt. The only silent write any granted helper permits is into the working directory, which is a uniform, bounded surface identical for `jq`/`head`/`tail`/`ls`/`wc`/`uniq`/`grep` as for `echo`/`printf`/`cat`/`sort`. Pipeline skills (`molt`, `create-working-branch`, `open-plan-pr`, `adaptation-cycle`) also grant `Bash(printf *)` via their own `allowed-tools` for routing-data output — safe for the same reason. The codex-companion rule uses the literal placeholder path `/path/to/.claude/plugins/cache/openai-codex/codex/*`; the consumer must replace `/path/to/` with their own home directory path after setup. Do NOT seed `acceptEdits` mode, `Edit`, or `Write` into consumer settings.
-7. Write the merged JSON to `.claude/settings.json` with two-space indentation and a trailing newline.
-8. Ensure both `.hivemind/` and `.claude/worktrees/` are listed in the project's `.gitignore`. `.hivemind/` is the brood manifest and runtime artifact directory; `.claude/worktrees/` is where `hivemind:spawn-brood` creates explicit git worktrees for each strain — without this entry the coordinator checkout goes dirty after any brood spawn. Apply the same append-if-absent idempotent guard to each entry independently:
-   a. If `<project root>/.gitignore` does not exist, create it with two lines: `.hivemind/` followed by `.claude/worktrees/`.
-   b. If `.gitignore` exists, read it. For each of the two entries (`.hivemind/`, `.claude/worktrees/`): if it already appears as a standalone line (trimmed), report `already present` and skip that entry. Otherwise append it to the end of the file (prepend a blank line if the file does not end with a newline at the time of that append). Process `.hivemind/` first, then `.claude/worktrees/`.
-9. If `caveman` resolves to `yes`: ensure `.envrc` contains `export CAVEMAN_DEFAULT_MODE=ultra`:
-   a. If `<project root>/.envrc` does not exist, create it with a single line `export CAVEMAN_DEFAULT_MODE=ultra`.
-   b. If `.envrc` exists, read it. If it contains an active (non-commented) line that, after trimming leading/trailing whitespace, equals `export CAVEMAN_DEFAULT_MODE=ultra` (with or without quotes around `ultra`), report `already present` and skip. Lines starting with `#` (after trimming) are not active.
-   c. Otherwise append `export CAVEMAN_DEFAULT_MODE=ultra` to the end of the file (prepend a newline if the file does not end with one).
-10. If `caveman` resolves to `yes`: ensure the SubagentStart hook for caveman ultra mode is configured:
-    a. Create `<project root>/.claude/hooks/` directory if it does not exist (`mkdir -p`).
-    b. If `<project root>/.claude/hooks/caveman-ultra-subagent.sh` does not exist, create it with the following content and make it executable (`chmod +x`):
-       ```bash
-       #!/usr/bin/env bash
+1. Resolve project root via `git rev-parse --show-toplevel`. Stop blocked if not a git
+   repository or path resolution fails.
+2. **Detect.** Run the `detect` phase for the facts. Skip per-companion when its input is an
+   explicit `yes`/`no`.
+3. **Resolve confirmation (judgment).** Apply Interactive Confirmation to resolve `caveman`,
+   `claude_mem`, and `codex` to final `yes`/`no` (interactive prompt, headless fallback, or
+   explicit-input verbatim).
+4. **Author the inputs file** via the Write tool, with the resolved values and detection facts
+   matching the Inputs JSON shape above. Write performs no shell parsing, so the values are
+   inert.
+5. **Apply.** Run the `apply` phase once:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh apply <inputs.json>
+   ```
+   EXECUTE (do not Read) the script. It composes the four libs to merge settings, guard the
+   `.gitignore`/`.envrc`/hook/`## Validation` files, provision claude-mem's `CLAUDE_CODE_PATH`,
+   detect the test command, and emit the EXACT `## Output` block below. apply exits 0 even when
+   it reports `status: blocked` — the conflict is a REPORTED outcome, not a script error.
+6. **Conflict gate (judgment).** If apply reported `status: blocked` on an `agent` conflict,
+   follow Conflict Resolution: surface it, obtain explicit user approval, then re-run apply.
+   On `malformed` settings (unparseable existing file) the engine fails closed — surface and
+   stop; do not overwrite.
+7. **Invoke `hivemind:creep-spread`** to analyze the project and generate a populated
+   `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). A skill cannot be invoked from
+   bash (P5), so this is the navigator's own orchestration step; the engine emits the
+   `context_bootstrap: creep-spread: invoked` Output line as a constant on the assumption you
+   run it here. creep-spread has its own skip guard for existing files.
+8. **Assemble + present the Output.** The engine's emitted block IS the Output schema below;
+   present it, reflecting the creep-spread invocation and (if reached) the conflict-approval
+   recovery.
 
-       cat <<'EOF'
-       {
-         "hookSpecificOutput": {
-           "hookEventName": "SubagentStart",
-           "additionalContext": "Caveman mode requirement for this project: operate in caveman ultra mode for this entire subagent conversation. Do not silently fall back to full, lite, or normal verbosity unless the user explicitly requests it."
-         }
-       }
-       EOF
-       ```
-    c. If the file already exists, report `already present` and skip.
-    d. Ensure `.claude/settings.json` contains a `hooks.SubagentStart` entry pointing to `.claude/hooks/caveman-ultra-subagent.sh`. The entry structure is:
-       ```json
-       {
-         "hooks": {
-           "SubagentStart": [
-             {
-               "hooks": [
-                 {
-                   "type": "command",
-                   "command": ".claude/hooks/caveman-ultra-subagent.sh"
-                 }
-               ]
-             }
-           ]
-         }
-       }
-       ```
-       If already present, report `already present`. If absent, merge it into the settings JSON.
-11. If `claude_mem` resolves to `yes`: ensure claude-mem's own `CLAUDE_CODE_PATH` is provisioned. This is a belt-and-suspenders safeguard: the root cause is arguably upstream in claude-mem's background worker (which should self-resolve the `claude` binary), and an empty `CLAUDE_CODE_PATH` causes that worker to silently discard all queued observations. This step is a convenience fix only. Note: `~/.claude-mem/settings.json` is claude-mem's OWN config in the user's HOME directory — it is entirely separate from this repo's project `.claude/settings.json` and must not be confused with it.
-    a. If `claude_mem` does not resolve to `yes`, skip this step entirely; report `claude_mem_path: skipped (claude_mem not enabled)`. The step 6 `enabledPlugins["claude-mem@thedotmack"]` write is independent of this step.
-    b. If `~/.claude-mem/settings.json` does not exist, claude-mem is not actually installed: report `claude_mem_path: skipped (claude-mem not installed)` and continue. Do not create the file. The step 6 enabledPlugins write still happens regardless.
-    c. Read `~/.claude-mem/settings.json`. If it is not valid JSON, do not crash or clobber it: report `claude_mem_path: skipped (malformed json)` in `issues` and continue without writing.
-    d. Inspect the `CLAUDE_CODE_PATH` key. If it is present with any non-empty string value, report `claude_mem_path: already set` and write NOTHING — never overwrite a user-provided value, even if that value points to a now-invalid path. Only act when `CLAUDE_CODE_PATH` is missing or an empty string.
-    e. Resolve the `claude` binary path DYNAMICALLY in this order, taking the first that resolves: (1) `command -v claude`; (2) fallback `~/.local/bin/claude` (verify with `test -x`); (3) fallback `~/.claude/local/claude` (verify with `test -x`). Never hard-code a home directory path — expand `~` at runtime. If `command -v claude` resolves to a shell alias or function rather than a real executable, prefer the path it reports if it is an executable file; otherwise continue to the fallbacks. If none resolve, report `claude_mem_path: skipped (claude binary not found)` and write NOTHING.
-    f. Otherwise set ONLY the `CLAUDE_CODE_PATH` key to the resolved path, preserving every other key in `~/.claude-mem/settings.json`. Write with two-space indentation and a trailing newline. Report `claude_mem_path: set`.
-    g. After setting the path, the claude-mem background worker must be restarted to load the new value. Do NOT auto-restart it (keep this step side-effect-light). PRINT a manual follow-up instruction telling the user to restart the claude-mem worker (e.g. via claude-mem's worker restart) or note that it will pick up the new value on the next session.
-12. Report which keys were added vs already present.
-13. Invoke `hivemind:creep-spread` to analyze the project and generate a populated `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). The skill has its own skip guard for existing files.
-14. Detect the project's test command and record it under a `## Validation` section in the repo-root `CLAUDE.md` if absent. DETECT only — never run, install, or scaffold a harness. Each signal must resolve to a real, executable test command. Step 14a explicitly rejects the `npm/yarn/pnpm init` default placeholder (`Error: no test specified`); other no-op or failing scripts remain a known limitation — review or override the recorded command after setup.
-    a. Match each signal below against repo-root or conventional well-known locations. Require the ACTUAL signal, not mere file existence — inspect the file content named in the signal:
-       - JS ecosystem (`package.json` present): emit at most ONE command for this ecosystem, choosing the first sub-signal that matches in order. The vitest/jest sub-signals are FALLBACKS — they apply only when the `scripts.test` sub-signal is UNMATCHED for this ecosystem (so a curated `npm test` that handles env flags, setup, or workspace routing is never bypassed by a parallel `npx vitest run` / `npx jest`):
-         1. `scripts.test` entry whose value is a string that does NOT contain the case-insensitive substring `Error: no test specified` → that script (`npm test`). When the value DOES contain that substring (the `npm init` / `yarn init` / `pnpm init` placeholder `"echo \"Error: no test specified\" && exit 1"`), treat this sub-signal as UNMATCHED and fall through to sub-signals 2–3 below. The content-based substring match is intentionally runner-agnostic — it auto-covers all three init defaults; do not add per-runner branches. Non-string `scripts.test` values (array, object) are likewise treated as unmatched and fall through. Missing `scripts` object entirely is already unmatched. Accepted tradeoff: chained scripts that mention the placeholder string mid-pipeline (e.g. `"echo \"Error: no test specified\" && vitest run"`) are also rejected by this substring match; sub-signals 2–3 cover the common recovery, and if none of 1–3 match the JS ecosystem contributes nothing and the existing no-signal path applies.
-         2. (only when sub-signal 1 is UNMATCHED) `package.json` declares a `vitest` dependency or config → `npx vitest run`.
-         3. (only when sub-signals 1–2 are UNMATCHED) `package.json` declares a `jest` dependency or config → `npx jest`.
-       - `pyproject.toml` or `setup.py` with a pytest signal (a `pytest` dependency, `[tool.pytest]` config, or `tests/` test files) → `pytest`
-       - `go.mod` → `go test ./...`
-       - `Cargo.toml` → `cargo test`
-       - `*.csproj` or `*.sln` referencing `Microsoft.NET.Test.Sdk` → `dotnet test`
-       - `mix.exs` → `mix test`
-       - `Gemfile` or `spec/` with an `rspec` signal → `bundle exec rspec`
-       - `Makefile` with a real `test:` target → `make test`
-    b. When more than one signal matches (a monorepo or multi-ecosystem repo), record ALL detected commands — one per ecosystem. Never pick one, never fabricate a combined runner. Match only root / workspace-root signals; do not emit one command per nested package.
-    c. Read repo-root `CLAUDE.md` if present. If it ALREADY documents a test or validation command — the `## Validation` convention — record NOTHING, leave the existing prose untouched (never overwrite or reorder it), and report `already documented`. This is append-if-absent only, identical in spirit to the `.gitignore` / `.envrc` / `CLAUDE_CODE_PATH` guards.
-    d. Otherwise, with one or more commands detected, record them under a `## Validation` section in repo-root `CLAUDE.md` as a fenced code block (or a list of fenced blocks when multiple). If the section is missing, append a minimal `## Validation` section containing only the detected command(s); if it exists without a command, append the command(s) into it without touching surrounding content.
-    e. If repo-root `CLAUDE.md` does not exist and a command is detected, create a minimal repo-root `CLAUDE.md` containing only the `## Validation` section with the detected command(s).
-    f. If NO signal matches, record nothing fabricated: note the absence and RECOMMEND that the user document a validation command manually. NEVER install, scaffold, or invent a harness or command. A documented-validation-only or non-executable repo (a Markdown plugin, a docs repo) is a legitimate outcome.
-    g. Re-running is idempotent: when a command is already recorded (step 14c), write nothing and report `already documented` — no duplicate lines or sections.
+## Pointers
 
-## Merge Rules
-
-- Preserve every existing key that is not in the required-keys list.
-- Do not remove or reorder existing entries.
-- If a required key already has the correct value, report it as `already present`, not `added`.
-- If a required key has a conflicting value (e.g., `agent` set to a different agent), stop blocked and report the conflict. Do not overwrite without explicit user approval.
-- `permissions.allow` (when `seed_allowlist` = `yes`, the default) merges as an array union, append-if-absent: keep every existing entry in its original order, then append each template rule whose exact string is not already in the array. Never overwrite, remove, dedupe, or reorder the user's existing entries. A template rule already present is reported as `already present`, not `added`. If `permissions.allow` is absent, create it containing only the template rules (in template order). If `permissions` exists without `allow`, add the `allow` array while preserving other `permissions` keys.
+- EXECUTE (do not read) the engine:
+  `${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh`.
+- Mechanism libs (referenced by intent, not re-narrated):
+  `${CLAUDE_PLUGIN_ROOT}/skills/_shared/settings-merge.sh`,
+  `${CLAUDE_PLUGIN_ROOT}/skills/_shared/file-guard.sh`,
+  `${CLAUDE_PLUGIN_ROOT}/skills/_shared/claude-mem-path.sh`,
+  `${CLAUDE_PLUGIN_ROOT}/skills/_shared/test-detect.sh`.
 
 ## Do Not
 
-- write any key not listed in step 6 (except `hooks.SubagentStart` when `caveman` resolves to `yes`, as specified in steps 6 and 10d; and `permissions.allow` ONLY when `seed_allowlist` = `yes`, as specified in step 6)
-- modify project files outside `.claude/settings.json`, `.gitignore`, `.envrc`, `.claude/hooks/`, repo-root `CLAUDE.md` (create-or-append-if-absent only, per step 14), and files created or modified by invoked skills
-- install, scaffold, or invent a test harness; run the detected test command; or overwrite, reorder, or replace an existing documented test/validation command in repo-root `CLAUDE.md` (step 14 detects and records append-if-absent only)
-- modify `~/.claude-mem/settings.json` beyond setting its single `CLAUDE_CODE_PATH` key (and only when `claude_mem` resolves to `yes`, the file already exists, the key is empty/missing, and a `claude` binary resolves, per step 11); never overwrite an existing non-empty `CLAUDE_CODE_PATH`, and never touch any other key in that file
-- remove or disable an existing `enabledPlugins` companion entry — detection only ever adds; an entry already present in `.claude/settings.json` is preserved and reported `already present` even if detection missed it
-- commit, push, or otherwise touch git state
-- proceed if the project root cannot be resolved
+- write any settings key outside the engine's merge contract (the required keys, plus
+  `hooks.SubagentStart` when `caveman` resolves to `yes`, and `permissions.allow` ONLY when
+  `seed_allowlist` = `yes`) — the engine owns the contract; do not hand-edit settings.
+- modify project files outside the engine's surface (`.claude/settings.json`, `.gitignore`,
+  `.envrc`, `.claude/hooks/`, repo-root `CLAUDE.md` create-or-append-if-absent) and files
+  created or modified by `hivemind:creep-spread`.
+- install, scaffold, or invent a test harness; run the detected test command; or overwrite,
+  reorder, or replace an existing documented test/validation command in repo-root `CLAUDE.md`
+  — the engine detects and records append-if-absent only.
+- modify `~/.claude-mem/settings.json` beyond the single `CLAUDE_CODE_PATH` key the engine
+  provisions (and only when `claude_mem` resolves to `yes`, the file exists, the key is
+  empty/missing, and a `claude` binary resolves); never overwrite an existing non-empty
+  value, and never touch any other key.
+- remove or disable an existing `enabledPlugins` companion entry — detection only ever adds;
+  an entry already present is preserved and reported `already present` even if detection missed it.
+- overwrite a conflicting `agent` value without EXPLICIT user approval — the engine reports
+  blocked, and the navigator may proceed only after the user approves.
+- proceed if the project root cannot be resolved.
+- commit, push, or otherwise touch git state.
+- Read or reconstruct the engine body — invoke it with the documented phase + argument.
 
 ## Output
+
+The `apply` phase emits this block verbatim; the navigator presents it. The schema and field
+values are the acceptance contract.
 
 ```text
 status: complete | partial | blocked
