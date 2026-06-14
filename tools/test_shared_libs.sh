@@ -1862,6 +1862,43 @@ assert_eq "settings:same-agent-class" "already present" \
 assert_eq "settings:same-agent-no-conflict" "null" \
   "$(printf '%s' "$sm_same_agent" | jq -r '.agent_conflict // "null"')" "agent already equal → no conflict block"
 
+# 12e-approve. APPROVAL OVERWRITE (7th arg "yes"): a DIFFERENT existing agent WITH explicit
+# approval → status ok, agent OVERWRITTEN to the target, classified `overwritten`, NO conflict
+# block. This locks the restored base-prose contract: overwrite is permitted ONLY WITH approval.
+# Non-vacuous: if RR-001 dropped the approval gate, the merge would still return conflict (no
+# overwrite) and these four assertions would all fail.
+sm_approved="$(hivemind_settings_merge '{"agent":"other:agent"}' 'hivemind:overlord' 'no' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:approve-status" "ok" \
+  "$(printf '%s' "$sm_approved" | jq -r '.status')" "different existing agent + approval → status ok"
+assert_eq "settings:approve-agent-class" "overwritten" \
+  "$(printf '%s' "$sm_approved" | jq -r '.keys.agent')" "approved conflict → agent classified overwritten"
+assert_eq "settings:approve-agent-value" "hivemind:overlord" \
+  "$(printf '%s' "$sm_approved" | jq -r '.settings.agent')" "approved conflict → agent overwritten to target"
+assert_eq "settings:approve-no-conflict" "null" \
+  "$(printf '%s' "$sm_approved" | jq -r '.agent_conflict // "null"')" "approved conflict → no conflict block"
+
+# 12e-noapprove. NO-APPROVAL BYTE-PRESERVE GUARD (never-silently-overwrite): the SAME conflict
+# with approval "no" → status conflict, existing agent byte-unchanged, conflict block populated.
+# This is the regression guard that an absent/explicit-"no" approval NEVER overwrites. Non-vacuous:
+# if the never-overwrite invariant were inverted, .settings.agent would become the target here.
+sm_noapprove="$(hivemind_settings_merge '{"agent":"other:agent"}' 'hivemind:overlord' 'no' 'no' 'no' 'no' 'no')"
+assert_eq "settings:noapprove-status" "conflict" \
+  "$(printf '%s' "$sm_noapprove" | jq -r '.status')" "different existing agent + approval no → status conflict"
+assert_eq "settings:noapprove-agent-preserved" "other:agent" \
+  "$(printf '%s' "$sm_noapprove" | jq -r '.settings.agent')" "approval no → existing agent byte-unchanged"
+assert_eq "settings:noapprove-conflict-existing" "other:agent" \
+  "$(printf '%s' "$sm_noapprove" | jq -r '.agent_conflict.existing')" "approval no → conflict block populated"
+
+# 12e-malformed-approve. MALFORMED-BEFORE-APPROVAL (fail closed): a NON-EMPTY unparseable settings
+# blob WITH approval "yes" still returns status malformed — approval authorizes an agent overwrite,
+# it NEVER clobbers a torn file. Non-vacuous: if the malformed check were evaluated after (or
+# skipped under) the approval gate, this would not report malformed.
+sm_malformed_approve="$(hivemind_settings_merge 'torn { not json' 'hivemind:overlord' 'no' 'no' 'no' 'yes' 'yes')"
+assert_eq "settings:malformed-approve-status" "malformed" \
+  "$(printf '%s' "$sm_malformed_approve" | jq -r '.status')" "malformed input + approval → still malformed (fail closed)"
+assert_eq "settings:malformed-approve-settings-null" "null" \
+  "$(printf '%s' "$sm_malformed_approve" | jq -r '.settings // "null"')" "malformed + approval → settings not echoed (torn file not clobbered)"
+
 # 12f. permissions.allow UNION preserves existing ORDER, appends only ABSENT rules.
 # Existing: a custom rule + one template rule (Bash(jq *)). Union must keep both in place, then
 # append the 19 absent template rules; Bash(jq *) reported already present, Bash(echo *) added.

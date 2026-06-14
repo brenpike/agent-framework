@@ -150,9 +150,44 @@ INPUTS3="$(jq -nc --arg r "$ROOT3" '{
 OUT3="$(run_apply "$ROOT3" "$INPUTS3")"
 assert_eq "conflict:exit" "0" "$?" "blocked is exit 0 (reported outcome)"
 assert_contains "conflict:status"   "status: blocked" "$OUT3"
-assert_contains "conflict:target"   "- .claude/settings.json: unchanged" "$OUT3"
+# RR-STEP-002 rewrote the blocked terminal to the Worker Report — Blocked schema: the old
+# `## Output` `target_file:` `- .claude/settings.json: unchanged` line is GONE. Key the
+# "no settings write" assertion on the schema-valid blocker/impact fields instead. Non-vacuous:
+# if the blocked emitter regressed to the old `## Output` shape, these fields would be absent.
+assert_contains "conflict:blocker"  "blocker: .claude/settings.json already sets a different agent; overwrite needs explicit user approval" "$OUT3"
+assert_contains "conflict:impact"   "impact: settings not written; no project files mutated (settings.json byte-unchanged)" "$OUT3"
 assert_contains "conflict:conflict" "- agent: someone:else vs hivemind:overlord" "$OUT3"
 assert_eq "conflict:no-overwrite" "$BEFORE3" "$(cat "$ROOT3/.claude/settings.json")" "settings byte-unchanged on conflict"
+# (iii) BLOCKED-OUTPUT SCHEMA CONFORMANCE: the blocked Output carries ONLY schema-valid fields and
+# NONE of the out-of-schema `## Output` tokens the prior emitter produced. Non-vacuous: each token
+# below was emitted by the pre-RR-002 blocked path; their absence proves the rewrite landed.
+assert_contains "conflict:schema-status" "status: blocked" "$OUT3"
+assert_contains "conflict:schema-stage"  "stage: implementation" "$OUT3"
+assert_contains "conflict:schema-retry"  "retry: not attempted" "$OUT3"
+for forbidden in "not invoked" "not recorded" "unchanged (settings not written)" ": unchanged"; do
+  if printf '%s' "$OUT3" | grep -qF -- "$forbidden"; then
+    failed "conflict:no-offschema" "blocked Output still emits out-of-schema token '$forbidden'"
+  else
+    pass "conflict:no-offschema" "blocked Output free of out-of-schema token '$forbidden'"
+  fi
+done
+
+# ── Case 3c: agent conflict + approval → overwrite, complete, agent = target ──────
+echo '=== Case 3c: agent conflict + agent_conflict_approved=yes — overwrite, complete ==='
+ROOT3C="$(new_project approved)"
+mkdir -p "$ROOT3C/.claude"
+printf '{"agent":"someone:else"}\n' > "$ROOT3C/.claude/settings.json"
+INPUTS3C="$(jq -nc --arg r "$ROOT3C" '{
+  project_root: $r, caveman: "no", claude_mem: "no", codex: "no", seed_allowlist: "yes",
+  agent_conflict_approved: "yes" }')"
+OUT3C="$(run_apply "$ROOT3C" "$INPUTS3C")"
+assert_eq "approve:exit" "0" "$?" "approved overwrite exit"
+# Non-vacuous: without the entrypoint threading agent_conflict_approved into the merge, this would
+# stay blocked (status blocked) and the written agent would remain someone:else.
+assert_contains "approve:status"  "status: complete" "$OUT3C"
+assert_contains "approve:target"  "- .claude/settings.json: updated" "$OUT3C"
+assert_eq "approve:settings.agent" "hivemind:overlord" \
+  "$(jq -r '.agent' "$ROOT3C/.claude/settings.json" 2>/dev/null)" "approved conflict overwrites agent to target"
 
 # ── Case 3b: malformed existing settings → blocked, byte-unchanged ───────────────
 echo '=== Case 3b: malformed existing settings — blocked, byte-unchanged ==='
@@ -203,6 +238,38 @@ mkdir -p "$ROOT5/fakehome/.claude/plugins/cache/openai-codex/codex"
 OUT5C="$(run_detect "$ROOT5")"
 assert_eq "detect:cache-codex-det" "installed" "$(printf '%s' "$OUT5C" | jq -r '.companions["codex@openai-codex"].detected')"
 assert_eq "detect:cache-codex-src" "cache"     "$(printf '%s' "$OUT5C" | jq -r '.companions["codex@openai-codex"].source')"
+# 5d: jq-ABSENT detect must NOT hard-fail — it degrades to the cache-dir probe and emits parseable
+# facts (printf-assembled, valid JSON). Build a hermetic jq-LESS PATH that still has every other
+# CLI the entrypoint needs: a tmp bin dir of symlinks to each command currently on PATH EXCEPT jq.
+# (Stripping whole PATH dirs is wrong on systems where jq shares a dir with coreutils/bash — it
+# would also hide dirname/mkdir/bash and break the script for the wrong reason.) A companion cache
+# dir is present so the degraded probe classifies it `cache`. The ASSERTION re-enables jq (ambient
+# PATH) to parse the emitted JSON. Non-vacuous: if detect re-acquired a hard jq gate (FINDING 2
+# regression), the jq-less run would exit 2 with empty stdout and every assertion below would fail.
+JQLESS_BIN="$WORKDIR/jqless-bin"
+mkdir -p "$JQLESS_BIN"
+IFS=':' read -r -a sh_path_dirs <<< "$PATH"
+for sh_dir in "${sh_path_dirs[@]}"; do
+  [ -d "$sh_dir" ] || continue
+  for tool in "$sh_dir"/*; do
+    [ -x "$tool" ] || continue
+    base="$(basename "$tool")"
+    [ "$base" = "jq" ] && continue            # the ONLY omission: jq is unavailable
+    [ -e "$JQLESS_BIN/$base" ] && continue     # first dir on PATH wins (mirror real lookup)
+    ln -s "$tool" "$JQLESS_BIN/$base"
+  done
+done
+ROOT5D="$(new_project detect-jqless)"
+mkdir -p "$ROOT5D/fakehome/.claude/plugins/cache/caveman/caveman"
+# Run detect with jq UNAVAILABLE; capture stdout + exit code.
+OUT5D="$(PATH="$JQLESS_BIN" HOME="$ROOT5D/fakehome" bash "$ENTRYPOINT" detect "$ROOT5D")"
+RC5D=$?
+assert_eq "detect:jqless-exit" "0" "$RC5D" "jq-absent detect exits 0 (degrades, not hard-fail)"
+# Emitted bytes are parseable JSON (parse with jq, now back on the ambient PATH).
+assert_eq "detect:jqless-parseable" "installed" \
+  "$(printf '%s' "$OUT5D" | jq -r '.companions["caveman@caveman"].detected' 2>/dev/null)" "jq-absent detect emits parseable facts"
+assert_eq "detect:jqless-cache-src" "cache" \
+  "$(printf '%s' "$OUT5D" | jq -r '.companions["caveman@caveman"].source' 2>/dev/null)" "jq-absent detect classifies companion via cache fallback"
 
 # ── Case 6: headless-resolved inputs drive a complete seed (claude_mem yes path) ─
 echo '=== Case 6: headless-resolved inputs (claude_mem yes, allowlist no) → complete seed ==='
