@@ -140,11 +140,17 @@ inputs file. The engine writes nothing for a companion resolved `no`.
 ## Conflict Resolution (judgment)
 
 The engine never overwrites a different existing `agent` value: when `.claude/settings.json`
-already holds a DIFFERENT `agent`, apply REPORTS `status: blocked` with the conflict in the
-Output `conflicts:` block and writes NOTHING. The navigator OWNS the recovery — surface the
-conflict to the user, obtain EXPLICIT approval to overwrite, and only then re-run apply with
-the approval reflected in your reasoning. There is no silent-overwrite path; the navigator is
-the ONLY route that may proceed past a conflict, and only with the user's go-ahead.
+already holds a DIFFERENT `agent`, apply returns `status: blocked`, writes the conflict into
+the Output `conflicts:` block, and writes NOTHING to any file. The navigator OWNS the
+recovery — surface the conflict to the user and obtain EXPLICIT approval to overwrite. On
+explicit user approval, the navigator re-runs apply with `agent_conflict_approved: "yes"`
+authored into the inputs file; the engine then classifies the agent as `overwritten`, returns
+`status: ok`, and produces normal `complete`/`updated` Output. Without approval the skill
+stays blocked and no file is changed. There is no silent-overwrite path; the navigator is
+the ONLY route that may proceed past a conflict, and only with the user's go-ahead. On
+`malformed` settings (unparseable existing file) the engine fails closed regardless of
+`agent_conflict_approved` — approval authorizes an agent overwrite, never clobbering a
+malformed file.
 
 ## Inputs JSON (apply)
 
@@ -161,6 +167,7 @@ interpolates it into shell or jq program source. Shape (authoritative: the entry
   "claude_mem":     "yes | no",
   "codex":          "yes | no",
   "seed_allowlist": "yes | no",
+  "agent_conflict_approved": "yes | no",
   "companions": {
     "caveman@caveman":       { "detected": "...", "source": "...", "via": "..." },
     "claude-mem@thedotmack": { "detected": "...", "source": "...", "via": "..." },
@@ -170,10 +177,13 @@ interpolates it into shell or jq program source. Shape (authoritative: the entry
 ```
 
 `caveman` / `claude_mem` / `codex` carry the RESOLVED `yes`/`no` (detect+confirm already
-done); `seed_allowlist` is the explicit flag (default `yes`). The `companions` block echoes
-the detection facts you gathered — `detected`/`source` from `detect`, `via` from the
-confirmation resolution — verbatim into the Output `companions:` block; an absent field is
-reported `unknown`.
+done); `seed_allowlist` is the explicit flag (default `yes`). `agent_conflict_approved` is
+OPTIONAL, default `"no"`; the navigator sets it `"yes"` ONLY when re-running apply after the
+user EXPLICITLY approved overwriting a conflicting existing `agent` value; absent or any other
+value leaves the conflict blocked and the file unchanged; it NEVER authorizes clobbering a
+malformed settings file. The `companions` block echoes the detection facts you gathered —
+`detected`/`source` from `detect`, `via` from the confirmation resolution — verbatim into the
+Output `companions:` block; an absent field is reported `unknown`.
 
 ## Procedure
 
@@ -196,9 +206,10 @@ reported `unknown`.
    detect the test command, and emit the EXACT `## Output` block below. apply exits 0 even when
    it reports `status: blocked` — the conflict is a REPORTED outcome, not a script error.
 6. **Conflict gate (judgment).** If apply reported `status: blocked` on an `agent` conflict,
-   follow Conflict Resolution: surface it, obtain explicit user approval, then re-run apply.
-   On `malformed` settings (unparseable existing file) the engine fails closed — surface and
-   stop; do not overwrite.
+   follow Conflict Resolution: surface it, obtain explicit user approval, then re-author the
+   inputs file with `"agent_conflict_approved": "yes"` and re-run apply. On `malformed`
+   settings (unparseable existing file) the engine fails closed — surface and stop; do not
+   overwrite regardless of `agent_conflict_approved`.
 7. **Invoke `hivemind:creep-spread`** to analyze the project and generate a populated
    `CONTEXT.md` (or `CONTEXT-MAP.md` for multi-context repos). A skill cannot be invoked from
    bash (P5), so this is the navigator's own orchestration step; the engine emits the
