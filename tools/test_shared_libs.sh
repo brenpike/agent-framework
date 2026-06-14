@@ -38,6 +38,7 @@ for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh" \
                 "$SHARED_DIR/fetch-normalize-core.sh" "$SHARED_DIR/ledger-engine-io.sh" \
                 "$SHARED_DIR/settings-merge.sh" "$SHARED_DIR/claude-mem-path.sh" \
+                "$SHARED_DIR/file-guard.sh" \
                 "$CLASSIFY_FILTER" \
                 "$FN_REVIEW_HANDLED" "$FN_EXPECTED_REVIEW" "$FN_CI_CHECKS" "$FN_EXPECTED_CI" \
                 "$FN_OVERFLOW_THREADS" "$FN_MALFORMED"; do
@@ -72,6 +73,8 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 . "$SHARED_DIR/settings-merge.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/claude-mem-path.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/file-guard.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -2037,6 +2040,159 @@ cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_
 assert_eq "claude-mem:fallback-status" "set" "$cm_status" "second fallback resolves → set"
 assert_eq "claude-mem:fallback-value" "$cm_home_fallback/.claude/local/claude" \
   "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_fallback")" "~/.claude/local/claude fallback used when ~/.local/bin absent"
+
+# ── Section 14: file-guard.sh — append-if-absent kernel + comment-aware/section/hook variants ──
+echo ''
+echo '=== file-guard.sh: append-if-absent kernel + .envrc / ## Validation / hook-scaffold variants ==='
+#
+# AUTHORITATIVE regression tests for the seed-hive plain-text file-guard family (SKILL.md steps
+# 8, 9, 10, and the step-14 `## Validation` guard). Every case is HERMETIC: it builds its own
+# fixture file under $WORKDIR and asserts the in-band status word, the idempotency/byte-stability
+# invariants, and the EXACT entries/semantics/wording from seed-hive/SKILL.md.
+
+# 14a. .gitignore two-entry kernel idempotency (SKILL.md step 8): each entry independent; re-run
+# is a no-op `already present`; the entry is never duplicated.
+fg_gitignore="$WORKDIR/fg-gitignore"
+rm -f "$fg_gitignore"
+fg_s1="$(hivemind_append_if_absent "$fg_gitignore" ".hivemind/")"
+fg_s2="$(hivemind_append_if_absent "$fg_gitignore" ".claude/worktrees/")"
+assert_eq "file-guard:gitignore-first-added" "added" "$fg_s1" ".hivemind/ appended to fresh file → added"
+assert_eq "file-guard:gitignore-second-added" "added" "$fg_s2" ".claude/worktrees/ appended → added"
+assert_eq "file-guard:gitignore-both-lines" ".hivemind/
+.claude/worktrees/" "$(cat "$fg_gitignore")" "both entries present, each on its own line"
+# Re-run both entries → already present, no-op, byte-stable.
+fg_before="$(cat "$fg_gitignore")"
+fg_r1="$(hivemind_append_if_absent "$fg_gitignore" ".hivemind/")"
+fg_r2="$(hivemind_append_if_absent "$fg_gitignore" ".claude/worktrees/")"
+assert_eq "file-guard:gitignore-rerun-first" "already present" "$fg_r1" ".hivemind/ re-run → already present"
+assert_eq "file-guard:gitignore-rerun-second" "already present" "$fg_r2" ".claude/worktrees/ re-run → already present"
+assert_eq "file-guard:gitignore-rerun-bytes" "$fg_before" "$(cat "$fg_gitignore")" "re-run is byte-stable (no duplicate lines)"
+# Entry never duplicated: exactly one occurrence of each.
+assert_eq "file-guard:gitignore-no-dup-hive" "1" \
+  "$(grep -c '^\.hivemind/$' "$fg_gitignore")" ".hivemind/ appears exactly once"
+
+# 14b. Entry independence: a file that already has ONE entry gets only the MISSING one appended.
+fg_partial="$WORKDIR/fg-partial-gitignore"
+printf '.hivemind/\n' > "$fg_partial"
+fg_p1="$(hivemind_append_if_absent "$fg_partial" ".hivemind/")"
+fg_p2="$(hivemind_append_if_absent "$fg_partial" ".claude/worktrees/")"
+assert_eq "file-guard:partial-present" "already present" "$fg_p1" "pre-existing .hivemind/ → already present"
+assert_eq "file-guard:partial-added" "added" "$fg_p2" "absent .claude/worktrees/ → added"
+assert_eq "file-guard:partial-result" ".hivemind/
+.claude/worktrees/" "$(cat "$fg_partial")" "only the missing entry appended"
+
+# 14c. Trailing-newline guard (SKILL.md step 8b): a file with NO trailing newline gets a blank
+# line inserted before the append so the entry lands on its own line, never glued on.
+fg_nonl="$WORKDIR/fg-no-trailing-nl"
+printf 'existing-line-no-newline' > "$fg_nonl"   # deliberately NO trailing \n
+fg_n1="$(hivemind_append_if_absent "$fg_nonl" ".hivemind/")"
+assert_eq "file-guard:nonl-added" "added" "$fg_n1" "entry appended to newline-less file → added"
+assert_eq "file-guard:nonl-standalone" "existing-line-no-newline
+.hivemind/" "$(cat "$fg_nonl")" "entry lands on its own line (blank-line/newline guard fired)"
+
+# 14d. .envrc active-vs-commented discrimination (SKILL.md step 9b/c). A COMMENTED line does NOT
+# count as present → the entry is still appended.
+fg_env_commented="$WORKDIR/fg-envrc-commented"
+printf '# export CAVEMAN_DEFAULT_MODE=ultra\n' > "$fg_env_commented"
+fg_ec="$(hivemind_append_env_if_absent "$fg_env_commented" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-commented-added" "added" "$fg_ec" "commented line is NOT active → entry appended"
+assert_eq "file-guard:env-commented-result" "# export CAVEMAN_DEFAULT_MODE=ultra
+export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$fg_env_commented")" "active entry appended below the comment"
+# An ACTIVE matching line → already present, no-op.
+fg_env_active="$WORKDIR/fg-envrc-active"
+printf 'export CAVEMAN_DEFAULT_MODE=ultra\n' > "$fg_env_active"
+fg_ea="$(hivemind_append_env_if_absent "$fg_env_active" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-active-present" "already present" "$fg_ea" "active matching line → already present"
+# Quote tolerance (SKILL.md step 9b: "with or without quotes around ultra"): a double-quoted and a
+# single-quoted active value both count as present → no duplicate append.
+fg_env_dq="$WORKDIR/fg-envrc-dq"
+printf 'export CAVEMAN_DEFAULT_MODE="ultra"\n' > "$fg_env_dq"
+fg_edq="$(hivemind_append_env_if_absent "$fg_env_dq" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-dquote-present" "already present" "$fg_edq" "double-quoted value tolerated → already present"
+fg_env_sq="$WORKDIR/fg-envrc-sq"
+printf "export CAVEMAN_DEFAULT_MODE='ultra'\n" > "$fg_env_sq"
+fg_esq="$(hivemind_append_env_if_absent "$fg_env_sq" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-squote-present" "already present" "$fg_esq" "single-quoted value tolerated → already present"
+# Whitespace-padded active line (trimmed match) → already present.
+fg_env_pad="$WORKDIR/fg-envrc-pad"
+printf '   export CAVEMAN_DEFAULT_MODE=ultra   \n' > "$fg_env_pad"
+fg_epad="$(hivemind_append_env_if_absent "$fg_env_pad" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-padded-present" "already present" "$fg_epad" "whitespace-padded active line trimmed-matches → already present"
+# .envrc created from absent → entry is the sole line.
+fg_env_new="$WORKDIR/fg-envrc-new"
+rm -f "$fg_env_new"
+fg_en="$(hivemind_append_env_if_absent "$fg_env_new" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-new-added" "added" "$fg_en" "absent .envrc → entry added"
+assert_eq "file-guard:env-new-content" "export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$fg_env_new")" "created .envrc holds only the entry"
+
+# 14e. Idempotent re-run of ALL guards is byte-stable (no-op).
+fg_env_idem="$WORKDIR/fg-envrc-idem"
+printf 'export CAVEMAN_DEFAULT_MODE=ultra\n' > "$fg_env_idem"
+fg_env_idem_before="$(cat "$fg_env_idem")"
+hivemind_append_env_if_absent "$fg_env_idem" "export CAVEMAN_DEFAULT_MODE=ultra" >/dev/null
+assert_eq "file-guard:env-idem-bytes" "$fg_env_idem_before" "$(cat "$fg_env_idem")" "envrc guard re-run is byte-stable"
+
+# 14f. Hook scaffold (SKILL.md step 10a-c): create-if-absent (`created` + executable bit) vs
+# `already present` (content untouched).
+fg_hook="$WORKDIR/fg-hooks/caveman-ultra-subagent.sh"
+rm -rf "$WORKDIR/fg-hooks"
+fg_hc="$(hivemind_scaffold_hook_file "$fg_hook")"
+assert_eq "file-guard:hook-created" "created" "$fg_hc" "absent hook file → created"
+if [ -x "$fg_hook" ]; then
+  pass "file-guard:hook-executable" "scaffolded hook file has the executable bit set"
+else
+  failed "file-guard:hook-executable" "scaffolded hook file is NOT executable"
+fi
+# Content byte-matches the SINGLE DATA source.
+assert_eq "file-guard:hook-content-matches" "$(hivemind_caveman_hook_content)" "$(cat "$fg_hook")" \
+  "scaffolded hook content equals the single DATA source"
+# Existing hook → already present, content untouched.
+fg_hook_marker="$(cat "$fg_hook")"
+fg_hc2="$(hivemind_scaffold_hook_file "$fg_hook")"
+assert_eq "file-guard:hook-already-present" "already present" "$fg_hc2" "existing hook file → already present"
+assert_eq "file-guard:hook-content-untouched" "$fg_hook_marker" "$(cat "$fg_hook")" "existing hook content left untouched"
+
+# 14g. CLAUDE.md `## Validation` section-append (SKILL.md step 14c/d/e): absent → added; present →
+# already documented, existing prose untouched.
+FG_VALIDATION_BODY="## Validation
+
+\`\`\`bash
+go test ./...
+\`\`\`"
+# Absent CLAUDE.md → section created.
+fg_claude_new="$WORKDIR/fg-claude-new.md"
+rm -f "$fg_claude_new"
+fg_vn="$(hivemind_guard_validation_section "$fg_claude_new" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-new-added" "added" "$fg_vn" "absent CLAUDE.md → ## Validation added"
+assert_eq "file-guard:validation-new-content" "$FG_VALIDATION_BODY" "$(cat "$fg_claude_new")" "created CLAUDE.md holds the section body"
+# CLAUDE.md WITHOUT a ## Validation section → section appended after existing prose (untouched).
+fg_claude_append="$WORKDIR/fg-claude-append.md"
+printf '# Project\n\nSome existing prose.\n' > "$fg_claude_append"
+fg_va="$(hivemind_guard_validation_section "$fg_claude_append" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-append-added" "added" "$fg_va" "CLAUDE.md lacking ## Validation → added"
+assert_eq "file-guard:validation-append-prose-kept" "Some existing prose." \
+  "$(grep -F 'Some existing prose.' "$fg_claude_append")" "existing prose preserved on append"
+assert_eq "file-guard:validation-append-has-section" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_append")" "## Validation section appended exactly once"
+# CLAUDE.md that ALREADY documents ## Validation → already documented, byte-unchanged.
+fg_claude_present="$WORKDIR/fg-claude-present.md"
+printf '# Project\n\n## Validation\n\n```bash\nmake test\n```\n' > "$fg_claude_present"
+fg_present_before="$(cat "$fg_claude_present")"
+fg_vp="$(hivemind_guard_validation_section "$fg_claude_present" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-present-documented" "already documented" "$fg_vp" "existing ## Validation → already documented"
+assert_eq "file-guard:validation-present-bytes" "$fg_present_before" "$(cat "$fg_claude_present")" "existing ## Validation prose left byte-unchanged"
+
+# 14h. INERT: a hostile entry value crafted as a command-substitution payload is written as plain
+# text, never executed (proves the text guards never eval/source the entry).
+rm -f "$PWN_MARKER"
+fg_inert="$WORKDIR/fg-inert-gitignore"
+rm -f "$fg_inert"
+hivemind_append_if_absent "$fg_inert" "\$(touch $PWN_MARKER)" >/dev/null
+if [ -e "$PWN_MARKER" ]; then
+  failed "file-guard:inert-no-side-effect" "an entry value triggered command substitution: $PWN_MARKER created"
+else
+  pass "file-guard:inert-no-side-effect" "no entry value triggered command substitution"
+fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ''
