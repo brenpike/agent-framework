@@ -40,26 +40,37 @@ After:
       `<brood-id>-<short>` running claude, and its injected `task.md` — which
       emits the data-boundary preamble FIRST, THEN the YAML child-task metadata
       block (`parent`, `strain`, `run`, `instructions`), THEN the description.
-      The engine submits each task during a shared Pass-2 readiness round-robin:
+      A pre-launch identity guard runs before each strain's session is started:
+      if the strain's `task.md` `strain.id` would not match its `run.suggested_id`,
+      the strain is refused (failed-pre-launch) and never spawned. The engine
+      submits each task during a shared Pass-2 readiness round-robin:
       load-buffer, paste-buffer, settle, then a single Enter, so the submit
       keystroke lands as a submit instead of racing the paste. After all strains
       have been submitted in Pass 2, a separate Pass 3 runs per-strain turn-start
       verification — each strain's verify/resend poll runs on its OWN independent
-      deadline, decoupled from every other strain's readiness budget, so one slow
-      child cannot consume another strain's Pass-2 time. The verifier polls the
-      child's on-disk run-ledger `state.current` for started-evidence; if no
-      started-evidence is observed it resends Enter (idempotent — task text is
-      already buffered, never re-pasted) up to a bounded retry cap. On cap
-      exhaustion the strain is marked `failed` (failed-to-launch) in the manifest,
-      distinguishable in `hivemind:brood-status` from the transient `starting`
-      state. Verification reads the child run-ledger `state.current` as ground
-      truth — capture-pane is not used (architectural direction established in
-      #213/#248). Whether a child actually completed turn-start is also observed
-      independently by `hivemind:brood-status` from run-ledger ground truth
-      (child run `state.current` present => `running`, absent => `starting`),
-      not only by spawn-brood.
+      deadline (`STARTED_EVIDENCE_TIMEOUT`, default 180 s), decoupled from every
+      other strain's readiness budget, so one slow child cannot block another.
+      The verifier polls the child's on-disk run-ledger `state.current` for
+      started-evidence; if no started-evidence is observed it resends Enter
+      (idempotent — task text is already buffered, never re-pasted) as a
+      periodic nudge within the grace window. On grace exhaustion the outcome
+      depends on tmux session liveness: if the session is ALIVE the strain is
+      classified `starting` (alive but not yet started) in the manifest; only a
+      DEAD session yields `failed` (failed-to-launch). `starting` is a
+      non-failed observable rendered by `hivemind:brood-status` as such;
+      only `failed` is the error state in brood-status derivation. Verification
+      reads the child run-ledger `state.current` as ground truth — capture-pane
+      is not used (architectural direction established in #213/#248). Whether a
+      child actually completed turn-start is also observed independently by
+      `hivemind:brood-status` from run-ledger ground truth (`state.current`
+      present => `running`, absent => `starting`), not only by spawn-brood.
 - [ ] `.claude/worktrees/` is excluded from git (the script self-guards).
-- [ ] Final action is the Bash script call (exit 0 = spawned, exit 1 = blocked).
+- [ ] Final action is the Bash script call. Exit 0 = brood spawned successfully
+      (all strains `running`, OR all non-running strains are `starting` — a slow
+      cold boot is not a failure); exit 1 = pre-flight blocker OR at least one
+      strain is genuinely `failed` (dead tmux session or pre-launch identity
+      guard refusal). `starting` strains do NOT contribute to `failed_count`
+      and do NOT cause exit 1.
 
 The manifest is a registry/coordination artifact, NOT the source of truth for
 child workflow state — that lives in each child's own JSON run ledger. The
@@ -153,6 +164,16 @@ The caller resolves and passes these; the skill does not resolve them.
 - EXECUTE (do not read) the engine:
   `${CLAUDE_PLUGIN_ROOT}/skills/spawn-brood/scripts/spawn-brood.sh`.
 
+## Tunables
+
+Environment variables the caller may set before invoking the script to override
+defaults. All tunables are fail-closed: a non-numeric or non-positive value is
+rejected and the script exits with a blocker.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `STARTED_EVIDENCE_TIMEOUT` | `180` (seconds) | Cold-boot grace period for a child to write its run-ledger `state.current` (started-evidence). Governs the Pass-3 per-strain verification deadline. Bare-Enter resends are periodic nudges within this window, not a fixed retry cap. |
+
 ## Silence Discipline
 
 This is a pipeline skill:
@@ -160,8 +181,10 @@ This is a pipeline skill:
 - Produce zero chat text during execution. Outputs are tool calls only.
 - The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat
   text. The final action is the Bash script call (step 3).
-- Exit 0 = caller proceeds; routing data (`brood_id:` and `manifest:` lines)
-  is on stdout. Exit 1 = blocked; the reason is on stderr.
+- Exit 0 = caller proceeds (all strains running, or all non-running strains are
+  `starting`); routing data (`brood_id:`, `manifest:`, and `attach:` lines for
+  running AND starting strains) is on stdout. Exit 1 = blocked; the reason is
+  on stderr (pre-flight blocker or at least one genuinely `failed` strain).
 
 ## Do Not
 
