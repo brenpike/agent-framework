@@ -42,10 +42,20 @@
 #   - enabledPlugins["caveman@caveman"] / ["claude-mem@thedotmack"] / ["codex@openai-codex"]
 #     = true — written ONLY when the matching companion flag resolves yes; add-if-absent.
 #   - agent = "<agent_target>" — add-if-absent. CONFLICT DETECTION: if `agent` already holds a
-#     DIFFERENT non-empty value, the merge does NOT overwrite; it flags `agent_conflict` with
-#     the existing value so the caller can stop blocked and seek user approval (SKILL.md Merge
-#     Rules: "stop blocked and report the conflict. Do not overwrite without explicit user
-#     approval"). On conflict the returned settings keep the existing `agent` byte-unchanged.
+#     DIFFERENT non-empty value, behavior is GATED by the 7th arg <agent_conflict_approved>:
+#       * approved != "yes" (default): the merge does NOT overwrite; it flags `agent_conflict`
+#         with the existing value, returns `status: conflict`, and keeps the existing `agent`
+#         byte-unchanged so the caller can stop blocked and seek user approval (SKILL.md Merge
+#         Rules: "stop blocked and report the conflict. Do not overwrite without explicit user
+#         approval").
+#       * approved == "yes": the merge OVERWRITES `.settings.agent` to the target, classifies it
+#         `overwritten`, returns `status: ok`, and `agent_conflict` is null. This restores the
+#         base-prose contract: overwrite is permitted ONLY WITH explicit user approval.
+#     NEVER-SILENTLY-OVERWRITE INVARIANT PRESERVED: an overwrite happens ONLY when the caller
+#     passes approved=="yes", a flag the navigator sets ONLY after obtaining user approval. With
+#     the flag absent/any-other-value the never-overwrite-on-conflict behavior is byte-identical
+#     to the no-approval path. The approval gate is the conflict branch ONLY; an absent or
+#     already-equal `agent` makes approval inert (normal add / already-present classification).
 #   - pluginConfigs["caveman@caveman"].options.defaultLevel = "ultra" — caveman=yes only.
 #   - hooks.SubagentStart — the caveman ultra-mode hook entry (caveman=yes only), add-if-absent.
 #   - permissions.allow — union/append-if-absent of the frozen template (seed_allowlist=yes):
@@ -71,10 +81,10 @@
 #     {
 #       "status": "ok" | "conflict" | "malformed",
 #       "settings": <merged settings object>,   // on malformed: the input is NOT echoed; null
-#       "agent_conflict": null | { "existing": <str>, "required": <str> },
+#       "agent_conflict": null | { "existing": <str>, "required": <str> },  // null when overwritten
 #       "keys": {                                // classification per required key
 #         "enabledPlugins.hivemind@brenpike": "added" | "already present",
-#         "agent": "added" | "already present" | "unchanged" | "conflict",
+#         "agent": "added" | "already present" | "unchanged" | "conflict" | "overwritten",
 #         "enabledPlugins.caveman@caveman": "added" | "already present" | "resolved no",
 #         "enabledPlugins.claude-mem@thedotmack": "...",
 #         "enabledPlugins.codex@openai-codex": "...",
@@ -88,7 +98,9 @@
 #     }
 #   `agent` classification: `added` (was absent), `already present`/`unchanged` (already equal
 #   to the target — both map here; SKILL.md output allows either token), `conflict` (different
-#   existing value; the conflict block is populated and `.settings.agent` is the existing value).
+#   existing value AND not approved; the conflict block is populated and `.settings.agent` is the
+#   existing value), `overwritten` (different existing value AND approved=="yes"; `.settings.agent`
+#   is the target and the conflict block is null).
 #
 # DEPENDENCY: jq only (POSIX + jq). No yq, no sed/awk.
 
@@ -127,10 +139,12 @@ TEMPLATE
 }
 
 # hivemind_settings_merge <settings_json> <agent_target> <caveman_yes> <claude_mem_yes> \
-#                         <codex_yes> <seed_allowlist_yes>
+#                         <codex_yes> <seed_allowlist_yes> [<agent_conflict_approved>]
 #
 # Merge the hivemind required keys into <settings_json> per the MERGE INVARIANTS in the header
-# and emit the OUTPUT CONTRACT JSON object on stdout. All six arguments are required.
+# and emit the OUTPUT CONTRACT JSON object on stdout. The first six arguments are required; the
+# 7th (<agent_conflict_approved>) is optional and defaults to "no" so existing 6-arg callers are
+# byte-unchanged.
 #
 # ARGUMENTS
 #   <settings_json>     the current `.claude/settings.json` contents as a string. EMPTY → treated
@@ -142,6 +156,14 @@ TEMPLATE
 #   <codex_yes>         "yes" → write enabledPlugins["codex@openai-codex"]; else "resolved no".
 #   <seed_allowlist_yes>"yes" → union-append the frozen permissions.allow template; any other
 #                       value → permissions.allow left untouched, permissions_allow = [].
+#   <agent_conflict_approved>  OPTIONAL (default "no"). "yes" → authorize an `agent` OVERWRITE on
+#                       the conflict branch (existing differs from target): write the target,
+#                       classify `overwritten`, status "ok", no conflict block. Any other value /
+#                       absent → never overwrite on conflict (status "conflict", agent unchanged).
+#                       Inert when `agent` is absent or already equal to the target. Evaluated
+#                       ONLY AFTER the malformed-settings fail-closed check: a non-empty
+#                       unparseable blob with approved=="yes" STILL returns status "malformed" —
+#                       approval authorizes an agent overwrite, NEVER clobbering a torn file.
 #
 # The settings JSON enters jq as --argjson (jq validates it); the agent target and each toggle
 # enter as --arg; the template enters as --argjson (a JSON array built from the single DATA
@@ -155,6 +177,10 @@ hivemind_settings_merge() {
   local claude_mem_yes="$4"
   local codex_yes="$5"
   local seed_allowlist_yes="$6"
+  # OPTIONAL 7th arg: authorize an agent overwrite on the conflict branch. Default "no" so
+  # existing 6-arg callers are byte-unchanged. This is a controlled "yes"/"no" string bound
+  # inertly into jq as --arg below — it is NEVER spliced into jq program source.
+  local agent_conflict_approved="${7:-no}"
 
   # EMPTY input is the absent-file case (SKILL.md step 4): treat as {}. A NON-EMPTY but
   # unparseable string is NOT coerced — report malformed so the caller fails closed rather than
@@ -181,6 +207,7 @@ hivemind_settings_merge() {
     --arg claude_mem "$claude_mem_yes" \
     --arg codex "$codex_yes" \
     --arg seed_allow "$seed_allowlist_yes" \
+    --arg agent_approved "$agent_conflict_approved" \
     --argjson template "$template_json" '
     # ── helpers ──────────────────────────────────────────────────────────────────
     # getpath-safe presence test for a nested key equal to a value.
@@ -192,10 +219,13 @@ hivemind_settings_merge() {
     | (($s.permissions) // {}) as $perm
     | (($perm.allow) // null) as $existing_allow
 
-    # ── agent conflict detection (PRESERVE-EXISTING; never overwrite on conflict) ──
+    # ── agent conflict detection (PRESERVE-EXISTING; overwrite ONLY with explicit approval) ──
+    # Differing existing agent: classify "overwritten" when the caller passed approved=="yes"
+    # (the navigator sets this ONLY after user approval), else "conflict" (never overwrite).
     | ($s.agent) as $cur_agent
     | (if ($cur_agent == null) then "added"
        elif ($cur_agent == $agent) then "already present"
+       elif ($agent_approved == "yes") then "overwritten"
        else "conflict" end) as $agent_class
     | (if $agent_class == "conflict"
        then {existing: $cur_agent, required: $agent}
@@ -238,8 +268,9 @@ hivemind_settings_merge() {
     | (if $caveman == "yes" then .enabledPlugins += {"caveman@caveman": true} else . end)
     | (if $claude_mem == "yes" then .enabledPlugins += {"claude-mem@thedotmack": true} else . end)
     | (if $codex == "yes" then .enabledPlugins += {"codex@openai-codex": true} else . end)
-    # agent: write the target ONLY when absent or already equal; on conflict leave the existing
-    # value byte-unchanged (the caller stops blocked on $agent_conflict).
+    # agent: write the target when absent, already equal, or "overwritten" (differing + approved);
+    # on "conflict" (differing + NOT approved) leave the existing value byte-unchanged (the caller
+    # stops blocked on $agent_conflict). Overwrite happens ONLY via the approved=="yes" gate.
     | (if $agent_class == "conflict" then . else .agent = $agent end)
     # caveman pluginConfigs + SubagentStart hook (add-if-absent).
     | (if $caveman == "yes"
