@@ -1,5 +1,7 @@
 # Watch mode is a foreground-blocking Monitor owned by github-reviewer
 
+> Active end-state: ADR-0011.
+
 github-reviewer watch mode must poll a PR and remediate review feedback until a terminal event (merged, closed, timeout, max cycles, deferred escalation, injection-suspect, or Codex approval). Two failure modes drove this decision.
 
 (1) A subagent that starts Monitor then returns kills the watch: the Monitor trigger does not survive the subagent's return, so the poll loop dies the moment the subagent emits its Output Contract. The overlord, seeing a returned run, then falsely reports monitoring active. A doc-removal refactor had stripped the guard (from commit `d9bfea3`) that kept the agent in the loop, reintroducing exactly this bug.
