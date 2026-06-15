@@ -272,7 +272,9 @@ detection) is reported `not-checked`.
 ## Output
 
 The `apply` phase emits this block verbatim; the navigator presents it. The schema and field
-values are the acceptance contract.
+values are the acceptance contract. When the `follow_up:` block carries the restart line (a fresh
+`set` of CLAUDE_CODE_PATH), the navigator MUST surface it to the user so they restart the
+claude-mem worker — until they do, the worker may drop observations.
 
 ```text
 status: complete | partial | blocked
@@ -300,6 +302,10 @@ companions:
 
 claude_mem_path:
 - ~/.claude-mem/settings.json CLAUDE_CODE_PATH: set | already set | skipped (claude-mem not installed) | skipped (claude binary not found) | skipped (malformed json) | skipped (claude_mem not enabled)
+
+follow_up:
+- Restart claude-mem (or its background worker) so the new CLAUDE_CODE_PATH takes effect; until then it may drop observations. | None
+# the restart line is emitted ONLY when claude_mem_path resolves to `set` (a fresh write); `None` for `already set` / any `skipped (...)` / claude_mem not enabled. The navigator MUST surface this line to the user.
 
 keys_applied:
 - enabledPlugins["hivemind@brenpike"]: added | already present

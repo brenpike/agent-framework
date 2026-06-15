@@ -308,6 +308,9 @@ OUT6="$(PATH="$ROOT6/fakehome/bin:$PATH" run_apply "$ROOT6" "$INPUTS6")"
 assert_eq "headless:exit" "0" "$?" "headless seed exit"
 assert_contains "headless:status"   "status: complete" "$OUT6"
 assert_contains "headless:memset"   "- ~/.claude-mem/settings.json CLAUDE_CODE_PATH: set" "$OUT6"
+# Fresh set → restart follow-up note surfaced (behavior-restoring: base-prose step 11g notice).
+assert_contains "headless:restart-note" \
+  "- Restart claude-mem (or its background worker) so the new CLAUDE_CODE_PATH takes effect" "$OUT6"
 assert_contains "headless:allow-no" "- not requested" "$OUT6"
 assert_contains "headless:testcmd"  "- repo-root CLAUDE.md ## Validation: recorded go test ./..." "$OUT6"
 assert_eq "headless:mem-preserved" "keep" \
@@ -317,6 +320,30 @@ assert_eq "headless:mem-set" "$ROOT6/fakehome/bin/claude" \
 # allowlist no → no permissions.allow written.
 assert_eq "headless:no-allowlist" "null" \
   "$(jq -r '.permissions.allow // "null"' "$ROOT6/.claude/settings.json")" "permissions.allow absent when seed_allowlist=no"
+
+# ── Case 7: claude_mem yes but CLAUDE_CODE_PATH ALREADY set → NO restart note ─────
+echo '=== Case 7: claude_mem yes, CLAUDE_CODE_PATH already set → already set + no restart note ==='
+ROOT7="$(new_project memalready)"
+mkdir -p "$ROOT7/fakehome/.claude-mem" "$ROOT7/fakehome/bin"
+# A non-empty CLAUDE_CODE_PATH → provision writes nothing, reports `already set`.
+printf '{"other":"keep","CLAUDE_CODE_PATH":"/preexisting/claude"}\n' > "$ROOT7/fakehome/.claude-mem/settings.json"
+printf '#!/bin/sh\n' > "$ROOT7/fakehome/bin/claude"; chmod +x "$ROOT7/fakehome/bin/claude"
+INPUTS7="$(jq -nc --arg r "$ROOT7" '{
+  project_root: $r, caveman: "no", claude_mem: "yes", codex: "no", seed_allowlist: "no" }')"
+OUT7="$(PATH="$ROOT7/fakehome/bin:$PATH" run_apply "$ROOT7" "$INPUTS7")"
+assert_contains "memalready:status"   "status: complete" "$OUT7"
+assert_contains "memalready:alreadyset" "- ~/.claude-mem/settings.json CLAUDE_CODE_PATH: already set" "$OUT7"
+assert_contains "memalready:followup-none" "follow_up:
+- None" "$OUT7"
+# Restart note must NOT appear when nothing was freshly set.
+if printf '%s' "$OUT7" | grep -qF -- "Restart claude-mem"; then
+  failed "memalready:no-restart-note" "restart note leaked on already-set path"
+else
+  pass "memalready:no-restart-note" "(no restart note on already-set path)"
+fi
+# Pre-existing value untouched.
+assert_eq "memalready:preserved" "/preexisting/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$ROOT7/fakehome/.claude-mem/settings.json")" "existing CLAUDE_CODE_PATH preserved"
 
 # ── Tally ───────────────────────────────────────────────────────────────────────
 echo

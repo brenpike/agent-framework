@@ -476,6 +476,15 @@ emit_complete_output() {
   printf '\n'
   printf 'claude_mem_path:\n'
   printf -- '- ~/.claude-mem/settings.json CLAUDE_CODE_PATH: %s\n\n' "$claude_mem_path_result"
+  # Restart follow-up: emitted ONLY on a FRESH set of CLAUDE_CODE_PATH. The claude-mem background
+  # worker does not reload the new path until restart, so until then it may drop observations.
+  # NOT emitted for `already set` / any `skipped (...)` — those write nothing and need no restart.
+  printf 'follow_up:\n'
+  if [ "$claude_mem_path_result" = "set" ]; then
+    printf -- '- Restart claude-mem (or its background worker) so the new CLAUDE_CODE_PATH takes effect; until then it may drop observations.\n\n'
+  else
+    printf -- '- None\n\n'
+  fi
   emit_keys_block "$merge_out"
   printf '\n'
   emit_permissions_block "$merge_out" "$seed_allowlist"
