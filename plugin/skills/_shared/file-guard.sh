@@ -299,22 +299,35 @@ _hivemind_is_section_heading() {
 
 # _hivemind_is_validation_heading <trimmed_line>
 # Return 0 when <trimmed_line> is EXACTLY the level-2 `## Validation` heading. The match is on the
-# heading TEXT, not a prefix: after stripping the `## ` level-2 marker and removing ATX-legal
-# trailing whitespace plus optional closing `#` characters, the remaining text must equal exactly
-# `Validation`. So `## Validation`, `##   Validation  ` (extra spaces), and `## Validation ##` (ATX
-# closing hashes) all match, while a SIBLING heading whose text merely STARTS WITH `Validation`
-# (`## Validation Details`, `## Validation Notes`, `## ValidationX`) does NOT. A level-3 `###
-# Validation` also does NOT match (its level-2 marker strip fails). This exactness keeps a
-# differently-named sibling section from being mistaken for the `## Validation` section, so the
-# ABSENT path creates the real `## Validation` section. Pure text, no eval.
+# heading TEXT, not a prefix, via a COMPLETE CommonMark ATX-heading parse:
+#   1. The line MUST be a level-2 heading — exactly `##` followed by AT LEAST ONE space or tab, so a
+#      level-1 `#`, a level-3+ `###`, and a no-space `##Validation` (not an ATX heading at all) are
+#      all rejected. (`_hivemind_heading_level` is space-only and would miss a tab marker, so the
+#      level-2 gate is parsed inline to also cover `##\tValidation`.)
+#   2. The `##` marker is stripped, then ALL leading whitespace (spaces AND tabs) is removed — not
+#      just a single space — so `##   Validation` and `##\tValidation` normalize identically.
+#   3. ATX-legal trailing is removed: trailing whitespace, then an optional contiguous run of
+#      closing `#`s, then any whitespace those `#`s exposed.
+#   4. The remaining heading TEXT must equal exactly `Validation`.
+# So `## Validation`, `##   Validation` (multi-space), `##\tValidation` (tab), and
+# `##  Validation  ##` (ATX closing hashes + trailing ws) all match, while a SIBLING heading whose
+# text merely STARTS WITH `Validation` (`## Validation Details`, `## Validation Notes`,
+# `## ValidationX`) does NOT. This exactness keeps a differently-named sibling section from being
+# mistaken for the `## Validation` section, so the ABSENT path creates the real `## Validation`
+# section. Pure text, no eval.
 _hivemind_is_validation_heading() {
   local rest="$1"
-  # Require the level-2 marker `## ` (exactly two `#` then at least one space). A level-1 `#` or a
-  # level-3+ `###` heading is not the `## Validation` heading.
+  # Require an EXACTLY level-2 ATX heading: the line begins with `##`, the marker is NOT a third `#`
+  # (so `###`+ is rejected), and `##` is followed by AT LEAST ONE space OR tab (CommonMark requires
+  # whitespace after the marker, so a no-space `##Validation` — not an ATX heading — is rejected). A
+  # level-1 `#` fails the `'##'*` prefix. `_hivemind_heading_level` is space-only and would miss a
+  # tab marker, so the level-2 gate is parsed directly here to cover `##\tValidation`.
   case "$rest" in
-    '## '*) rest="${rest#'## '}" ;;
-    *) return 1 ;;
+    '###'*) return 1 ;;                       # level-3+ heading, not the `## Validation` heading
+    '## '*|'##	'*) rest="${rest#'##'}" ;;     # `##` + space  OR  `##` + tab → strip the marker
+    *) return 1 ;;                            # no `##`, or `##` not followed by space/tab
   esac
+  rest="${rest#"${rest%%[![:space:]]*}"}"    # drop ALL leading whitespace (spaces AND tabs)
   # Strip ATX-legal trailing in plain bash (no extglob): trailing whitespace, then a contiguous run
   # of closing `#`s, then any whitespace those `#`s exposed. So `Validation`, `Validation  `,
   # `Validation ##`, and `Validation ##  ` all reduce to `Validation`.

@@ -2672,6 +2672,59 @@ assert_eq "file-guard:validation-vx-real-heading" "1" \
 assert_eq "file-guard:validation-vx-preserved" "1" \
   "$(grep -c '^## ValidationX$' "$fg_claude_vx")" "## ValidationX sibling preserved"
 
+# 14g-wsmarker. ATX MARKER-WHITESPACE NORMALIZATION LOCK (PR #297 P2): a valid level-2 heading whose
+# `##` marker is followed by EXTRA whitespace (multiple spaces, or a tab) must still be recognized as
+# the `## Validation` heading. The prior fix stripped only a single literal `## ` (one space), so
+# `##   Validation` / `##\tValidation` left leading whitespace on the heading text → the exact
+# compare to `Validation` FAILED → the section was MISSED and a DUPLICATE `## Validation` block was
+# appended even when a command was already documented. Each case below is NON-VACUOUS: it FAILS
+# against the single-space-strip code (verdict `added` + a duplicate heading) and passes only with
+# the strip-ALL-leading-whitespace parse.
+#
+# (a) `##   Validation` (3 spaces) WITH a fenced command → already documented, byte-unchanged.
+fg_claude_msp="$WORKDIR/fg-claude-multispace.md"
+printf '# Project\n\n##   Validation\n\n```bash\nnpm test\n```\n' > "$fg_claude_msp"
+fg_msp_before="$(cat "$fg_claude_msp")"
+fg_msp_res="$(hivemind_guard_validation_section "$fg_claude_msp" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-multispace-documented" "already documented" "$fg_msp_res" "##   Validation (multi-space marker) with command → already documented"
+assert_eq "file-guard:validation-multispace-bytes" "$fg_msp_before" "$(cat "$fg_claude_msp")" "multi-space-marker heading file byte-unchanged"
+assert_eq "file-guard:validation-multispace-no-dup" "0" \
+  "$(grep -c '^## Validation$' "$fg_claude_msp")" "no canonical '## Validation' duplicate appended beside the multi-space heading"
+
+# (b) `##\tValidation` (TAB after the marker) WITH a fenced command → already documented, byte-unchanged.
+fg_claude_tab="$WORKDIR/fg-claude-tabmarker.md"
+printf '# Project\n\n##\tValidation\n\n```bash\nnpm test\n```\n' > "$fg_claude_tab"
+fg_tab_before="$(cat "$fg_claude_tab")"
+fg_tab_res="$(hivemind_guard_validation_section "$fg_claude_tab" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-tab-documented" "already documented" "$fg_tab_res" "##<tab>Validation (tab marker) with command → already documented"
+assert_eq "file-guard:validation-tab-bytes" "$fg_tab_before" "$(cat "$fg_claude_tab")" "tab-marker heading file byte-unchanged"
+
+# (c) `##   Validation` with PROSE but NO command → recognized as the section (not a duplicate) →
+# prose-preserving append, EXACTLY ONE level-2 Validation heading after the append.
+fg_claude_msp_prose="$WORKDIR/fg-claude-multispace-prose.md"
+printf '##   Validation\n\nRun the tests manually before pushing.\n' > "$fg_claude_msp_prose"
+fg_msp_prose_res="$(hivemind_guard_validation_section "$fg_claude_msp_prose" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-multispace-prose-added" "added" "$fg_msp_prose_res" "prose-only ##   Validation → ABSENT body → added (recognized, not duplicated)"
+assert_eq "file-guard:validation-multispace-prose-kept" "Run the tests manually before pushing." \
+  "$(grep -F 'Run the tests manually before pushing.' "$fg_claude_msp_prose")" "multi-space-marker prose preserved on append"
+assert_eq "file-guard:validation-multispace-prose-no-dup" "0" \
+  "$(grep -c '^## Validation$' "$fg_claude_msp_prose")" "no canonical '## Validation' duplicate appended beside the multi-space prose heading"
+assert_eq "file-guard:validation-multispace-prose-one-heading" "1" \
+  "$(grep -cE '^##[[:space:]]+Validation$' "$fg_claude_msp_prose")" "exactly ONE level-2 Validation heading after the prose-preserving append"
+
+# (d) NO-SPACE REGRESSION GUARD: `##Validation` (no whitespace after the marker) is NOT an ATX
+# heading → NOT the `## Validation` heading → ABSENT → the real `## Validation` section is created
+# and `##Validation` is preserved. Non-vacuous: a marker-strip that did not require whitespace would
+# treat `##Validation` as the target → no real `## Validation` ever created.
+fg_claude_nospace="$WORKDIR/fg-claude-nospace.md"
+printf '# Project\n\n##Validation\n\nnot a heading.\n' > "$fg_claude_nospace"
+fg_nospace_res="$(hivemind_guard_validation_section "$fg_claude_nospace" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-nospace-added" "added" "$fg_nospace_res" "##Validation (no space, not ATX) → ABSENT → added"
+assert_eq "file-guard:validation-nospace-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_nospace")" "real ## Validation heading created beside ##Validation"
+assert_eq "file-guard:validation-nospace-preserved" "1" \
+  "$(grep -c '^##Validation$' "$fg_claude_nospace")" "##Validation non-heading line preserved"
+
 # 14h. INERT: a hostile entry value crafted as a command-substitution payload is written as plain
 # text, never executed (proves the text guards never eval/source the entry).
 rm -f "$PWN_MARKER"
