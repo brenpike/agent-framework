@@ -2839,6 +2839,35 @@ td_py="$(td_new_project)"
 printf '[project]\ndependencies = ["pytest"]\n' > "$td_py/pyproject.toml"
 assert_eq "test-detect:python" "pytest" "$(hivemind_detect_test_commands "$td_py")" "pyproject pytest signal → pytest"
 
+# Python pytest NESTED test file (tests/unit/test_api.py, no direct-child test file) → pytest.
+# NON-VACUITY: the old shallow ls-glob misses tests/unit/test_api.py so this case FAILS against
+# the unfixed code (emitting nothing) and PASSES only with the recursive find fix.
+td_py_nested="$(td_new_project)"
+printf '[tool.pytest.ini_options]\n' > "$td_py_nested/pyproject.toml"
+mkdir -p "$td_py_nested/tests/unit"
+printf '# unit test\n' > "$td_py_nested/tests/unit/test_api.py"
+assert_eq "test-detect:python-nested-test-file" "pytest" \
+  "$(hivemind_detect_test_commands "$td_py_nested")" \
+  "pyproject.toml [tool.pytest] + nested tests/unit/test_api.py → pytest"
+
+# Python pytest DIRECT-CHILD regression: tests/test_foo.py still detected after the recursive fix.
+td_py_direct="$(td_new_project)"
+printf '[tool.pytest.ini_options]\n' > "$td_py_direct/pyproject.toml"
+mkdir -p "$td_py_direct/tests"
+printf '# test\n' > "$td_py_direct/tests/test_foo.py"
+assert_eq "test-detect:python-direct-test-file" "pytest" \
+  "$(hivemind_detect_test_commands "$td_py_direct")" \
+  "direct-child tests/test_foo.py still detected (recursive find includes depth-1)"
+
+# Python pytest NO-SIGNAL regression: pyproject.toml without a pytest signal AND no test files → no pytest.
+td_py_nosig="$(td_new_project)"
+printf '[project]\nname = "myapp"\n' > "$td_py_nosig/pyproject.toml"
+mkdir -p "$td_py_nosig/tests"
+printf '# helper\n' > "$td_py_nosig/tests/helpers.py"
+assert_eq "test-detect:python-no-signal" "" \
+  "$(hivemind_detect_test_commands "$td_py_nosig")" \
+  "pyproject without pytest signal and no test_*.py/*_test.py → no pytest command"
+
 # Go → go test ./...
 td_go="$(td_new_project)"
 printf 'module example.com/x\n\ngo 1.22\n' > "$td_go/go.mod"
@@ -2867,6 +2896,24 @@ assert_eq "test-detect:elixir" "mix test" "$(hivemind_detect_test_commands "$td_
 td_rb="$(td_new_project)"
 printf 'gem "rspec"\n' > "$td_rb/Gemfile"
 assert_eq "test-detect:ruby" "bundle exec rspec" "$(hivemind_detect_test_commands "$td_rb")" "Gemfile rspec signal → bundle exec rspec"
+
+# Ruby rspec NESTED spec file (spec/unit/foo_spec.rb, no direct-child spec file) → bundle exec rspec.
+# NON-VACUITY: the old shallow ls-glob misses spec/unit/foo_spec.rb so this case FAILS against
+# the unfixed code and PASSES only with the recursive find fix.
+td_rb_nested="$(td_new_project)"
+mkdir -p "$td_rb_nested/spec/unit"
+printf '# unit spec\n' > "$td_rb_nested/spec/unit/foo_spec.rb"
+assert_eq "test-detect:ruby-nested-spec-file" "bundle exec rspec" \
+  "$(hivemind_detect_test_commands "$td_rb_nested")" \
+  "nested spec/unit/foo_spec.rb with no Gemfile rspec → bundle exec rspec"
+
+# Ruby rspec DIRECT-CHILD regression: spec/bar_spec.rb still detected after the recursive fix.
+td_rb_direct="$(td_new_project)"
+mkdir -p "$td_rb_direct/spec"
+printf '# spec\n' > "$td_rb_direct/spec/bar_spec.rb"
+assert_eq "test-detect:ruby-direct-spec-file" "bundle exec rspec" \
+  "$(hivemind_detect_test_commands "$td_rb_direct")" \
+  "direct-child spec/bar_spec.rb still detected (recursive find includes depth-1)"
 
 # Make with a real test: target → make test.
 td_mk="$(td_new_project)"

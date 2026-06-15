@@ -167,9 +167,12 @@ _hivemind_python_has_pytest_signal() {
   if [ -f "$root/setup.py" ]; then
     grep -qi 'pytest' "$root/setup.py" 2>/dev/null && return 0
   fi
-  # `tests/` test files: a tests/ directory holding at least one test_*.py / *_test.py file.
+  # `tests/` test files: a tests/ directory holding at least one test_*.py / *_test.py file,
+  # searched RECURSIVELY so nested layouts (e.g. tests/unit/test_api.py) are detected.
+  # `find ... -print -quit` stops on the first match — bounded, portable, no globstar required.
   if [ -d "$root/tests" ]; then
-    if ls "$root"/tests/test_*.py "$root"/tests/*_test.py >/dev/null 2>&1; then
+    if find "$root/tests" -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit \
+         2>/dev/null | grep -q .; then
       return 0
     fi
   fi
@@ -196,8 +199,10 @@ _hivemind_ruby_has_rspec_signal() {
   if [ -f "$root/Gemfile" ]; then
     grep -qi 'rspec' "$root/Gemfile" 2>/dev/null && return 0
   fi
+  # `spec/` spec files: searched RECURSIVELY (e.g. spec/unit/foo_spec.rb) with first-match quit.
   if [ -d "$root/spec" ]; then
-    if ls "$root"/spec/*_spec.rb >/dev/null 2>&1; then
+    if find "$root/spec" -type f -name '*_spec.rb' -print -quit \
+         2>/dev/null | grep -q .; then
       return 0
     fi
   fi
