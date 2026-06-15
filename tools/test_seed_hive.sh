@@ -222,8 +222,10 @@ assert_contains "caveman:keypcfg"  '- pluginConfigs["caveman@caveman"]: added' "
 # `resolved: yes` and the off companions `resolved: no` — even though no `companions` block was
 # supplied. Guards the regression where `resolved` keyed off the (absent) companions.resolved field
 # and always printed `resolved: unknown`.
-assert_contains "caveman:resolved-yes" "- caveman@caveman: detected: not-checked, source: not-checked, resolved: yes, via: unknown" "$OUT4"
-assert_contains "caveman:resolved-no"  "- claude-mem@thedotmack: detected: not-checked, source: not-checked, resolved: no, via: unknown" "$OUT4"
+# Absent companion facts (explicit-input skips detection) → the emitter's `($c.via // "explicit-input")`
+# default reports `via: explicit-input` (NOT the out-of-schema `via: unknown`); see SKILL.md `## Output`.
+assert_contains "caveman:resolved-yes" "- caveman@caveman: detected: not-checked, source: not-checked, resolved: yes, via: explicit-input" "$OUT4"
+assert_contains "caveman:resolved-no"  "- claude-mem@thedotmack: detected: not-checked, source: not-checked, resolved: no, via: explicit-input" "$OUT4"
 # Finding-2 (PR #297): absent companion facts (explicit-input skips detection) report the
 # schema-valid `not-checked` token for detected/source — NEVER the out-of-schema `unknown`.
 # Non-vacuous: pre-fix this path emitted `detected: unknown, source: unknown` (not in the Output enum).
@@ -234,6 +236,16 @@ for offschema in "detected: unknown" "source: unknown"; do
     pass "caveman:companions-no-unknown" "companions block free of out-of-schema token '$offschema'"
   fi
 done
+# Focused `via` regression (mirrors the detected/source guard above): caveman=yes with NO companions
+# facts block exercises the explicit-input skip path. The `via:` column MUST report `explicit-input`
+# (the emitter's `($c.via // "explicit-input")` default) and MUST NOT leak the out-of-schema `via: unknown`.
+# Non-vacuous: pre-fix this path printed `via: unknown` for every companion when no facts were threaded.
+assert_contains "caveman:via-explicit-input" "via: explicit-input" "$OUT4"
+if printf '%s' "$OUT4" | grep -qF -- "via: unknown"; then
+  failed "caveman:via-no-unknown" "companions block emits out-of-schema token 'via: unknown'"
+else
+  pass "caveman:via-no-unknown" "companions block free of out-of-schema token 'via: unknown'"
+fi
 assert_eq "caveman:envrc-content" "export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$ROOT4/.envrc")" ".envrc content"
 [ -x "$ROOT4/.claude/hooks/caveman-ultra-subagent.sh" ] \
   && pass "caveman:hook-exec" "hook file is executable" \
@@ -344,6 +356,77 @@ fi
 # Pre-existing value untouched.
 assert_eq "memalready:preserved" "/preexisting/claude" \
   "$(jq -r '.CLAUDE_CODE_PATH' "$ROOT7/fakehome/.claude-mem/settings.json")" "existing CLAUDE_CODE_PATH preserved"
+
+# ── Case 8: Pattern-1 schema-enumeration — apply Output emits NO companion token out of enum ──
+# Closes the merge-predicate-gap class at the SCHEMA boundary: parse the SKILL.md `## Output`
+# companions enum for each field (via / detected / source / resolved), then across representative
+# apply Outputs assert every `companions:` line's emitted value for that field is INSIDE the parsed
+# enum. A future out-of-schema companion token (e.g. a new `via: unknown`) trips this immediately.
+echo '=== Case 8: schema-enumeration — apply companions tokens stay within the SKILL.md ## Output enum ==='
+SKILL_MD="$REPO_ROOT/plugin/skills/seed-hive/SKILL.md"
+assert_eq "schema:skill-present" "0" "$([ -f "$SKILL_MD" ] && echo 0 || echo 1)" "SKILL.md present"
+
+# enum_tokens <field> — extract the alternation tokens for one companions field from the fenced
+# `## Output` block. Anchors on the `## Output` heading, the fenced ```text region, and a companion
+# `- <name>: ... <field>: <a> | <b> | ...` line (robust to the trailing fields after it). Echoes one
+# token per line.
+enum_tokens() {
+  local field="$1"
+  awk -v field="$field" '
+    /^## Output/      { in_out = 1; next }
+    in_out && /^```text/ { in_fence = 1; next }
+    in_out && in_fence && /^```/ { in_fence = 0; in_out = 0; next }
+    in_fence && /^- (caveman@caveman|claude-mem@thedotmack|codex@openai-codex):/ {
+      # isolate "<field>: <enum...>" up to the next ", <nextfield>:" or end of line.
+      line = $0
+      idx = index(line, field ": ")
+      if (idx == 0) next
+      rest = substr(line, idx + length(field) + 2)
+      # cut at the first ", " that begins a following "<word>:" field label.
+      if (match(rest, /, [a-z_]+: /)) rest = substr(rest, 1, RSTART - 1)
+      n = split(rest, parts, / \| /)
+      for (i = 1; i <= n; i++) { gsub(/^[ \t]+|[ \t]+$/, "", parts[i]); if (parts[i] != "") print parts[i] }
+      exit
+    }
+  ' "$SKILL_MD" | sort -u
+}
+
+# assert_enum_coverage <case> <field> <output> — every value emitted on a companions line for <field>
+# in <output> must be a member of the parsed SKILL.md enum for <field>.
+assert_enum_coverage() {
+  local case_name="$1" field="$2" output="$3"
+  local enum emitted tok
+  enum="$(enum_tokens "$field")"
+  if [ -z "$enum" ]; then
+    failed "$case_name" "could not parse '$field' enum from SKILL.md ## Output (parser anchor broke)"
+    return
+  fi
+  # Pull each emitted value for this field from every companions `- <name>: ...` line.
+  emitted="$(printf '%s\n' "$output" \
+    | grep -E '^- (caveman@caveman|claude-mem@thedotmack|codex@openai-codex):' \
+    | sed -nE "s/.*[, ]${field}: ([a-z-]+).*/\1/p" | sort -u)"
+  if [ -z "$emitted" ]; then
+    failed "$case_name" "no '$field' values emitted on any companions line (expected at least one)"
+    return
+  fi
+  while IFS= read -r tok; do
+    [ -n "$tok" ] || continue
+    if printf '%s\n' "$enum" | grep -qx -- "$tok"; then
+      pass "$case_name" "'$field: $tok' is in the SKILL.md ## Output enum"
+    else
+      failed "$case_name" "'$field: $tok' is OUTSIDE the SKILL.md ## Output enum [$(printf '%s' "$enum" | tr '\n' '/')]"
+    fi
+  done <<< "$emitted"
+}
+
+# Representative apply Outputs: clean seed (Case 1, explicit-input/none), caveman=yes with absent
+# companion facts (Case 4, the explicit-input skip path → not-checked + explicit-input), headless
+# (Case 6, claude_mem=yes). Each must keep every companions token within its parsed enum.
+for field in via detected source resolved; do
+  assert_enum_coverage "schema:clean:$field"    "$field" "$OUT"
+  assert_enum_coverage "schema:caveman:$field"  "$field" "$OUT4"
+  assert_enum_coverage "schema:headless:$field" "$field" "$OUT6"
+done
 
 # ── Tally ───────────────────────────────────────────────────────────────────────
 echo

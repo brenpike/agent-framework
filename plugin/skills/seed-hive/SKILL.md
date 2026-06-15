@@ -296,6 +296,8 @@ hooks:
 - hooks.SubagentStart in settings.json: added | already present | skipped (caveman not enabled)
 
 companions:
+# `via: explicit-input` is reported whenever detection was skipped for that companion (an explicit
+# `yes`/`no` input, so no `detect`/confirm ran); the other `via` tokens reflect a detected companion's resolution path.
 - caveman@caveman: detected: installed | absent | not-checked, source: manifest | cache | none | not-checked, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt
 - claude-mem@thedotmack: detected: installed | absent | not-checked, source: manifest | cache | none | not-checked, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt
 - codex@openai-codex: detected: installed | absent | not-checked, source: manifest | cache | none | not-checked, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt

@@ -400,18 +400,21 @@ phase_apply() {
 # claude_mem / codex fields, not inside each companion object — so it is supplied here from the
 # three resolved top-level flags the caller already parsed, positional in SEED_COMPANIONS order
 # (caveman, claude-mem, codex). detected/source/via still come from the threaded facts; a missing
-# detected/source field (explicit yes/no skips detection) → "not-checked"; missing via → "unknown".
+# detected/source field (explicit yes/no skips detection) → "not-checked"; missing via →
+# "explicit-input" (detection skipped because the input was explicit yes/no). resolved defaults to
+# "no" — the caller always supplies all three flags (jq default "no"), so this default is latent.
 emit_companions_block() {
   local companions_json="$1"
   # Resolved yes/no flags, positional in SEED_COMPANIONS order (caveman, claude-mem, codex).
-  local -a resolved_flags=("${2:-unknown}" "${3:-unknown}" "${4:-unknown}")
+  # Defaults to "no" (documented value) — caller always supplies these; default is latent hardening.
+  local -a resolved_flags=("${2:-no}" "${3:-no}" "${4:-no}")
   local key fields detected source via resolved idx
   printf 'companions:\n'
   for idx in "${!SEED_COMPANIONS[@]}"; do
     key="${SEED_COMPANIONS[$idx]}"
     fields="$(jq -r --arg k "$key" '
       (.[$k] // {}) as $c
-      | [($c.detected // "not-checked"), ($c.source // "not-checked"), ($c.via // "unknown")] | @tsv
+      | [($c.detected // "not-checked"), ($c.source // "not-checked"), ($c.via // "explicit-input")] | @tsv
     ' <<<"$companions_json")"
     IFS=$'\t' read -r detected source via <<<"$fields"
     resolved="${resolved_flags[$idx]}"
