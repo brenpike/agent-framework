@@ -1853,6 +1853,63 @@ assert_eq "settings:cave-hook-existing-idem-class" "already present" \
 assert_eq "settings:cave-hook-existing-idem-count" "2" \
   "$(printf '%s' "$sm_existing_hook_twice" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge does not duplicate the caveman hook"
 
+# 12c-ter. caveman pluginConfigs NESTED-LEAF merge: the contract value is
+# pluginConfigs["caveman@caveman"].options.defaultLevel == "ultra", NOT the mere presence of the
+# parent "caveman@caveman" key. A parent config object present WITHOUT (or with a non-"ultra")
+# defaultLevel is NOT configured for ultra mode — the leaf must be set/corrected while preserving
+# every sibling key in the config object and in .options.
+# (a) parent present, options present, defaultLevel MISSING → set "ultra", preserve sibling option.
+sm_pcfg_no_level='{"pluginConfigs":{"caveman@caveman":{"options":{"someOther":1}}}}'
+sm_pcfg_set="$(hivemind_settings_merge "$sm_pcfg_no_level" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-missing-class" "added" \
+  "$(printf '%s' "$sm_pcfg_set" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "parent present, defaultLevel missing → corrected (added)"
+assert_eq "settings:cave-pcfg-leaf-missing-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_set" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "missing defaultLevel set to ultra"
+assert_eq "settings:cave-pcfg-leaf-missing-sibling" "1" \
+  "$(printf '%s' "$sm_pcfg_set" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.someOther')" "sibling option key preserved when leaf set"
+# (b) parent present, defaultLevel = "lite" (WRONG value) → corrected to "ultra", sibling preserved.
+sm_pcfg_lite='{"pluginConfigs":{"caveman@caveman":{"options":{"defaultLevel":"lite","keepMe":true}}}}'
+sm_pcfg_corrected="$(hivemind_settings_merge "$sm_pcfg_lite" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-wrong-class" "added" \
+  "$(printf '%s' "$sm_pcfg_corrected" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "defaultLevel != ultra → corrected (added)"
+assert_eq "settings:cave-pcfg-leaf-wrong-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_corrected" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "wrong defaultLevel corrected to ultra"
+assert_eq "settings:cave-pcfg-leaf-wrong-sibling" "true" \
+  "$(printf '%s' "$sm_pcfg_corrected" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.keepMe')" "sibling option key preserved when leaf corrected"
+# (c) parent present, defaultLevel ALREADY "ultra" + sibling config key → no-op, already present,
+# BYTE-STABLE, sibling config key (outside .options) preserved.
+sm_pcfg_ultra='{"pluginConfigs":{"caveman@caveman":{"options":{"defaultLevel":"ultra"},"extra":true}}}'
+sm_pcfg_noop="$(hivemind_settings_merge "$sm_pcfg_ultra" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-ultra-class" "already present" \
+  "$(printf '%s' "$sm_pcfg_noop" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "defaultLevel already ultra → already present"
+assert_eq "settings:cave-pcfg-leaf-ultra-extra" "true" \
+  "$(printf '%s' "$sm_pcfg_noop" | jq -r '.settings.pluginConfigs["caveman@caveman"].extra')" "sibling config key (outside .options) preserved"
+assert_eq "settings:cave-pcfg-leaf-ultra-bytestable" \
+  "$(printf '%s' '{"caveman@caveman":{"options":{"defaultLevel":"ultra"},"extra":true}}' | jq -cS .)" \
+  "$(printf '%s' "$sm_pcfg_noop" | jq -cS '.settings.pluginConfigs')" "already-ultra pluginConfigs is byte-stable (no-op)"
+# (d) parent key ABSENT → full add of {options:{defaultLevel:"ultra"}} (regression of original behavior).
+sm_pcfg_absent="$(hivemind_settings_merge '{"pluginConfigs":{"other@plugin":{}}}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-absent-class" "added" \
+  "$(printf '%s' "$sm_pcfg_absent" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "parent absent → added"
+assert_eq "settings:cave-pcfg-leaf-absent-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_absent" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "parent absent → full add with ultra"
+assert_eq "settings:cave-pcfg-leaf-absent-sibling" "0" \
+  "$(printf '%s' "$sm_pcfg_absent" | jq -r '.settings.pluginConfigs["other@plugin"] | length')" "unrelated sibling pluginConfig preserved"
+# (e) parent config WRONG-TYPED (a string) → canon_obj → {} → ultra set, no crash (RR4 shape-norm).
+sm_pcfg_wrongcfg="$(hivemind_settings_merge '{"pluginConfigs":{"caveman@caveman":"oops"}}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-wrongcfg-status" "ok" \
+  "$(printf '%s' "$sm_pcfg_wrongcfg" | jq -r '.status')" "wrong-typed caveman config (string) → canonical {} → status ok (no jq abort)"
+assert_eq "settings:cave-pcfg-leaf-wrongcfg-class" "added" \
+  "$(printf '%s' "$sm_pcfg_wrongcfg" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "wrong-typed caveman config → added"
+assert_eq "settings:cave-pcfg-leaf-wrongcfg-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_wrongcfg" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "wrong-typed config → canonical {} then ultra set"
+# (f) parent present, .options WRONG-TYPED (an array) → canon_obj → {} → ultra set, no crash.
+sm_pcfg_wrongopt="$(hivemind_settings_merge '{"pluginConfigs":{"caveman@caveman":{"options":["x"]}}}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-wrongopt-status" "ok" \
+  "$(printf '%s' "$sm_pcfg_wrongopt" | jq -r '.status')" "wrong-typed .options (array) → canonical {} → status ok (no jq abort)"
+assert_eq "settings:cave-pcfg-leaf-wrongopt-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_wrongopt" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "wrong-typed .options → canonical {} then ultra set"
+
 # 12d. IDEMPOTENT re-merge of an already-seeded object = no-op, BYTE-STABLE settings.
 sm_once="$(hivemind_settings_merge '' 'hivemind:overlord' 'yes' 'yes' 'yes' 'yes')"
 sm_once_settings="$(printf '%s' "$sm_once" | jq -cS '.settings')"

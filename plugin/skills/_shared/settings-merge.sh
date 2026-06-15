@@ -62,7 +62,14 @@
 #     the flag absent/any-other-value the never-overwrite-on-conflict behavior is byte-identical
 #     to the no-approval path. The approval gate is the conflict branch ONLY; an absent or
 #     already-equal `agent` makes approval inert (normal add / already-present classification).
-#   - pluginConfigs["caveman@caveman"].options.defaultLevel = "ultra" — caveman=yes only.
+#   - pluginConfigs["caveman@caveman"].options.defaultLevel = "ultra" — caveman=yes only,
+#     NESTED-LEAF add/correct on the SPECIFIC .options.defaultLevel leaf, NOT on the presence of
+#     the parent "caveman@caveman" key. A parent config object that already exists but LACKS
+#     defaultLevel (or holds a non-"ultra" value) is NOT configured for ultra mode: the leaf is
+#     set to "ultra" while every sibling key in the config object and in .options is PRESERVED.
+#     `already present` requires defaultLevel to ALREADY equal "ultra". Each container on the path
+#     (config object, .options) is canon_obj-normalized so a wrong-typed nested container collapses
+#     to {} before the leaf is set — a malformed nested config never crashes or clobbers.
 #   - hooks.SubagentStart — the caveman ultra-mode hook entry (caveman=yes only), add-if-absent
 #     on the SPECIFIC `.claude/hooks/caveman-ultra-subagent.sh` command, NOT on the presence of
 #     the SubagentStart key. An existing unrelated SubagentStart array is PRESERVED and the
@@ -110,6 +117,9 @@
 #         "enabledPlugins.claude-mem@thedotmack": "...",
 #         "enabledPlugins.codex@openai-codex": "...",
 #         "pluginConfigs.caveman@caveman": "added" | "already present" | "resolved no",
+#           // NESTED-LEAF: "already present" ONLY when .options.defaultLevel is ALREADY
+#           // "ultra"; "added" when the leaf had to be set or corrected (parent absent, OR
+#           // parent present but defaultLevel missing / != "ultra"); "resolved no" when caveman != yes.
 #         "hooks.SubagentStart": "added" | "already present" | "resolved no"
 #       },
 #       "permissions_allow": [                   // one entry per template rule, in template
@@ -330,8 +340,14 @@ hivemind_settings_merge() {
        elif has_enabled("claude-mem@thedotmack") then "already present" else "added" end) as $c_mem
     | (if $codex != "yes" then "resolved no"
        elif has_enabled("codex@openai-codex") then "already present" else "added" end) as $c_codex
+    # NESTED-LEAF classification: the contract value is pluginConfigs["caveman@caveman"]
+    # .options.defaultLevel == "ultra", NOT the mere presence of the parent key. A parent
+    # object present WITHOUT (or with a non-"ultra") defaultLevel is NOT configured for ultra
+    # mode — it must be corrected (classified "added"). canon_obj normalizes the config object
+    # and its .options so a wrong-typed nested container collapses to {} before the leaf read.
     | (if $caveman != "yes" then "resolved no"
-       elif (canon_obj($s.pluginConfigs) | has("caveman@caveman")) then "already present"
+       elif ((canon_obj($s.pluginConfigs) | canon_obj(.["caveman@caveman"]) | canon_obj(.options).defaultLevel) == "ultra")
+         then "already present"
        else "added" end) as $c_pcfg
     | (if $caveman != "yes" then "resolved no"
        elif (canon_arr(canon_obj($s.hooks).SubagentStart)
@@ -351,11 +367,18 @@ hivemind_settings_merge() {
     # on "conflict" (differing + NOT approved) leave the existing value byte-unchanged (the caller
     # stops blocked on $agent_conflict). Overwrite happens ONLY via the approved=="yes" gate.
     | (if $agent_class == "conflict" then . else .agent = $agent end)
-    # caveman pluginConfigs + SubagentStart hook (add-if-absent).
+    # caveman pluginConfigs — NESTED-LEAF merge (add/correct the specific
+    # .options.defaultLevel == "ultra" leaf, PRESERVING every sibling key). The earlier
+    # parent-presence test left an existing caveman config that lacked (or mis-set)
+    # defaultLevel unchanged, so ultra mode was never actually configured. Here every
+    # container on the path is canon_obj-normalized (the config object and its .options) so a
+    # wrong-typed nested container collapses to {} BEFORE the leaf is set — a malformed config
+    # can neither crash nor clobber. Sibling keys in the config object and in .options are kept;
+    # only .options.defaultLevel is set to "ultra". Already-ultra → byte-stable no-op.
     | (if $caveman == "yes"
        then .pluginConfigs = (canon_obj(.pluginConfigs)
-              | if has("caveman@caveman") then .
-                else . + {"caveman@caveman": {options: {defaultLevel: "ultra"}}} end)
+              | .["caveman@caveman"] = (canon_obj(.["caveman@caveman"])
+                  | .options = (canon_obj(.options) | .defaultLevel = "ultra")))
        else . end)
     # caveman SubagentStart hook (add-if-absent on the SPECIFIC command, NOT on the presence of
     # the SubagentStart key): an existing unrelated SubagentStart array is PRESERVED and the
