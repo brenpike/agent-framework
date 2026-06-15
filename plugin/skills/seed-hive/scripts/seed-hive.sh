@@ -161,7 +161,7 @@ hivemind_seed_detect_one() {
   # When jq is ABSENT this whole branch is skipped (jq-unavailable == unparseable manifest), so
   # detection degrades to the cache-dir probe below — never a crash.
   if command -v jq >/dev/null 2>&1 \
-     && [ -f "$manifest" ] && jq -e 'type == "object"' "$manifest" >/dev/null 2>&1; then
+     && [ -f "$manifest" ] && hivemind_jq_is_single_object_file "$manifest"; then
     if jq -e --arg k "$key" '(.plugins // {}) | has($k)' "$manifest" >/dev/null 2>&1; then
       printf '%s %s\n' "installed" "manifest"
     else
@@ -226,7 +226,7 @@ phase_apply() {
   local inputs_file="${1:-}"
   [ -n "$inputs_file" ] || fail "apply requires an inputs JSON file argument"
   [ -f "$inputs_file" ] || fail "apply inputs file does not exist: $inputs_file"
-  jq -e 'type == "object"' "$inputs_file" >/dev/null 2>&1 \
+  hivemind_jq_is_single_object_file "$inputs_file" \
     || fail "apply inputs file is not a valid JSON object: $inputs_file"
 
   # Parse every field into inert variables.

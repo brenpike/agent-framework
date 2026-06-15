@@ -71,6 +71,17 @@
 #
 # DEPENDENCY: jq only (POSIX + jq). No yq, no sed/awk.
 
+# ── self-location + sibling-lib source (SOURCE-OR-DIE) ──────────────────────────
+# THIS file is itself a SOURCED lib (no shebang); BASH_SOURCE[0] still resolves to this file's own
+# path when sourced, so we self-locate the _shared dir from it (never a caller value) and source the
+# json-normalize.sh sibling that supplies hivemind_jq_is_single_object_file. SOURCE-OR-DIE: a missing
+# or unparseable sibling returns non-zero from this fragment so the caller (entrypoint / test harness)
+# fails closed exactly as it does for this file. Re-sourcing is idempotent (pure function definitions).
+__cm_path_shared_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=/dev/null
+. "$__cm_path_shared_dir/json-normalize.sh"
+unset __cm_path_shared_dir
+
 # hivemind_claude_mem_resolve_binary [home_dir]
 # Resolve the `claude` binary path DYNAMICALLY per SKILL.md step 11e, taking the first candidate
 # that resolves to an executable file. Emits the resolved absolute path on stdout and returns 0
@@ -131,9 +142,12 @@ hivemind_claude_mem_provision_path() {
     return 0
   fi
 
-  # MALFORMED → no crash, no clobber (SKILL.md step 11c). Validate as a JSON object before any
-  # read of the key; a torn real file must be left byte-unchanged.
-  if ! jq -e 'type == "object"' "$settings_file" >/dev/null 2>&1; then
+  # MALFORMED → no crash, no clobber (SKILL.md step 11c). Validate as a SINGLE JSON object before
+  # any read of the key; a torn real file (including a multi-document stream) must be left
+  # byte-unchanged. hivemind_jq_is_single_object_file returns 0 IFF the file is exactly one JSON
+  # document AND it is an object — rejects multi-doc streams, non-object single docs, and
+  # unparseable content (subsumes the former `type=="object"` test and closes the stream gap).
+  if ! hivemind_jq_is_single_object_file "$settings_file"; then
     printf '%s\n' "skipped (malformed json)"
     return 0
   fi

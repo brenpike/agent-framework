@@ -250,12 +250,18 @@ hivemind_settings_merge() {
   local agent_conflict_approved="${7:-no}"
 
   # EMPTY input is the absent-file case (SKILL.md step 4): treat as {}. A NON-EMPTY but
-  # unparseable string is NOT coerced — report malformed so the caller fails closed rather than
-  # silently erasing a torn real file.
+  # invalid input is NOT coerced — report malformed so the caller fails closed rather than
+  # silently erasing a torn real file. "Invalid" covers: unparseable JSON, valid JSON that is
+  # not an object (a settings file must be an object), AND a multi-document stream (two or more
+  # concatenated top-level documents). The bare `jq -e 'type=="object"'` precheck accepted
+  # multi-doc streams because jq streams them and exits 0 on the last document; the downstream
+  # `--argjson settings` then rejected the stream and crashed. hivemind_jq_is_single_object_stdin
+  # (STEP-001, json-normalize.sh) slurps into an array and requires length==1 AND type==object,
+  # closing the multi-doc case while subsuming the old type check.
   if [ -z "$settings_json" ]; then
     settings_json='{}'
-  elif ! printf '%s' "$settings_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
-    # Unparseable JSON, or valid JSON that is not an object (a settings file must be an object).
+  elif ! printf '%s' "$settings_json" | hivemind_jq_is_single_object_stdin; then
+    # Multi-document stream, unparseable JSON, or valid JSON that is not an object.
     jq -n '{status:"malformed", settings:null, agent_conflict:null, keys:{}, permissions_allow:[]}'
     return 0
   fi

@@ -70,3 +70,46 @@ def canon_obj(f): (f) as $v | if ($v|type)=="object" then $v else {} end;
 def canon_arr(f): (f) as $v | if ($v|type)=="array" then $v else [] end;
 CANON_DEFS
 }
+
+# ── Single-document-validity primitive (P2 contract) ──────────────────────────────
+# SINGLE-DOCUMENT DISCIPLINE (root cause — mirrors ledger-project.sh and manifest-json.sh):
+# jq accepts a STREAM of concatenated JSON documents, so a bare `jq -e 'type=="object"'` over a
+# file holding TWO objects (`{"a":1}{"b":2}`) runs the predicate ONCE PER document and SUCCEEDS —
+# jq exits 0 on the last document. A downstream `--argjson`/per-object-write that assumed ONE
+# object then crashes or clobbers instead of taking the documented malformed path. We SLURP with
+# `jq -s` (collect the stream into an array), require `length == 1` (EXACTLY one top-level
+# document), and require that single element to be an object (`.[0] | type == "object"`). This is
+# the same `jq -s ... length == 1 and (.[0] | type == "object")` discipline ledger-project.sh's
+# _content projectors and manifest-json.sh's hivemind_manifest_validate_shape already enforce; this
+# primitive factors it into ONE reusable shape so every "exactly one JSON object" precheck shares it.
+#
+# DATA-BOUNDARY (MANDATORY — fixed program, NO value splice): both helpers run jq with a CONSTANT
+# program string (the single-document predicate). The input is BYTES ONLY — a file path passed as a
+# jq operand (file form) or stdin bytes piped to jq (stdin form). No runtime/untrusted value is ever
+# interpolated into the jq program source; there is nothing to splice. jq stdout is redirected to
+# /dev/null — the contract is EXIT CODE only, never emitted bytes.
+#
+# CONTRACT (both helpers): return 0 IFF the input is EXACTLY ONE JSON document AND that document is
+# an OBJECT. Return NON-ZERO for: a multi-document (concatenated) stream (length != 1), zero
+# documents, unparseable JSON, or a single NON-object document (array/string/number/bool/null).
+# `jq -e` already exits non-zero when the predicate is false/null, and exits non-zero when jq cannot
+# parse the input; the two failure routes fold into the single non-zero contract. No stdout.
+
+# hivemind_jq_is_single_object_file <path>
+# File form: validate the JSON at <path>. Returns 0 IFF <path> holds EXACTLY ONE JSON object;
+# non-zero for a multi-document stream, zero documents, unparseable JSON, or a single non-object.
+# For the entrypoint manifest/inputs reads and claude-mem-path.sh (path-holding callers). Pure: no
+# side effects beyond reading <path> through jq; emits no stdout (exit code only).
+hivemind_jq_is_single_object_file() {
+  local path="$1"
+  jq -s -e 'length == 1 and (.[0] | type == "object")' "$path" >/dev/null 2>&1
+}
+
+# hivemind_jq_is_single_object_stdin
+# Stdin form: validate the JSON bytes on stdin. Returns 0 IFF stdin holds EXACTLY ONE JSON object;
+# non-zero for a multi-document stream, zero documents, unparseable JSON, or a single non-object.
+# For settings-merge.sh and any caller holding the document as a string (`printf '%s' "$bytes" |
+# hivemind_jq_is_single_object_stdin`). Pure: reads stdin only; emits no stdout (exit code only).
+hivemind_jq_is_single_object_stdin() {
+  jq -s -e 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1
+}
