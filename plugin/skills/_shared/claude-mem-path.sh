@@ -96,10 +96,17 @@ hivemind_claude_mem_resolve_binary() {
   local home_dir="${1:-$HOME}"
   local candidate
 
-  # (1) command -v claude — accept ONLY when it names a real executable file. `command -v` may
-  # report an alias/function name (not an executable path); guard with test -x so those fall
-  # through to the fallbacks rather than being mistaken for a found binary.
+  # (1) command -v claude — accept ONLY when it names a real, ABSOLUTE executable file. `command -v`
+  # may report an alias/function name (not an executable path); guard with test -x so those fall
+  # through to the fallbacks. It may ALSO return a CWD-relative path (e.g. `bin/claude`) when PATH
+  # carries a relative component (`PATH=bin:$PATH`); such a path passes -x/-f but breaks worker
+  # resolution from another CWD once persisted as CLAUDE_CODE_PATH, so it MUST be absolute (leading
+  # `/`). A non-absolute candidate is rejected and resolution falls through to the absolute fallbacks.
   candidate="$(command -v claude 2>/dev/null || true)"
+  case "$candidate" in
+    /*) ;;
+    *)  candidate="" ;;
+  esac
   if [ -n "$candidate" ] && [ -x "$candidate" ] && [ -f "$candidate" ]; then
     printf '%s\n' "$candidate"
     return 0

@@ -205,6 +205,33 @@ OUT3B="$(run_apply "$ROOT3B" "$INPUTS3B")"
 assert_contains "malformed:status" "status: blocked" "$OUT3B"
 assert_eq "malformed:byte-unchanged" "$BEFORE3B" "$(cat "$ROOT3B/.claude/settings.json")" "malformed file untouched"
 
+# ── Case 3n: NUL-bearing existing settings → blocked, byte-unchanged (Class A) ────
+# A literal NUL inside otherwise-valid JSON. bash $(cat ...) silently strips the NUL, so the
+# pre-fix in-variable single-object check passed and the file got clobbered to a stripped 14-byte
+# `{"agent":null}` while apply reported complete. The on-disk validate routes to blocked instead.
+# NOTE: $(cat) strips NUL, so the fixture is preserved as a byte-exact reference copy and the
+# untouched assertion uses cmp (not a $()-captured string) and wc -c (must NOT be the 14-byte
+# stripped form). Both assertions FAIL pre-fix (status complete + clobbered), PASS post-fix.
+echo '=== Case 3n: NUL-bearing existing settings — blocked, byte-unchanged ==='
+ROOT3N="$(new_project nul)"
+mkdir -p "$ROOT3N/.claude"
+printf '{"agent":null\000}' > "$ROOT3N/.claude/settings.json"
+cp "$ROOT3N/.claude/settings.json" "$ROOT3N/settings.fixture"
+BYTES3N_BEFORE="$(wc -c < "$ROOT3N/.claude/settings.json")"
+INPUTS3N="$(jq -nc --arg r "$ROOT3N" '{ project_root: $r, caveman: "no", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT3N="$(run_apply "$ROOT3N" "$INPUTS3N")"
+# (a) STRUCTURED status field reports the blocked/malformed path (not a banner substring).
+assert_contains "nul:status"  "status: blocked" "$OUT3N"
+assert_contains "nul:blocker" "blocker: .claude/settings.json is not valid JSON; refusing to overwrite without user approval" "$OUT3N"
+# (b) settings.json is BYTE-UNCHANGED vs the original NUL-bearing fixture (not clobbered to the
+# 14-byte stripped `{"agent":null}` form).
+if cmp -s "$ROOT3N/settings.fixture" "$ROOT3N/.claude/settings.json"; then
+  pass "nul:byte-unchanged" "NUL-bearing settings.json byte-exact vs fixture"
+else
+  failed "nul:byte-unchanged" "NUL-bearing settings.json was mutated (expected byte-exact fixture)"
+fi
+assert_eq "nul:byte-count" "$BYTES3N_BEFORE" "$(wc -c < "$ROOT3N/.claude/settings.json")" "settings.json byte-count unchanged"
+
 # ── Case 4: all-companions-no reduced Output (already covered by Case 1) + caveman yes ──
 echo '=== Case 4: caveman=yes seed — envrc + hook + pluginConfigs written ==='
 ROOT4="$(new_project caveman)"

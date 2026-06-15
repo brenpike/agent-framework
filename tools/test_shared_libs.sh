@@ -2409,6 +2409,48 @@ assert_eq "claude-mem:stream-status" "skipped (malformed json)" "$cm_status" \
 assert_eq "claude-mem:stream-bytes" "$cm_before" "$(cat "$cm_file_stream")" \
   "stream target is byte-unchanged (never clobbered by a per-object write)"
 
+# 13h. RELATIVE-PATH-COMPONENT REJECT (Class B): with a relative PATH component (`PATH=bin:$PATH`),
+# `command -v claude` returns a CWD-relative path (`bin/claude`) that passes -x/-f. Persisted as
+# CLAUDE_CODE_PATH it would break worker resolution from another CWD. The candidate-(1) guard now
+# ADDITIONALLY requires an ABSOLUTE leading `/`, so the relative hit is REJECTED and resolution
+# falls through to the absolute `$home_dir/.local/bin/claude` fallback. The RETURNED path MUST be
+# absolute. NON-VACUOUS: pre-fix `command -v claude` returned the relative `bin/claude` verbatim →
+# the leading-`/` assertion FAILS pre-fix and PASSES post-fix.
+# CWD is restored so the per-case `cd` does not leak into later cases.
+cm_home_relpath="$(cm_setup_home cm-relpath)"   # stages an absolute $home/.local/bin/claude fallback
+cm_relpath_cwd="$WORKDIR/cm-relpath-cwd"
+mkdir -p "$cm_relpath_cwd/bin"
+printf '#!/usr/bin/env bash\necho rel-stub\n' > "$cm_relpath_cwd/bin/claude"
+chmod +x "$cm_relpath_cwd/bin/claude"
+cm_relpath_oldpwd="$PWD"
+cd "$cm_relpath_cwd"
+cm_relpath_result="$(PATH="bin:$CM_CLEAN_PATH" hivemind_claude_mem_resolve_binary "$cm_home_relpath")"
+cd "$cm_relpath_oldpwd"
+case "$cm_relpath_result" in
+  /*) pass "claude-mem:relpath-absolute" "relative PATH hit rejected; absolute fallback returned ($cm_relpath_result)" ;;
+  *)  failed "claude-mem:relpath-absolute" "expected an absolute path; got relative '$cm_relpath_result'" ;;
+esac
+assert_eq "claude-mem:relpath-value" "$cm_home_relpath/.local/bin/claude" "$cm_relpath_result" \
+  "resolution falls through to the absolute home-dir fallback"
+
+# 13h-neg. Negative control: a relative-only `bin/claude` on PATH with NO absolute fallback (a tmp
+# HOME containing neither ~/.local/bin/claude nor ~/.claude/local/claude) → resolution returns 1.
+cm_home_relonly="$WORKDIR/cm-relonly"
+mkdir -p "$cm_home_relonly"   # no .local/bin/claude, no .claude/local/claude
+cm_relonly_cwd="$WORKDIR/cm-relonly-cwd"
+mkdir -p "$cm_relonly_cwd/bin"
+printf '#!/usr/bin/env bash\necho rel-stub\n' > "$cm_relonly_cwd/bin/claude"
+chmod +x "$cm_relonly_cwd/bin/claude"
+cm_relonly_oldpwd="$PWD"
+cd "$cm_relonly_cwd"
+if PATH="bin:$CM_CLEAN_PATH" hivemind_claude_mem_resolve_binary "$cm_home_relonly" >/dev/null 2>&1; then
+  cd "$cm_relonly_oldpwd"
+  failed "claude-mem:relonly-rc" "relative-only PATH with no absolute fallback should return 1"
+else
+  cd "$cm_relonly_oldpwd"
+  pass "claude-mem:relonly-rc" "relative-only PATH + no absolute fallback → return 1 (relative rejected)"
+fi
+
 # ── Section 14: file-guard.sh — append-if-absent kernel + comment-aware/section/hook variants ──
 echo ''
 echo '=== file-guard.sh: append-if-absent kernel + .envrc / ## Validation / hook-scaffold variants ==='
