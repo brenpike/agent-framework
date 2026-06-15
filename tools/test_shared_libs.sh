@@ -37,6 +37,7 @@ for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh" \
                 "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh" \
                 "$SHARED_DIR/fetch-normalize-core.sh" "$SHARED_DIR/ledger-engine-io.sh" \
+                "$SHARED_DIR/json-normalize.sh" \
                 "$SHARED_DIR/settings-merge.sh" "$SHARED_DIR/claude-mem-path.sh" \
                 "$SHARED_DIR/file-guard.sh" "$SHARED_DIR/test-detect.sh" \
                 "$CLASSIFY_FILTER" \
@@ -69,6 +70,12 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 # this source line.
 # shellcheck source=/dev/null
 . "$SHARED_DIR/ledger-engine-io.sh"
+# json-normalize.sh supplies the canon_obj/canon_arr container-shape def text that settings-merge.sh
+# splices into its jq program; settings-merge.sh SOURCE-OR-DIE-sources it transitively, but the
+# harness lists every lib under test explicitly (presence checked in the required-libs preamble), so
+# this explicit source line keeps the listing complete and re-sourcing is idempotent (pure echo fn).
+# shellcheck source=/dev/null
+. "$SHARED_DIR/json-normalize.sh"
 # shellcheck source=/dev/null
 . "$SHARED_DIR/settings-merge.sh"
 # shellcheck source=/dev/null
@@ -2017,6 +2024,66 @@ else
   pass "settings:inert-no-side-effect" "no settings value triggered command substitution"
 fi
 
+# 12l. WRONG-TYPED CONTAINER NORMALIZATION (RR4-STEP-005): every container-typed key whose existing
+# value is the WRONG SHAPE (a non-object at an object-typed key, a non-array at permissions.allow) is
+# the canonical absent/needs-seed state — it collapses to {} / [] via canon_obj/canon_arr (from
+# json-normalize.sh) BEFORE any predicate runs, so the required seed is add-if-absent over the empty
+# and the merge returns status `ok` with the required keys seeded. NON-VACUOUS for EVERY case: pre-RR4
+# the wrong-typed container made jq's has()/index()/iteration abort (jq rc=5 → empty merge output →
+# empty `.status`), so each `status == ok` + seeded-key assertion fails on a revert of the
+# normalization. No REAL value is clobbered: a wrong-typed container holds no contract-type entries to
+# preserve.
+
+# enabledPlugins as a STRING → canon_obj → {} → hivemind required entry seeded; status ok.
+sm_ep_string="$(hivemind_settings_merge '{"enabledPlugins":"oops"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:wrongtype-ep-string-status" "ok" \
+  "$(printf '%s' "$sm_ep_string" | jq -r '.status')" "enabledPlugins as string → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-ep-string-class" "added" \
+  "$(printf '%s' "$sm_ep_string" | jq -r '.keys["enabledPlugins.hivemind@brenpike"]')" "wrong-typed enabledPlugins → hivemind seeded as added"
+assert_eq "settings:wrongtype-ep-string-value" "true" \
+  "$(printf '%s' "$sm_ep_string" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')" "required hivemind enabledPlugin written over canonical empty"
+
+# enabledPlugins as an ARRAY → canon_obj → {} → required entry seeded; status ok.
+sm_ep_array="$(hivemind_settings_merge '{"enabledPlugins":["x"]}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:wrongtype-ep-array-status" "ok" \
+  "$(printf '%s' "$sm_ep_array" | jq -r '.status')" "enabledPlugins as array → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-ep-array-value" "true" \
+  "$(printf '%s' "$sm_ep_array" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')" "wrong-typed (array) enabledPlugins → hivemind seeded true"
+
+# pluginConfigs WRONG-TYPED (array) with caveman=yes → canon_obj → {} → caveman pluginConfig seeded.
+sm_pcfg_array="$(hivemind_settings_merge '{"pluginConfigs":["x"]}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:wrongtype-pcfg-status" "ok" \
+  "$(printf '%s' "$sm_pcfg_array" | jq -r '.status')" "pluginConfigs as array → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-pcfg-class" "added" \
+  "$(printf '%s' "$sm_pcfg_array" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "wrong-typed pluginConfigs → caveman pluginConfig added"
+assert_eq "settings:wrongtype-pcfg-value" "ultra" \
+  "$(printf '%s' "$sm_pcfg_array" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "caveman defaultLevel seeded over canonical empty"
+
+# hooks WRONG-TYPED (string) with caveman=yes → canon_obj → {} → SubagentStart hook seeded.
+sm_hooks_string="$(hivemind_settings_merge '{"hooks":"oops"}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:wrongtype-hooks-status" "ok" \
+  "$(printf '%s' "$sm_hooks_string" | jq -r '.status')" "hooks as string → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-hooks-class" "added" \
+  "$(printf '%s' "$sm_hooks_string" | jq -r '.keys["hooks.SubagentStart"]')" "wrong-typed hooks → SubagentStart hook added"
+assert_eq "settings:wrongtype-hooks-cmd" ".claude/hooks/caveman-ultra-subagent.sh" \
+  "$(printf '%s' "$sm_hooks_string" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "caveman hook command seeded over canonical empty"
+
+# permissions WRONG-TYPED (array) with seed_allowlist=yes → canon_obj → {} → permissions.allow seeded.
+sm_perm_array="$(hivemind_settings_merge '{"permissions":["x"]}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:wrongtype-perm-status" "ok" \
+  "$(printf '%s' "$sm_perm_array" | jq -r '.status')" "permissions as array → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-perm-allow-count" "20" \
+  "$(printf '%s' "$sm_perm_array" | jq -r '.settings.permissions.allow | length')" "wrong-typed permissions → allow seeded with 20 template rules"
+
+# permissions.allow WRONG-TYPED (string) with seed_allowlist=yes → canon_arr → [] → template appended.
+sm_allow_string="$(hivemind_settings_merge '{"permissions":{"allow":"oops"}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:wrongtype-allow-status" "ok" \
+  "$(printf '%s' "$sm_allow_string" | jq -r '.status')" "permissions.allow as string → canonical [] → status ok (no jq abort)"
+assert_eq "settings:wrongtype-allow-count" "20" \
+  "$(printf '%s' "$sm_allow_string" | jq -r '.settings.permissions.allow | length')" "wrong-typed permissions.allow → [] then 20 template rules appended"
+assert_eq "settings:wrongtype-allow-report-count" "20" \
+  "$(printf '%s' "$sm_allow_string" | jq -r '.permissions_allow | length')" "every template rule reported over the canonical empty allow"
+
 # ── Section 13: claude-mem-path.sh — dynamic binary resolution + never-clobber single-key write ─
 echo ''
 echo '=== claude-mem-path.sh: CLAUDE_CODE_PATH dynamic resolution + conditional single-key write ==='
@@ -2314,13 +2381,32 @@ fg_vp="$(hivemind_guard_validation_section "$fg_claude_present" "$FG_VALIDATION_
 assert_eq "file-guard:validation-present-documented" "already documented" "$fg_vp" "existing ## Validation → already documented"
 assert_eq "file-guard:validation-present-bytes" "$fg_present_before" "$(cat "$fg_claude_present")" "existing ## Validation prose left byte-unchanged"
 
+# 14g-prose. PROSE-PRESERVATION DATA-LOSS LOCK (RR4-STEP-005): a `## Validation` heading carrying
+# REAL PROSE but NO fenced command body is PRESENT-NO-COMMAND → `added`, and the existing prose line
+# is byte-PRESERVED (APPENDED-UNDER, never REPLACED) while the assembled fenced ```bash block is
+# inserted beneath it. Result: EXACTLY ONE `## Validation` heading and the fenced block now present.
+# Non-vacuous: the prior RR3 implementation REPLACED the stub range in place, which would DROP this
+# prose line (grep -F would return empty) — this case fails on any revert to the replace-in-place
+# code, locking the data-loss fix.
+fg_claude_prose="$WORKDIR/fg-claude-prose.md"
+printf '## Validation\n\nRun the tests manually before pushing.\n' > "$fg_claude_prose"
+fg_vpr="$(hivemind_guard_validation_section "$fg_claude_prose" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-prose-added" "added" "$fg_vpr" "prose-only ## Validation → ABSENT body → added"
+assert_eq "file-guard:validation-prose-kept" "Run the tests manually before pushing." \
+  "$(grep -F 'Run the tests manually before pushing.' "$fg_claude_prose")" "existing prose byte-PRESERVED (append-under, not replace)"
+assert_eq "file-guard:validation-prose-one-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_prose")" "exactly ONE ## Validation heading after the append"
+assert_eq "file-guard:validation-prose-has-body" "1" \
+  "$(grep -c "$(printf '^\140\140\140bash$')" "$fg_claude_prose")" "fenced bash command block now present under the prose"
+
 # 14g-stub. ROOT-CLUSTER EDGE (RR3-STEP-005): a HEADING-ONLY `## Validation` (the heading line
 # present but NO fenced command body beneath it) normalizes to ABSENT under the BODY-presence
-# predicate → `added`, the heading-only stub is REPLACED IN PLACE with the assembled command
-# body, the result carries the fenced ```bash block, has EXACTLY ONE `## Validation` heading, and
-# every SIBLING section is byte-preserved. Non-vacuous: if the predicate reverted to bare-heading
-# presence, the stub would be mis-reported `already documented`, the file would stay byte-unchanged
-# (no fenced block, the `go test ./...` body never written) and every assertion below would fail.
+# predicate → `added`, the heading-only stub is APPENDED-UNDER (prose-preserving — its existing
+# blank/comment lines are kept verbatim, never replaced) with the assembled command body, the result
+# carries the fenced ```bash block, has EXACTLY ONE `## Validation` heading, and every SIBLING section
+# is byte-preserved. Non-vacuous: if the predicate reverted to bare-heading presence, the stub would
+# be mis-reported `already documented`, the file would stay byte-unchanged (no fenced block, the
+# `go test ./...` body never written) and every assertion below would fail.
 fg_claude_stub="$WORKDIR/fg-claude-stub.md"
 printf '# Project\n\n## Setup\n\nRun the installer.\n\n## Validation\n\n## License\n\nMIT.\n' > "$fg_claude_stub"
 fg_vs="$(hivemind_guard_validation_section "$fg_claude_stub" "$FG_VALIDATION_BODY")"
@@ -2333,7 +2419,7 @@ assert_eq "file-guard:validation-stub-has-body" "1" \
 assert_eq "file-guard:validation-stub-cmd" "go test ./..." \
   "$(grep -F 'go test ./...' "$fg_claude_stub")" "assembled command landed in the section"
 assert_eq "file-guard:validation-stub-one-heading" "1" \
-  "$(grep -c '^## Validation$' "$fg_claude_stub")" "exactly ONE ## Validation heading (stub replaced in place, not duplicated)"
+  "$(grep -c '^## Validation$' "$fg_claude_stub")" "exactly ONE ## Validation heading (stub appended-under, prose-preserving, not duplicated)"
 # Sibling sections are byte-preserved (only the stub's own range was rewritten).
 assert_eq "file-guard:validation-stub-sibling-setup" "Run the installer." \
   "$(grep -F 'Run the installer.' "$fg_claude_stub")" "preceding ## Setup sibling byte-preserved"
@@ -2547,15 +2633,18 @@ assert_eq "test-detect:monorepo-recorder-go" "1" "$(grep -cF 'go test ./...' "$t
 echo ''
 echo '=== root-cluster class-locking matrix: seed-hive merge-predicate-gap regression lock ==='
 #
-# CLASS LOCK for the seed-hive MERGE-PREDICATE-GAP cluster (PR #297). The three site fixes that
-# closed the cluster each replaced a presence-only predicate with a VALUE-STATE NORMALIZATION:
+# CLASS LOCK for the seed-hive MERGE-PREDICATE-GAP cluster (PR #297). The site fixes that closed the
+# cluster each replaced a presence-only predicate with a VALUE-STATE NORMALIZATION (or its approach-
+# level extension). Clauses (1)-(3) are the RR3 closure; (4)-(5) are the RR4 approach-level closure:
 #   (1) file-guard `## Validation`  — bare-heading presence → BODY presence (heading-only stub is ABSENT)
 #   (2) settings-merge `agent`      — any-present-string → empty/whitespace normalizes to ABSENT
 #   (3) claude-mem CLAUDE_CODE_PATH — present-non-empty-string → present-non-string/null is NEVER clobbered
-# This single test asserts ALL THREE together as the NAMED root-cluster lock so a future
-# single-SITE regression (reverting just one predicate) trips it. It is NON-VACUOUS: each clause
-# below fails independently if its corresponding site fix reverts, so no one site can silently
-# regress while the other two hold.
+#   (4) file-guard `## Validation`  — PRESENT-NO-COMMAND is APPENDED-UNDER (prose byte-preserved, not replaced)
+#   (5) settings-merge containers   — wrong-typed container → canon_obj/canon_arr empty → merge stays `ok` (no jq abort)
+# This single test asserts ALL FIVE together as the NAMED root-cluster lock so a future single-SITE
+# regression (reverting just one predicate / one approach-level fix) trips it. It is NON-VACUOUS: each
+# clause below fails independently if its corresponding site fix reverts, so no one site can silently
+# regress while the others hold.
 mx_fail=0
 
 # Matrix clause (1): heading-only `## Validation` → command appended (file-guard body-presence).
@@ -2584,8 +2673,27 @@ mx_cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$mx_cm
 [ "$mx_cm_status" = "already set" ] || { mx_fail=1; echo "  matrix-3 FAIL: non-string status=$mx_cm_status (want already set)"; }
 [ "$mx_cm_before" = "$(cat "$mx_cm_file")" ] || { mx_fail=1; echo "  matrix-3 FAIL: non-string file was clobbered"; }
 
+# Matrix clause (4) [RR4]: PROSE-PRESERVATION — a prose-only `## Validation` is APPENDED-UNDER, the
+# prose byte-PRESERVED while the command body is inserted (file-guard append-under, not replace).
+# Reverts-as: the RR3 replace-in-place code would DROP the prose line (grep -F empty).
+mx_prose="$WORKDIR/mx-prose.md"
+printf '## Validation\n\nRun the tests manually before pushing.\n' > "$mx_prose"
+mx_pv="$(hivemind_guard_validation_section "$mx_prose" "$FG_VALIDATION_BODY")"
+[ "$mx_pv" = "added" ] || { mx_fail=1; echo "  matrix-4 FAIL: prose-only stub status=$mx_pv (want added)"; }
+[ "$(grep -cF 'Run the tests manually before pushing.' "$mx_prose")" = "1" ] || { mx_fail=1; echo "  matrix-4 FAIL: existing prose dropped (data loss)"; }
+
+# Matrix clause (5) [RR4]: WRONG-TYPED-CONTAINER-NO-CRASH — a wrong-typed container (enabledPlugins as
+# a string) collapses to its canonical empty via canon_obj BEFORE any predicate runs, so the merge
+# returns status `ok` and seeds the required key (settings-merge shape-normalization at one chokepoint).
+# Reverts-as: without canon_obj/canon_arr the wrong-typed container aborts jq (rc=5) → empty `.status`.
+mx_wt="$(hivemind_settings_merge '{"enabledPlugins":"oops"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+mx_wt_status="$(printf '%s' "$mx_wt" | jq -r '.status')"
+mx_wt_value="$(printf '%s' "$mx_wt" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')"
+[ "$mx_wt_status" = "ok" ] || { mx_fail=1; echo "  matrix-5 FAIL: wrong-typed container status=$mx_wt_status (want ok)"; }
+[ "$mx_wt_value" = "true" ] || { mx_fail=1; echo "  matrix-5 FAIL: required key not seeded over canonical empty (value=$mx_wt_value)"; }
+
 if [ "$mx_fail" -eq 0 ]; then
-  pass "matrix:root-cluster-class-lock" "all three merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered)"
+  pass "matrix:root-cluster-class-lock" "all five merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered + prose-preservation append-under + wrong-typed-container normalizes to ok)"
 else
   failed "matrix:root-cluster-class-lock" "a seed-hive merge-predicate-gap site fix regressed (see matrix-N FAIL lines above)"
 fi
