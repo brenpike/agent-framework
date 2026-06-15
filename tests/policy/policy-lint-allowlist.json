@@ -148,6 +148,12 @@
   },
   {
     "rule": "CHECK13",
+    "path": "plugin/skills/_shared/json-normalize.sh",
+    "line": 10,
+    "reason": "P18 documented exception (ADR-0020): SOURCED library. set -e/pipefail and EXIT trap deliberately omitted — a sourced file mutates the SOURCING shell's option state and would corrupt every caller; carries no top-level set at all. Pure I/O-free primitive emitting a constant jq definition block (canon_obj/canon_arr container-shape normalization) as program text — no value splice; callers own set -u and error routing."
+  },
+  {
+    "rule": "CHECK13",
     "path": "plugin/skills/_shared/claude-mem-path.sh",
     "line": 10,
     "reason": "P18 documented exception (ADR-0020): SOURCED library. set -e/pipefail and EXIT trap deliberately omitted — a sourced file mutates the SOURCING shell's option state and would corrupt every caller; carries no top-level set at all. Conditional never-clobber CLAUDE_CODE_PATH provisioner signalling an in-band status word; callers own set -u and error routing."
