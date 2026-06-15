@@ -53,7 +53,8 @@
 #                              any other value / absent → conflict stays blocked. Inert when no
 #                              agent conflict exists. NEVER authorizes clobbering a malformed file.
 #           // companion detection FACTS (detected/source/via) the navigator gathered, echoed
-#           // verbatim into the Output `companions:` block. Optional; absent → reported unknown.
+#           // verbatim into the Output `companions:` block. Optional; absent detected/source
+#           // (explicit yes/no skips detection) → reported not-checked.
 #           "companions": {
 #             "caveman@caveman":       { "detected": "...", "source": "...", "via": "..." },
 #             "claude-mem@thedotmack": { ... },
@@ -245,7 +246,8 @@ phase_apply() {
   [ -d "$project_root" ] || fail "apply project_root is not a directory: $project_root"
 
   # The companions facts block (detected/source/via) the navigator threaded in. Echoed verbatim
-  # into the Output companions: block; absent → reported unknown. Read once as compact JSON.
+  # into the Output companions: block; absent detected/source → reported not-checked. Read once as
+  # compact JSON.
   local companions_json
   if jq -e 'has("companions") and (.companions | type == "object")' "$inputs_file" >/dev/null 2>&1; then
     companions_json="$(jq -c '.companions' "$inputs_file")"
@@ -397,8 +399,8 @@ phase_apply() {
 # carried inside the companions facts block — the inputs schema keeps it at the TOP LEVEL caveman /
 # claude_mem / codex fields, not inside each companion object — so it is supplied here from the
 # three resolved top-level flags the caller already parsed, positional in SEED_COMPANIONS order
-# (caveman, claude-mem, codex). detected/source/via still come from the threaded facts; missing
-# facts fields → "unknown".
+# (caveman, claude-mem, codex). detected/source/via still come from the threaded facts; a missing
+# detected/source field (explicit yes/no skips detection) → "not-checked"; missing via → "unknown".
 emit_companions_block() {
   local companions_json="$1"
   # Resolved yes/no flags, positional in SEED_COMPANIONS order (caveman, claude-mem, codex).
@@ -409,7 +411,7 @@ emit_companions_block() {
     key="${SEED_COMPANIONS[$idx]}"
     fields="$(jq -r --arg k "$key" '
       (.[$k] // {}) as $c
-      | [($c.detected // "unknown"), ($c.source // "unknown"), ($c.via // "unknown")] | @tsv
+      | [($c.detected // "not-checked"), ($c.source // "not-checked"), ($c.via // "unknown")] | @tsv
     ' <<<"$companions_json")"
     IFS=$'\t' read -r detected source via <<<"$fields"
     resolved="${resolved_flags[$idx]}"

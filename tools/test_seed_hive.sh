@@ -186,6 +186,11 @@ assert_eq "approve:exit" "0" "$?" "approved overwrite exit"
 # stay blocked (status blocked) and the written agent would remain someone:else.
 assert_contains "approve:status"  "status: complete" "$OUT3C"
 assert_contains "approve:target"  "- .claude/settings.json: updated" "$OUT3C"
+# Finding-1 (PR #297): the approved-overwrite path classifies the agent `overwritten`, which flows
+# through emit_keys_block into keys_applied. Assert that schema-valid token appears in the Output.
+# Non-vacuous: pre-fix the `## Output` agent enum lacked `overwritten`, so this legitimate token
+# was out-of-schema; the merge already emits it (settings-merge.sh agent classifier).
+assert_contains "approve:key-overwritten" "- agent: overwritten" "$OUT3C"
 assert_eq "approve:settings.agent" "hivemind:overlord" \
   "$(jq -r '.agent' "$ROOT3C/.claude/settings.json" 2>/dev/null)" "approved conflict overwrites agent to target"
 
@@ -217,8 +222,18 @@ assert_contains "caveman:keypcfg"  '- pluginConfigs["caveman@caveman"]: added' "
 # `resolved: yes` and the off companions `resolved: no` — even though no `companions` block was
 # supplied. Guards the regression where `resolved` keyed off the (absent) companions.resolved field
 # and always printed `resolved: unknown`.
-assert_contains "caveman:resolved-yes" "- caveman@caveman: detected: unknown, source: unknown, resolved: yes, via: unknown" "$OUT4"
-assert_contains "caveman:resolved-no"  "- claude-mem@thedotmack: detected: unknown, source: unknown, resolved: no, via: unknown" "$OUT4"
+assert_contains "caveman:resolved-yes" "- caveman@caveman: detected: not-checked, source: not-checked, resolved: yes, via: unknown" "$OUT4"
+assert_contains "caveman:resolved-no"  "- claude-mem@thedotmack: detected: not-checked, source: not-checked, resolved: no, via: unknown" "$OUT4"
+# Finding-2 (PR #297): absent companion facts (explicit-input skips detection) report the
+# schema-valid `not-checked` token for detected/source — NEVER the out-of-schema `unknown`.
+# Non-vacuous: pre-fix this path emitted `detected: unknown, source: unknown` (not in the Output enum).
+for offschema in "detected: unknown" "source: unknown"; do
+  if printf '%s' "$OUT4" | grep -qF -- "$offschema"; then
+    failed "caveman:companions-no-unknown" "companions block emits out-of-schema token '$offschema'"
+  else
+    pass "caveman:companions-no-unknown" "companions block free of out-of-schema token '$offschema'"
+  fi
+done
 assert_eq "caveman:envrc-content" "export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$ROOT4/.envrc")" ".envrc content"
 [ -x "$ROOT4/.claude/hooks/caveman-ultra-subagent.sh" ] \
   && pass "caveman:hook-exec" "hook file is executable" \

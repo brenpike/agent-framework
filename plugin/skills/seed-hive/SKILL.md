@@ -187,7 +187,8 @@ user EXPLICITLY approved overwriting a conflicting existing `agent` value; absen
 value leaves the conflict blocked and the file unchanged; it NEVER authorizes clobbering a
 malformed settings file. The `companions` block echoes the detection facts you gathered —
 `detected`/`source` from `detect`, `via` from the confirmation resolution — verbatim into the
-Output `companions:` block; an absent field is reported `unknown`.
+Output `companions:` block; an absent `detected`/`source` field (explicit `yes`/`no` skips
+detection) is reported `not-checked`.
 
 ## Procedure
 
@@ -293,16 +294,16 @@ hooks:
 - hooks.SubagentStart in settings.json: added | already present | skipped (caveman not enabled)
 
 companions:
-- caveman@caveman: detected: installed | absent, source: manifest | cache | none, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt
-- claude-mem@thedotmack: detected: installed | absent, source: manifest | cache | none, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt
-- codex@openai-codex: detected: installed | absent, source: manifest | cache | none, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt
+- caveman@caveman: detected: installed | absent | not-checked, source: manifest | cache | none | not-checked, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt
+- claude-mem@thedotmack: detected: installed | absent | not-checked, source: manifest | cache | none | not-checked, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt
+- codex@openai-codex: detected: installed | absent | not-checked, source: manifest | cache | none | not-checked, resolved: yes | no, via: explicit-input | prompt-confirmed | prompt-overridden | auto-detect-no-prompt
 
 claude_mem_path:
 - ~/.claude-mem/settings.json CLAUDE_CODE_PATH: set | already set | skipped (claude-mem not installed) | skipped (claude binary not found) | skipped (malformed json) | skipped (claude_mem not enabled)
 
 keys_applied:
 - enabledPlugins["hivemind@brenpike"]: added | already present
-- agent: added | already present | unchanged
+- agent: added | already present | unchanged | overwritten
 - enabledPlugins["caveman@caveman"]: added | already present | resolved no
 - enabledPlugins["claude-mem@thedotmack"]: added | already present | resolved no
 - enabledPlugins["codex@openai-codex"]: added | already present | resolved no
