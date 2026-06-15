@@ -76,6 +76,18 @@
 #   - IDEMPOTENT + BYTE-STABLE: re-merging an already-seeded settings object is a no-op — every
 #     key reports `already present`, and the emitted `.settings` equals the input (modulo jq's
 #     canonical key ordering, which is stable across re-runs).
+#   - SHAPE-NORMALIZE-AT-ONE-CHOKEPOINT: every container-typed key (object-typed enabledPlugins /
+#     pluginConfigs / hooks / permissions, array-typed permissions.allow) is normalized via the
+#     shared canon_obj/canon_arr defs (sourced from json-normalize.sh, spliced as program text)
+#     BEFORE any predicate (has() / index() / membership) or build assignment runs. A WRONG-TYPED
+#     existing container is the canonical absent/needs-seed state: it collapses to {} / [] (it held
+#     no contract-type entries to preserve), and the required seed is then add-if-absent over that
+#     empty — so a malformed container NEVER aborts the jq program (no crash → no empty `.status` →
+#     no seed abort) and NEVER clobbers a real value. ONE normalizer routes every container site,
+#     classification AND build (so the report and the written settings share one canonical shape);
+#     there is no per-key type branch. A CORRECTLY-typed container is returned untouched, so
+#     correctly-typed inputs are byte-identical to the pre-normalization behavior. This guard is
+#     NESTED-only: the top-level non-object pre-check (status "malformed") still runs first.
 #
 # MALFORMED / EMPTY INPUT (SKILL.md step 4: "otherwise treat existing settings as {}"):
 #   an EMPTY settings string is treated as `{}` (the absent-file case the caller passes through).
@@ -114,6 +126,32 @@
 #   the conflict block is null).
 #
 # DEPENDENCY: jq only (POSIX + jq). No yq, no sed/awk.
+#
+# SHAPE-NORMALIZATION AT ONE CHOKEPOINT (P22 / canon_obj+canon_arr): every container-typed key the
+# merge reads (the object-typed enabledPlugins / pluginConfigs / hooks / permissions, and the
+# array-typed permissions.allow) is normalized to its canonical empty container BEFORE any predicate
+# runs. A WRONG-TYPED existing container (e.g. enabledPlugins as an array/string, permissions.allow as
+# a string) is NOT a preservable user value — it holds no entries of the contract type — so it
+# collapses to {} / [] via the shared canon_obj/canon_arr defs (sourced from json-normalize.sh and
+# spliced as fixed PROGRAM TEXT at the top of the single jq program). The required seed is then
+# add-if-absent over that canonical empty: the merge returns status "ok" (NEVER crashes the jq program
+# and NEVER clobbers a real value), because a malformed container held no real entry to preserve. ONE
+# normalizer routes every container site (classification AND build) — no per-key type branch. The
+# top-level non-object pre-check (status "malformed") still runs FIRST; only NESTED container keys are
+# shape-normalized here. A CORRECTLY-typed container is returned untouched, so correctly-typed inputs
+# are byte-identical to before.
+
+# ── self-location + sibling-lib source (SOURCE-OR-DIE) ──────────────────────────
+# THIS file is itself a SOURCED lib (no shebang); BASH_SOURCE[0] still resolves to this file's own
+# path when sourced, so we self-locate the _shared dir from it (never a caller value) and source the
+# json-normalize.sh sibling that supplies the canon_obj/canon_arr def text. SOURCE-OR-DIE: a missing
+# or unparseable sibling returns non-zero from this fragment so the caller (entrypoint loop / test
+# harness) fails closed exactly as it does for this file — the merge cannot run its shape guard
+# without those defs. Re-sourcing is idempotent (it only redefines a pure echo function).
+__settings_merge_shared_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=/dev/null
+. "$__settings_merge_shared_dir/json-normalize.sh"
+unset __settings_merge_shared_dir
 
 # hivemind_settings_permissions_template
 # Emit the frozen least-privilege `permissions.allow` template, ONE rule per line, in the
@@ -208,6 +246,13 @@ hivemind_settings_merge() {
   local template_json
   template_json="$(hivemind_settings_permissions_template | jq -R . | jq -s .)"
 
+  # Capture the shared container-normalization defs as PROGRAM TEXT (a constant def block; no
+  # runtime value is interpolated). Spliced verbatim at the TOP of the single jq program below so
+  # canon_obj/canon_arr are in scope before any predicate uses them. DATA-BOUNDARY preserved: this
+  # is jq source text only — every runtime value still enters via --argjson/--arg.
+  local canon_defs
+  canon_defs="$(hivemind_jq_canon_defs)"
+
   # Single jq program: classify every required key against the PARSED input, then build the
   # merged settings with preserve-existing semantics. Toggles and the agent target are inert
   # --arg bindings; the template and parsed settings are inert --argjson bindings.
@@ -220,15 +265,24 @@ hivemind_settings_merge() {
     --arg seed_allow "$seed_allowlist_yes" \
     --arg agent_approved "$agent_conflict_approved" \
     --argjson template "$template_json" '
+    # ── shared container-shape normalizers (spliced PROGRAM TEXT from json-normalize.sh) ──
+    # canon_obj(f) → f when f is an object, else {}; canon_arr(f) → f when an array, else [].
+    # These collapse a wrong-typed container to its canonical empty BEFORE any predicate runs.
+    '"$canon_defs"'
     # ── helpers ──────────────────────────────────────────────────────────────────
-    # getpath-safe presence test for a nested key equal to a value.
-    def has_enabled($k): ($settings.enabledPlugins // {}) | has($k);
+    # getpath-safe presence test for a nested key, run over the SHAPE-normalized enabledPlugins
+    # object so a wrong-typed enabledPlugins (array/string/etc.) collapses to {} instead of
+    # aborting has() — an absent enabledPlugins then classifies every companion as "added".
+    def has_enabled($k): canon_obj($settings.enabledPlugins) | has($k);
 
     # The caveman SubagentStart hook entry, mirroring SKILL.md step 10d structure.
+    # Every container-typed key is normalized at binding time so a wrong-typed existing value
+    # collapses to its canonical empty container ({} / []) here, once, for both classification and
+    # build. permissions.allow normalizes its parent object first, then the allow array.
     ($settings) as $s
-    | (($s.enabledPlugins) // {}) as $ep
-    | (($s.permissions) // {}) as $perm
-    | (($perm.allow) // null) as $existing_allow
+    | canon_obj($s.enabledPlugins) as $ep
+    | canon_obj($s.permissions) as $perm
+    | (canon_arr($perm.allow)) as $existing_allow
 
     # ── agent value-state normalization (ABSENT / PRESENT-CANONICAL / PRESENT-MALFORMED) ──
     # An existing `agent` is ABSENT when the key is missing/null OR is a string that is empty or
@@ -254,12 +308,14 @@ hivemind_settings_merge() {
 
     # ── permissions.allow union/append-if-absent (seed_allowlist = yes) ───────────
     # Keep existing entries in order, then append only template rules not already present.
+    # $existing_allow is already canon_arr-normalized above (always an array, never null/wrong-typed),
+    # so index()/$base + [...] cannot abort even when the source permissions.allow was wrong-typed.
     | (if $seed_allow == "yes"
-       then ($existing_allow // [])
+       then $existing_allow
        else null end) as $base_allow
     | (if $seed_allow == "yes"
        then [ $template[] | . as $r | { rule: $r, result:
-                ( if (($existing_allow // []) | index($r)) != null
+                ( if ($existing_allow | index($r)) != null
                   then "already present" else "added" end ) } ]
        else [] end) as $allow_report
     | (if $seed_allow == "yes"
@@ -275,11 +331,11 @@ hivemind_settings_merge() {
     | (if $codex != "yes" then "resolved no"
        elif has_enabled("codex@openai-codex") then "already present" else "added" end) as $c_codex
     | (if $caveman != "yes" then "resolved no"
-       elif (($s.pluginConfigs) // {} | has("caveman@caveman")) then "already present"
+       elif (canon_obj($s.pluginConfigs) | has("caveman@caveman")) then "already present"
        else "added" end) as $c_pcfg
     | (if $caveman != "yes" then "resolved no"
-       elif ((($s.hooks) // {} | .SubagentStart) // [])
-            | any(.hooks // [] | any(.command == ".claude/hooks/caveman-ultra-subagent.sh"))
+       elif (canon_arr(canon_obj($s.hooks).SubagentStart)
+            | any(canon_arr(.hooks) | any(.command == ".claude/hooks/caveman-ultra-subagent.sh")))
          then "already present"
        else "added" end) as $c_hook
 
@@ -297,7 +353,7 @@ hivemind_settings_merge() {
     | (if $agent_class == "conflict" then . else .agent = $agent end)
     # caveman pluginConfigs + SubagentStart hook (add-if-absent).
     | (if $caveman == "yes"
-       then .pluginConfigs = (((.pluginConfigs) // {})
+       then .pluginConfigs = (canon_obj(.pluginConfigs)
               | if has("caveman@caveman") then .
                 else . + {"caveman@caveman": {options: {defaultLevel: "ultra"}}} end)
        else . end)
@@ -306,10 +362,10 @@ hivemind_settings_merge() {
     # caveman entry is APPENDED to it. Already-present requires that exact command be wired, so
     # re-merge stays byte-stable and idempotent.
     | (if $caveman == "yes"
-       then .hooks = (((.hooks) // {})
-              | (.SubagentStart // []) as $existing_subagent
+       then .hooks = (canon_obj(.hooks)
+              | canon_arr(.SubagentStart) as $existing_subagent
               | if ($existing_subagent
-                     | any(.hooks // [] | any(.command == ".claude/hooks/caveman-ultra-subagent.sh")))
+                     | any(canon_arr(.hooks) | any(.command == ".claude/hooks/caveman-ultra-subagent.sh")))
                 then .
                 else .SubagentStart = ($existing_subagent + [ { hooks: [ {
                        type: "command",
