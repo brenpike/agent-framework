@@ -246,7 +246,8 @@ Output `companions:` block; an absent field is reported `unknown`.
   — the engine detects and records append-if-absent only; a `## Validation` section counts as
   already-documented only when it carries a real command body (a fenced block under the
   heading); a heading-only stub with no body is treated as absent and the detected command is
-  appended.
+  appended; a `## Validation` section that contains prose but no command body has the command
+  APPENDED after the existing prose — existing prose is preserved, never replaced or dropped.
 - modify `~/.claude-mem/settings.json` beyond the single `CLAUDE_CODE_PATH` key the engine
   provisions (and only when `claude_mem` resolves to `yes`, the file exists, the key is
   empty/missing, and a `claude` binary resolves); never overwrite an existing present value
@@ -255,6 +256,12 @@ Output `companions:` block; an absent field is reported `unknown`.
   other key.
 - remove or disable an existing `enabledPlugins` companion entry — detection only ever adds;
   an entry already present is preserved and reported `already present` even if detection missed it.
+- clobber or crash on a wrong-typed existing container at a required object-typed key
+  (`enabledPlugins`, `pluginConfigs`, `hooks`, `permissions`) or the `permissions.allow` array
+  — a present value that is not the expected object or array type is treated as the canonical
+  absent/needs-seed shape and seeded add-if-absent; it is never clobbered and never causes a
+  crash, mirroring the never-clobber posture documented for the top-level malformed settings
+  object in Conflict Resolution above.
 - overwrite a conflicting `agent` value without EXPLICIT user approval — the engine reports
   blocked, and the navigator may proceed only after the user approves.
 - proceed if the project root cannot be resolved.
