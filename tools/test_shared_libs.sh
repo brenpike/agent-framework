@@ -2204,6 +2204,35 @@ assert_eq "settings:wrongtype-allow-count" "20" \
 assert_eq "settings:wrongtype-allow-report-count" "20" \
   "$(printf '%s' "$sm_allow_string" | jq -r '.permissions_allow | length')" "every template rule reported over the canonical empty allow"
 
+# 12m. MULTI-DOCUMENT STREAM (JSON-stream sweep, STEP-005): a settings input that is a STREAM of TWO
+# concatenated top-level objects (`{"a":1}{"b":2}`) is NOT a single settings object — it takes the
+# fail-closed malformed path via hivemind_jq_is_single_object_stdin (json-normalize.sh), exactly like
+# the unparseable-blob and non-object cases (12j). NON-VACUOUS: the OLD bare `jq -e 'type=="object"'`
+# precheck STREAMED both documents and exited 0 on the LAST one, so the merge fell through to the
+# `--argjson settings` build which then CRASHED on the two-document operand. If the single-doc gate
+# reverts to `type=="object"` (which accepts streams), this case loses status `malformed`, `.settings`
+# is no longer null, and the function's stdout is no longer a clean single parseable JSON object.
+sm_stream="$(hivemind_settings_merge '{"a":1}{"b":2}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:stream-status" "malformed" \
+  "$(printf '%s' "$sm_stream" | jq -r '.status')" "two-object stream → status malformed (single-document gate)"
+assert_eq "settings:stream-settings-null" "null" \
+  "$(printf '%s' "$sm_stream" | jq -r '.settings // "null"')" "stream input → settings not echoed (torn-stream not merged)"
+# The crash is GONE: the function's stdout is the malformed-REPORT object — EXACTLY ONE parseable JSON
+# object (no jq usage text / no multi-document crash output). `jq -s 'length'` over the stdout proves
+# it is a single document; a pre-gate crash would leave non-JSON error bytes here and fail the slurp.
+assert_eq "settings:stream-stdout-single-object" "1" \
+  "$(printf '%s' "$sm_stream" | jq -s 'length' 2>/dev/null)" "stream input → stdout is exactly one parseable JSON object (crash gone)"
+# A genuine SINGLE object on the SAME merge still merges normally (regression: gate does not over-reject).
+sm_single_obj="$(hivemind_settings_merge '{"theme":"dark"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:stream-single-regression-status" "ok" \
+  "$(printf '%s' "$sm_single_obj" | jq -r '.status')" "single object still merges → ok (gate does not over-reject)"
+assert_eq "settings:stream-single-regression-theme" "dark" \
+  "$(printf '%s' "$sm_single_obj" | jq -r '.settings.theme')" "single object preserved key (normal merge)"
+# A single ARRAY `[1]` is subsumed by the SAME gate (length==1 but NOT type==object) → malformed.
+sm_single_array="$(hivemind_settings_merge '[1]' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:stream-single-array-malformed" "malformed" \
+  "$(printf '%s' "$sm_single_array" | jq -r '.status')" "single array [1] → malformed (single-document gate subsumes non-object)"
+
 # ── Section 13: claude-mem-path.sh — dynamic binary resolution + never-clobber single-key write ─
 echo ''
 echo '=== claude-mem-path.sh: CLAUDE_CODE_PATH dynamic resolution + conditional single-key write ==='
@@ -2359,6 +2388,26 @@ cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_
 assert_eq "claude-mem:fallback-status" "set" "$cm_status" "second fallback resolves → set"
 assert_eq "claude-mem:fallback-value" "$cm_home_fallback/.claude/local/claude" \
   "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_fallback")" "~/.claude/local/claude fallback used when ~/.local/bin absent"
+
+# 13g. MULTI-DOCUMENT STREAM (JSON-stream sweep, STEP-005): a `~/.claude-mem/settings.json` that is a
+# STREAM of TWO concatenated top-level objects (`{"a":1}{"b":2}`) is NOT a single settings object. The
+# provision function gates on hivemind_jq_is_single_object_file (json-normalize.sh, file form) BEFORE
+# any resolve/write, so a stream → `skipped (malformed json)` with the file BYTE-UNCHANGED — the same
+# never-clobber contract as the unparseable-blob case (13d). A resolvable claude binary IS present
+# (cm_setup_home stages ~/.local/bin/claude), so the skip is attributable SOLELY to the stream gate,
+# not to a missing binary. NON-VACUOUS: the OLD bare `jq -e type=="object"` precheck STREAMED both
+# documents and exited 0 on the LAST one → resolve+single-key-write would run and the per-object write
+# would clobber/duplicate the file. If the single-doc gate reverts to `type=="object"` (accepts
+# streams), status flips to `set` and the byte-compare below fails (the file is rewritten).
+cm_home_stream="$(cm_setup_home cm-stream)"
+cm_file_stream="$cm_home_stream/.claude-mem/settings.json"
+printf '{"a":1}{"b":2}' > "$cm_file_stream"
+cm_before="$(cat "$cm_file_stream")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_stream" "$cm_home_stream")"
+assert_eq "claude-mem:stream-status" "skipped (malformed json)" "$cm_status" \
+  "two-object stream target → malformed skip (single-document gate, binary present)"
+assert_eq "claude-mem:stream-bytes" "$cm_before" "$(cat "$cm_file_stream")" \
+  "stream target is byte-unchanged (never clobbered by a per-object write)"
 
 # ── Section 14: file-guard.sh — append-if-absent kernel + comment-aware/section/hook variants ──
 echo ''
@@ -2780,10 +2829,12 @@ echo '=== root-cluster class-locking matrix: seed-hive merge-predicate-gap regre
 #   (4) file-guard `## Validation`  — PRESENT-NO-COMMAND is APPENDED-UNDER (prose byte-preserved, not replaced)
 #   (5) settings-merge containers   — wrong-typed container → canon_obj/canon_arr empty → merge stays `ok` (no jq abort)
 #   (6) settings-merge enabledPlugins — present-but-false value-equality → classified `added` AND corrected to `true`
-# This single test asserts ALL SIX together as the NAMED root-cluster lock so a future single-SITE
-# regression (reverting just one predicate / one approach-level fix) trips it. It is NON-VACUOUS: each
-# clause below fails independently if its corresponding site fix reverts, so no one site can silently
-# regress while the others hold.
+#   (7) BOTH settings-merge + claude-mem — multi-document JSON STREAM rejected via the shared json-normalize.sh
+#       single-document gate (settings-merge → `malformed`; claude-mem → `skipped (malformed json)`, byte-unchanged)
+# This single test asserts ALL SEVEN together as the NAMED root-cluster lock so a future single-SITE
+# regression (reverting just one predicate / one approach-level fix / either single-document gate) trips
+# it. It is NON-VACUOUS: each clause below fails independently if its corresponding site fix reverts, so
+# no one site can silently regress while the others hold.
 mx_fail=0
 
 # Matrix clause (1): heading-only `## Validation` → command appended (file-guard body-presence).
@@ -2841,8 +2892,28 @@ mx_ve_value="$(printf '%s' "$mx_ve" | jq -r '.settings.enabledPlugins["hivemind@
 [ "$mx_ve_class" = "added" ] || { mx_fail=1; echo "  matrix-6 FAIL: present-false enabledPlugin class=$mx_ve_class (want added)"; }
 [ "$mx_ve_value" = "true" ] || { mx_fail=1; echo "  matrix-6 FAIL: present-false enabledPlugin not corrected (value=$mx_ve_value, want true)"; }
 
+# Matrix clause (7) [JSON-stream sweep, STEP-005]: MULTI-DOCUMENT-STREAM REJECTION across BOTH sites
+# sharing the json-normalize.sh single-document primitive. A STREAM of two concatenated top-level
+# objects (`{"a":1}{"b":2}`) is NOT a single object, so BOTH precheck sites must take their fail-closed
+# path together: settings-merge → status `malformed` (settings null); claude-mem → `skipped (malformed
+# json)` with the target file BYTE-UNCHANGED (binary present, so the skip is the stream gate, not a
+# missing binary). Reverts-as: a `type=="object"` precheck on EITHER site STREAMS both docs and exits 0
+# on the last → settings-merge crashes its `--argjson` build (status no longer `malformed`) and
+# claude-mem resolves+writes (status `set`, bytes change). Reverting EITHER single-doc gate trips this
+# one matrix case.
+mx_sm_stream="$(hivemind_settings_merge '{"a":1}{"b":2}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+mx_sm_stream_status="$(printf '%s' "$mx_sm_stream" | jq -r '.status')"
+[ "$mx_sm_stream_status" = "malformed" ] || { mx_fail=1; echo "  matrix-7 FAIL: settings-merge stream status=$mx_sm_stream_status (want malformed)"; }
+mx_stream_home="$(cm_setup_home mx-claude-mem-stream)"
+mx_stream_file="$mx_stream_home/.claude-mem/settings.json"
+printf '{"a":1}{"b":2}' > "$mx_stream_file"
+mx_stream_before="$(cat "$mx_stream_file")"
+mx_stream_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$mx_stream_file" "$mx_stream_home")"
+[ "$mx_stream_status" = "skipped (malformed json)" ] || { mx_fail=1; echo "  matrix-7 FAIL: claude-mem stream status=$mx_stream_status (want skipped malformed json)"; }
+[ "$mx_stream_before" = "$(cat "$mx_stream_file")" ] || { mx_fail=1; echo "  matrix-7 FAIL: claude-mem stream file was clobbered"; }
+
 if [ "$mx_fail" -eq 0 ]; then
-  pass "matrix:root-cluster-class-lock" "all six merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered + prose-preservation append-under + wrong-typed-container normalizes to ok + present-false enabledPlugin value-equality corrected to true)"
+  pass "matrix:root-cluster-class-lock" "all seven merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered + prose-preservation append-under + wrong-typed-container normalizes to ok + present-false enabledPlugin value-equality corrected to true + multi-doc-stream rejected by both settings-merge[malformed] and claude-mem[skipped malformed, byte-unchanged])"
 else
   failed "matrix:root-cluster-class-lock" "a seed-hive merge-predicate-gap site fix regressed (see matrix-N FAIL lines above)"
 fi

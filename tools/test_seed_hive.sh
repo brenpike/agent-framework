@@ -357,6 +357,62 @@ fi
 assert_eq "memalready:preserved" "/preexisting/claude" \
   "$(jq -r '.CLAUDE_CODE_PATH' "$ROOT7/fakehome/.claude-mem/settings.json")" "existing CLAUDE_CODE_PATH preserved"
 
+# ── Case 7m: apply with a MULTI-DOC inputs stream → exit 2, usage fail, NO mutation ──
+# The JSON multi-document (stream) sweep routed apply's inputs precheck through the single-object
+# primitive (hivemind_jq_is_single_object_file). Two concatenated objects are a STREAM, not one
+# object, so the precheck rejects it BEFORE any field read or file mutation.
+# Non-vacuous: a revert to the per-doc `type=="object"` precheck would ACCEPT the stream; the
+# jq -r field reads would then concatenate both docs' project_root into a multi-line value (no
+# clean exit-2 fail, and the seed would proceed) → every assertion below flips.
+echo '=== Case 7m: apply MULTI-DOC inputs stream — exit 2, usage fail, no mutation ==='
+ROOT7M="$(new_project apply-multidoc)"
+# TWO concatenated JSON objects (a stream). One names a different project_root than the other.
+printf '{"project_root":"/x"}{"project_root":"%s"}' "$ROOT7M" > "$ROOT7M/inputs.json"
+set +e
+OUT7M="$(HOME="$ROOT7M/fakehome" bash "$ENTRYPOINT" apply "$ROOT7M/inputs.json" 2>&1)"
+RC7M=$?
+set -u
+assert_eq "apply-multidoc:exit" "2" "$RC7M" "multi-doc inputs stream fails with exit 2"
+assert_contains "apply-multidoc:failmsg" "apply inputs file is not a valid JSON object" "$OUT7M"
+# No silent field corruption: the run never reached the seed/render path.
+if printf '%s' "$OUT7M" | grep -qF -- "status: complete"; then
+  failed "apply-multidoc:no-complete" "multi-doc inputs stream wrongly emitted 'status: complete'"
+else
+  pass "apply-multidoc:no-complete" "(multi-doc stream did not emit status: complete)"
+fi
+# No settings.json written under the project root (the rejected run mutated nothing).
+[ -e "$ROOT7M/.claude/settings.json" ] \
+  && failed "apply-multidoc:no-write" "multi-doc stream wrote .claude/settings.json (expected no mutation)" \
+  || pass "apply-multidoc:no-write" "(no .claude/settings.json written for rejected multi-doc stream)"
+
+# ── Case 7n: detect with a MULTI-DOC manifest → cache-fallback, NO per-object manifest hit ──
+# The same sweep routed detect's manifest precheck through hivemind_jq_is_single_object_file: a
+# torn `installed_plugins.json` stream is treated EXACTLY like an unparseable manifest, so the
+# manifest branch is skipped and resolution degrades to the cache-dir probe.
+# Non-vacuous: a revert would `jq -e ... has($k)` per-document and mis-classify caveman as
+# installed/manifest off the first doc (which makes it look installed) → the assertions flip.
+echo '=== Case 7n: detect MULTI-DOC manifest — cache fallback, no per-object manifest mis-classify ==='
+ROOT7N="$(new_project detect-multidoc)"
+mkdir -p "$ROOT7N/fakehome/.claude/plugins"
+# TWO concatenated manifest objects: the first would make caveman look installed; the second empty.
+printf '{"plugins":{"caveman@caveman":[{"x":1}]}}{"plugins":{}}' \
+  > "$ROOT7N/fakehome/.claude/plugins/installed_plugins.json"
+OUT7N="$(run_detect "$ROOT7N")"
+RC7N=$?
+assert_eq "detect-multidoc:exit" "0" "$RC7N" "torn manifest detect still exits 0 (degrades, not hard-fail)"
+# The torn stream must NOT classify caveman from the manifest. No cache dir is staged → cache
+# fallback resolves to absent/none. Critically: source is NEVER `manifest` off the torn stream.
+assert_eq "detect-multidoc:caveman-det" "absent" \
+  "$(printf '%s' "$OUT7N" | jq -r '.companions["caveman@caveman"].detected' 2>/dev/null)" "torn-stream caveman not installed"
+assert_eq "detect-multidoc:caveman-src" "none" \
+  "$(printf '%s' "$OUT7N" | jq -r '.companions["caveman@caveman"].source' 2>/dev/null)" "torn-stream caveman resolved via cache fallback, not manifest"
+CAVE_SRC7N="$(printf '%s' "$OUT7N" | jq -r '.companions["caveman@caveman"].source' 2>/dev/null)"
+if [ "$CAVE_SRC7N" = "manifest" ]; then
+  failed "detect-multidoc:no-manifest-misclassify" "torn manifest stream mis-classified caveman as source: manifest"
+else
+  pass "detect-multidoc:no-manifest-misclassify" "(torn manifest stream did not report caveman source: manifest)"
+fi
+
 # ── Case 8: Pattern-1 schema-enumeration — apply Output emits NO companion token out of enum ──
 # Closes the merge-predicate-gap class at the SCHEMA boundary: parse the SKILL.md `## Output`
 # companions enum for each field (via / detected / source / resolved), then across representative
