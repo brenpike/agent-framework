@@ -371,7 +371,7 @@ hivemind_settings_merge() {
        else "added" end) as $c_pcfg
     | (if $caveman != "yes" then "resolved no"
        elif (canon_arr(canon_obj($s.hooks).SubagentStart)
-            | any(canon_arr(.hooks) | any(.command == ".claude/hooks/caveman-ultra-subagent.sh")))
+            | any(canon_arr(.hooks) | any(.type == "command" and .command == ".claude/hooks/caveman-ultra-subagent.sh")))
          then "already present"
        else "added" end) as $c_hook
 
@@ -400,15 +400,18 @@ hivemind_settings_merge() {
               | .["caveman@caveman"] = (canon_obj(.["caveman@caveman"])
                   | .options = (canon_obj(.options) | .defaultLevel = "ultra")))
        else . end)
-    # caveman SubagentStart hook (add-if-absent on the SPECIFIC command, NOT on the presence of
-    # the SubagentStart key): an existing unrelated SubagentStart array is PRESERVED and the
-    # caveman entry is APPENDED to it. Already-present requires that exact command be wired, so
-    # re-merge stays byte-stable and idempotent.
+    # caveman SubagentStart hook (add-if-absent on the SPECIFIC {type:"command", command} entry, NOT
+    # on the presence of the SubagentStart key OR on the command alone): an existing unrelated
+    # SubagentStart array is PRESERVED and the caveman entry is APPENDED to it. Already-present
+    # requires an entry with BOTH .type == "command" AND that exact command wired — a command-matching
+    # entry with a missing/wrong .type is an INVALID hook, so it does NOT count as present and the
+    # canonical {type:"command", command} entry is appended beside it (the wrong-typed entry is left
+    # in place). Re-merge of the canonical entry stays byte-stable and idempotent.
     | (if $caveman == "yes"
        then .hooks = (canon_obj(.hooks)
               | canon_arr(.SubagentStart) as $existing_subagent
               | if ($existing_subagent
-                     | any(canon_arr(.hooks) | any(.command == ".claude/hooks/caveman-ultra-subagent.sh")))
+                     | any(canon_arr(.hooks) | any(.type == "command" and .command == ".claude/hooks/caveman-ultra-subagent.sh")))
                 then .
                 else .SubagentStart = ($existing_subagent + [ { hooks: [ {
                        type: "command",

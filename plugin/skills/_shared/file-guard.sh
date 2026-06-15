@@ -266,12 +266,19 @@ hivemind_scaffold_hook_file() {
 }
 
 # _hivemind_atx_heading <raw_line>
-# THE ONE consolidated CommonMark-ATX heading parser (P22 — one home for heading parsing). Decide
-# whether <raw_line> is an ATX heading and, when it is, emit its LEVEL and normalized TEXT so BOTH
-# the section-bound matcher (`_hivemind_is_section_heading`) and the exact-name matcher
-# (`_hivemind_is_validation_heading`) route through a SINGLE parse — no per-matcher heading rule can
-# drift apart, and no further marker/whitespace/indent/CRLF edge can be missed by one but not the
-# other.
+# THE ONE consolidated CommonMark-ATX heading reduction (P22 — one home for heading parsing). It is a
+# CANONICAL-ANCHOR normalize-and-equate primitive, NOT a general ATX text-extraction parser: it reduces
+# <raw_line> to its (LEVEL, normalized TEXT) canonical form so BOTH the section-bound matcher
+# (`_hivemind_is_section_heading`, which needs the LEVEL only) and the exact-name matcher
+# (`_hivemind_is_validation_heading`, which equates the reduced form against the skill's OWN canonical
+# `## Validation` heading) route through a SINGLE reduction — no per-matcher heading rule can drift
+# apart. The skill emits exactly ONE canonical heading (`## Validation`); the exact-name matcher decides
+# membership by reducing the candidate line through THIS function and comparing its canonical form to the
+# canonical form of that one target, rather than by re-deriving arbitrary heading text. There is no
+# general "extract any heading's title" contract — only LEVEL extraction plus a normalized TEXT used for
+# the canonical equate — which is why a new closing-hash/marker/indent §4.3 edge cannot reopen a
+# per-edge text-extraction bug class: every candidate and the canonical target pass through the SAME
+# reduction, so they always agree.
 #
 # CONTRACT
 #   stdout (heading): two lines — line 1 = the numeric LEVEL (1-6); line 2 = the normalized TEXT.
@@ -279,12 +286,12 @@ hivemind_scaffold_hook_file() {
 #   The caller captures stdout and splits on the first newline (level = first line, text = the rest).
 #   TEXT is always a single line (an ATX heading is one source line), so a single split is exact.
 #
-# IMPORTANT: this parser takes the RAW line, NOT a trimmed line. CommonMark distinguishes 0-3 leading
+# IMPORTANT: this reduction takes the RAW line, NOT a trimmed line. CommonMark distinguishes 0-3 leading
 # spaces (still a heading) from 4+ leading spaces (an indented code block, NOT a heading); trimming
 # first would erase that distinction. Every caller therefore passes the original line.
 #
 # COMMONMARK ATX RULES IMPLEMENTED (no Setext, no other markdown — heading parsing only):
-#   - CRLF: a trailing `\r` is stripped first, so a `## Validation\r` CRLF line is parsed identically
+#   - CRLF: a trailing `\r` is stripped first, so a `## Validation\r` CRLF line is reduced identically
 #     to its LF form.
 #   - Leading indent: 0-3 leading SPACES are allowed (still a heading); 4-or-more leading spaces — or
 #     ANY leading TAB (a tab advances to the 4-col tab stop) — mean an indented code block, NOT a
@@ -292,9 +299,11 @@ hivemind_scaffold_hook_file() {
 #   - Marker: after the 0-3 spaces, 1-6 `#`s. A 7th `#` (`#######`) is not an ATX heading → return 1.
 #   - After-marker whitespace: the `#` run MUST be followed by AT LEAST ONE space or tab, OR by
 #     end-of-line (an empty heading). A `##Text` no-space marker is NOT a heading → return 1.
-#   - Normalized TEXT: leading indent + marker + after-marker whitespace removed; then trailing
-#     whitespace, an optional contiguous run of closing `#`s, and any whitespace those `#`s exposed
-#     are removed (ATX-legal trailing). So `   ##  Validation  ##  \r` → level 2, text `Validation`.
+#   - Normalized TEXT (§4.3): leading indent + marker + after-marker whitespace removed; then trailing
+#     whitespace removed; a closing run of `#`s is then stripped ONLY WHEN it is preceded by whitespace
+#     (a true §4.3 closing sequence). A `#` run glued to the text with NO preceding whitespace is part
+#     of the text and is KEPT. So `   ##  Validation  ##  \r` → level 2, text `Validation`; but
+#     `## Validation#` → level 2, text `Validation#` (closing hash glued to the text, not a match).
 # Pure text, no eval; set -u safe.
 _hivemind_atx_heading() {
   local rest="$1"
@@ -333,13 +342,24 @@ _hivemind_atx_heading() {
   esac
 
   rest="${rest#"${rest%%[![:space:]]*}"}"     # drop ALL after-marker leading whitespace (spaces+tabs)
-  # ATX-legal trailing (plain bash, no extglob): trailing whitespace, then a contiguous run of
-  # closing `#`s, then any whitespace those `#`s exposed. So `Validation ##  ` reduces to `Validation`.
+  # §4.3 closing sequence (plain bash, no extglob): drop trailing whitespace, then strip a contiguous
+  # run of closing `#`s ONLY WHEN that run is preceded by whitespace. A `#` run glued to the text with
+  # no preceding whitespace is NOT a closing sequence — it is part of the text and is kept. So
+  # `Validation ##  ` reduces to `Validation`, but `Validation#` stays `Validation#`.
   rest="${rest%"${rest##*[![:space:]]}"}"     # drop trailing whitespace
-  while [ "${rest%'#'}" != "$rest" ]; do      # drop a contiguous run of trailing `#`
-    rest="${rest%'#'}"
+  local stripped="$rest"
+  while [ "${stripped%'#'}" != "$stripped" ]; do  # peel a contiguous run of trailing `#` into a candidate
+    stripped="${stripped%'#'}"
   done
-  rest="${rest%"${rest##*[![:space:]]}"}"     # drop whitespace exposed before the closing `#`s
+  # Strip the closing-`#` run ONLY when it was preceded by whitespace (true §4.3 closing sequence).
+  # `stripped` differs from `rest` iff there was a `#` run; the run is closing iff what precedes it is
+  # empty or ends in whitespace.
+  if [ "$stripped" != "$rest" ]; then
+    case "$stripped" in
+      '' | *[[:space:]]) rest="${stripped%"${stripped##*[![:space:]]}"}" ;;  # closing seq → drop run + exposed ws
+      *) ;;                                    # `#`s glued to text (no preceding ws) → keep as text
+    esac
+  fi
 
   printf '%s\n%s' "$level" "$rest"
   return 0
@@ -376,21 +396,25 @@ _hivemind_is_section_heading() {
 }
 
 # _hivemind_is_validation_heading <raw_line>
-# Return 0 when <raw_line> is EXACTLY the level-2 `## Validation` heading. Routes through the
-# consolidated `_hivemind_atx_heading` parser, then requires LEVEL == 2 AND normalized TEXT ==
-# `Validation`. Because it shares the one parser with `_hivemind_is_section_heading`, the exact-name
-# match and the section-bound can never disagree on what counts as a heading, and both inherit the
-# full CommonMark ATX rule set:
+# Return 0 when <raw_line> reduces to the skill's OWN canonical `## Validation` heading. This is a
+# CANONICAL-ANCHOR equate, not an arbitrary title extraction: <raw_line> is reduced through the
+# consolidated `_hivemind_atx_heading` reduction and its (LEVEL, TEXT) canonical form is compared to
+# the canonical form of the one heading the skill emits — LEVEL == 2 AND normalized TEXT ==
+# `Validation`. Because the candidate and the canonical target pass through the SAME reduction that
+# `_hivemind_is_section_heading` uses for the section bound, the exact-name match and the section-bound
+# can never disagree on what counts as a heading, and both inherit the full CommonMark ATX rule set:
 #   - leading indent 0-3 spaces allowed; 4+ spaces or a leading tab → not a heading (so an indented
 #     `    ## Validation` is correctly NOT recognized);
 #   - the `##` marker may be followed by ANY run of spaces/tabs, so `##   Validation` and
-#     `##\tValidation` normalize identically;
-#   - ATX-legal trailing (`## Validation ##  `) and a trailing `\r` (CRLF `## Validation\r`) are
-#     handled;
+#     `##\tValidation` reduce identically;
+#   - a §4.3 closing `#` run (`## Validation ##  `) and a trailing `\r` (CRLF `## Validation\r`) are
+#     handled, but a closing `#` run GLUED to the text with no preceding whitespace (`## Validation#`,
+#     `## Validation##`) is part of the TEXT — its canonical form is `Validation#`/`Validation##`, NOT
+#     `Validation`, so it does NOT match and the ABSENT path creates the real `## Validation` section;
 #   - a no-space `##Validation` and a level-1/level-3+ marker are rejected.
 # A SIBLING whose text merely STARTS WITH `Validation` (`## Validation Details`, `## ValidationX`)
-# fails the exact-text compare, so the ABSENT path creates the real `## Validation` section. Takes
-# the RAW line. Pure text, no eval.
+# reduces to a different canonical form, so the ABSENT path creates the real `## Validation` section.
+# Takes the RAW line. Pure text, no eval.
 _hivemind_is_validation_heading() {
   local parsed level text
   if ! parsed="$(_hivemind_atx_heading "$1")"; then

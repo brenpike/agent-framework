@@ -1853,6 +1853,29 @@ assert_eq "settings:cave-hook-existing-idem-class" "already present" \
 assert_eq "settings:cave-hook-existing-idem-count" "2" \
   "$(printf '%s' "$sm_existing_hook_twice" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge does not duplicate the caveman hook"
 
+# 12c-bis2. caveman hook PRESENT-PREDICATE TYPE-CHECK (Codex P1 @ settings-merge.sh:411): an existing
+# SubagentStart entry whose `.command` MATCHES the caveman hook but whose `.type` is missing/wrong is an
+# INVALID hook. The present-predicate is now conjunctive (.type == "command" AND .command == "..."), so a
+# command-matching-but-wrong-typed entry classifies `added` and the canonical {type:"command", command}
+# entry is APPENDED beside it (the wrong-typed entry is LEFT in place). Non-vacuous: the prior command-only
+# predicate matched the wrong-typed entry → `already present`, appended nothing (length stays 1, no
+# canonical-typed entry), so both the class and the count/typed-entry assertions below would fail.
+sm_pre_wrongtype='{"hooks":{"SubagentStart":[{"hooks":[{"type":"foo","command":".claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
+sm_wrongtype="$(hivemind_settings_merge "$sm_pre_wrongtype" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-wrongtype-class" "added" \
+  "$(printf '%s' "$sm_wrongtype" | jq -r '.keys["hooks.SubagentStart"]')" "command matches but .type wrong → invalid hook → added"
+assert_eq "settings:cave-hook-wrongtype-count" "2" \
+  "$(printf '%s' "$sm_wrongtype" | jq -r '.settings.hooks.SubagentStart | length')" "wrong-typed entry left in place + canonical entry appended"
+assert_eq "settings:cave-hook-wrongtype-canonical-present" "true" \
+  "$(printf '%s' "$sm_wrongtype" | jq -r '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and .command == ".claude/hooks/caveman-ultra-subagent.sh")] | length > 0')" "a {type:\"command\", caveman command} entry now exists"
+# Idempotency regression guard: a correctly-typed canonical entry re-merged stays `already present`, no duplicate.
+sm_pre_canon='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":".claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
+sm_canon_idem="$(hivemind_settings_merge "$sm_pre_canon" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-canon-idem-class" "already present" \
+  "$(printf '%s' "$sm_canon_idem" | jq -r '.keys["hooks.SubagentStart"]')" "correctly-typed canonical entry re-merged → already present"
+assert_eq "settings:cave-hook-canon-idem-count" "1" \
+  "$(printf '%s' "$sm_canon_idem" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge of canonical entry does not duplicate"
+
 # 12c-ter. caveman pluginConfigs NESTED-LEAF merge: the contract value is
 # pluginConfigs["caveman@caveman"].options.defaultLevel == "ultra", NOT the mere presence of the
 # parent "caveman@caveman" key. A parent config object present WITHOUT (or with a non-"ultra")
@@ -2840,6 +2863,116 @@ assert_eq "file-guard:validation-crlf-bytes" "$fg_crlf_before" "$(cat "$fg_claud
 # Exactly one Validation heading — the CRLF heading carries a trailing \r, so match it tolerantly.
 assert_eq "file-guard:validation-crlf-one-heading" "1" \
   "$(grep -cE '^## Validation'$'\r''?$' "$fg_claude_crlf")" "exactly ONE ## Validation heading (CRLF, no duplicate appended)"
+
+# 14g-closinghash. §4.3 CLOSING-SEQUENCE MATRIX (PR #297 ATX approach-level zoom-out): the
+# general-ATX-text-extraction edge class is ELIMINATED; heading detection is now normalize-and-equate
+# against the skill's own canonical `## Validation` heading. The reduction strips a closing `#` run
+# ONLY when it is preceded by whitespace (a true CommonMark §4.3 closing sequence); a `#` run GLUED to
+# the heading text with no preceding whitespace is PART OF the text. Therefore `## Validation#` and
+# `## Validation##` (no space) reduce to text `Validation#`/`Validation##` ≠ `Validation` → NOT the
+# heading → ABSENT → the real `## Validation` section is created. `## Validation #` /
+# `## Validation ###` (space before the run) STAY recognized as the existing section. This matrix
+# locks the canonical-equate primitive against any revert to the prior unconditional closing-hash trim.
+#
+# (a) `## Validation#` (closing hash, NO preceding space) + fenced body → text `Validation#` ≠
+# `Validation` → ABSENT → `added`, real `## Validation` section created. LOAD-BEARING: pre-fix the
+# unconditional trim reduced this to `Validation` → wrongly `already documented`.
+fg_claude_ch1="$WORKDIR/fg-claude-closinghash1.md"
+printf '# Project\n\n## Validation#\n\n```bash\nnpm test\n```\n' > "$fg_claude_ch1"
+fg_ch1_res="$(hivemind_guard_validation_section "$fg_claude_ch1" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-nospace-added" "added" "$fg_ch1_res" "## Validation# (glued closing hash, no space) → text Validation# → ABSENT → added"
+assert_eq "file-guard:validation-closinghash-nospace-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch1")" "real ## Validation heading created beside ## Validation#"
+assert_eq "file-guard:validation-closinghash-nospace-preserved" "1" \
+  "$(grep -c '^## Validation#$' "$fg_claude_ch1")" "## Validation# (text-bearing closing hash) preserved verbatim"
+
+# (b) `## Validation##` (double closing hash, NO preceding space) + body → text `Validation##` →
+# ABSENT → `added`. LOAD-BEARING: pre-fix the unconditional trim reduced this to `Validation`.
+fg_claude_ch2="$WORKDIR/fg-claude-closinghash2.md"
+printf '# Project\n\n## Validation##\n\n```bash\nnpm test\n```\n' > "$fg_claude_ch2"
+fg_ch2_res="$(hivemind_guard_validation_section "$fg_claude_ch2" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-double-added" "added" "$fg_ch2_res" "## Validation## (glued double closing hash, no space) → text Validation## → ABSENT → added"
+assert_eq "file-guard:validation-closinghash-double-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch2")" "real ## Validation heading created beside ## Validation##"
+assert_eq "file-guard:validation-closinghash-double-preserved" "1" \
+  "$(grep -c '^## Validation##$' "$fg_claude_ch2")" "## Validation## (text-bearing double closing hash) preserved verbatim"
+
+# (c) `## Validation #` (single closing hash WITH a preceding space) + body → true §4.3 closing
+# sequence → text `Validation` → recognized → `already documented`, byte-unchanged.
+fg_claude_ch3="$WORKDIR/fg-claude-closinghash3.md"
+printf '# Project\n\n## Validation #\n\n```bash\nmake test\n```\n' > "$fg_claude_ch3"
+fg_ch3_before="$(cat "$fg_claude_ch3")"
+fg_ch3_res="$(hivemind_guard_validation_section "$fg_claude_ch3" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-space-documented" "already documented" "$fg_ch3_res" "## Validation # (space before closing hash, §4.3 closing seq) with command → already documented"
+assert_eq "file-guard:validation-closinghash-space-bytes" "$fg_ch3_before" "$(cat "$fg_claude_ch3")" "## Validation # heading file byte-unchanged"
+
+# (d) `## Validation ###` (closing-hash RUN WITH a preceding space) + body → §4.3 closing sequence →
+# text `Validation` → recognized → `already documented`, byte-unchanged.
+fg_claude_ch4="$WORKDIR/fg-claude-closinghash4.md"
+printf '# Project\n\n## Validation ###\n\n```bash\nmake test\n```\n' > "$fg_claude_ch4"
+fg_ch4_before="$(cat "$fg_claude_ch4")"
+fg_ch4_res="$(hivemind_guard_validation_section "$fg_claude_ch4" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-run-documented" "already documented" "$fg_ch4_res" "## Validation ### (space before closing-hash run) with command → already documented"
+assert_eq "file-guard:validation-closinghash-run-bytes" "$fg_ch4_before" "$(cat "$fg_claude_ch4")" "## Validation ### heading file byte-unchanged"
+
+# (e) SIBLING `## Other#` (glued closing hash on a SIBLING) still bounds the `## Validation` section:
+# it is a LEVEL-2 heading (text `Other#`), so it ENDS the Validation section AFTER the fenced block,
+# leaving the command in range → already documented, byte-unchanged, sibling preserved. Regression
+# guard that the level path is UNCHANGED by the text-extraction fix (closing-hash glue does not
+# demote a sibling out of level-2 heading status).
+fg_claude_ch5="$WORKDIR/fg-claude-closinghash-sibling.md"
+printf '# Project\n\n## Validation\n\n```bash\nmake test\n```\n\n## Other#\n\nbody.\n' > "$fg_claude_ch5"
+fg_ch5_before="$(cat "$fg_claude_ch5")"
+fg_ch5_res="$(hivemind_guard_validation_section "$fg_claude_ch5" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-sibling-documented" "already documented" "$fg_ch5_res" "## Other# sibling (level-2, glued closing hash) bounds the section; in-range command → already documented"
+assert_eq "file-guard:validation-closinghash-sibling-bytes" "$fg_ch5_before" "$(cat "$fg_claude_ch5")" "## Other# sibling-bound file byte-unchanged (no duplicate)"
+assert_eq "file-guard:validation-closinghash-sibling-preserved" "1" \
+  "$(grep -c '^## Other#$' "$fg_claude_ch5")" "## Other# sibling heading preserved verbatim (still a level-2 bound)"
+
+# (f) `####### Validation` (7 `#`s) is NOT an ATX heading → ABSENT → real `## Validation` created.
+# Regression guard for the level path (7+ marker reject) under the new reduction.
+fg_claude_ch6="$WORKDIR/fg-claude-closinghash-seven.md"
+printf '# Project\n\n####### Validation\n\nnot a heading.\n' > "$fg_claude_ch6"
+fg_ch6_res="$(hivemind_guard_validation_section "$fg_claude_ch6" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-sevenhash-added" "added" "$fg_ch6_res" "####### Validation (7 hashes, not ATX) → ABSENT → added"
+assert_eq "file-guard:validation-sevenhash-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch6")" "real ## Validation heading created beside the 7-hash line"
+
+# (g) `##5 Validation` (no space after the marker run) is NOT an ATX heading → ABSENT → real
+# `## Validation` created. Regression guard for the after-marker-whitespace requirement.
+fg_claude_ch7="$WORKDIR/fg-claude-closinghash-nomarkerws.md"
+printf '# Project\n\n##5 Validation\n\nnot a heading.\n' > "$fg_claude_ch7"
+fg_ch7_res="$(hivemind_guard_validation_section "$fg_claude_ch7" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-nomarkerws-added" "added" "$fg_ch7_res" "##5 Validation (no space after marker) → not ATX → ABSENT → added"
+assert_eq "file-guard:validation-nomarkerws-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch7")" "real ## Validation heading created beside ##5 Validation"
+
+# (h) `## Validation` indented 4 spaces is an indented code block, NOT a heading → ABSENT → real
+# column-0 `## Validation` created. Regression guard for the 4+-indent reject.
+fg_claude_ch8="$WORKDIR/fg-claude-closinghash-indent4.md"
+printf '# Project\n\n    ## Validation\n\nnot a heading (indented).\n' > "$fg_claude_ch8"
+fg_ch8_res="$(hivemind_guard_validation_section "$fg_claude_ch8" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-ch-indent4-added" "added" "$fg_ch8_res" "    ## Validation (4-space indent) → not a heading → ABSENT → added"
+assert_eq "file-guard:validation-ch-indent4-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch8")" "real column-0 ## Validation heading created"
+
+# (i) `##\tValidation` (TAB after the marker) WITH a fenced command → reduces to the canonical
+# `Validation` → recognized → already documented, byte-unchanged. Regression guard for tab-after-marker.
+fg_claude_ch9="$WORKDIR/fg-claude-closinghash-tabmarker.md"
+printf '# Project\n\n##\tValidation\n\n```bash\nmake test\n```\n' > "$fg_claude_ch9"
+fg_ch9_before="$(cat "$fg_claude_ch9")"
+fg_ch9_res="$(hivemind_guard_validation_section "$fg_claude_ch9" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-ch-tabmarker-documented" "already documented" "$fg_ch9_res" "##<tab>Validation (tab marker) with command → reduces to Validation → already documented"
+assert_eq "file-guard:validation-ch-tabmarker-bytes" "$fg_ch9_before" "$(cat "$fg_claude_ch9")" "##<tab>Validation heading file byte-unchanged"
+
+# (j) CRLF `## Validation\r` WITH a fenced command → the `\r` is stripped before the equate →
+# reduces to `Validation` → recognized → already documented, byte-unchanged. Regression guard for CRLF.
+fg_claude_ch10="$WORKDIR/fg-claude-closinghash-crlf.md"
+printf '# Project\r\n\r\n## Validation\r\n\r\n```bash\r\nmake test\r\n```\r\n' > "$fg_claude_ch10"
+fg_ch10_before="$(cat "$fg_claude_ch10")"
+fg_ch10_res="$(hivemind_guard_validation_section "$fg_claude_ch10" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-ch-crlf-documented" "already documented" "$fg_ch10_res" "CRLF ## Validation\\r with command → \\r stripped before equate → already documented"
+assert_eq "file-guard:validation-ch-crlf-bytes" "$fg_ch10_before" "$(cat "$fg_claude_ch10")" "CRLF ## Validation file byte-unchanged"
 
 # 14h. INERT: a hostile entry value crafted as a command-substitution payload is written as plain
 # text, never executed (proves the text guards never eval/source the entry).
