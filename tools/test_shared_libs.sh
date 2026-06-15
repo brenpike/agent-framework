@@ -3099,6 +3099,24 @@ td_mk_bare="$(td_new_project)"
 printf 'build:\n\tgo build ./...\n' > "$td_mk_bare/Makefile"
 assert_eq "test-detect:make-no-target" "" "$(hivemind_detect_test_commands "$td_mk_bare")" "Makefile lacking test: target → no command"
 
+# (a) SPACE-leading target: a `test:` line indented with SPACES is still a target GNU make 4.3 runs.
+# Non-vacuity: pre-fix the predicate anchored at column 0 (`^test[[:space:]]*:`) → leading space
+# missed → empty; this assertion (expecting `make test`) FAILS pre-fix, passes once the leading
+# class becomes `[ ]*`.
+td_mk_sp="$(td_new_project)"
+printf ' test:\n\t@echo run\n' > "$td_mk_sp/Makefile"
+assert_eq "test-detect:make-space-target" "make test" "$(hivemind_detect_test_commands "$td_mk_sp")" "space-indented test: target → make test"
+# (b) TAB-recipe guard: the only test-bearing line is a TAB-indented RECIPE under another target —
+# a make command, NOT a target. Must stay UNmatched. Recurrence guard: would regress if the fix
+# naively used a `[[:space:]]*` leading class (which would admit the tab).
+td_mk_tab="$(td_new_project)"
+printf 'build:\n\ttest: not-a-target\n' > "$td_mk_tab/Makefile"
+assert_eq "test-detect:make-tab-recipe" "" "$(hivemind_detect_test_commands "$td_mk_tab")" "TAB-indented test: recipe line → no command (not a target)"
+# (c) near-miss guard: `testing:` is not a `test:` target. Recurrence guard, must stay empty.
+td_mk_near="$(td_new_project)"
+printf 'testing:\n\t@echo x\n' > "$td_mk_near/Makefile"
+assert_eq "test-detect:make-near-miss" "" "$(hivemind_detect_test_commands "$td_mk_near")" "testing: near-miss → no command"
+
 # 15b. JS sub-signal ordering: a curated scripts.test WINS over a parallel vitest/jest dependency
 # (the fallback is NOT taken when sub-signal 1 matches).
 td_js_order="$(td_new_project)"

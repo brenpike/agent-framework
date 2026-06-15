@@ -377,9 +377,11 @@ phase_apply() {
     "already documented")
       test_command_line="already documented" ;;
     "added")
-      # Recorded — report the detected command(s) inline, comma-separated in detector order.
+      # Recorded — report the detected command(s) inline, joined with a literal `, ` between
+      # adjacent commands. Element boundary is the NEWLINE (one command per detector line);
+      # embedded spaces within a single command (e.g. `go test ./...`) are preserved.
       local recorded
-      recorded="$(hivemind_detect_test_commands "$project_root" | paste -sd ', ' -)"
+      recorded="$(hivemind_detect_test_commands "$project_root" | awk 'NR>1{printf ", "}{printf "%s",$0}')"
       test_command_line="recorded $recorded" ;;
     *)
       test_command_line="$validation_status" ;;

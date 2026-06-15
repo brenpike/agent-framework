@@ -210,13 +210,18 @@ _hivemind_ruby_has_rspec_signal() {
 }
 
 # _hivemind_makefile_has_test_target <makefile>
-# Return 0 when <makefile> declares a REAL `test:` target (a line whose first non-whitespace token
-# is `test` immediately followed by `:`), per SKILL.md step 14a "a real test: target". Mere file
-# existence is insufficient.
+# Return 0 when <makefile> declares a REAL `test:` target (a line whose first token is `test`
+# immediately followed by `:`), per SKILL.md step 14a "a real test: target". Mere file existence
+# is insufficient.
+#
+# LEADING WHITESPACE: a leading run of SPACES is allowed (`[ ]*`) because GNU make 4.3 still treats
+# a space-indented `test:` line as a target. The leading class is deliberately literal-space-only,
+# NOT `[[:space:]]*`: a TAB-leading line (`\ttest:`) is a make RECIPE command under some other
+# target, NOT a target declaration, and must stay UNmatched.
 _hivemind_makefile_has_test_target() {
   local makefile="$1"
   [ -f "$makefile" ] || return 1
-  grep -Eq '^test[[:space:]]*:' "$makefile" 2>/dev/null
+  grep -Eq '^[ ]*test[[:space:]]*:' "$makefile" 2>/dev/null
 }
 
 # hivemind_detect_test_commands <project_root>

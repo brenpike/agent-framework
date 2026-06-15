@@ -511,6 +511,31 @@ for field in via detected source resolved; do
   assert_enum_coverage "schema:headless:$field" "$field" "$OUT6"
 done
 
+# ── Case 9: recorded-join — ≥3 detected commands joined by a TRUE `, ` between EVERY pair ─
+# Non-vacuity: pre-fix the `recorded` branch used `paste -sd ', ' -`, whose `-d` CYCLES the two
+# delimiter chars rather than using `, ` as one literal separator, yielding
+#   `npm test,go test ./..., cargo test`  (comma-NO-space at pair 1).
+# ≥3 commands are required to expose the cyclic alternation (2 commands only reveals a single
+# missing space). Canonical emission order is derived from test-detect.sh §hivemind_detect_test_commands
+# (JS=1, Go=3, Rust=4) → npm test, go test ./..., cargo test.
+echo '=== Case 9: recorded-join — ≥3 commands joined by literal ", " between every pair ==='
+ROOT9="$(new_project recordjoin)"
+# JS (curated scripts.test → npm test) + Go (go.mod) + Rust (Cargo.toml): three root signals.
+printf '{"scripts":{"test":"jest"}}\n' > "$ROOT9/package.json"
+printf 'module x\n'                    > "$ROOT9/go.mod"
+printf '[package]\nname = "x"\n'        > "$ROOT9/Cargo.toml"
+INPUTS9="$(jq -nc --arg r "$ROOT9" '{
+  project_root: $r, caveman: "no", claude_mem: "no", codex: "no", seed_allowlist: "no" }')"
+OUT9="$(run_apply "$ROOT9" "$INPUTS9")"
+assert_contains "recordjoin:exact" \
+  "- repo-root CLAUDE.md ## Validation: recorded npm test, go test ./..., cargo test" "$OUT9"
+# Recurrence guard: the pre-fix cyclic substring (comma-no-space at pair 1) must be ABSENT.
+if printf '%s' "$OUT9" | grep -qF -- "npm test,go test"; then
+  failed "recordjoin:no-cyclic" "comma-no-space join leaked (pre-fix paste -sd cyclic delimiter)"
+else
+  pass "recordjoin:no-cyclic" "(no comma-no-space pair; literal ', ' separator confirmed)"
+fi
+
 # ── Tally ───────────────────────────────────────────────────────────────────────
 echo
 echo "test_seed_hive: $PASS_COUNT passed, $FAIL_COUNT failed"
