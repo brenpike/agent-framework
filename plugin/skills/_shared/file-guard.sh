@@ -41,16 +41,25 @@
 #     kernel; only the PRESENCE predicate differs. This is a genuine variant (a different
 #     predicate), expressed by parameterizing the kernel's matcher — NOT a near-duplicate body.
 #   - `hivemind_guard_validation_section` (CLAUDE.md `## Validation`, SKILL.md step 14c/d/e):
-#     a SECTION-aware append keyed on a VALUE-STATE NORMALIZATION of the `## Validation` section
-#     (ABSENT / PRESENT-CANONICAL), NOT on the bare presence of the heading. The presence
-#     predicate is BODY-presence: a `## Validation` section counts as already-handled only when it
-#     carries a real COMMAND BODY (a fenced ```` ``` ```` command block under the heading) — a
-#     heading-only stub (the `## Validation` line with no fenced block beneath it before the next
-#     sibling/parent heading or EOF; blank lines or comments do NOT count as a body) is ABSENT and
-#     gets the assembled command body. This closes the predicate gap where a heading-only stub was
-#     mis-reported `already documented` and the detected command was silently dropped. Same
-#     append-if-absent SHAPE as the kernel (test the value-state, else write a trailing-newline-
-#     guarded section, report added/already), with the section-scoped BODY predicate.
+#     a SECTION-aware guard keyed on a 3-state VALUE-STATE NORMALIZATION of the `## Validation`
+#     section (ABSENT / PRESENT-NO-COMMAND / PRESENT-WITH-COMMAND), NOT on the bare presence of the
+#     heading. The predicate is BODY-presence: a `## Validation` section counts as fully documented
+#     only when it carries a real COMMAND BODY (a fenced ```` ``` ```` command block under the
+#     heading). The three states:
+#       ABSENT               — no `## Validation` heading at all → append the full assembled section
+#                              body (heading + fenced block); report `added`.
+#       PRESENT-WITH-COMMAND — a `## Validation` heading WITH a fenced command block in its range →
+#                              no-op; report `already documented`; byte-unchanged.
+#       PRESENT-NO-COMMAND   — a `## Validation` heading present, NO fenced command block in its
+#                              range (prose-only, blank-only, comment-only, or any mix) → KEEP every
+#                              existing line of the section VERBATIM and INSERT the fenced command
+#                              block(s) (the body BELOW the assembled heading line, NOT a second
+#                              heading) at the END of the section's existing content, before the
+#                              next sibling/parent heading or EOF; report `added`.
+#     This closes the predicate gap where a heading-only stub was mis-reported `already documented`
+#     and the detected command was silently dropped. file-guard NEVER drops existing prose: a
+#     prose-bearing `## Validation` section is APPENDED-UNDER, never REPLACED, so existing user
+#     content is preserved byte-for-byte. The result is always exactly ONE `## Validation` heading.
 #
 # THE HOOK SCAFFOLD IS NOT A LINE GUARD (different op, lives here for cohesion):
 #   `hivemind_scaffold_hook_file` is a CREATE-IF-ABSENT file scaffold for the caveman
@@ -278,39 +287,44 @@ _hivemind_is_validation_heading() {
 }
 
 # hivemind_guard_validation_section <claude_md_file> <section_body>
-# SECTION-aware append-if-absent for the repo-root CLAUDE.md `## Validation` section (SKILL.md
-# step 14c/d/e), keyed on a VALUE-STATE NORMALIZATION of the section rather than bare heading
-# presence:
+# SECTION-aware guard for the repo-root CLAUDE.md `## Validation` section (SKILL.md step 14c/d/e),
+# keyed on a 3-state VALUE-STATE NORMALIZATION of the section rather than bare heading presence:
 #
-#   ABSENT            — no `## Validation` heading at all, OR a `## Validation` heading with NO
-#                       command body (no fenced ```` ``` ```` block under the heading before the
-#                       next sibling/parent `#`-heading or EOF; blank lines and comment lines do
-#                       NOT count as a body). The assembled command body is written and the result
-#                       reports `added`.
-#   PRESENT-CANONICAL — a `## Validation` heading WITH a real command body (a fenced block already
-#                       present under it). No-op: reports `already documented`, existing prose
-#                       left byte-untouched (SKILL.md step 14c: "leave the existing prose
-#                       untouched").
+#   ABSENT               — no `## Validation` heading at all. The full assembled section
+#                          (<section_body>: heading + fenced block) is appended and the result
+#                          reports `added`.
+#   PRESENT-WITH-COMMAND — a `## Validation` heading WITH a real command body (a fenced ```` ``` ````
+#                          block already present in its range). No-op: reports `already documented`,
+#                          file left byte-untouched (SKILL.md step 14c: "leave the existing prose
+#                          untouched").
+#   PRESENT-NO-COMMAND   — a `## Validation` heading present, NO fenced command block in its range
+#                          (the range running from the heading to the next sibling/parent
+#                          `#`-heading or EOF). Prose-only, blank-only, comment-only, or any mix all
+#                          fall here. EVERY existing line of the section is KEPT VERBATIM and the
+#                          fenced command block(s) — the body of <section_body> BELOW its heading
+#                          line, NOT a second heading — is INSERTED at the END of the section's
+#                          existing content (immediately before the next sibling/parent heading or
+#                          EOF). The result reports `added`.
 #
 # This replaces the prior HEADING-ONLY predicate ("a `## Validation` heading exists ⇒
 # already documented"), which mis-classified a heading-only stub as handled and silently dropped
 # the detected command. The predicate now keys on BODY-presence (a fenced command block).
 #
-# HEADING-ONLY EDGE (ABSENT with a stub heading already present): to guarantee the result is ONE
-# `## Validation` section carrying the command body — never two competing headings — the existing
-# heading-only stub (heading line plus any blank/comment lines in its range) is REPLACED IN PLACE
-# by <section_body>. Replacement is chosen over append-under-heading because <section_body> itself
-# begins with the `## Validation` heading, so dropping the stub and writing the full assembled
-# section yields exactly one heading + the body while leaving every other line of the file
-# byte-unchanged (only the stub's own range is rewritten). The stub's blank/comment lines are not
-# a body and carry no information, so discarding them is lossless.
+# file-guard NEVER DROPS EXISTING PROSE. A PRESENT-NO-COMMAND section is APPENDED-UNDER (the fenced
+# block is inserted after the section's existing lines), never REPLACED — so any user prose under
+# `## Validation` is preserved byte-for-byte. There is NO branch that substitutes <section_body>
+# for a range containing existing lines; the only place content is written is an append. A
+# blank/comment-only stub goes through the SAME append-preserving path (there is simply no prose to
+# preserve); its trailing blank/comment lines are kept, which is harmless and lossless. The result
+# is always exactly ONE `## Validation` heading carrying the command body.
 #
 # ARGUMENTS
 #   <claude_md_file>  absolute path to repo-root CLAUDE.md. Created if absent.
-#   <section_body>    the full `## Validation` section text to append (heading + fenced command
-#                     block(s)), assembled by the caller. Written verbatim; never interpreted.
-#                     MUST begin with the `## Validation` heading line so the BODY predicate and
-#                     the written content agree.
+#   <section_body>    the full `## Validation` section text (heading + fenced command block(s)),
+#                     assembled by the caller. Written verbatim; never interpreted. MUST begin with
+#                     the `## Validation` heading line: ABSENT writes it whole, and PRESENT-NO-
+#                     COMMAND inserts only the lines BELOW that first heading line so the result
+#                     keeps a single heading.
 hivemind_guard_validation_section() {
   local file="$1" section_body="$2"
 
@@ -322,7 +336,8 @@ hivemind_guard_validation_section() {
   fi
 
   # Read the file into a line array so the section's value-state can be classified and, in the
-  # heading-only edge, the stub range rewritten in place. Read is pure text (no interpretation).
+  # PRESENT-NO-COMMAND case, the command body inserted at the end of the existing section while
+  # every existing line is kept verbatim. Read is pure text (no interpretation).
   local lines=()
   local line
   while IFS= read -r line || [ -n "$line" ]; do
@@ -359,24 +374,41 @@ hivemind_guard_validation_section() {
     done
   fi
 
-  # PRESENT-CANONICAL: heading with a real command body → no-op, byte-unchanged.
+  # PRESENT-WITH-COMMAND: heading with a real command body → no-op, byte-unchanged.
   if [ "$heading_idx" -ge 0 ] && [ "$has_body" = "yes" ]; then
     printf '%s\n' "already documented"
     return 0
   fi
 
-  # ABSENT with a heading-only stub: REPLACE the stub range [heading_idx, end_idx) with the
-  # assembled section in place, leaving every other line byte-unchanged → ONE section with a body.
+  # PRESENT-NO-COMMAND: a `## Validation` heading exists but its range has no fenced command block
+  # (prose-only, blank-only, comment-only, or any mix). KEEP every existing line verbatim and
+  # INSERT the command body — the lines of <section_body> BELOW its own `## Validation` heading
+  # line, never a second heading — at the END of the section (immediately before end_idx). This is
+  # an APPEND-UNDER, never a replace: no existing line is dropped, so any user prose is preserved.
   if [ "$heading_idx" -ge 0 ]; then
-    local out=()
-    for (( i = 0; i < heading_idx; i++ )); do
-      out+=("${lines[$i]}")
-    done
-    # Expand the assembled section_body into its constituent lines.
+    # Split <section_body> into lines; drop its leading `## Validation` heading line so only the
+    # command-body lines (the fenced block(s)) are inserted under the existing heading. The caller
+    # always assembles section_body with the heading as its first line (test-detect.sh
+    # `_hivemind_validation_section_body`), so the heading is `body_lines[0]`.
+    local body_lines=()
     local body_line
     while IFS= read -r body_line || [ -n "$body_line" ]; do
-      out+=("$body_line")
+      body_lines+=("$body_line")
     done <<< "$section_body"
+
+    local out=()
+    # Existing content up to and including the last line of the section (everything before end_idx).
+    for (( i = 0; i < end_idx; i++ )); do
+      out+=("${lines[$i]}")
+    done
+    # Insert only the command-body lines (everything in section_body AFTER its heading line). The
+    # fenced block already begins on its own line (the caller emits a blank line before each ```bash
+    # fence), so it never merges with a preceding non-blank prose line.
+    local b
+    for (( b = 1; b < "${#body_lines[@]}"; b++ )); do
+      out+=("${body_lines[$b]}")
+    done
+    # Sibling/parent sections after `## Validation` are carried over byte-for-byte.
     for (( i = end_idx; i < n; i++ )); do
       out+=("${lines[$i]}")
     done
