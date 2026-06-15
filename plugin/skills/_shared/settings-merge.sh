@@ -38,9 +38,15 @@
 #   - PRESERVE-EXISTING: every key the caller already had that is not a required key is kept
 #     untouched, in place. A required key already at the correct value is `already present`,
 #     not re-added.
-#   - enabledPlugins["hivemind@brenpike"] = true — add-if-absent; idempotent.
+#   - enabledPlugins["hivemind@brenpike"] = true — add-if-absent; idempotent. VALUE-EQUALITY
+#     classification: `already present` IFF the existing value already EQUALS the canonical
+#     target (== true). The build unconditionally writes `true`, so a key present-but-false /
+#     null / wrong-typed is NOT already present — it is reported `added` (corrected), matching
+#     the write. An absent key is `added`; a key already `== true` is `already present`.
 #   - enabledPlugins["caveman@caveman"] / ["claude-mem@thedotmack"] / ["codex@openai-codex"]
-#     = true — written ONLY when the matching companion flag resolves yes; add-if-absent.
+#     = true — written ONLY when the matching companion flag resolves yes; add-if-absent. Same
+#     VALUE-EQUALITY classification (== true) once resolved yes; the `resolved no` short-circuit
+#     (companion not resolved-yes) is checked FIRST, before the value test.
 #   - agent = "<agent_target>" — add-if-absent. VALUE-STATE NORMALIZATION (ABSENT detection): an
 #     existing `agent` that is missing, `null`, or a string that is EMPTY or WHITESPACE-ONLY ("",
 #     " ", "\t") normalizes to ABSENT → classified `added` and the target is written. An empty /
@@ -112,6 +118,8 @@
 #       "agent_conflict": null | { "existing": <str>, "required": <str> },  // null when overwritten
 #       "keys": {                                // classification per required key
 #         "enabledPlugins.hivemind@brenpike": "added" | "already present",
+#           // VALUE-EQUALITY: "already present" IFF the value is ALREADY == true; a
+#           // present-but-false/null/wrong-typed key is "added" (the build corrects it to true).
 #         "agent": "added" | "already present" | "unchanged" | "conflict" | "overwritten",
 #         "enabledPlugins.caveman@caveman": "added" | "already present" | "resolved no",
 #         "enabledPlugins.claude-mem@thedotmack": "...",
@@ -285,6 +293,12 @@ hivemind_settings_merge() {
     # aborting has() — an absent enabledPlugins then classifies every companion as "added".
     def has_enabled($k): canon_obj($settings.enabledPlugins) | has($k);
 
+    # VALUE-EQUALITY presence test for an enabledPlugins entry, run over the SHAPE-normalized
+    # enabledPlugins object: true IFF the existing value already EQUALS the canonical target (true).
+    # The build unconditionally writes `true`, so a key present-but-false/null/wrong-typed needs
+    # correcting and must classify "added", NOT "already present" — this is value-not-presence.
+    def enabled_true($k): canon_obj($settings.enabledPlugins) | (.[$k] == true);
+
     # The caveman SubagentStart hook entry, mirroring SKILL.md step 10d structure.
     # Every container-typed key is normalized at binding time so a wrong-typed existing value
     # collapses to its canonical empty container ({} / []) here, once, for both classification and
@@ -333,13 +347,13 @@ hivemind_settings_merge() {
        else $existing_allow end) as $merged_allow
 
     # ── required-key classification ──────────────────────────────────────────────
-    | (if has_enabled("hivemind@brenpike") then "already present" else "added" end) as $c_hive
+    | (if enabled_true("hivemind@brenpike") then "already present" else "added" end) as $c_hive
     | (if $caveman != "yes" then "resolved no"
-       elif has_enabled("caveman@caveman") then "already present" else "added" end) as $c_cave
+       elif enabled_true("caveman@caveman") then "already present" else "added" end) as $c_cave
     | (if $claude_mem != "yes" then "resolved no"
-       elif has_enabled("claude-mem@thedotmack") then "already present" else "added" end) as $c_mem
+       elif enabled_true("claude-mem@thedotmack") then "already present" else "added" end) as $c_mem
     | (if $codex != "yes" then "resolved no"
-       elif has_enabled("codex@openai-codex") then "already present" else "added" end) as $c_codex
+       elif enabled_true("codex@openai-codex") then "already present" else "added" end) as $c_codex
     # NESTED-LEAF classification: the contract value is pluginConfigs["caveman@caveman"]
     # .options.defaultLevel == "ultra", NOT the mere presence of the parent key. A parent
     # object present WITHOUT (or with a non-"ultra") defaultLevel is NOT configured for ultra

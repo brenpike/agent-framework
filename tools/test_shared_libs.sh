@@ -2052,6 +2052,69 @@ sm_pre_companion="$(hivemind_settings_merge '{"enabledPlugins":{"caveman@caveman
 assert_eq "settings:preserve-companion-kept" "true" \
   "$(printf '%s' "$sm_pre_companion" | jq -r '.settings.enabledPlugins["caveman@caveman"]')" "pre-existing companion entry preserved even when toggle is no"
 
+# 12i-bis. VALUE-EQUALITY classification matrix (SWEEP-STEP-004, Pattern-2). The enabledPlugins
+# classification is VALUE-NOT-PRESENCE: a key reports `already present` IFF its existing value
+# already EQUALS the canonical target (== true). A key present-but-false / null / wrong-typed is
+# NOT already present — it must be classified `added` AND the build must CORRECT it to true. This
+# parametrized matrix locks one case PER enabledPlugins key so a revert of `enabled_true` back to
+# a presence-only `has()` predicate (which would report `already present` for a present-but-false
+# key, leaving the wrong value in place) trips a per-key assertion.
+#
+# Driver: $1 case-slug, $2 settings-json, $3 caveman, $4 claude_mem, $5 codex, $6 plugin-key,
+#         $7 expected-class, $8 expected-built-value ("true" | "null" | "skip"). Runs the merge
+#         and asserts BOTH the classification token AND the built .enabledPlugins[key] value, so
+#         every case is NON-VACUOUS on the value-equality fix (presence-only revert flips class
+#         from `added`→`already present` AND, for false/null inputs, the build still corrects the
+#         value to true — the class assertion is what fails on revert).
+sm_value_case() {
+  local slug="$1" json="$2" cav="$3" mem="$4" cdx="$5" key="$6" want_class="$7" want_val="$8"
+  local res
+  res="$(hivemind_settings_merge "$json" 'hivemind:overlord' "$cav" "$mem" "$cdx" 'no')"
+  assert_eq "settings:value-$slug-class" "$want_class" \
+    "$(printf '%s' "$res" | jq -r --arg k "$key" '.keys["enabledPlugins." + $k]')" \
+    "$slug: enabledPlugins.$key classified $want_class"
+  if [ "$want_val" != "skip" ]; then
+    # NOTE: jq `//` treats `false` as empty, so a literal `// "null"` fallback would mis-render a
+    # preserved `false` as "null". Branch on has() to render absent vs. the exact stored value.
+    assert_eq "settings:value-$slug-built" "$want_val" \
+      "$(printf '%s' "$res" | jq -r --arg k "$key" '.settings.enabledPlugins | if has($k) then .[$k] else "null" end')" \
+      "$slug: built enabledPlugins.$key == $want_val"
+  fi
+}
+
+# (i) hivemind key present == false → added (NOT already present), corrected to true.
+sm_value_case "hive-false" '{"enabledPlugins":{"hivemind@brenpike":false}}' \
+  'no' 'no' 'no' 'hivemind@brenpike' 'added' 'true'
+# (ii) hivemind key present == null → added, corrected to true.
+sm_value_case "hive-null" '{"enabledPlugins":{"hivemind@brenpike":null}}' \
+  'no' 'no' 'no' 'hivemind@brenpike' 'added' 'true'
+# (iii) resolved-yes caveman present == false → added, corrected to true.
+sm_value_case "cave-false" '{"enabledPlugins":{"caveman@caveman":false}}' \
+  'yes' 'no' 'no' 'caveman@caveman' 'added' 'true'
+# (iv) resolved-yes claude-mem present == false → added, corrected to true.
+sm_value_case "mem-false" '{"enabledPlugins":{"claude-mem@thedotmack":false}}' \
+  'no' 'yes' 'no' 'claude-mem@thedotmack' 'added' 'true'
+# (v) resolved-yes codex present == false → added, corrected to true.
+sm_value_case "codex-false" '{"enabledPlugins":{"codex@openai-codex":false}}' \
+  'no' 'no' 'yes' 'codex@openai-codex' 'added' 'true'
+# REGRESSION GUARD (a): each key present == true → already present (behavior preserved).
+sm_value_case "hive-true" '{"enabledPlugins":{"hivemind@brenpike":true}}' \
+  'no' 'no' 'no' 'hivemind@brenpike' 'already present' 'true'
+sm_value_case "cave-true" '{"enabledPlugins":{"caveman@caveman":true}}' \
+  'yes' 'no' 'no' 'caveman@caveman' 'already present' 'true'
+sm_value_case "mem-true" '{"enabledPlugins":{"claude-mem@thedotmack":true}}' \
+  'no' 'yes' 'no' 'claude-mem@thedotmack' 'already present' 'true'
+sm_value_case "codex-true" '{"enabledPlugins":{"codex@openai-codex":true}}' \
+  'no' 'no' 'yes' 'codex@openai-codex' 'already present' 'true'
+# REGRESSION GUARD (b): absent key → added (presence-absent still classifies added).
+sm_value_case "hive-absent" '{"enabledPlugins":{}}' \
+  'no' 'no' 'no' 'hivemind@brenpike' 'added' 'true'
+# REGRESSION GUARD (c): companion key present == false but toggle NOT resolved-yes → `resolved no`
+# (the `resolved no` short-circuit runs BEFORE the value test, so no spurious `added`, and the
+# key is left untouched — the build never writes a companion whose toggle is no).
+sm_value_case "cave-false-noresolve" '{"enabledPlugins":{"caveman@caveman":false}}' \
+  'no' 'no' 'no' 'caveman@caveman' 'resolved no' 'false'
+
 # 12j. MALFORMED non-empty input → status malformed, settings null, NO merge (fail-closed).
 # An EMPTY string is the absent-file case (treated as {}), NOT malformed.
 sm_malformed="$(hivemind_settings_merge 'not json{' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
@@ -2716,7 +2779,8 @@ echo '=== root-cluster class-locking matrix: seed-hive merge-predicate-gap regre
 #   (3) claude-mem CLAUDE_CODE_PATH — present-non-empty-string → present-non-string/null is NEVER clobbered
 #   (4) file-guard `## Validation`  — PRESENT-NO-COMMAND is APPENDED-UNDER (prose byte-preserved, not replaced)
 #   (5) settings-merge containers   — wrong-typed container → canon_obj/canon_arr empty → merge stays `ok` (no jq abort)
-# This single test asserts ALL FIVE together as the NAMED root-cluster lock so a future single-SITE
+#   (6) settings-merge enabledPlugins — present-but-false value-equality → classified `added` AND corrected to `true`
+# This single test asserts ALL SIX together as the NAMED root-cluster lock so a future single-SITE
 # regression (reverting just one predicate / one approach-level fix) trips it. It is NON-VACUOUS: each
 # clause below fails independently if its corresponding site fix reverts, so no one site can silently
 # regress while the others hold.
@@ -2767,8 +2831,18 @@ mx_wt_value="$(printf '%s' "$mx_wt" | jq -r '.settings.enabledPlugins["hivemind@
 [ "$mx_wt_status" = "ok" ] || { mx_fail=1; echo "  matrix-5 FAIL: wrong-typed container status=$mx_wt_status (want ok)"; }
 [ "$mx_wt_value" = "true" ] || { mx_fail=1; echo "  matrix-5 FAIL: required key not seeded over canonical empty (value=$mx_wt_value)"; }
 
+# Matrix clause (6) [SWEEP-STEP-004]: VALUE-EQUALITY — enabledPlugins["hivemind@brenpike"] present
+# but == false is classified `added` (NOT `already present`) AND the build CORRECTS it to true. This
+# is the value-not-presence predicate (enabled_true), not has()-presence.
+# Reverts-as: a presence-only has() predicate would report `already present` and leave the value false.
+mx_ve="$(hivemind_settings_merge '{"enabledPlugins":{"hivemind@brenpike":false}}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+mx_ve_class="$(printf '%s' "$mx_ve" | jq -r '.keys["enabledPlugins.hivemind@brenpike"]')"
+mx_ve_value="$(printf '%s' "$mx_ve" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')"
+[ "$mx_ve_class" = "added" ] || { mx_fail=1; echo "  matrix-6 FAIL: present-false enabledPlugin class=$mx_ve_class (want added)"; }
+[ "$mx_ve_value" = "true" ] || { mx_fail=1; echo "  matrix-6 FAIL: present-false enabledPlugin not corrected (value=$mx_ve_value, want true)"; }
+
 if [ "$mx_fail" -eq 0 ]; then
-  pass "matrix:root-cluster-class-lock" "all five merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered + prose-preservation append-under + wrong-typed-container normalizes to ok)"
+  pass "matrix:root-cluster-class-lock" "all six merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered + prose-preservation append-under + wrong-typed-container normalizes to ok + present-false enabledPlugin value-equality corrected to true)"
 else
   failed "matrix:root-cluster-class-lock" "a seed-hive merge-predicate-gap site fix regressed (see matrix-N FAIL lines above)"
 fi
