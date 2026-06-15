@@ -2627,6 +2627,51 @@ assert_eq "file-guard:validation-nested-one-fence" "1" \
 assert_eq "file-guard:validation-nested-subheading" "1" \
   "$(grep -c '^### CI$' "$fg_claude_nested")" "nested ### CI subsection preserved as part of the section"
 
+# 14g-sibling. EXACT-NAME MATCH LOCK (PR #297 P1): a CLAUDE.md that has a SIBLING heading whose text
+# merely STARTS WITH `Validation` (`## Validation Details`) but NO exact `## Validation` heading must
+# classify ABSENT → the real `## Validation` section is CREATED and the sibling section + its content
+# is left BYTE-PRESERVED, so BOTH headings now exist. Non-vacuous: under the prior loose prefix match
+# (`'## Validation '*`), `## Validation Details` was mistaken for the `## Validation` heading → the
+# command would be recorded UNDER the sibling (or reported `already documented`) and no real
+# `## Validation` heading would ever be created — every assertion below would fail.
+fg_claude_sibling="$WORKDIR/fg-claude-sibling.md"
+printf '# Project\n\n## Validation Details\n\nSee the wiki for the full checklist.\n' > "$fg_claude_sibling"
+fg_sib_res="$(hivemind_guard_validation_section "$fg_claude_sibling" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-sibling-added" "added" "$fg_sib_res" "sibling ## Validation Details, no exact ## Validation → ABSENT → added"
+assert_eq "file-guard:validation-sibling-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_sibling")" "the real ## Validation heading was created exactly once"
+assert_eq "file-guard:validation-sibling-preserved-heading" "1" \
+  "$(grep -c '^## Validation Details$' "$fg_claude_sibling")" "the ## Validation Details sibling heading preserved"
+assert_eq "file-guard:validation-sibling-preserved-prose" "1" \
+  "$(grep -c '^See the wiki for the full checklist\.$' "$fg_claude_sibling")" "sibling section prose preserved byte-for-byte"
+assert_eq "file-guard:validation-sibling-fence" "1" \
+  "$(grep -c "$(printf '^\140\140\140bash$')" "$fg_claude_sibling")" "real ## Validation section carries the fenced command body"
+
+# 14g-trailing. ATX-LEGAL TRAILING MATCH LOCK (PR #297 P1): an exact `## Validation` heading bearing
+# trailing whitespace and ATX closing `#`s (`## Validation ##  `) with a fenced command body must
+# still be RECOGNIZED as the `## Validation` heading → `already documented`, byte-unchanged. Non-
+# vacuous: an over-strict exact match (equality against the literal `## Validation` only) would treat
+# the trailing-`#` heading as absent → a DUPLICATE section appended and verdict `added`, failing here.
+fg_claude_trailing="$WORKDIR/fg-claude-trailing.md"
+printf '# Project\n\n## Validation ##  \n\n```bash\nmake test\n```\n' > "$fg_claude_trailing"
+fg_trail_before="$(cat "$fg_claude_trailing")"
+fg_trail_res="$(hivemind_guard_validation_section "$fg_claude_trailing" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-trailing-documented" "already documented" "$fg_trail_res" "## Validation ## (ATX closing hashes) with command → already documented"
+assert_eq "file-guard:validation-trailing-bytes" "$fg_trail_before" "$(cat "$fg_claude_trailing")" "trailing-hash heading file byte-unchanged"
+
+# 14g-validationx. NO-SUFFIX-MATCH LOCK (PR #297 P1): a heading whose text is `ValidationX` (a single
+# trailing char, no space) is NOT the `## Validation` heading → ABSENT → the real `## Validation`
+# section is created and `## ValidationX` is preserved. Non-vacuous: a substring/prefix match would
+# treat `## ValidationX` as the target → no real `## Validation` ever created.
+fg_claude_vx="$WORKDIR/fg-claude-validationx.md"
+printf '# Project\n\n## ValidationX\n\nnot the section.\n' > "$fg_claude_vx"
+fg_vx_res="$(hivemind_guard_validation_section "$fg_claude_vx" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-vx-added" "added" "$fg_vx_res" "## ValidationX → not the ## Validation heading → ABSENT → added"
+assert_eq "file-guard:validation-vx-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_vx")" "real ## Validation heading created"
+assert_eq "file-guard:validation-vx-preserved" "1" \
+  "$(grep -c '^## ValidationX$' "$fg_claude_vx")" "## ValidationX sibling preserved"
+
 # 14h. INERT: a hostile entry value crafted as a command-substitution payload is written as plain
 # text, never executed (proves the text guards never eval/source the entry).
 rm -f "$PWN_MARKER"

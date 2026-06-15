@@ -298,13 +298,32 @@ _hivemind_is_section_heading() {
 }
 
 # _hivemind_is_validation_heading <trimmed_line>
-# Return 0 when <trimmed_line> is the `## Validation` heading (allowing trailing whitespace/text
-# after the word, matching the caller's assembled heading line).
+# Return 0 when <trimmed_line> is EXACTLY the level-2 `## Validation` heading. The match is on the
+# heading TEXT, not a prefix: after stripping the `## ` level-2 marker and removing ATX-legal
+# trailing whitespace plus optional closing `#` characters, the remaining text must equal exactly
+# `Validation`. So `## Validation`, `##   Validation  ` (extra spaces), and `## Validation ##` (ATX
+# closing hashes) all match, while a SIBLING heading whose text merely STARTS WITH `Validation`
+# (`## Validation Details`, `## Validation Notes`, `## ValidationX`) does NOT. A level-3 `###
+# Validation` also does NOT match (its level-2 marker strip fails). This exactness keeps a
+# differently-named sibling section from being mistaken for the `## Validation` section, so the
+# ABSENT path creates the real `## Validation` section. Pure text, no eval.
 _hivemind_is_validation_heading() {
-  case "$1" in
-    '## Validation'|'## Validation '*) return 0 ;;
+  local rest="$1"
+  # Require the level-2 marker `## ` (exactly two `#` then at least one space). A level-1 `#` or a
+  # level-3+ `###` heading is not the `## Validation` heading.
+  case "$rest" in
+    '## '*) rest="${rest#'## '}" ;;
     *) return 1 ;;
   esac
+  # Strip ATX-legal trailing in plain bash (no extglob): trailing whitespace, then a contiguous run
+  # of closing `#`s, then any whitespace those `#`s exposed. So `Validation`, `Validation  `,
+  # `Validation ##`, and `Validation ##  ` all reduce to `Validation`.
+  rest="${rest%"${rest##*[![:space:]]}"}"   # drop trailing whitespace
+  while [ "${rest%'#'}" != "$rest" ]; do    # drop a contiguous run of trailing `#`
+    rest="${rest%'#'}"
+  done
+  rest="${rest%"${rest##*[![:space:]]}"}"   # drop whitespace exposed before the closing `#`s
+  [ "$rest" = "Validation" ]
 }
 
 # hivemind_guard_validation_section <claude_md_file> <section_body>
