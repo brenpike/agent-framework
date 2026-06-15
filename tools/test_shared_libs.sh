@@ -2440,6 +2440,24 @@ fg_vb="$(hivemind_guard_validation_section "$fg_claude_body" "$FG_VALIDATION_BOD
 assert_eq "file-guard:validation-body-documented" "already documented" "$fg_vb" "heading WITH fenced body → already documented"
 assert_eq "file-guard:validation-body-bytes" "$fg_body_before" "$(cat "$fg_claude_body")" "heading-with-body file byte-unchanged"
 
+# 14g-nested. NESTED-HEADING BOUND LOCK (PR #297 P2): a `## Validation` section whose fenced command
+# body lives under a `### Subsection` (level-3 child) is PRESENT-WITH-COMMAND → `already documented`,
+# byte-unchanged, NO duplicate block appended. The section-end scan must bound the `##` section only
+# at a LEVEL <= 2 heading — the `### CI` child is PART OF the section, so its fenced block is in range
+# and sets has_body. Non-vacuous: under the prior any-`#`-level bound, the `### CI` heading ENDED the
+# section before the fence, mis-classifying it PRESENT-NO-COMMAND → a DUPLICATE fenced block appended
+# (fence count would jump to 2) and the verdict would be `added`, failing every assertion below.
+fg_claude_nested="$WORKDIR/fg-claude-nested.md"
+printf '# Project\n\n## Validation\n\n### CI\n\n```bash\nnpm test\n```\n' > "$fg_claude_nested"
+fg_nested_before="$(cat "$fg_claude_nested")"
+fg_vnest="$(hivemind_guard_validation_section "$fg_claude_nested" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-nested-documented" "already documented" "$fg_vnest" "fenced body under ### child → already documented"
+assert_eq "file-guard:validation-nested-bytes" "$fg_nested_before" "$(cat "$fg_claude_nested")" "nested-command file byte-unchanged (no duplicate)"
+assert_eq "file-guard:validation-nested-one-fence" "1" \
+  "$(grep -c "$(printf '^\140\140\140bash$')" "$fg_claude_nested")" "exactly ONE fenced bash block (no duplicate appended)"
+assert_eq "file-guard:validation-nested-subheading" "1" \
+  "$(grep -c '^### CI$' "$fg_claude_nested")" "nested ### CI subsection preserved as part of the section"
+
 # 14h. INERT: a hostile entry value crafted as a command-substitution payload is written as plain
 # text, never executed (proves the text guards never eval/source the entry).
 rm -f "$PWN_MARKER"

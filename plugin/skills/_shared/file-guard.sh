@@ -265,15 +265,36 @@ hivemind_scaffold_hook_file() {
   printf '%s\n' "created"
 }
 
-# _hivemind_is_section_heading <trimmed_line>
-# Return 0 when <trimmed_line> is an ATX `#`-prefixed markdown heading (one or more `#` then a
-# space then text). Used to bound the `## Validation` section: the section runs from its heading
-# to the NEXT such heading (any `#` level — a sibling `## X` or a parent `# X`) or EOF.
-_hivemind_is_section_heading() {
+# _hivemind_heading_level <trimmed_line>
+# Print the ATX heading level (count of leading `#` up to the first non-`#`/space char) when
+# <trimmed_line> is a `#`-prefixed markdown heading (one or more `#` then a space then text); print
+# 0 otherwise. Pure text, no eval. Used to bound the `## Validation` section by heading LEVEL so a
+# deeper child (`###`+) does NOT close the section.
+_hivemind_heading_level() {
   case "$1" in
-    '#'*' '*) return 0 ;;
-    *) return 1 ;;
+    '#'*' '*) ;;
+    *) printf '0'; return 0 ;;
   esac
+  local rest="$1" level=0
+  while [ "${rest#\#}" != "$rest" ]; do
+    level=$(( level + 1 ))
+    rest="${rest#\#}"
+  done
+  printf '%s' "$level"
+}
+
+# _hivemind_is_section_heading <trimmed_line>
+# Return 0 when <trimmed_line> is a SIBLING-OR-PARENT heading that bounds the `## Validation`
+# section — an ATX heading of LEVEL <= 2 (`#` or `##`). A deeper child heading (`###`+, level >= 3)
+# returns 1: it is PART OF the section, so a nested `### Subsection` does NOT close the `##`
+# section. The section runs from its `## Validation` heading to the next level-<=2 heading or EOF.
+_hivemind_is_section_heading() {
+  local level
+  level="$(_hivemind_heading_level "$1")"
+  if [ "$level" -ge 1 ] && [ "$level" -le 2 ]; then
+    return 0
+  fi
+  return 1
 }
 
 # _hivemind_is_validation_heading <trimmed_line>
@@ -345,8 +366,9 @@ hivemind_guard_validation_section() {
   done < "$file"
 
   # Locate the `## Validation` heading and its section range [heading_idx, end_idx). end_idx is
-  # the index of the next sibling/parent `#`-heading after the heading, or the array length (EOF).
-  # Within that range, detect a command body: a fenced ``` block line.
+  # the index of the next SIBLING-OR-PARENT heading (LEVEL <= 2) after the heading, or the array
+  # length (EOF). A nested `### Subsection` (level >= 3) does NOT bound the section — it is part of
+  # it. Within that full range, detect a command body: a fenced ``` block line.
   local n="${#lines[@]}"
   local heading_idx=-1 end_idx="$n" has_body="no"
   local i trimmed
@@ -359,7 +381,8 @@ hivemind_guard_validation_section() {
   done
 
   if [ "$heading_idx" -ge 0 ]; then
-    # Scan from the line after the heading to the next sibling/parent heading or EOF.
+    # Scan from the line after the heading to the next level-<=2 heading or EOF. A nested `### `
+    # child does not end the scan, so a fenced block under it still sets has_body.
     for (( i = heading_idx + 1; i < n; i++ )); do
       trimmed="$(_hivemind_trim "${lines[$i]}")"
       if _hivemind_is_section_heading "$trimmed"; then
