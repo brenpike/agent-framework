@@ -2725,6 +2725,80 @@ assert_eq "file-guard:validation-nospace-real-heading" "1" \
 assert_eq "file-guard:validation-nospace-preserved" "1" \
   "$(grep -c '^##Validation$' "$fg_claude_nospace")" "##Validation non-heading line preserved"
 
+# 14g-indent. COMMONMARK LEADING-INDENT LOCK (PR #297 ATX-completion): the consolidated
+# `_hivemind_atx_heading` parser now applies the CommonMark leading-indent rule to BOTH the
+# exact-name match and the level-based section bound. 0-3 leading spaces still make a heading; 4+
+# leading spaces are an indented code block, NOT a heading. Each case is NON-VACUOUS against the
+# prior column-0-anchored parse, which treated `  ## Validation` as NOT-a-heading (would have
+# duplicated) and treated `    ## Validation` as a heading (would have mis-recognized the indented
+# code-block line).
+#
+# (a) `  ## Validation` (2 leading spaces) WITH a fenced command → recognized as the heading →
+# already documented, byte-unchanged, NO duplicate `## Validation` appended. Under the prior
+# column-0 parse the indented heading was missed → a duplicate canonical block would be appended.
+fg_claude_indent2="$WORKDIR/fg-claude-indent2.md"
+printf '# Project\n\n  ## Validation\n\n```bash\nnpm test\n```\n' > "$fg_claude_indent2"
+fg_indent2_before="$(cat "$fg_claude_indent2")"
+fg_indent2_res="$(hivemind_guard_validation_section "$fg_claude_indent2" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-indent2-documented" "already documented" "$fg_indent2_res" "  ## Validation (2-space indent) with command → already documented"
+assert_eq "file-guard:validation-indent2-bytes" "$fg_indent2_before" "$(cat "$fg_claude_indent2")" "2-space-indent heading file byte-unchanged"
+assert_eq "file-guard:validation-indent2-no-dup" "0" \
+  "$(grep -c '^## Validation$' "$fg_claude_indent2")" "no column-0 '## Validation' duplicate appended beside the 2-space-indent heading"
+
+# (b) `    ## Validation` (4 leading spaces) is an indented CODE BLOCK, NOT a heading → ABSENT → the
+# real (column-0) `## Validation` section is CREATED and the 4-space-indented line is preserved
+# verbatim. Non-vacuous: under the prior column-0-only parse (no indent rule), or a parse that
+# allowed 4+ indent, the indented line would be mis-recognized as the heading → no real `## Validation`
+# ever created and the assertions below would fail.
+fg_claude_indent4="$WORKDIR/fg-claude-indent4.md"
+printf '# Project\n\n    ## Validation\n\nnot a heading (indented code block).\n' > "$fg_claude_indent4"
+fg_indent4_res="$(hivemind_guard_validation_section "$fg_claude_indent4" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-indent4-added" "added" "$fg_indent4_res" "    ## Validation (4-space indent, code block) → not a heading → ABSENT → added"
+assert_eq "file-guard:validation-indent4-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_indent4")" "real column-0 ## Validation heading created"
+assert_eq "file-guard:validation-indent4-preserved" "1" \
+  "$(grep -c '^    ## Validation$' "$fg_claude_indent4")" "4-space-indented non-heading line preserved verbatim"
+assert_eq "file-guard:validation-indent4-fence" "1" \
+  "$(grep -c "$(printf '^\140\140\140bash$')" "$fg_claude_indent4")" "created section carries the fenced command body"
+
+# 14g-tabsibling. TAB-MARKED SIBLING BOUND LOCK (PR #297 ATX-completion): a `## Validation` section
+# (with a fenced command body) is followed by a SIBLING heading whose `##` marker is followed by a
+# TAB (`##\tOther`). The section bound (`_hivemind_is_section_heading` → consolidated parser) is now
+# tab-aware, so `##\tOther` is correctly LEVEL 2 → it ENDS the `## Validation` section AFTER the
+# fenced block, leaving the command in range → already documented, byte-unchanged, no duplicate.
+# Non-vacuous: under the SPACE-ONLY `_hivemind_heading_level`, `##\tOther` parsed as level 0 (not a
+# heading) → it did NOT bound the section, so the section ran past it; the fence is still in range in
+# THIS layout so the verdict would still be `already documented`, but the tab sibling was being
+# SWALLOWED into the Validation section's range. To make the swallow OBSERVABLE, place the fenced
+# command AFTER the tab sibling: under the space-only parse `##\tOther` does not bound the section,
+# the post-sibling fence is (wrongly) counted in-range → already documented; under the tab-aware
+# parse `##\tOther` ENDS the section BEFORE that fence → PRESENT-NO-COMMAND → `added`. The verdicts
+# DIVERGE, so this case fails on any revert to the space-only level parse.
+fg_claude_tabsib="$WORKDIR/fg-claude-tabsibling.md"
+printf '# Project\n\n## Validation\n\n##\tOther\n\n```bash\nnpm test\n```\n' > "$fg_claude_tabsib"
+fg_tabsib_res="$(hivemind_guard_validation_section "$fg_claude_tabsib" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-tabsibling-added" "added" "$fg_tabsib_res" "##<tab>Other sibling bounds the section (tab-aware level) → Validation has no in-range command → added"
+assert_eq "file-guard:validation-tabsibling-one-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_tabsib")" "exactly ONE ## Validation heading (sibling not swallowed; body inserted under Validation)"
+# The tab sibling is preserved verbatim and was NOT absorbed into / rewritten by the Validation range.
+assert_eq "file-guard:validation-tabsibling-preserved" "1" \
+  "$(grep -cP '^##\tOther$' "$fg_claude_tabsib")" "##<tab>Other sibling heading preserved verbatim"
+
+# 14g-crlf. CRLF RECOGNITION LOCK (PR #297 ATX-completion): a CLAUDE.md with CRLF line endings whose
+# `## Validation\r\n` heading carries a fenced command body must be RECOGNIZED (the parser strips the
+# trailing `\r` before comparing) → already documented, byte-unchanged, NO duplicate appended. Non-
+# vacuous: without the `\r` strip the heading text would be `Validation\r` ≠ `Validation` → the
+# section is missed → a duplicate canonical `## Validation` block appended and verdict `added`.
+fg_claude_crlf="$WORKDIR/fg-claude-crlf.md"
+printf '# Project\r\n\r\n## Validation\r\n\r\n```bash\r\nnpm test\r\n```\r\n' > "$fg_claude_crlf"
+fg_crlf_before="$(cat "$fg_claude_crlf")"
+fg_crlf_res="$(hivemind_guard_validation_section "$fg_claude_crlf" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-crlf-documented" "already documented" "$fg_crlf_res" "CRLF ## Validation\\r with command → recognized → already documented"
+assert_eq "file-guard:validation-crlf-bytes" "$fg_crlf_before" "$(cat "$fg_claude_crlf")" "CRLF file byte-unchanged (no duplicate)"
+# Exactly one Validation heading — the CRLF heading carries a trailing \r, so match it tolerantly.
+assert_eq "file-guard:validation-crlf-one-heading" "1" \
+  "$(grep -cE '^## Validation'$'\r''?$' "$fg_claude_crlf")" "exactly ONE ## Validation heading (CRLF, no duplicate appended)"
+
 # 14h. INERT: a hostile entry value crafted as a command-substitution payload is written as plain
 # text, never executed (proves the text guards never eval/source the entry).
 rm -f "$PWN_MARKER"

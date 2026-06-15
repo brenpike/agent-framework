@@ -265,29 +265,107 @@ hivemind_scaffold_hook_file() {
   printf '%s\n' "created"
 }
 
-# _hivemind_heading_level <trimmed_line>
-# Print the ATX heading level (count of leading `#` up to the first non-`#`/space char) when
-# <trimmed_line> is a `#`-prefixed markdown heading (one or more `#` then a space then text); print
-# 0 otherwise. Pure text, no eval. Used to bound the `## Validation` section by heading LEVEL so a
-# deeper child (`###`+) does NOT close the section.
-_hivemind_heading_level() {
-  case "$1" in
-    '#'*' '*) ;;
-    *) printf '0'; return 0 ;;
+# _hivemind_atx_heading <raw_line>
+# THE ONE consolidated CommonMark-ATX heading parser (P22 — one home for heading parsing). Decide
+# whether <raw_line> is an ATX heading and, when it is, emit its LEVEL and normalized TEXT so BOTH
+# the section-bound matcher (`_hivemind_is_section_heading`) and the exact-name matcher
+# (`_hivemind_is_validation_heading`) route through a SINGLE parse — no per-matcher heading rule can
+# drift apart, and no further marker/whitespace/indent/CRLF edge can be missed by one but not the
+# other.
+#
+# CONTRACT
+#   stdout (heading): two lines — line 1 = the numeric LEVEL (1-6); line 2 = the normalized TEXT.
+#   return: 0 when <raw_line> IS an ATX heading; 1 otherwise (stdout is then empty).
+#   The caller captures stdout and splits on the first newline (level = first line, text = the rest).
+#   TEXT is always a single line (an ATX heading is one source line), so a single split is exact.
+#
+# IMPORTANT: this parser takes the RAW line, NOT a trimmed line. CommonMark distinguishes 0-3 leading
+# spaces (still a heading) from 4+ leading spaces (an indented code block, NOT a heading); trimming
+# first would erase that distinction. Every caller therefore passes the original line.
+#
+# COMMONMARK ATX RULES IMPLEMENTED (no Setext, no other markdown — heading parsing only):
+#   - CRLF: a trailing `\r` is stripped first, so a `## Validation\r` CRLF line is parsed identically
+#     to its LF form.
+#   - Leading indent: 0-3 leading SPACES are allowed (still a heading); 4-or-more leading spaces — or
+#     ANY leading TAB (a tab advances to the 4-col tab stop) — mean an indented code block, NOT a
+#     heading → return 1.
+#   - Marker: after the 0-3 spaces, 1-6 `#`s. A 7th `#` (`#######`) is not an ATX heading → return 1.
+#   - After-marker whitespace: the `#` run MUST be followed by AT LEAST ONE space or tab, OR by
+#     end-of-line (an empty heading). A `##Text` no-space marker is NOT a heading → return 1.
+#   - Normalized TEXT: leading indent + marker + after-marker whitespace removed; then trailing
+#     whitespace, an optional contiguous run of closing `#`s, and any whitespace those `#`s exposed
+#     are removed (ATX-legal trailing). So `   ##  Validation  ##  \r` → level 2, text `Validation`.
+# Pure text, no eval; set -u safe.
+_hivemind_atx_heading() {
+  local rest="$1"
+  rest="${rest%$'\r'}"                        # CRLF: drop a single trailing carriage return
+
+  # Leading indent: 0-3 spaces allowed; 4+ spaces, or any leading tab, is an indented code block.
+  local indent=0
+  while [ "${rest# }" != "$rest" ]; do        # peel one leading space at a time, counting
+    indent=$(( indent + 1 ))
+    rest="${rest# }"
+    if [ "$indent" -ge 4 ]; then              # 4+ leading spaces → not a heading
+      return 1
+    fi
+  done
+  case "$rest" in
+    '	'*) return 1 ;;                         # a leading TAB (after 0-3 spaces) → indented, not a heading
   esac
-  local rest="$1" level=0
+
+  # Marker: 1-6 `#`s, then end-of-line OR a space/tab. Count the run and reject 0 or 7+.
+  local level=0
   while [ "${rest#\#}" != "$rest" ]; do
     level=$(( level + 1 ))
     rest="${rest#\#}"
+    if [ "$level" -ge 7 ]; then               # 7+ `#`s → not an ATX heading
+      return 1
+    fi
   done
-  printf '%s' "$level"
+  if [ "$level" -eq 0 ]; then                  # no `#` marker at all
+    return 1
+  fi
+  # The `#` run must be followed by whitespace OR end-of-line (a no-space `##Text` is not a heading).
+  case "$rest" in
+    '') ;;                                      # empty heading (`##` alone) — text is empty
+    ' '*|'	'*) ;;                              # followed by a space or a tab — a real heading
+    *) return 1 ;;                              # `#` run glued to text (`##Text`) — not a heading
+  esac
+
+  rest="${rest#"${rest%%[![:space:]]*}"}"     # drop ALL after-marker leading whitespace (spaces+tabs)
+  # ATX-legal trailing (plain bash, no extglob): trailing whitespace, then a contiguous run of
+  # closing `#`s, then any whitespace those `#`s exposed. So `Validation ##  ` reduces to `Validation`.
+  rest="${rest%"${rest##*[![:space:]]}"}"     # drop trailing whitespace
+  while [ "${rest%'#'}" != "$rest" ]; do      # drop a contiguous run of trailing `#`
+    rest="${rest%'#'}"
+  done
+  rest="${rest%"${rest##*[![:space:]]}"}"     # drop whitespace exposed before the closing `#`s
+
+  printf '%s\n%s' "$level" "$rest"
+  return 0
 }
 
-# _hivemind_is_section_heading <trimmed_line>
-# Return 0 when <trimmed_line> is a SIBLING-OR-PARENT heading that bounds the `## Validation`
-# section — an ATX heading of LEVEL <= 2 (`#` or `##`). A deeper child heading (`###`+, level >= 3)
-# returns 1: it is PART OF the section, so a nested `### Subsection` does NOT close the `##`
-# section. The section runs from its `## Validation` heading to the next level-<=2 heading or EOF.
+# _hivemind_heading_level <raw_line>
+# Print the ATX heading LEVEL (1-6) when <raw_line> is a CommonMark ATX heading, or `0` otherwise.
+# Routes through the consolidated `_hivemind_atx_heading` parser, so it inherits leading-indent (0-3
+# spaces allowed, 4+ / leading-tab rejected), tab-after-marker, no-space-marker, and CRLF handling.
+# Used to bound the `## Validation` section by heading LEVEL so a deeper child (`###`+) does NOT
+# close the section. Takes the RAW line (the indent distinction is lost by trimming).
+_hivemind_heading_level() {
+  local parsed
+  if ! parsed="$(_hivemind_atx_heading "$1")"; then
+    printf '0'
+    return 0
+  fi
+  printf '%s' "${parsed%%$'\n'*}"             # the LEVEL is the first line of the parser's output
+}
+
+# _hivemind_is_section_heading <raw_line>
+# Return 0 when <raw_line> is a SIBLING-OR-PARENT heading that bounds the `## Validation` section —
+# an ATX heading of LEVEL <= 2 (`#` or `##`). A deeper child heading (`###`+, level >= 3) returns 1:
+# it is PART OF the section, so a nested `### Subsection` does NOT close the `##` section. The section
+# runs from its `## Validation` heading to the next level-<=2 heading or EOF. Inherits all ATX rules
+# (indent/tab/CRLF) via `_hivemind_heading_level` → `_hivemind_atx_heading`. Takes the RAW line.
 _hivemind_is_section_heading() {
   local level
   level="$(_hivemind_heading_level "$1")"
@@ -297,46 +375,30 @@ _hivemind_is_section_heading() {
   return 1
 }
 
-# _hivemind_is_validation_heading <trimmed_line>
-# Return 0 when <trimmed_line> is EXACTLY the level-2 `## Validation` heading. The match is on the
-# heading TEXT, not a prefix, via a COMPLETE CommonMark ATX-heading parse:
-#   1. The line MUST be a level-2 heading — exactly `##` followed by AT LEAST ONE space or tab, so a
-#      level-1 `#`, a level-3+ `###`, and a no-space `##Validation` (not an ATX heading at all) are
-#      all rejected. (`_hivemind_heading_level` is space-only and would miss a tab marker, so the
-#      level-2 gate is parsed inline to also cover `##\tValidation`.)
-#   2. The `##` marker is stripped, then ALL leading whitespace (spaces AND tabs) is removed — not
-#      just a single space — so `##   Validation` and `##\tValidation` normalize identically.
-#   3. ATX-legal trailing is removed: trailing whitespace, then an optional contiguous run of
-#      closing `#`s, then any whitespace those `#`s exposed.
-#   4. The remaining heading TEXT must equal exactly `Validation`.
-# So `## Validation`, `##   Validation` (multi-space), `##\tValidation` (tab), and
-# `##  Validation  ##` (ATX closing hashes + trailing ws) all match, while a SIBLING heading whose
-# text merely STARTS WITH `Validation` (`## Validation Details`, `## Validation Notes`,
-# `## ValidationX`) does NOT. This exactness keeps a differently-named sibling section from being
-# mistaken for the `## Validation` section, so the ABSENT path creates the real `## Validation`
-# section. Pure text, no eval.
+# _hivemind_is_validation_heading <raw_line>
+# Return 0 when <raw_line> is EXACTLY the level-2 `## Validation` heading. Routes through the
+# consolidated `_hivemind_atx_heading` parser, then requires LEVEL == 2 AND normalized TEXT ==
+# `Validation`. Because it shares the one parser with `_hivemind_is_section_heading`, the exact-name
+# match and the section-bound can never disagree on what counts as a heading, and both inherit the
+# full CommonMark ATX rule set:
+#   - leading indent 0-3 spaces allowed; 4+ spaces or a leading tab → not a heading (so an indented
+#     `    ## Validation` is correctly NOT recognized);
+#   - the `##` marker may be followed by ANY run of spaces/tabs, so `##   Validation` and
+#     `##\tValidation` normalize identically;
+#   - ATX-legal trailing (`## Validation ##  `) and a trailing `\r` (CRLF `## Validation\r`) are
+#     handled;
+#   - a no-space `##Validation` and a level-1/level-3+ marker are rejected.
+# A SIBLING whose text merely STARTS WITH `Validation` (`## Validation Details`, `## ValidationX`)
+# fails the exact-text compare, so the ABSENT path creates the real `## Validation` section. Takes
+# the RAW line. Pure text, no eval.
 _hivemind_is_validation_heading() {
-  local rest="$1"
-  # Require an EXACTLY level-2 ATX heading: the line begins with `##`, the marker is NOT a third `#`
-  # (so `###`+ is rejected), and `##` is followed by AT LEAST ONE space OR tab (CommonMark requires
-  # whitespace after the marker, so a no-space `##Validation` — not an ATX heading — is rejected). A
-  # level-1 `#` fails the `'##'*` prefix. `_hivemind_heading_level` is space-only and would miss a
-  # tab marker, so the level-2 gate is parsed directly here to cover `##\tValidation`.
-  case "$rest" in
-    '###'*) return 1 ;;                       # level-3+ heading, not the `## Validation` heading
-    '## '*|'##	'*) rest="${rest#'##'}" ;;     # `##` + space  OR  `##` + tab → strip the marker
-    *) return 1 ;;                            # no `##`, or `##` not followed by space/tab
-  esac
-  rest="${rest#"${rest%%[![:space:]]*}"}"    # drop ALL leading whitespace (spaces AND tabs)
-  # Strip ATX-legal trailing in plain bash (no extglob): trailing whitespace, then a contiguous run
-  # of closing `#`s, then any whitespace those `#`s exposed. So `Validation`, `Validation  `,
-  # `Validation ##`, and `Validation ##  ` all reduce to `Validation`.
-  rest="${rest%"${rest##*[![:space:]]}"}"   # drop trailing whitespace
-  while [ "${rest%'#'}" != "$rest" ]; do    # drop a contiguous run of trailing `#`
-    rest="${rest%'#'}"
-  done
-  rest="${rest%"${rest##*[![:space:]]}"}"   # drop whitespace exposed before the closing `#`s
-  [ "$rest" = "Validation" ]
+  local parsed level text
+  if ! parsed="$(_hivemind_atx_heading "$1")"; then
+    return 1                                   # not an ATX heading at all
+  fi
+  level="${parsed%%$'\n'*}"                    # first line = level
+  text="${parsed#*$'\n'}"                      # everything after the first newline = normalized text
+  [ "$level" = "2" ] && [ "$text" = "Validation" ]
 }
 
 # hivemind_guard_validation_section <claude_md_file> <section_body>
@@ -404,9 +466,11 @@ hivemind_guard_validation_section() {
   local n="${#lines[@]}"
   local heading_idx=-1 end_idx="$n" has_body="no"
   local i trimmed
+  # The heading matchers take the RAW line: `_hivemind_atx_heading` must see the leading indent to
+  # apply the 0-3-spaces-allowed / 4+-spaces-rejected CommonMark rule, which trimming would erase.
+  # The fenced-block detection below still uses the TRIMMED line (a fence may be indented as content).
   for (( i = 0; i < n; i++ )); do
-    trimmed="$(_hivemind_trim "${lines[$i]}")"
-    if _hivemind_is_validation_heading "$trimmed"; then
+    if _hivemind_is_validation_heading "${lines[$i]}"; then
       heading_idx="$i"
       break
     fi
@@ -416,13 +480,13 @@ hivemind_guard_validation_section() {
     # Scan from the line after the heading to the next level-<=2 heading or EOF. A nested `### `
     # child does not end the scan, so a fenced block under it still sets has_body.
     for (( i = heading_idx + 1; i < n; i++ )); do
-      trimmed="$(_hivemind_trim "${lines[$i]}")"
-      if _hivemind_is_section_heading "$trimmed"; then
+      if _hivemind_is_section_heading "${lines[$i]}"; then
         end_idx="$i"
         break
       fi
       # A fenced code block under the heading is the canonical command body. Blank lines and
       # comment lines (`#`-leading but not a heading) do NOT count.
+      trimmed="$(_hivemind_trim "${lines[$i]}")"
       case "$trimmed" in
         '```'*) has_body="yes" ;;
       esac
