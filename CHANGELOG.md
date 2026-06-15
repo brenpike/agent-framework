@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deferred from #205 (behavior-preserving): review-loop capture/live seam env-presence activation hardening (both sibling seams) — tracked in #219.
 
+## [2.34.1] - 2026-06-14
+
+### Changed
+
+- seed-hive: refactored the prose-monolith skill into focused `_shared/*.sh` libraries (settings-merge, claude-mem-path, file-guard, test-detect) behind a thin two-phase entrypoint, with contract headers and unit/integration tests; behavior-preserving — same Output schema and idempotency guarantees (#247).
+
 ## [2.34.0] - 2026-06-14
 
 ### Changed

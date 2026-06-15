@@ -37,6 +37,9 @@ for required in "$LEDGER_PRESENT" \
                 "$SHARED_DIR/brood-status-derive.sh" "$SHARED_DIR/containment.sh" \
                 "$SHARED_DIR/ledger-reconstruct-parse.sh" "$SHARED_DIR/ledger-reconstruct-fold.sh" \
                 "$SHARED_DIR/fetch-normalize-core.sh" "$SHARED_DIR/ledger-engine-io.sh" \
+                "$SHARED_DIR/json-normalize.sh" \
+                "$SHARED_DIR/settings-merge.sh" "$SHARED_DIR/claude-mem-path.sh" \
+                "$SHARED_DIR/file-guard.sh" "$SHARED_DIR/test-detect.sh" \
                 "$CLASSIFY_FILTER" \
                 "$FN_REVIEW_HANDLED" "$FN_EXPECTED_REVIEW" "$FN_CI_CHECKS" "$FN_EXPECTED_CI" \
                 "$FN_OVERFLOW_THREADS" "$FN_MALFORMED"; do
@@ -67,6 +70,23 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this suite"
 # this source line.
 # shellcheck source=/dev/null
 . "$SHARED_DIR/ledger-engine-io.sh"
+# json-normalize.sh supplies the canon_obj/canon_arr container-shape def text that settings-merge.sh
+# splices into its jq program; settings-merge.sh SOURCE-OR-DIE-sources it transitively, but the
+# harness lists every lib under test explicitly (presence checked in the required-libs preamble), so
+# this explicit source line keeps the listing complete and re-sourcing is idempotent (pure echo fn).
+# shellcheck source=/dev/null
+. "$SHARED_DIR/json-normalize.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/settings-merge.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/claude-mem-path.sh"
+# shellcheck source=/dev/null
+. "$SHARED_DIR/file-guard.sh"
+# test-detect.sh DELEGATES the `## Validation` append to file-guard.sh's
+# hivemind_guard_validation_section; file-guard.sh is sourced above (L77), satisfying that
+# dependency before this source line.
+# shellcheck source=/dev/null
+. "$SHARED_DIR/test-detect.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -1714,6 +1734,1643 @@ if [ "$ol4_rc" -ne 0 ]; then
   pass "engineio:ol-symlinked-leaf-reject" "symlinked state.json leaf → containment reject (non-zero)"
 else
   failed "engineio:ol-symlinked-leaf-reject" "symlinked state.json leaf must be rejected; got 0"
+fi
+
+# ── Section 12: settings-merge.sh ───────────────────────────────────────────────
+echo ''
+echo '=== settings-merge.sh: frozen template + required-key merge core ==='
+#
+# AUTHORITATIVE regression tests for the seed-hive `.claude/settings.json` merge core. The
+# merge function takes the settings JSON as a STRING and emits the OUTPUT CONTRACT JSON object;
+# it performs NO file I/O. Each case feeds an inline settings string and asserts the emitted
+# classification, the merged settings, and the conflict/idempotency/union invariants from
+# seed-hive/SKILL.md step 6 + Merge Rules.
+
+# 12a. Frozen template is the SINGLE DATA source (P1): `hivemind_settings_permissions_template`
+# is the sole place the 20 rules live, so this case locks its literal content/order self-contained
+# — no SKILL.md mirror. The lib emits LF; trailing whitespace is stripped for a clean compare.
+SM_LIB_TEMPLATE="$WORKDIR/lib-template.txt"
+hivemind_settings_permissions_template | sed 's/[[:space:]]*$//' > "$SM_LIB_TEMPLATE"
+assert_eq "settings:template-rule-count" "20" \
+  "$(wc -l < "$SM_LIB_TEMPLATE" | tr -d ' ')" "frozen template has 20 rules"
+read -r -d '' SM_EXPECTED_TEMPLATE <<'TEMPLATE'
+Bash(echo *)
+Bash(printf *)
+Bash(cat *)
+Bash(grep *)
+Bash(jq *)
+Bash(head *)
+Bash(tail *)
+Bash(ls *)
+Bash(wc *)
+Bash(sort *)
+Bash(uniq *)
+Bash(git ls-files *)
+Bash(git ls-tree *)
+Bash(git grep *)
+Bash(git tag)
+Bash(git tag -l*)
+Bash(git tag --list*)
+Bash(git stash list)
+Bash(git stash show *)
+Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
+TEMPLATE
+assert_eq "settings:template-content-order" "$SM_EXPECTED_TEMPLATE" \
+  "$(cat "$SM_LIB_TEMPLATE")" "frozen template emits the expected 20 rules in order"
+
+# Merge helper: run the merge and capture the JSON result for jq assertions.
+# Usage: sm_result="$(hivemind_settings_merge "$settings" "$agent" caveman mem codex allow)"
+# then: assert_eq <case> <expected> "$(printf '%s' "$sm_result" | jq -r '<filter>')" <msg>
+
+# 12b. Merge from {} (absent-file case): every required key `added`, agent set, full template.
+sm_from_empty="$(hivemind_settings_merge '' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:empty-status" "ok" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.status')" "empty input → ok"
+assert_eq "settings:empty-agent-class" "added" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.keys.agent')" "agent added from {}"
+assert_eq "settings:empty-agent-value" "hivemind:overlord" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.agent')" "agent value written"
+assert_eq "settings:empty-hive-class" "added" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.keys["enabledPlugins.hivemind@brenpike"]')" "hivemind enabledPlugin added"
+assert_eq "settings:empty-hive-value" "true" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')" "hivemind enabledPlugin = true"
+# 12b: absent permissions.allow → created in template ORDER (first rule = Bash(echo *)).
+assert_eq "settings:empty-allow-count" "20" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow | length')" "absent allow → 20 template rules created"
+assert_eq "settings:empty-allow-first" "Bash(echo *)" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow[0]')" "created allow is in template order (first rule)"
+assert_eq "settings:empty-allow-last" "Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow[-1]')" "created allow is in template order (last rule)"
+assert_eq "settings:empty-allow-report-count" "20" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.permissions_allow | length')" "permissions_allow reports one entry per template rule"
+assert_eq "settings:empty-allow-all-added" "added" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '[.permissions_allow[].result] | unique | .[0]')" "every template rule reported added from {}"
+
+# 12c. companion toggles: yes writes the keys; no classifies `resolved no` and writes nothing.
+sm_companions="$(hivemind_settings_merge '' 'hivemind:overlord' 'yes' 'yes' 'yes' 'no')"
+assert_eq "settings:cave-on-class" "added" \
+  "$(printf '%s' "$sm_companions" | jq -r '.keys["enabledPlugins.caveman@caveman"]')" "caveman=yes → added"
+assert_eq "settings:cave-on-value" "true" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.enabledPlugins["caveman@caveman"]')" "caveman enabledPlugin = true"
+assert_eq "settings:cave-pcfg-level" "ultra" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "caveman pluginConfig defaultLevel = ultra"
+assert_eq "settings:cave-hook-cmd" ".claude/hooks/caveman-ultra-subagent.sh" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "SubagentStart hook command wired"
+assert_eq "settings:cave-hook-type" "command" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].type')" "SubagentStart hook type = command"
+assert_eq "settings:mem-on-value" "true" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.enabledPlugins["claude-mem@thedotmack"]')" "claude_mem=yes → enabledPlugin true"
+assert_eq "settings:codex-on-value" "true" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.enabledPlugins["codex@openai-codex"]')" "codex=yes → enabledPlugin true"
+# All companions off → classified `resolved no`, NONE written.
+sm_no_companions="$(hivemind_settings_merge '' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:cave-off-class" "resolved no" \
+  "$(printf '%s' "$sm_no_companions" | jq -r '.keys["enabledPlugins.caveman@caveman"]')" "caveman=no → resolved no"
+assert_eq "settings:cave-off-absent" "null" \
+  "$(printf '%s' "$sm_no_companions" | jq -r '.settings.enabledPlugins["caveman@caveman"] // "null"')" "caveman=no → key not written"
+assert_eq "settings:cave-pcfg-off-absent" "null" \
+  "$(printf '%s' "$sm_no_companions" | jq -r '.settings.pluginConfigs // "null"')" "caveman=no → no pluginConfigs"
+assert_eq "settings:cave-hook-off-absent" "null" \
+  "$(printf '%s' "$sm_no_companions" | jq -r '.settings.hooks // "null"')" "caveman=no → no hooks"
+
+# 12c-bis. caveman hook APPENDS to an existing UNRELATED SubagentStart array (add-if-absent on the
+# SPECIFIC command, not on the presence of the SubagentStart key). The existing entry is preserved,
+# the caveman entry appended, classified `added`; and a re-merge is idempotent (no duplicate).
+sm_pre_hook='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":".claude/hooks/other.sh"}]}]}}'
+sm_existing_hook="$(hivemind_settings_merge "$sm_pre_hook" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-existing-class" "added" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.keys["hooks.SubagentStart"]')" "caveman hook absent from existing SubagentStart → added"
+assert_eq "settings:cave-hook-existing-count" "2" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart | length')" "existing SubagentStart entry preserved + caveman appended"
+assert_eq "settings:cave-hook-existing-preserved" ".claude/hooks/other.sh" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "existing unrelated hook command preserved at index 0"
+assert_eq "settings:cave-hook-existing-appended" ".claude/hooks/caveman-ultra-subagent.sh" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "caveman hook appended at index 1"
+sm_existing_hook_settings="$(printf '%s' "$sm_existing_hook" | jq -c '.settings')"
+sm_existing_hook_twice="$(hivemind_settings_merge "$sm_existing_hook_settings" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-existing-idem-class" "already present" \
+  "$(printf '%s' "$sm_existing_hook_twice" | jq -r '.keys["hooks.SubagentStart"]')" "re-merge with caveman hook wired → already present"
+assert_eq "settings:cave-hook-existing-idem-count" "2" \
+  "$(printf '%s' "$sm_existing_hook_twice" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge does not duplicate the caveman hook"
+
+# 12c-bis2. caveman hook PRESENT-PREDICATE TYPE-CHECK (Codex P1 @ settings-merge.sh:411): an existing
+# SubagentStart entry whose `.command` MATCHES the caveman hook but whose `.type` is missing/wrong is an
+# INVALID hook. The present-predicate is now conjunctive (.type == "command" AND .command == "..."), so a
+# command-matching-but-wrong-typed entry classifies `added` and the canonical {type:"command", command}
+# entry is APPENDED beside it (the wrong-typed entry is LEFT in place). Non-vacuous: the prior command-only
+# predicate matched the wrong-typed entry → `already present`, appended nothing (length stays 1, no
+# canonical-typed entry), so both the class and the count/typed-entry assertions below would fail.
+sm_pre_wrongtype='{"hooks":{"SubagentStart":[{"hooks":[{"type":"foo","command":".claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
+sm_wrongtype="$(hivemind_settings_merge "$sm_pre_wrongtype" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-wrongtype-class" "added" \
+  "$(printf '%s' "$sm_wrongtype" | jq -r '.keys["hooks.SubagentStart"]')" "command matches but .type wrong → invalid hook → added"
+assert_eq "settings:cave-hook-wrongtype-count" "2" \
+  "$(printf '%s' "$sm_wrongtype" | jq -r '.settings.hooks.SubagentStart | length')" "wrong-typed entry left in place + canonical entry appended"
+assert_eq "settings:cave-hook-wrongtype-canonical-present" "true" \
+  "$(printf '%s' "$sm_wrongtype" | jq -r '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and .command == ".claude/hooks/caveman-ultra-subagent.sh")] | length > 0')" "a {type:\"command\", caveman command} entry now exists"
+# Idempotency regression guard: a correctly-typed canonical entry re-merged stays `already present`, no duplicate.
+sm_pre_canon='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":".claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
+sm_canon_idem="$(hivemind_settings_merge "$sm_pre_canon" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-canon-idem-class" "already present" \
+  "$(printf '%s' "$sm_canon_idem" | jq -r '.keys["hooks.SubagentStart"]')" "correctly-typed canonical entry re-merged → already present"
+assert_eq "settings:cave-hook-canon-idem-count" "1" \
+  "$(printf '%s' "$sm_canon_idem" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge of canonical entry does not duplicate"
+
+# 12c-ter. caveman pluginConfigs NESTED-LEAF merge: the contract value is
+# pluginConfigs["caveman@caveman"].options.defaultLevel == "ultra", NOT the mere presence of the
+# parent "caveman@caveman" key. A parent config object present WITHOUT (or with a non-"ultra")
+# defaultLevel is NOT configured for ultra mode — the leaf must be set/corrected while preserving
+# every sibling key in the config object and in .options.
+# (a) parent present, options present, defaultLevel MISSING → set "ultra", preserve sibling option.
+sm_pcfg_no_level='{"pluginConfigs":{"caveman@caveman":{"options":{"someOther":1}}}}'
+sm_pcfg_set="$(hivemind_settings_merge "$sm_pcfg_no_level" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-missing-class" "added" \
+  "$(printf '%s' "$sm_pcfg_set" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "parent present, defaultLevel missing → corrected (added)"
+assert_eq "settings:cave-pcfg-leaf-missing-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_set" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "missing defaultLevel set to ultra"
+assert_eq "settings:cave-pcfg-leaf-missing-sibling" "1" \
+  "$(printf '%s' "$sm_pcfg_set" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.someOther')" "sibling option key preserved when leaf set"
+# (b) parent present, defaultLevel = "lite" (WRONG value) → corrected to "ultra", sibling preserved.
+sm_pcfg_lite='{"pluginConfigs":{"caveman@caveman":{"options":{"defaultLevel":"lite","keepMe":true}}}}'
+sm_pcfg_corrected="$(hivemind_settings_merge "$sm_pcfg_lite" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-wrong-class" "added" \
+  "$(printf '%s' "$sm_pcfg_corrected" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "defaultLevel != ultra → corrected (added)"
+assert_eq "settings:cave-pcfg-leaf-wrong-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_corrected" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "wrong defaultLevel corrected to ultra"
+assert_eq "settings:cave-pcfg-leaf-wrong-sibling" "true" \
+  "$(printf '%s' "$sm_pcfg_corrected" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.keepMe')" "sibling option key preserved when leaf corrected"
+# (c) parent present, defaultLevel ALREADY "ultra" + sibling config key → no-op, already present,
+# BYTE-STABLE, sibling config key (outside .options) preserved.
+sm_pcfg_ultra='{"pluginConfigs":{"caveman@caveman":{"options":{"defaultLevel":"ultra"},"extra":true}}}'
+sm_pcfg_noop="$(hivemind_settings_merge "$sm_pcfg_ultra" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-ultra-class" "already present" \
+  "$(printf '%s' "$sm_pcfg_noop" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "defaultLevel already ultra → already present"
+assert_eq "settings:cave-pcfg-leaf-ultra-extra" "true" \
+  "$(printf '%s' "$sm_pcfg_noop" | jq -r '.settings.pluginConfigs["caveman@caveman"].extra')" "sibling config key (outside .options) preserved"
+assert_eq "settings:cave-pcfg-leaf-ultra-bytestable" \
+  "$(printf '%s' '{"caveman@caveman":{"options":{"defaultLevel":"ultra"},"extra":true}}' | jq -cS .)" \
+  "$(printf '%s' "$sm_pcfg_noop" | jq -cS '.settings.pluginConfigs')" "already-ultra pluginConfigs is byte-stable (no-op)"
+# (d) parent key ABSENT → full add of {options:{defaultLevel:"ultra"}} (regression of original behavior).
+sm_pcfg_absent="$(hivemind_settings_merge '{"pluginConfigs":{"other@plugin":{}}}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-absent-class" "added" \
+  "$(printf '%s' "$sm_pcfg_absent" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "parent absent → added"
+assert_eq "settings:cave-pcfg-leaf-absent-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_absent" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "parent absent → full add with ultra"
+assert_eq "settings:cave-pcfg-leaf-absent-sibling" "0" \
+  "$(printf '%s' "$sm_pcfg_absent" | jq -r '.settings.pluginConfigs["other@plugin"] | length')" "unrelated sibling pluginConfig preserved"
+# (e) parent config WRONG-TYPED (a string) → canon_obj → {} → ultra set, no crash (RR4 shape-norm).
+sm_pcfg_wrongcfg="$(hivemind_settings_merge '{"pluginConfigs":{"caveman@caveman":"oops"}}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-wrongcfg-status" "ok" \
+  "$(printf '%s' "$sm_pcfg_wrongcfg" | jq -r '.status')" "wrong-typed caveman config (string) → canonical {} → status ok (no jq abort)"
+assert_eq "settings:cave-pcfg-leaf-wrongcfg-class" "added" \
+  "$(printf '%s' "$sm_pcfg_wrongcfg" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "wrong-typed caveman config → added"
+assert_eq "settings:cave-pcfg-leaf-wrongcfg-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_wrongcfg" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "wrong-typed config → canonical {} then ultra set"
+# (f) parent present, .options WRONG-TYPED (an array) → canon_obj → {} → ultra set, no crash.
+sm_pcfg_wrongopt="$(hivemind_settings_merge '{"pluginConfigs":{"caveman@caveman":{"options":["x"]}}}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-pcfg-leaf-wrongopt-status" "ok" \
+  "$(printf '%s' "$sm_pcfg_wrongopt" | jq -r '.status')" "wrong-typed .options (array) → canonical {} → status ok (no jq abort)"
+assert_eq "settings:cave-pcfg-leaf-wrongopt-set" "ultra" \
+  "$(printf '%s' "$sm_pcfg_wrongopt" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "wrong-typed .options → canonical {} then ultra set"
+
+# 12d. IDEMPOTENT re-merge of an already-seeded object = no-op, BYTE-STABLE settings.
+sm_once="$(hivemind_settings_merge '' 'hivemind:overlord' 'yes' 'yes' 'yes' 'yes')"
+sm_once_settings="$(printf '%s' "$sm_once" | jq -cS '.settings')"
+sm_twice="$(hivemind_settings_merge "$(printf '%s' "$sm_once" | jq -c '.settings')" 'hivemind:overlord' 'yes' 'yes' 'yes' 'yes')"
+sm_twice_settings="$(printf '%s' "$sm_twice" | jq -cS '.settings')"
+assert_eq "settings:idempotent-byte-stable" "$sm_once_settings" "$sm_twice_settings" \
+  "re-merge of seeded object is byte-stable (no-op)"
+assert_eq "settings:idempotent-all-present" "already present" \
+  "$(printf '%s' "$sm_twice" | jq -r '[.keys | to_entries[] | .value] | unique | .[0]')" "re-merge → every key already present"
+assert_eq "settings:idempotent-allow-present" "already present" \
+  "$(printf '%s' "$sm_twice" | jq -r '[.permissions_allow[].result] | unique | .[0]')" "re-merge → every template rule already present"
+assert_eq "settings:idempotent-status" "ok" \
+  "$(printf '%s' "$sm_twice" | jq -r '.status')" "re-merge status ok"
+
+# 12e. agent CONFLICT detection: a DIFFERENT existing agent → status conflict, value preserved.
+sm_conflict="$(hivemind_settings_merge '{"agent":"other:agent"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:conflict-status" "conflict" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.status')" "different existing agent → status conflict"
+assert_eq "settings:conflict-agent-class" "conflict" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.keys.agent')" "agent classified conflict"
+assert_eq "settings:conflict-existing" "other:agent" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.agent_conflict.existing')" "conflict reports existing value"
+assert_eq "settings:conflict-required" "hivemind:overlord" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.agent_conflict.required')" "conflict reports required value"
+# CRITICAL: the existing agent is NOT overwritten on conflict (byte-preserved for user approval).
+assert_eq "settings:conflict-not-overwritten" "other:agent" \
+  "$(printf '%s' "$sm_conflict" | jq -r '.settings.agent')" "conflicting agent left unchanged (never silently overwritten)"
+# An agent already EQUAL to the target is NOT a conflict (already present, no conflict block).
+sm_same_agent="$(hivemind_settings_merge '{"agent":"hivemind:overlord"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:same-agent-status" "ok" \
+  "$(printf '%s' "$sm_same_agent" | jq -r '.status')" "agent already equal → ok, not conflict"
+assert_eq "settings:same-agent-class" "already present" \
+  "$(printf '%s' "$sm_same_agent" | jq -r '.keys.agent')" "agent already equal → already present"
+assert_eq "settings:same-agent-no-conflict" "null" \
+  "$(printf '%s' "$sm_same_agent" | jq -r '.agent_conflict // "null"')" "agent already equal → no conflict block"
+
+# 12e-empty. ROOT-CLUSTER EDGE (RR3-STEP-005): an existing `agent` that is an EMPTY string ("") or
+# WHITESPACE-ONLY ("  ") normalizes to ABSENT — it is NOT a real conflicting value. Classified
+# `added` (NOT conflict), `.settings.agent` written to the target, status `ok`, NO conflict block.
+# Non-vacuous: if the value-state normalization reverted (any present string treated as a real
+# value), "" / "  " would land in the conflict branch → status conflict + class conflict, and every
+# assertion below would flip.
+sm_empty_agent="$(hivemind_settings_merge '{"agent":""}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:empty-agent-status" "ok" \
+  "$(printf '%s' "$sm_empty_agent" | jq -r '.status')" "empty-string agent → status ok (not conflict)"
+assert_eq "settings:empty-agent-class-added" "added" \
+  "$(printf '%s' "$sm_empty_agent" | jq -r '.keys.agent')" "empty-string agent normalizes to ABSENT → added"
+assert_eq "settings:empty-agent-value-written" "hivemind:overlord" \
+  "$(printf '%s' "$sm_empty_agent" | jq -r '.settings.agent')" "empty-string agent → target written"
+assert_eq "settings:empty-agent-no-conflict" "null" \
+  "$(printf '%s' "$sm_empty_agent" | jq -r '.agent_conflict // "null"')" "empty-string agent → no conflict block"
+sm_ws_agent="$(hivemind_settings_merge '{"agent":"  "}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:ws-agent-class-added" "added" \
+  "$(printf '%s' "$sm_ws_agent" | jq -r '.keys.agent')" "whitespace-only agent normalizes to ABSENT → added"
+assert_eq "settings:ws-agent-value-written" "hivemind:overlord" \
+  "$(printf '%s' "$sm_ws_agent" | jq -r '.settings.agent')" "whitespace-only agent → target written"
+assert_eq "settings:ws-agent-status" "ok" \
+  "$(printf '%s' "$sm_ws_agent" | jq -r '.status')" "whitespace-only agent → status ok (not conflict)"
+
+# 12e-approve. APPROVAL OVERWRITE (7th arg "yes"): a DIFFERENT existing agent WITH explicit
+# approval → status ok, agent OVERWRITTEN to the target, classified `overwritten`, NO conflict
+# block. This locks the restored base-prose contract: overwrite is permitted ONLY WITH approval.
+# Non-vacuous: if RR-001 dropped the approval gate, the merge would still return conflict (no
+# overwrite) and these four assertions would all fail.
+sm_approved="$(hivemind_settings_merge '{"agent":"other:agent"}' 'hivemind:overlord' 'no' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:approve-status" "ok" \
+  "$(printf '%s' "$sm_approved" | jq -r '.status')" "different existing agent + approval → status ok"
+assert_eq "settings:approve-agent-class" "overwritten" \
+  "$(printf '%s' "$sm_approved" | jq -r '.keys.agent')" "approved conflict → agent classified overwritten"
+assert_eq "settings:approve-agent-value" "hivemind:overlord" \
+  "$(printf '%s' "$sm_approved" | jq -r '.settings.agent')" "approved conflict → agent overwritten to target"
+assert_eq "settings:approve-no-conflict" "null" \
+  "$(printf '%s' "$sm_approved" | jq -r '.agent_conflict // "null"')" "approved conflict → no conflict block"
+
+# 12e-noapprove. NO-APPROVAL BYTE-PRESERVE GUARD (never-silently-overwrite): the SAME conflict
+# with approval "no" → status conflict, existing agent byte-unchanged, conflict block populated.
+# This is the regression guard that an absent/explicit-"no" approval NEVER overwrites. Non-vacuous:
+# if the never-overwrite invariant were inverted, .settings.agent would become the target here.
+sm_noapprove="$(hivemind_settings_merge '{"agent":"other:agent"}' 'hivemind:overlord' 'no' 'no' 'no' 'no' 'no')"
+assert_eq "settings:noapprove-status" "conflict" \
+  "$(printf '%s' "$sm_noapprove" | jq -r '.status')" "different existing agent + approval no → status conflict"
+assert_eq "settings:noapprove-agent-preserved" "other:agent" \
+  "$(printf '%s' "$sm_noapprove" | jq -r '.settings.agent')" "approval no → existing agent byte-unchanged"
+assert_eq "settings:noapprove-conflict-existing" "other:agent" \
+  "$(printf '%s' "$sm_noapprove" | jq -r '.agent_conflict.existing')" "approval no → conflict block populated"
+
+# 12e-malformed-approve. MALFORMED-BEFORE-APPROVAL (fail closed): a NON-EMPTY unparseable settings
+# blob WITH approval "yes" still returns status malformed — approval authorizes an agent overwrite,
+# it NEVER clobbers a torn file. Non-vacuous: if the malformed check were evaluated after (or
+# skipped under) the approval gate, this would not report malformed.
+sm_malformed_approve="$(hivemind_settings_merge 'torn { not json' 'hivemind:overlord' 'no' 'no' 'no' 'yes' 'yes')"
+assert_eq "settings:malformed-approve-status" "malformed" \
+  "$(printf '%s' "$sm_malformed_approve" | jq -r '.status')" "malformed input + approval → still malformed (fail closed)"
+assert_eq "settings:malformed-approve-settings-null" "null" \
+  "$(printf '%s' "$sm_malformed_approve" | jq -r '.settings // "null"')" "malformed + approval → settings not echoed (torn file not clobbered)"
+
+# 12f. permissions.allow UNION preserves existing ORDER, appends only ABSENT rules.
+# Existing: a custom rule + one template rule (Bash(jq *)). Union must keep both in place, then
+# append the 19 absent template rules; Bash(jq *) reported already present, Bash(echo *) added.
+sm_union="$(hivemind_settings_merge '{"permissions":{"allow":["Bash(custom *)","Bash(jq *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:union-first" "Bash(custom *)" \
+  "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow[0]')" "union preserves existing first entry order"
+assert_eq "settings:union-second" "Bash(jq *)" \
+  "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow[1]')" "union preserves existing second entry order"
+assert_eq "settings:union-total" "21" \
+  "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow | length')" "union = 2 existing + 19 absent template rules"
+assert_eq "settings:union-existing-present" "already present" \
+  "$(printf '%s' "$sm_union" | jq -r '.permissions_allow[] | select(.rule=="Bash(jq *)") | .result')" "template rule already in array → already present"
+assert_eq "settings:union-absent-added" "added" \
+  "$(printf '%s' "$sm_union" | jq -r '.permissions_allow[] | select(.rule=="Bash(echo *)") | .result')" "absent template rule → added"
+# A user's custom (non-template) rule is NEVER removed or duplicated by the union.
+assert_eq "settings:union-custom-kept" "1" \
+  "$(printf '%s' "$sm_union" | jq -r '[.settings.permissions.allow[] | select(. == "Bash(custom *)")] | length')" "user custom rule kept exactly once"
+
+# 12g. permissions present WITHOUT allow → allow added, sibling permissions keys preserved.
+sm_sibling="$(hivemind_settings_merge '{"permissions":{"deny":["Bash(rm *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:sibling-deny-kept" "Bash(rm *)" \
+  "$(printf '%s' "$sm_sibling" | jq -r '.settings.permissions.deny[0]')" "sibling permissions.deny preserved"
+assert_eq "settings:sibling-allow-created" "20" \
+  "$(printf '%s' "$sm_sibling" | jq -r '.settings.permissions.allow | length')" "permissions without allow → allow created with 20 rules"
+
+# 12h. seed_allowlist=no → permissions.allow left UNTOUCHED, permissions_allow report empty.
+sm_no_allow="$(hivemind_settings_merge '{"permissions":{"allow":["Bash(x *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:noallow-untouched-len" "1" \
+  "$(printf '%s' "$sm_no_allow" | jq -r '.settings.permissions.allow | length')" "seed_allowlist=no → existing allow untouched"
+assert_eq "settings:noallow-untouched-val" "Bash(x *)" \
+  "$(printf '%s' "$sm_no_allow" | jq -r '.settings.permissions.allow[0]')" "seed_allowlist=no → existing allow value unchanged"
+assert_eq "settings:noallow-report-empty" "0" \
+  "$(printf '%s' "$sm_no_allow" | jq -r '.permissions_allow | length')" "seed_allowlist=no → empty permissions_allow report"
+
+# 12i. PRESERVE-EXISTING: an unrelated pre-existing key the user had is kept untouched.
+sm_preserve="$(hivemind_settings_merge '{"theme":"dark","model":"opus"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:preserve-theme" "dark" \
+  "$(printf '%s' "$sm_preserve" | jq -r '.settings.theme')" "unrelated existing key (theme) preserved"
+assert_eq "settings:preserve-model" "opus" \
+  "$(printf '%s' "$sm_preserve" | jq -r '.settings.model')" "unrelated existing key (model) preserved"
+# A pre-existing companion entry is preserved + reported already present even when its toggle is no
+# (SKILL.md: detection only ever adds; an entry already present is preserved and `already present`).
+sm_pre_companion="$(hivemind_settings_merge '{"enabledPlugins":{"caveman@caveman":true}}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:preserve-companion-kept" "true" \
+  "$(printf '%s' "$sm_pre_companion" | jq -r '.settings.enabledPlugins["caveman@caveman"]')" "pre-existing companion entry preserved even when toggle is no"
+
+# 12i-bis. VALUE-EQUALITY classification matrix (SWEEP-STEP-004, Pattern-2). The enabledPlugins
+# classification is VALUE-NOT-PRESENCE: a key reports `already present` IFF its existing value
+# already EQUALS the canonical target (== true). A key present-but-false / null / wrong-typed is
+# NOT already present — it must be classified `added` AND the build must CORRECT it to true. This
+# parametrized matrix locks one case PER enabledPlugins key so a revert of `enabled_true` back to
+# a presence-only `has()` predicate (which would report `already present` for a present-but-false
+# key, leaving the wrong value in place) trips a per-key assertion.
+#
+# Driver: $1 case-slug, $2 settings-json, $3 caveman, $4 claude_mem, $5 codex, $6 plugin-key,
+#         $7 expected-class, $8 expected-built-value ("true" | "null" | "skip"). Runs the merge
+#         and asserts BOTH the classification token AND the built .enabledPlugins[key] value, so
+#         every case is NON-VACUOUS on the value-equality fix (presence-only revert flips class
+#         from `added`→`already present` AND, for false/null inputs, the build still corrects the
+#         value to true — the class assertion is what fails on revert).
+sm_value_case() {
+  local slug="$1" json="$2" cav="$3" mem="$4" cdx="$5" key="$6" want_class="$7" want_val="$8"
+  local res
+  res="$(hivemind_settings_merge "$json" 'hivemind:overlord' "$cav" "$mem" "$cdx" 'no')"
+  assert_eq "settings:value-$slug-class" "$want_class" \
+    "$(printf '%s' "$res" | jq -r --arg k "$key" '.keys["enabledPlugins." + $k]')" \
+    "$slug: enabledPlugins.$key classified $want_class"
+  if [ "$want_val" != "skip" ]; then
+    # NOTE: jq `//` treats `false` as empty, so a literal `// "null"` fallback would mis-render a
+    # preserved `false` as "null". Branch on has() to render absent vs. the exact stored value.
+    assert_eq "settings:value-$slug-built" "$want_val" \
+      "$(printf '%s' "$res" | jq -r --arg k "$key" '.settings.enabledPlugins | if has($k) then .[$k] else "null" end')" \
+      "$slug: built enabledPlugins.$key == $want_val"
+  fi
+}
+
+# (i) hivemind key present == false → added (NOT already present), corrected to true.
+sm_value_case "hive-false" '{"enabledPlugins":{"hivemind@brenpike":false}}' \
+  'no' 'no' 'no' 'hivemind@brenpike' 'added' 'true'
+# (ii) hivemind key present == null → added, corrected to true.
+sm_value_case "hive-null" '{"enabledPlugins":{"hivemind@brenpike":null}}' \
+  'no' 'no' 'no' 'hivemind@brenpike' 'added' 'true'
+# (iii) resolved-yes caveman present == false → added, corrected to true.
+sm_value_case "cave-false" '{"enabledPlugins":{"caveman@caveman":false}}' \
+  'yes' 'no' 'no' 'caveman@caveman' 'added' 'true'
+# (iv) resolved-yes claude-mem present == false → added, corrected to true.
+sm_value_case "mem-false" '{"enabledPlugins":{"claude-mem@thedotmack":false}}' \
+  'no' 'yes' 'no' 'claude-mem@thedotmack' 'added' 'true'
+# (v) resolved-yes codex present == false → added, corrected to true.
+sm_value_case "codex-false" '{"enabledPlugins":{"codex@openai-codex":false}}' \
+  'no' 'no' 'yes' 'codex@openai-codex' 'added' 'true'
+# REGRESSION GUARD (a): each key present == true → already present (behavior preserved).
+sm_value_case "hive-true" '{"enabledPlugins":{"hivemind@brenpike":true}}' \
+  'no' 'no' 'no' 'hivemind@brenpike' 'already present' 'true'
+sm_value_case "cave-true" '{"enabledPlugins":{"caveman@caveman":true}}' \
+  'yes' 'no' 'no' 'caveman@caveman' 'already present' 'true'
+sm_value_case "mem-true" '{"enabledPlugins":{"claude-mem@thedotmack":true}}' \
+  'no' 'yes' 'no' 'claude-mem@thedotmack' 'already present' 'true'
+sm_value_case "codex-true" '{"enabledPlugins":{"codex@openai-codex":true}}' \
+  'no' 'no' 'yes' 'codex@openai-codex' 'already present' 'true'
+# REGRESSION GUARD (b): absent key → added (presence-absent still classifies added).
+sm_value_case "hive-absent" '{"enabledPlugins":{}}' \
+  'no' 'no' 'no' 'hivemind@brenpike' 'added' 'true'
+# REGRESSION GUARD (c): companion key present == false but toggle NOT resolved-yes → `resolved no`
+# (the `resolved no` short-circuit runs BEFORE the value test, so no spurious `added`, and the
+# key is left untouched — the build never writes a companion whose toggle is no).
+sm_value_case "cave-false-noresolve" '{"enabledPlugins":{"caveman@caveman":false}}' \
+  'no' 'no' 'no' 'caveman@caveman' 'resolved no' 'false'
+
+# 12j. MALFORMED non-empty input → status malformed, settings null, NO merge (fail-closed).
+# An EMPTY string is the absent-file case (treated as {}), NOT malformed.
+sm_malformed="$(hivemind_settings_merge 'not json{' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:malformed-status" "malformed" \
+  "$(printf '%s' "$sm_malformed" | jq -r '.status')" "unparseable non-empty input → status malformed"
+assert_eq "settings:malformed-settings-null" "null" \
+  "$(printf '%s' "$sm_malformed" | jq -r '.settings // "null"')" "malformed input → settings not echoed (null)"
+# Valid JSON that is NOT an object (a bare array) is likewise malformed (a settings file is an object).
+sm_array="$(hivemind_settings_merge '[1,2,3]' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:nonobject-malformed" "malformed" \
+  "$(printf '%s' "$sm_array" | jq -r '.status')" "non-object JSON (array) → status malformed"
+# Empty string is NOT malformed — it is the absent-file {} case.
+sm_empty_ok="$(hivemind_settings_merge '' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:empty-not-malformed" "ok" \
+  "$(printf '%s' "$sm_empty_ok" | jq -r '.status')" "empty input is absent-file case, not malformed"
+
+# 12k. INERT BINDING: a settings value crafted to look like a jq-program fragment or a
+# command-substitution payload is treated as plain data (passed via --argjson), never executed.
+rm -f "$PWN_MARKER"
+sm_inert="$(hivemind_settings_merge "{\"agent\":\"\$(touch $PWN_MARKER)\"}" 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+# The crafted agent string is a DIFFERENT value than the target → conflict, value preserved verbatim.
+assert_eq "settings:inert-status" "conflict" \
+  "$(printf '%s' "$sm_inert" | jq -r '.status')" "crafted agent value is inert data → conflict, not executed"
+if [ -e "$PWN_MARKER" ]; then
+  failed "settings:inert-no-side-effect" "a settings value triggered command substitution: $PWN_MARKER created"
+else
+  pass "settings:inert-no-side-effect" "no settings value triggered command substitution"
+fi
+
+# 12l. WRONG-TYPED CONTAINER NORMALIZATION (RR4-STEP-005): every container-typed key whose existing
+# value is the WRONG SHAPE (a non-object at an object-typed key, a non-array at permissions.allow) is
+# the canonical absent/needs-seed state — it collapses to {} / [] via canon_obj/canon_arr (from
+# json-normalize.sh) BEFORE any predicate runs, so the required seed is add-if-absent over the empty
+# and the merge returns status `ok` with the required keys seeded. NON-VACUOUS for EVERY case: pre-RR4
+# the wrong-typed container made jq's has()/index()/iteration abort (jq rc=5 → empty merge output →
+# empty `.status`), so each `status == ok` + seeded-key assertion fails on a revert of the
+# normalization. No REAL value is clobbered: a wrong-typed container holds no contract-type entries to
+# preserve.
+
+# enabledPlugins as a STRING → canon_obj → {} → hivemind required entry seeded; status ok.
+sm_ep_string="$(hivemind_settings_merge '{"enabledPlugins":"oops"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:wrongtype-ep-string-status" "ok" \
+  "$(printf '%s' "$sm_ep_string" | jq -r '.status')" "enabledPlugins as string → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-ep-string-class" "added" \
+  "$(printf '%s' "$sm_ep_string" | jq -r '.keys["enabledPlugins.hivemind@brenpike"]')" "wrong-typed enabledPlugins → hivemind seeded as added"
+assert_eq "settings:wrongtype-ep-string-value" "true" \
+  "$(printf '%s' "$sm_ep_string" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')" "required hivemind enabledPlugin written over canonical empty"
+
+# enabledPlugins as an ARRAY → canon_obj → {} → required entry seeded; status ok.
+sm_ep_array="$(hivemind_settings_merge '{"enabledPlugins":["x"]}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:wrongtype-ep-array-status" "ok" \
+  "$(printf '%s' "$sm_ep_array" | jq -r '.status')" "enabledPlugins as array → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-ep-array-value" "true" \
+  "$(printf '%s' "$sm_ep_array" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')" "wrong-typed (array) enabledPlugins → hivemind seeded true"
+
+# pluginConfigs WRONG-TYPED (array) with caveman=yes → canon_obj → {} → caveman pluginConfig seeded.
+sm_pcfg_array="$(hivemind_settings_merge '{"pluginConfigs":["x"]}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:wrongtype-pcfg-status" "ok" \
+  "$(printf '%s' "$sm_pcfg_array" | jq -r '.status')" "pluginConfigs as array → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-pcfg-class" "added" \
+  "$(printf '%s' "$sm_pcfg_array" | jq -r '.keys["pluginConfigs.caveman@caveman"]')" "wrong-typed pluginConfigs → caveman pluginConfig added"
+assert_eq "settings:wrongtype-pcfg-value" "ultra" \
+  "$(printf '%s' "$sm_pcfg_array" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "caveman defaultLevel seeded over canonical empty"
+
+# hooks WRONG-TYPED (string) with caveman=yes → canon_obj → {} → SubagentStart hook seeded.
+sm_hooks_string="$(hivemind_settings_merge '{"hooks":"oops"}' 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:wrongtype-hooks-status" "ok" \
+  "$(printf '%s' "$sm_hooks_string" | jq -r '.status')" "hooks as string → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-hooks-class" "added" \
+  "$(printf '%s' "$sm_hooks_string" | jq -r '.keys["hooks.SubagentStart"]')" "wrong-typed hooks → SubagentStart hook added"
+assert_eq "settings:wrongtype-hooks-cmd" ".claude/hooks/caveman-ultra-subagent.sh" \
+  "$(printf '%s' "$sm_hooks_string" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "caveman hook command seeded over canonical empty"
+
+# permissions WRONG-TYPED (array) with seed_allowlist=yes → canon_obj → {} → permissions.allow seeded.
+sm_perm_array="$(hivemind_settings_merge '{"permissions":["x"]}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:wrongtype-perm-status" "ok" \
+  "$(printf '%s' "$sm_perm_array" | jq -r '.status')" "permissions as array → canonical {} → status ok (no jq abort)"
+assert_eq "settings:wrongtype-perm-allow-count" "20" \
+  "$(printf '%s' "$sm_perm_array" | jq -r '.settings.permissions.allow | length')" "wrong-typed permissions → allow seeded with 20 template rules"
+
+# permissions.allow WRONG-TYPED (string) with seed_allowlist=yes → canon_arr → [] → template appended.
+sm_allow_string="$(hivemind_settings_merge '{"permissions":{"allow":"oops"}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:wrongtype-allow-status" "ok" \
+  "$(printf '%s' "$sm_allow_string" | jq -r '.status')" "permissions.allow as string → canonical [] → status ok (no jq abort)"
+assert_eq "settings:wrongtype-allow-count" "20" \
+  "$(printf '%s' "$sm_allow_string" | jq -r '.settings.permissions.allow | length')" "wrong-typed permissions.allow → [] then 20 template rules appended"
+assert_eq "settings:wrongtype-allow-report-count" "20" \
+  "$(printf '%s' "$sm_allow_string" | jq -r '.permissions_allow | length')" "every template rule reported over the canonical empty allow"
+
+# 12m. MULTI-DOCUMENT STREAM (JSON-stream sweep, STEP-005): a settings input that is a STREAM of TWO
+# concatenated top-level objects (`{"a":1}{"b":2}`) is NOT a single settings object — it takes the
+# fail-closed malformed path via hivemind_jq_is_single_object_stdin (json-normalize.sh), exactly like
+# the unparseable-blob and non-object cases (12j). NON-VACUOUS: the OLD bare `jq -e 'type=="object"'`
+# precheck STREAMED both documents and exited 0 on the LAST one, so the merge fell through to the
+# `--argjson settings` build which then CRASHED on the two-document operand. If the single-doc gate
+# reverts to `type=="object"` (which accepts streams), this case loses status `malformed`, `.settings`
+# is no longer null, and the function's stdout is no longer a clean single parseable JSON object.
+sm_stream="$(hivemind_settings_merge '{"a":1}{"b":2}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+assert_eq "settings:stream-status" "malformed" \
+  "$(printf '%s' "$sm_stream" | jq -r '.status')" "two-object stream → status malformed (single-document gate)"
+assert_eq "settings:stream-settings-null" "null" \
+  "$(printf '%s' "$sm_stream" | jq -r '.settings // "null"')" "stream input → settings not echoed (torn-stream not merged)"
+# The crash is GONE: the function's stdout is the malformed-REPORT object — EXACTLY ONE parseable JSON
+# object (no jq usage text / no multi-document crash output). `jq -s 'length'` over the stdout proves
+# it is a single document; a pre-gate crash would leave non-JSON error bytes here and fail the slurp.
+assert_eq "settings:stream-stdout-single-object" "1" \
+  "$(printf '%s' "$sm_stream" | jq -s 'length' 2>/dev/null)" "stream input → stdout is exactly one parseable JSON object (crash gone)"
+# A genuine SINGLE object on the SAME merge still merges normally (regression: gate does not over-reject).
+sm_single_obj="$(hivemind_settings_merge '{"theme":"dark"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:stream-single-regression-status" "ok" \
+  "$(printf '%s' "$sm_single_obj" | jq -r '.status')" "single object still merges → ok (gate does not over-reject)"
+assert_eq "settings:stream-single-regression-theme" "dark" \
+  "$(printf '%s' "$sm_single_obj" | jq -r '.settings.theme')" "single object preserved key (normal merge)"
+# A single ARRAY `[1]` is subsumed by the SAME gate (length==1 but NOT type==object) → malformed.
+sm_single_array="$(hivemind_settings_merge '[1]' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+assert_eq "settings:stream-single-array-malformed" "malformed" \
+  "$(printf '%s' "$sm_single_array" | jq -r '.status')" "single array [1] → malformed (single-document gate subsumes non-object)"
+
+# ── Section 13: claude-mem-path.sh — dynamic binary resolution + never-clobber single-key write ─
+echo ''
+echo '=== claude-mem-path.sh: CLAUDE_CODE_PATH dynamic resolution + conditional single-key write ==='
+#
+# AUTHORITATIVE regression tests for the seed-hive claude-mem `CLAUDE_CODE_PATH` provisioning core
+# (SKILL.md step 11). The provision function reads claude-mem's OWN config, decides under
+# never-clobber + malformed-safe semantics, and writes ONLY that one key. Every case is HERMETIC:
+# it runs against a tmp HOME + tmp candidate bin dirs inside $WORKDIR and NEVER reads or writes the
+# developer's real `~/.claude-mem` or `~/.local/bin`. Each case builds its own fixture HOME so the
+# resolution + write are isolated.
+
+# HERMETIC PATH: step 11e candidate (1) is `command -v claude`, which honors the ambient PATH —
+# a developer with a real `claude` on PATH would otherwise shadow every fixture's home-dir
+# fallback and make resolution non-hermetic. Build a CLEAN PATH that keeps the system bins
+# (so `mktemp`/`mv`/`jq` still work) but DROPS any directory that actually contains an executable
+# `claude`, so `command -v claude` resolves to nothing and the per-fixture `home_dir` fallbacks
+# (candidates 2/3) govern. Every Section 13 case runs under this CLEAN PATH.
+CM_CLEAN_PATH=""
+IFS=':' read -r -a cm_path_dirs <<< "$PATH"
+for cm_dir in "${cm_path_dirs[@]}"; do
+  [ -n "$cm_dir" ] || continue
+  [ -x "$cm_dir/claude" ] && continue   # drop any dir holding a real claude binary
+  CM_CLEAN_PATH="${CM_CLEAN_PATH:+$CM_CLEAN_PATH:}$cm_dir"
+done
+
+# cm_setup_home <subdir> — create a hermetic tmp HOME under $WORKDIR and a fake executable
+# `claude` at ~/.local/bin/claude inside it (so binary resolution succeeds without touching the
+# real filesystem). Echoes the HOME path; the claude-mem settings file is NOT created here (each
+# case stages its own target so it can exercise the missing/malformed/present permutations).
+cm_setup_home() {
+  local home_dir="$WORKDIR/$1"
+  mkdir -p "$home_dir/.local/bin" "$home_dir/.claude-mem"
+  printf '#!/usr/bin/env bash\necho claude-stub\n' > "$home_dir/.local/bin/claude"
+  chmod +x "$home_dir/.local/bin/claude"
+  printf '%s\n' "$home_dir"
+}
+
+# 13a. Missing target file → skipped (claude-mem not installed); nothing created.
+cm_home_missing="$(cm_setup_home cm-missing)"
+rm -f "$cm_home_missing/.claude-mem/settings.json"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_home_missing/.claude-mem/settings.json" "$cm_home_missing")"
+assert_eq "claude-mem:missing-status" "skipped (claude-mem not installed)" "$cm_status" \
+  "absent settings file → not installed"
+if [ -e "$cm_home_missing/.claude-mem/settings.json" ]; then
+  failed "claude-mem:missing-no-create" "provision created the settings file when it should not have"
+else
+  pass "claude-mem:missing-no-create" "missing settings file is NOT created"
+fi
+
+# 13b. Empty/missing CLAUDE_CODE_PATH (key absent) → set, value = resolved binary path.
+cm_home_set="$(cm_setup_home cm-set)"
+cm_file_set="$cm_home_set/.claude-mem/settings.json"
+printf '{\n  "logLevel": "info",\n  "CLAUDE_CODE_PATH": ""\n}\n' > "$cm_file_set"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_set" "$cm_home_set")"
+assert_eq "claude-mem:empty-status" "set" "$cm_status" "empty CLAUDE_CODE_PATH → set"
+assert_eq "claude-mem:empty-value" "$cm_home_set/.local/bin/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_set")" "CLAUDE_CODE_PATH set to resolved binary path"
+# Every OTHER key is byte-preserved after the write.
+assert_eq "claude-mem:empty-other-key" "info" \
+  "$(jq -r '.logLevel' "$cm_file_set")" "sibling key (logLevel) preserved after a write"
+
+# Key entirely ABSENT (not just empty) → also set.
+cm_home_absent="$(cm_setup_home cm-absent)"
+cm_file_absent="$cm_home_absent/.claude-mem/settings.json"
+printf '{\n  "logLevel": "debug"\n}\n' > "$cm_file_absent"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_absent" "$cm_home_absent")"
+assert_eq "claude-mem:absent-key-status" "set" "$cm_status" "absent CLAUDE_CODE_PATH key → set"
+assert_eq "claude-mem:absent-key-value" "$cm_home_absent/.local/bin/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_absent")" "absent key gets the resolved binary path"
+assert_eq "claude-mem:absent-key-other" "debug" \
+  "$(jq -r '.logLevel' "$cm_file_absent")" "sibling key preserved when key was absent"
+
+# 13c. Non-empty CLAUDE_CODE_PATH → already set; NOTHING written, value preserved.
+cm_home_present="$(cm_setup_home cm-present)"
+cm_file_present="$cm_home_present/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": "/user/provided/claude",\n  "logLevel": "warn"\n}\n' > "$cm_file_present"
+cm_before="$(cat "$cm_file_present")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_present" "$cm_home_present")"
+assert_eq "claude-mem:present-status" "already set" "$cm_status" "non-empty CLAUDE_CODE_PATH → already set"
+assert_eq "claude-mem:present-value" "/user/provided/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_present")" "user-provided value never overwritten"
+cm_after="$(cat "$cm_file_present")"
+assert_eq "claude-mem:present-bytes" "$cm_before" "$cm_after" "already-set file is byte-unchanged (no write)"
+
+# 13c-nonstring. ROOT-CLUSTER EDGE (RR3-STEP-005): a PRESENT NON-STRING `CLAUDE_CODE_PATH`
+# (boolean/number/object/array) is PRESENT-MALFORMED — a user-provided value that must NEVER be
+# clobbered → `already set`, file BYTE-UNCHANGED. Asserted for each non-string JSON shape.
+# Non-vacuous: if the predicate normalized non-strings to ABSENT (e.g. an `== ""`-only test that
+# mis-handled type), each of these would resolve+write → status `set` and the file bytes would
+# change, flipping both assertions per shape.
+# Each shape carries an explicit slug (the `{}`/`[]` JSON literals strip to nothing under a
+# charset filter, so name them rather than risk duplicate/empty case ids).
+for cm_ns_pair in 'false:bool' '42:number' '{}:object' '[]:array'; do
+  cm_ns="${cm_ns_pair%%:*}"
+  cm_ns_slug="${cm_ns_pair##*:}"
+  cm_home_ns="$(cm_setup_home "cm-nonstring-$cm_ns_slug")"
+  cm_file_ns="$cm_home_ns/.claude-mem/settings.json"
+  printf '{\n  "CLAUDE_CODE_PATH": %s,\n  "logLevel": "info"\n}\n' "$cm_ns" > "$cm_file_ns"
+  cm_before="$(cat "$cm_file_ns")"
+  cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_ns" "$cm_home_ns")"
+  assert_eq "claude-mem:nonstring-$cm_ns_slug-status" "already set" "$cm_status" \
+    "present non-string CLAUDE_CODE_PATH ($cm_ns) → already set (never clobbered)"
+  assert_eq "claude-mem:nonstring-$cm_ns_slug-bytes" "$cm_before" "$(cat "$cm_file_ns")" \
+    "present non-string ($cm_ns) → file byte-unchanged"
+done
+
+# 13c-null. PRESENT-NULL EDGE (RR3-STEP-005): an explicitly-present JSON `null` is a user-provided
+# value → PRESENT-MALFORMED → `already set`, file byte-unchanged (NOT treated as ABSENT). Non-vacuous:
+# if present-null were normalized to ABSENT, the binary would resolve and the key be overwritten →
+# status `set`, bytes changed.
+cm_home_null="$(cm_setup_home cm-null)"
+cm_file_null="$cm_home_null/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": null,\n  "logLevel": "info"\n}\n' > "$cm_file_null"
+cm_before="$(cat "$cm_file_null")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_null" "$cm_home_null")"
+assert_eq "claude-mem:present-null-status" "already set" "$cm_status" "present null CLAUDE_CODE_PATH → already set (skip, not absent)"
+assert_eq "claude-mem:present-null-bytes" "$cm_before" "$(cat "$cm_file_null")" "present null → file byte-unchanged"
+
+# 13d. Malformed JSON target → skipped (malformed json); no write, file byte-unchanged.
+cm_home_bad="$(cm_setup_home cm-bad)"
+cm_file_bad="$cm_home_bad/.claude-mem/settings.json"
+printf 'not json{ CLAUDE_CODE_PATH' > "$cm_file_bad"
+cm_before="$(cat "$cm_file_bad")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_bad" "$cm_home_bad")"
+assert_eq "claude-mem:malformed-status" "skipped (malformed json)" "$cm_status" "unparseable target → malformed skip"
+cm_after="$(cat "$cm_file_bad")"
+assert_eq "claude-mem:malformed-bytes" "$cm_before" "$cm_after" "malformed file is byte-unchanged (never clobbered)"
+
+# 13e. No claude binary resolvable → skipped (claude binary not found); empty key untouched.
+# Hermetic: a tmp HOME with NO ~/.local/bin/claude and NO ~/.claude/local/claude, run under the
+# CLEAN PATH (no real `claude`), so all three resolution candidates fail without reading the
+# developer's filesystem.
+cm_home_nobin="$WORKDIR/cm-nobin"
+mkdir -p "$cm_home_nobin/.claude-mem"
+cm_file_nobin="$cm_home_nobin/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": "",\n  "logLevel": "info"\n}\n' > "$cm_file_nobin"
+cm_before="$(cat "$cm_file_nobin")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_nobin" "$cm_home_nobin")"
+assert_eq "claude-mem:nobin-status" "skipped (claude binary not found)" "$cm_status" \
+  "no resolvable binary → not found skip"
+cm_after="$(cat "$cm_file_nobin")"
+assert_eq "claude-mem:nobin-bytes" "$cm_before" "$cm_after" "no-binary case writes NOTHING (file unchanged)"
+
+# 13f. Resolution order: when ~/.local/bin/claude is absent, the ~/.claude/local/claude fallback
+# is used (proves the EXACT fallback list + order from SKILL.md step 11e).
+cm_home_fallback="$WORKDIR/cm-fallback"
+mkdir -p "$cm_home_fallback/.claude/local" "$cm_home_fallback/.claude-mem"
+printf '#!/usr/bin/env bash\necho stub\n' > "$cm_home_fallback/.claude/local/claude"
+chmod +x "$cm_home_fallback/.claude/local/claude"
+cm_file_fallback="$cm_home_fallback/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": ""\n}\n' > "$cm_file_fallback"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_fallback" "$cm_home_fallback")"
+assert_eq "claude-mem:fallback-status" "set" "$cm_status" "second fallback resolves → set"
+assert_eq "claude-mem:fallback-value" "$cm_home_fallback/.claude/local/claude" \
+  "$(jq -r '.CLAUDE_CODE_PATH' "$cm_file_fallback")" "~/.claude/local/claude fallback used when ~/.local/bin absent"
+
+# 13g. MULTI-DOCUMENT STREAM (JSON-stream sweep, STEP-005): a `~/.claude-mem/settings.json` that is a
+# STREAM of TWO concatenated top-level objects (`{"a":1}{"b":2}`) is NOT a single settings object. The
+# provision function gates on hivemind_jq_is_single_object_file (json-normalize.sh, file form) BEFORE
+# any resolve/write, so a stream → `skipped (malformed json)` with the file BYTE-UNCHANGED — the same
+# never-clobber contract as the unparseable-blob case (13d). A resolvable claude binary IS present
+# (cm_setup_home stages ~/.local/bin/claude), so the skip is attributable SOLELY to the stream gate,
+# not to a missing binary. NON-VACUOUS: the OLD bare `jq -e type=="object"` precheck STREAMED both
+# documents and exited 0 on the LAST one → resolve+single-key-write would run and the per-object write
+# would clobber/duplicate the file. If the single-doc gate reverts to `type=="object"` (accepts
+# streams), status flips to `set` and the byte-compare below fails (the file is rewritten).
+cm_home_stream="$(cm_setup_home cm-stream)"
+cm_file_stream="$cm_home_stream/.claude-mem/settings.json"
+printf '{"a":1}{"b":2}' > "$cm_file_stream"
+cm_before="$(cat "$cm_file_stream")"
+cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$cm_file_stream" "$cm_home_stream")"
+assert_eq "claude-mem:stream-status" "skipped (malformed json)" "$cm_status" \
+  "two-object stream target → malformed skip (single-document gate, binary present)"
+assert_eq "claude-mem:stream-bytes" "$cm_before" "$(cat "$cm_file_stream")" \
+  "stream target is byte-unchanged (never clobbered by a per-object write)"
+
+# 13h. RELATIVE-PATH-COMPONENT REJECT (Class B): with a relative PATH component (`PATH=bin:$PATH`),
+# `command -v claude` returns a CWD-relative path (`bin/claude`) that passes -x/-f. Persisted as
+# CLAUDE_CODE_PATH it would break worker resolution from another CWD. The candidate-(1) guard now
+# ADDITIONALLY requires an ABSOLUTE leading `/`, so the relative hit is REJECTED and resolution
+# falls through to the absolute `$home_dir/.local/bin/claude` fallback. The RETURNED path MUST be
+# absolute. NON-VACUOUS: pre-fix `command -v claude` returned the relative `bin/claude` verbatim →
+# the leading-`/` assertion FAILS pre-fix and PASSES post-fix.
+# CWD is restored so the per-case `cd` does not leak into later cases.
+cm_home_relpath="$(cm_setup_home cm-relpath)"   # stages an absolute $home/.local/bin/claude fallback
+cm_relpath_cwd="$WORKDIR/cm-relpath-cwd"
+mkdir -p "$cm_relpath_cwd/bin"
+printf '#!/usr/bin/env bash\necho rel-stub\n' > "$cm_relpath_cwd/bin/claude"
+chmod +x "$cm_relpath_cwd/bin/claude"
+cm_relpath_oldpwd="$PWD"
+cd "$cm_relpath_cwd"
+cm_relpath_result="$(PATH="bin:$CM_CLEAN_PATH" hivemind_claude_mem_resolve_binary "$cm_home_relpath")"
+cd "$cm_relpath_oldpwd"
+case "$cm_relpath_result" in
+  /*) pass "claude-mem:relpath-absolute" "relative PATH hit rejected; absolute fallback returned ($cm_relpath_result)" ;;
+  *)  failed "claude-mem:relpath-absolute" "expected an absolute path; got relative '$cm_relpath_result'" ;;
+esac
+assert_eq "claude-mem:relpath-value" "$cm_home_relpath/.local/bin/claude" "$cm_relpath_result" \
+  "resolution falls through to the absolute home-dir fallback"
+
+# 13h-neg. Negative control: a relative-only `bin/claude` on PATH with NO absolute fallback (a tmp
+# HOME containing neither ~/.local/bin/claude nor ~/.claude/local/claude) → resolution returns 1.
+cm_home_relonly="$WORKDIR/cm-relonly"
+mkdir -p "$cm_home_relonly"   # no .local/bin/claude, no .claude/local/claude
+cm_relonly_cwd="$WORKDIR/cm-relonly-cwd"
+mkdir -p "$cm_relonly_cwd/bin"
+printf '#!/usr/bin/env bash\necho rel-stub\n' > "$cm_relonly_cwd/bin/claude"
+chmod +x "$cm_relonly_cwd/bin/claude"
+cm_relonly_oldpwd="$PWD"
+cd "$cm_relonly_cwd"
+if PATH="bin:$CM_CLEAN_PATH" hivemind_claude_mem_resolve_binary "$cm_home_relonly" >/dev/null 2>&1; then
+  cd "$cm_relonly_oldpwd"
+  failed "claude-mem:relonly-rc" "relative-only PATH with no absolute fallback should return 1"
+else
+  cd "$cm_relonly_oldpwd"
+  pass "claude-mem:relonly-rc" "relative-only PATH + no absolute fallback → return 1 (relative rejected)"
+fi
+
+# ── Section 14: file-guard.sh — append-if-absent kernel + comment-aware/section/hook variants ──
+echo ''
+echo '=== file-guard.sh: append-if-absent kernel + .envrc / ## Validation / hook-scaffold variants ==='
+#
+# AUTHORITATIVE regression tests for the seed-hive plain-text file-guard family (SKILL.md steps
+# 8, 9, 10, and the step-14 `## Validation` guard). Every case is HERMETIC: it builds its own
+# fixture file under $WORKDIR and asserts the in-band status word, the idempotency/byte-stability
+# invariants, and the EXACT entries/semantics/wording from seed-hive/SKILL.md.
+
+# 14a. .gitignore two-entry kernel idempotency (SKILL.md step 8): each entry independent; re-run
+# is a no-op `already present`; the entry is never duplicated.
+fg_gitignore="$WORKDIR/fg-gitignore"
+rm -f "$fg_gitignore"
+fg_s1="$(hivemind_append_if_absent "$fg_gitignore" ".hivemind/")"
+fg_s2="$(hivemind_append_if_absent "$fg_gitignore" ".claude/worktrees/")"
+assert_eq "file-guard:gitignore-first-added" "added" "$fg_s1" ".hivemind/ appended to fresh file → added"
+assert_eq "file-guard:gitignore-second-added" "added" "$fg_s2" ".claude/worktrees/ appended → added"
+assert_eq "file-guard:gitignore-both-lines" ".hivemind/
+.claude/worktrees/" "$(cat "$fg_gitignore")" "both entries present, each on its own line"
+# Re-run both entries → already present, no-op, byte-stable.
+fg_before="$(cat "$fg_gitignore")"
+fg_r1="$(hivemind_append_if_absent "$fg_gitignore" ".hivemind/")"
+fg_r2="$(hivemind_append_if_absent "$fg_gitignore" ".claude/worktrees/")"
+assert_eq "file-guard:gitignore-rerun-first" "already present" "$fg_r1" ".hivemind/ re-run → already present"
+assert_eq "file-guard:gitignore-rerun-second" "already present" "$fg_r2" ".claude/worktrees/ re-run → already present"
+assert_eq "file-guard:gitignore-rerun-bytes" "$fg_before" "$(cat "$fg_gitignore")" "re-run is byte-stable (no duplicate lines)"
+# Entry never duplicated: exactly one occurrence of each.
+assert_eq "file-guard:gitignore-no-dup-hive" "1" \
+  "$(grep -c '^\.hivemind/$' "$fg_gitignore")" ".hivemind/ appears exactly once"
+
+# 14b. Entry independence: a file that already has ONE entry gets only the MISSING one appended.
+fg_partial="$WORKDIR/fg-partial-gitignore"
+printf '.hivemind/\n' > "$fg_partial"
+fg_p1="$(hivemind_append_if_absent "$fg_partial" ".hivemind/")"
+fg_p2="$(hivemind_append_if_absent "$fg_partial" ".claude/worktrees/")"
+assert_eq "file-guard:partial-present" "already present" "$fg_p1" "pre-existing .hivemind/ → already present"
+assert_eq "file-guard:partial-added" "added" "$fg_p2" "absent .claude/worktrees/ → added"
+assert_eq "file-guard:partial-result" ".hivemind/
+.claude/worktrees/" "$(cat "$fg_partial")" "only the missing entry appended"
+
+# 14c. Trailing-newline guard (SKILL.md step 8b): a file with NO trailing newline gets a blank
+# line inserted before the append so the entry lands on its own line, never glued on.
+fg_nonl="$WORKDIR/fg-no-trailing-nl"
+printf 'existing-line-no-newline' > "$fg_nonl"   # deliberately NO trailing \n
+fg_n1="$(hivemind_append_if_absent "$fg_nonl" ".hivemind/")"
+assert_eq "file-guard:nonl-added" "added" "$fg_n1" "entry appended to newline-less file → added"
+assert_eq "file-guard:nonl-standalone" "existing-line-no-newline
+.hivemind/" "$(cat "$fg_nonl")" "entry lands on its own line (blank-line/newline guard fired)"
+
+# 14d. .envrc active-vs-commented discrimination (SKILL.md step 9b/c). A COMMENTED line does NOT
+# count as present → the entry is still appended.
+fg_env_commented="$WORKDIR/fg-envrc-commented"
+printf '# export CAVEMAN_DEFAULT_MODE=ultra\n' > "$fg_env_commented"
+fg_ec="$(hivemind_append_env_if_absent "$fg_env_commented" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-commented-added" "added" "$fg_ec" "commented line is NOT active → entry appended"
+assert_eq "file-guard:env-commented-result" "# export CAVEMAN_DEFAULT_MODE=ultra
+export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$fg_env_commented")" "active entry appended below the comment"
+# An ACTIVE matching line → already present, no-op.
+fg_env_active="$WORKDIR/fg-envrc-active"
+printf 'export CAVEMAN_DEFAULT_MODE=ultra\n' > "$fg_env_active"
+fg_ea="$(hivemind_append_env_if_absent "$fg_env_active" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-active-present" "already present" "$fg_ea" "active matching line → already present"
+# Quote tolerance (SKILL.md step 9b: "with or without quotes around ultra"): a double-quoted and a
+# single-quoted active value both count as present → no duplicate append.
+fg_env_dq="$WORKDIR/fg-envrc-dq"
+printf 'export CAVEMAN_DEFAULT_MODE="ultra"\n' > "$fg_env_dq"
+fg_edq="$(hivemind_append_env_if_absent "$fg_env_dq" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-dquote-present" "already present" "$fg_edq" "double-quoted value tolerated → already present"
+fg_env_sq="$WORKDIR/fg-envrc-sq"
+printf "export CAVEMAN_DEFAULT_MODE='ultra'\n" > "$fg_env_sq"
+fg_esq="$(hivemind_append_env_if_absent "$fg_env_sq" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-squote-present" "already present" "$fg_esq" "single-quoted value tolerated → already present"
+# Whitespace-padded active line (trimmed match) → already present.
+fg_env_pad="$WORKDIR/fg-envrc-pad"
+printf '   export CAVEMAN_DEFAULT_MODE=ultra   \n' > "$fg_env_pad"
+fg_epad="$(hivemind_append_env_if_absent "$fg_env_pad" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-padded-present" "already present" "$fg_epad" "whitespace-padded active line trimmed-matches → already present"
+# .envrc created from absent → entry is the sole line.
+fg_env_new="$WORKDIR/fg-envrc-new"
+rm -f "$fg_env_new"
+fg_en="$(hivemind_append_env_if_absent "$fg_env_new" "export CAVEMAN_DEFAULT_MODE=ultra")"
+assert_eq "file-guard:env-new-added" "added" "$fg_en" "absent .envrc → entry added"
+assert_eq "file-guard:env-new-content" "export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$fg_env_new")" "created .envrc holds only the entry"
+
+# 14e. Idempotent re-run of ALL guards is byte-stable (no-op).
+fg_env_idem="$WORKDIR/fg-envrc-idem"
+printf 'export CAVEMAN_DEFAULT_MODE=ultra\n' > "$fg_env_idem"
+fg_env_idem_before="$(cat "$fg_env_idem")"
+hivemind_append_env_if_absent "$fg_env_idem" "export CAVEMAN_DEFAULT_MODE=ultra" >/dev/null
+assert_eq "file-guard:env-idem-bytes" "$fg_env_idem_before" "$(cat "$fg_env_idem")" "envrc guard re-run is byte-stable"
+
+# 14f. Hook scaffold (SKILL.md step 10a-c): create-if-absent (`created` + executable bit) vs
+# `already present` (content untouched).
+fg_hook="$WORKDIR/fg-hooks/caveman-ultra-subagent.sh"
+rm -rf "$WORKDIR/fg-hooks"
+fg_hc="$(hivemind_scaffold_hook_file "$fg_hook")"
+assert_eq "file-guard:hook-created" "created" "$fg_hc" "absent hook file → created"
+if [ -x "$fg_hook" ]; then
+  pass "file-guard:hook-executable" "scaffolded hook file has the executable bit set"
+else
+  failed "file-guard:hook-executable" "scaffolded hook file is NOT executable"
+fi
+# Content byte-matches the SINGLE DATA source.
+assert_eq "file-guard:hook-content-matches" "$(hivemind_caveman_hook_content)" "$(cat "$fg_hook")" \
+  "scaffolded hook content equals the single DATA source"
+# Existing hook → already present, content untouched.
+fg_hook_marker="$(cat "$fg_hook")"
+fg_hc2="$(hivemind_scaffold_hook_file "$fg_hook")"
+assert_eq "file-guard:hook-already-present" "already present" "$fg_hc2" "existing hook file → already present"
+assert_eq "file-guard:hook-content-untouched" "$fg_hook_marker" "$(cat "$fg_hook")" "existing hook content left untouched"
+
+# 14g. CLAUDE.md `## Validation` section-append (SKILL.md step 14c/d/e): absent → added; present →
+# already documented, existing prose untouched.
+FG_VALIDATION_BODY="## Validation
+
+\`\`\`bash
+go test ./...
+\`\`\`"
+# Absent CLAUDE.md → section created.
+fg_claude_new="$WORKDIR/fg-claude-new.md"
+rm -f "$fg_claude_new"
+fg_vn="$(hivemind_guard_validation_section "$fg_claude_new" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-new-added" "added" "$fg_vn" "absent CLAUDE.md → ## Validation added"
+assert_eq "file-guard:validation-new-content" "$FG_VALIDATION_BODY" "$(cat "$fg_claude_new")" "created CLAUDE.md holds the section body"
+# CLAUDE.md WITHOUT a ## Validation section → section appended after existing prose (untouched).
+fg_claude_append="$WORKDIR/fg-claude-append.md"
+printf '# Project\n\nSome existing prose.\n' > "$fg_claude_append"
+fg_va="$(hivemind_guard_validation_section "$fg_claude_append" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-append-added" "added" "$fg_va" "CLAUDE.md lacking ## Validation → added"
+assert_eq "file-guard:validation-append-prose-kept" "Some existing prose." \
+  "$(grep -F 'Some existing prose.' "$fg_claude_append")" "existing prose preserved on append"
+assert_eq "file-guard:validation-append-has-section" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_append")" "## Validation section appended exactly once"
+# CLAUDE.md that ALREADY documents ## Validation → already documented, byte-unchanged.
+fg_claude_present="$WORKDIR/fg-claude-present.md"
+printf '# Project\n\n## Validation\n\n```bash\nmake test\n```\n' > "$fg_claude_present"
+fg_present_before="$(cat "$fg_claude_present")"
+fg_vp="$(hivemind_guard_validation_section "$fg_claude_present" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-present-documented" "already documented" "$fg_vp" "existing ## Validation → already documented"
+assert_eq "file-guard:validation-present-bytes" "$fg_present_before" "$(cat "$fg_claude_present")" "existing ## Validation prose left byte-unchanged"
+
+# 14g-prose. PROSE-PRESERVATION DATA-LOSS LOCK (RR4-STEP-005): a `## Validation` heading carrying
+# REAL PROSE but NO fenced command body is PRESENT-NO-COMMAND → `added`, and the existing prose line
+# is byte-PRESERVED (APPENDED-UNDER, never REPLACED) while the assembled fenced ```bash block is
+# inserted beneath it. Result: EXACTLY ONE `## Validation` heading and the fenced block now present.
+# Non-vacuous: the prior RR3 implementation REPLACED the stub range in place, which would DROP this
+# prose line (grep -F would return empty) — this case fails on any revert to the replace-in-place
+# code, locking the data-loss fix.
+fg_claude_prose="$WORKDIR/fg-claude-prose.md"
+printf '## Validation\n\nRun the tests manually before pushing.\n' > "$fg_claude_prose"
+fg_vpr="$(hivemind_guard_validation_section "$fg_claude_prose" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-prose-added" "added" "$fg_vpr" "prose-only ## Validation → ABSENT body → added"
+assert_eq "file-guard:validation-prose-kept" "Run the tests manually before pushing." \
+  "$(grep -F 'Run the tests manually before pushing.' "$fg_claude_prose")" "existing prose byte-PRESERVED (append-under, not replace)"
+assert_eq "file-guard:validation-prose-one-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_prose")" "exactly ONE ## Validation heading after the append"
+assert_eq "file-guard:validation-prose-has-body" "1" \
+  "$(grep -c "$(printf '^\140\140\140bash$')" "$fg_claude_prose")" "fenced bash command block now present under the prose"
+
+# 14g-stub. ROOT-CLUSTER EDGE (RR3-STEP-005): a HEADING-ONLY `## Validation` (the heading line
+# present but NO fenced command body beneath it) normalizes to ABSENT under the BODY-presence
+# predicate → `added`, the heading-only stub is APPENDED-UNDER (prose-preserving — its existing
+# blank/comment lines are kept verbatim, never replaced) with the assembled command body, the result
+# carries the fenced ```bash block, has EXACTLY ONE `## Validation` heading, and every SIBLING section
+# is byte-preserved. Non-vacuous: if the predicate reverted to bare-heading presence, the stub would
+# be mis-reported `already documented`, the file would stay byte-unchanged (no fenced block, the
+# `go test ./...` body never written) and every assertion below would fail.
+fg_claude_stub="$WORKDIR/fg-claude-stub.md"
+printf '# Project\n\n## Setup\n\nRun the installer.\n\n## Validation\n\n## License\n\nMIT.\n' > "$fg_claude_stub"
+fg_vs="$(hivemind_guard_validation_section "$fg_claude_stub" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-stub-added" "added" "$fg_vs" "heading-only ## Validation stub → ABSENT → added"
+# Fence pattern built via printf (octal 140 = backtick) so the literal backticks never enter the
+# shell tokenizer inside a command substitution.
+fg_fence_re="$(printf '^\140\140\140bash$')"
+assert_eq "file-guard:validation-stub-has-body" "1" \
+  "$(grep -c "$fg_fence_re" "$fg_claude_stub")" "command body (fenced bash block) written into the stub section"
+assert_eq "file-guard:validation-stub-cmd" "go test ./..." \
+  "$(grep -F 'go test ./...' "$fg_claude_stub")" "assembled command landed in the section"
+assert_eq "file-guard:validation-stub-one-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_stub")" "exactly ONE ## Validation heading (stub appended-under, prose-preserving, not duplicated)"
+# Sibling sections are byte-preserved (only the stub's own range was rewritten).
+assert_eq "file-guard:validation-stub-sibling-setup" "Run the installer." \
+  "$(grep -F 'Run the installer.' "$fg_claude_stub")" "preceding ## Setup sibling byte-preserved"
+assert_eq "file-guard:validation-stub-sibling-license" "MIT." \
+  "$(grep -F 'MIT.' "$fg_claude_stub")" "following ## License sibling byte-preserved"
+assert_eq "file-guard:validation-stub-license-heading" "1" \
+  "$(grep -c '^## License$' "$fg_claude_stub")" "following ## License heading byte-preserved"
+
+# 14g-bodyregress. REGRESSION GUARD (RR3-STEP-005): a `## Validation` heading WITH a real fenced
+# command body is PRESENT-CANONICAL → still `already documented`, file byte-unchanged. This is the
+# inverse-edge guard ensuring the body-presence predicate did not over-correct into always-append.
+# Non-vacuous: if the predicate dropped the body check (treating every heading as absent), this
+# would return `added` and rewrite the file, breaking both assertions.
+fg_claude_body="$WORKDIR/fg-claude-body.md"
+printf '# Project\n\n## Validation\n\n```bash\nmake check\n```\n\n## Notes\n\nkeep.\n' > "$fg_claude_body"
+fg_body_before="$(cat "$fg_claude_body")"
+fg_vb="$(hivemind_guard_validation_section "$fg_claude_body" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-body-documented" "already documented" "$fg_vb" "heading WITH fenced body → already documented"
+assert_eq "file-guard:validation-body-bytes" "$fg_body_before" "$(cat "$fg_claude_body")" "heading-with-body file byte-unchanged"
+
+# 14g-nested. NESTED-HEADING BOUND LOCK (PR #297 P2): a `## Validation` section whose fenced command
+# body lives under a `### Subsection` (level-3 child) is PRESENT-WITH-COMMAND → `already documented`,
+# byte-unchanged, NO duplicate block appended. The section-end scan must bound the `##` section only
+# at a LEVEL <= 2 heading — the `### CI` child is PART OF the section, so its fenced block is in range
+# and sets has_body. Non-vacuous: under the prior any-`#`-level bound, the `### CI` heading ENDED the
+# section before the fence, mis-classifying it PRESENT-NO-COMMAND → a DUPLICATE fenced block appended
+# (fence count would jump to 2) and the verdict would be `added`, failing every assertion below.
+fg_claude_nested="$WORKDIR/fg-claude-nested.md"
+printf '# Project\n\n## Validation\n\n### CI\n\n```bash\nnpm test\n```\n' > "$fg_claude_nested"
+fg_nested_before="$(cat "$fg_claude_nested")"
+fg_vnest="$(hivemind_guard_validation_section "$fg_claude_nested" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-nested-documented" "already documented" "$fg_vnest" "fenced body under ### child → already documented"
+assert_eq "file-guard:validation-nested-bytes" "$fg_nested_before" "$(cat "$fg_claude_nested")" "nested-command file byte-unchanged (no duplicate)"
+assert_eq "file-guard:validation-nested-one-fence" "1" \
+  "$(grep -c "$(printf '^\140\140\140bash$')" "$fg_claude_nested")" "exactly ONE fenced bash block (no duplicate appended)"
+assert_eq "file-guard:validation-nested-subheading" "1" \
+  "$(grep -c '^### CI$' "$fg_claude_nested")" "nested ### CI subsection preserved as part of the section"
+
+# 14g-sibling. EXACT-NAME MATCH LOCK (PR #297 P1): a CLAUDE.md that has a SIBLING heading whose text
+# merely STARTS WITH `Validation` (`## Validation Details`) but NO exact `## Validation` heading must
+# classify ABSENT → the real `## Validation` section is CREATED and the sibling section + its content
+# is left BYTE-PRESERVED, so BOTH headings now exist. Non-vacuous: under the prior loose prefix match
+# (`'## Validation '*`), `## Validation Details` was mistaken for the `## Validation` heading → the
+# command would be recorded UNDER the sibling (or reported `already documented`) and no real
+# `## Validation` heading would ever be created — every assertion below would fail.
+fg_claude_sibling="$WORKDIR/fg-claude-sibling.md"
+printf '# Project\n\n## Validation Details\n\nSee the wiki for the full checklist.\n' > "$fg_claude_sibling"
+fg_sib_res="$(hivemind_guard_validation_section "$fg_claude_sibling" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-sibling-added" "added" "$fg_sib_res" "sibling ## Validation Details, no exact ## Validation → ABSENT → added"
+assert_eq "file-guard:validation-sibling-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_sibling")" "the real ## Validation heading was created exactly once"
+assert_eq "file-guard:validation-sibling-preserved-heading" "1" \
+  "$(grep -c '^## Validation Details$' "$fg_claude_sibling")" "the ## Validation Details sibling heading preserved"
+assert_eq "file-guard:validation-sibling-preserved-prose" "1" \
+  "$(grep -c '^See the wiki for the full checklist\.$' "$fg_claude_sibling")" "sibling section prose preserved byte-for-byte"
+assert_eq "file-guard:validation-sibling-fence" "1" \
+  "$(grep -c "$(printf '^\140\140\140bash$')" "$fg_claude_sibling")" "real ## Validation section carries the fenced command body"
+
+# 14g-trailing. ATX-LEGAL TRAILING MATCH LOCK (PR #297 P1): an exact `## Validation` heading bearing
+# trailing whitespace and ATX closing `#`s (`## Validation ##  `) with a fenced command body must
+# still be RECOGNIZED as the `## Validation` heading → `already documented`, byte-unchanged. Non-
+# vacuous: an over-strict exact match (equality against the literal `## Validation` only) would treat
+# the trailing-`#` heading as absent → a DUPLICATE section appended and verdict `added`, failing here.
+fg_claude_trailing="$WORKDIR/fg-claude-trailing.md"
+printf '# Project\n\n## Validation ##  \n\n```bash\nmake test\n```\n' > "$fg_claude_trailing"
+fg_trail_before="$(cat "$fg_claude_trailing")"
+fg_trail_res="$(hivemind_guard_validation_section "$fg_claude_trailing" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-trailing-documented" "already documented" "$fg_trail_res" "## Validation ## (ATX closing hashes) with command → already documented"
+assert_eq "file-guard:validation-trailing-bytes" "$fg_trail_before" "$(cat "$fg_claude_trailing")" "trailing-hash heading file byte-unchanged"
+
+# 14g-validationx. NO-SUFFIX-MATCH LOCK (PR #297 P1): a heading whose text is `ValidationX` (a single
+# trailing char, no space) is NOT the `## Validation` heading → ABSENT → the real `## Validation`
+# section is created and `## ValidationX` is preserved. Non-vacuous: a substring/prefix match would
+# treat `## ValidationX` as the target → no real `## Validation` ever created.
+fg_claude_vx="$WORKDIR/fg-claude-validationx.md"
+printf '# Project\n\n## ValidationX\n\nnot the section.\n' > "$fg_claude_vx"
+fg_vx_res="$(hivemind_guard_validation_section "$fg_claude_vx" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-vx-added" "added" "$fg_vx_res" "## ValidationX → not the ## Validation heading → ABSENT → added"
+assert_eq "file-guard:validation-vx-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_vx")" "real ## Validation heading created"
+assert_eq "file-guard:validation-vx-preserved" "1" \
+  "$(grep -c '^## ValidationX$' "$fg_claude_vx")" "## ValidationX sibling preserved"
+
+# 14g-wsmarker. ATX MARKER-WHITESPACE NORMALIZATION LOCK (PR #297 P2): a valid level-2 heading whose
+# `##` marker is followed by EXTRA whitespace (multiple spaces, or a tab) must still be recognized as
+# the `## Validation` heading. The prior fix stripped only a single literal `## ` (one space), so
+# `##   Validation` / `##\tValidation` left leading whitespace on the heading text → the exact
+# compare to `Validation` FAILED → the section was MISSED and a DUPLICATE `## Validation` block was
+# appended even when a command was already documented. Each case below is NON-VACUOUS: it FAILS
+# against the single-space-strip code (verdict `added` + a duplicate heading) and passes only with
+# the strip-ALL-leading-whitespace parse.
+#
+# (a) `##   Validation` (3 spaces) WITH a fenced command → already documented, byte-unchanged.
+fg_claude_msp="$WORKDIR/fg-claude-multispace.md"
+printf '# Project\n\n##   Validation\n\n```bash\nnpm test\n```\n' > "$fg_claude_msp"
+fg_msp_before="$(cat "$fg_claude_msp")"
+fg_msp_res="$(hivemind_guard_validation_section "$fg_claude_msp" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-multispace-documented" "already documented" "$fg_msp_res" "##   Validation (multi-space marker) with command → already documented"
+assert_eq "file-guard:validation-multispace-bytes" "$fg_msp_before" "$(cat "$fg_claude_msp")" "multi-space-marker heading file byte-unchanged"
+assert_eq "file-guard:validation-multispace-no-dup" "0" \
+  "$(grep -c '^## Validation$' "$fg_claude_msp")" "no canonical '## Validation' duplicate appended beside the multi-space heading"
+
+# (b) `##\tValidation` (TAB after the marker) WITH a fenced command → already documented, byte-unchanged.
+fg_claude_tab="$WORKDIR/fg-claude-tabmarker.md"
+printf '# Project\n\n##\tValidation\n\n```bash\nnpm test\n```\n' > "$fg_claude_tab"
+fg_tab_before="$(cat "$fg_claude_tab")"
+fg_tab_res="$(hivemind_guard_validation_section "$fg_claude_tab" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-tab-documented" "already documented" "$fg_tab_res" "##<tab>Validation (tab marker) with command → already documented"
+assert_eq "file-guard:validation-tab-bytes" "$fg_tab_before" "$(cat "$fg_claude_tab")" "tab-marker heading file byte-unchanged"
+
+# (c) `##   Validation` with PROSE but NO command → recognized as the section (not a duplicate) →
+# prose-preserving append, EXACTLY ONE level-2 Validation heading after the append.
+fg_claude_msp_prose="$WORKDIR/fg-claude-multispace-prose.md"
+printf '##   Validation\n\nRun the tests manually before pushing.\n' > "$fg_claude_msp_prose"
+fg_msp_prose_res="$(hivemind_guard_validation_section "$fg_claude_msp_prose" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-multispace-prose-added" "added" "$fg_msp_prose_res" "prose-only ##   Validation → ABSENT body → added (recognized, not duplicated)"
+assert_eq "file-guard:validation-multispace-prose-kept" "Run the tests manually before pushing." \
+  "$(grep -F 'Run the tests manually before pushing.' "$fg_claude_msp_prose")" "multi-space-marker prose preserved on append"
+assert_eq "file-guard:validation-multispace-prose-no-dup" "0" \
+  "$(grep -c '^## Validation$' "$fg_claude_msp_prose")" "no canonical '## Validation' duplicate appended beside the multi-space prose heading"
+assert_eq "file-guard:validation-multispace-prose-one-heading" "1" \
+  "$(grep -cE '^##[[:space:]]+Validation$' "$fg_claude_msp_prose")" "exactly ONE level-2 Validation heading after the prose-preserving append"
+
+# (d) NO-SPACE REGRESSION GUARD: `##Validation` (no whitespace after the marker) is NOT an ATX
+# heading → NOT the `## Validation` heading → ABSENT → the real `## Validation` section is created
+# and `##Validation` is preserved. Non-vacuous: a marker-strip that did not require whitespace would
+# treat `##Validation` as the target → no real `## Validation` ever created.
+fg_claude_nospace="$WORKDIR/fg-claude-nospace.md"
+printf '# Project\n\n##Validation\n\nnot a heading.\n' > "$fg_claude_nospace"
+fg_nospace_res="$(hivemind_guard_validation_section "$fg_claude_nospace" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-nospace-added" "added" "$fg_nospace_res" "##Validation (no space, not ATX) → ABSENT → added"
+assert_eq "file-guard:validation-nospace-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_nospace")" "real ## Validation heading created beside ##Validation"
+assert_eq "file-guard:validation-nospace-preserved" "1" \
+  "$(grep -c '^##Validation$' "$fg_claude_nospace")" "##Validation non-heading line preserved"
+
+# 14g-indent. COMMONMARK LEADING-INDENT LOCK (PR #297 ATX-completion): the consolidated
+# `_hivemind_atx_heading` parser now applies the CommonMark leading-indent rule to BOTH the
+# exact-name match and the level-based section bound. 0-3 leading spaces still make a heading; 4+
+# leading spaces are an indented code block, NOT a heading. Each case is NON-VACUOUS against the
+# prior column-0-anchored parse, which treated `  ## Validation` as NOT-a-heading (would have
+# duplicated) and treated `    ## Validation` as a heading (would have mis-recognized the indented
+# code-block line).
+#
+# (a) `  ## Validation` (2 leading spaces) WITH a fenced command → recognized as the heading →
+# already documented, byte-unchanged, NO duplicate `## Validation` appended. Under the prior
+# column-0 parse the indented heading was missed → a duplicate canonical block would be appended.
+fg_claude_indent2="$WORKDIR/fg-claude-indent2.md"
+printf '# Project\n\n  ## Validation\n\n```bash\nnpm test\n```\n' > "$fg_claude_indent2"
+fg_indent2_before="$(cat "$fg_claude_indent2")"
+fg_indent2_res="$(hivemind_guard_validation_section "$fg_claude_indent2" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-indent2-documented" "already documented" "$fg_indent2_res" "  ## Validation (2-space indent) with command → already documented"
+assert_eq "file-guard:validation-indent2-bytes" "$fg_indent2_before" "$(cat "$fg_claude_indent2")" "2-space-indent heading file byte-unchanged"
+assert_eq "file-guard:validation-indent2-no-dup" "0" \
+  "$(grep -c '^## Validation$' "$fg_claude_indent2")" "no column-0 '## Validation' duplicate appended beside the 2-space-indent heading"
+
+# (b) `    ## Validation` (4 leading spaces) is an indented CODE BLOCK, NOT a heading → ABSENT → the
+# real (column-0) `## Validation` section is CREATED and the 4-space-indented line is preserved
+# verbatim. Non-vacuous: under the prior column-0-only parse (no indent rule), or a parse that
+# allowed 4+ indent, the indented line would be mis-recognized as the heading → no real `## Validation`
+# ever created and the assertions below would fail.
+fg_claude_indent4="$WORKDIR/fg-claude-indent4.md"
+printf '# Project\n\n    ## Validation\n\nnot a heading (indented code block).\n' > "$fg_claude_indent4"
+fg_indent4_res="$(hivemind_guard_validation_section "$fg_claude_indent4" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-indent4-added" "added" "$fg_indent4_res" "    ## Validation (4-space indent, code block) → not a heading → ABSENT → added"
+assert_eq "file-guard:validation-indent4-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_indent4")" "real column-0 ## Validation heading created"
+assert_eq "file-guard:validation-indent4-preserved" "1" \
+  "$(grep -c '^    ## Validation$' "$fg_claude_indent4")" "4-space-indented non-heading line preserved verbatim"
+assert_eq "file-guard:validation-indent4-fence" "1" \
+  "$(grep -c "$(printf '^\140\140\140bash$')" "$fg_claude_indent4")" "created section carries the fenced command body"
+
+# 14g-tabsibling. TAB-MARKED SIBLING BOUND LOCK (PR #297 ATX-completion): a `## Validation` section
+# (with a fenced command body) is followed by a SIBLING heading whose `##` marker is followed by a
+# TAB (`##\tOther`). The section bound (`_hivemind_is_section_heading` → consolidated parser) is now
+# tab-aware, so `##\tOther` is correctly LEVEL 2 → it ENDS the `## Validation` section AFTER the
+# fenced block, leaving the command in range → already documented, byte-unchanged, no duplicate.
+# Non-vacuous: under the SPACE-ONLY `_hivemind_heading_level`, `##\tOther` parsed as level 0 (not a
+# heading) → it did NOT bound the section, so the section ran past it; the fence is still in range in
+# THIS layout so the verdict would still be `already documented`, but the tab sibling was being
+# SWALLOWED into the Validation section's range. To make the swallow OBSERVABLE, place the fenced
+# command AFTER the tab sibling: under the space-only parse `##\tOther` does not bound the section,
+# the post-sibling fence is (wrongly) counted in-range → already documented; under the tab-aware
+# parse `##\tOther` ENDS the section BEFORE that fence → PRESENT-NO-COMMAND → `added`. The verdicts
+# DIVERGE, so this case fails on any revert to the space-only level parse.
+fg_claude_tabsib="$WORKDIR/fg-claude-tabsibling.md"
+printf '# Project\n\n## Validation\n\n##\tOther\n\n```bash\nnpm test\n```\n' > "$fg_claude_tabsib"
+fg_tabsib_res="$(hivemind_guard_validation_section "$fg_claude_tabsib" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-tabsibling-added" "added" "$fg_tabsib_res" "##<tab>Other sibling bounds the section (tab-aware level) → Validation has no in-range command → added"
+assert_eq "file-guard:validation-tabsibling-one-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_tabsib")" "exactly ONE ## Validation heading (sibling not swallowed; body inserted under Validation)"
+# The tab sibling is preserved verbatim and was NOT absorbed into / rewritten by the Validation range.
+assert_eq "file-guard:validation-tabsibling-preserved" "1" \
+  "$(grep -cP '^##\tOther$' "$fg_claude_tabsib")" "##<tab>Other sibling heading preserved verbatim"
+
+# 14g-crlf. CRLF RECOGNITION LOCK (PR #297 ATX-completion): a CLAUDE.md with CRLF line endings whose
+# `## Validation\r\n` heading carries a fenced command body must be RECOGNIZED (the parser strips the
+# trailing `\r` before comparing) → already documented, byte-unchanged, NO duplicate appended. Non-
+# vacuous: without the `\r` strip the heading text would be `Validation\r` ≠ `Validation` → the
+# section is missed → a duplicate canonical `## Validation` block appended and verdict `added`.
+fg_claude_crlf="$WORKDIR/fg-claude-crlf.md"
+printf '# Project\r\n\r\n## Validation\r\n\r\n```bash\r\nnpm test\r\n```\r\n' > "$fg_claude_crlf"
+fg_crlf_before="$(cat "$fg_claude_crlf")"
+fg_crlf_res="$(hivemind_guard_validation_section "$fg_claude_crlf" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-crlf-documented" "already documented" "$fg_crlf_res" "CRLF ## Validation\\r with command → recognized → already documented"
+assert_eq "file-guard:validation-crlf-bytes" "$fg_crlf_before" "$(cat "$fg_claude_crlf")" "CRLF file byte-unchanged (no duplicate)"
+# Exactly one Validation heading — the CRLF heading carries a trailing \r, so match it tolerantly.
+assert_eq "file-guard:validation-crlf-one-heading" "1" \
+  "$(grep -cE '^## Validation'$'\r''?$' "$fg_claude_crlf")" "exactly ONE ## Validation heading (CRLF, no duplicate appended)"
+
+# 14g-closinghash. §4.3 CLOSING-SEQUENCE MATRIX (PR #297 ATX approach-level zoom-out): the
+# general-ATX-text-extraction edge class is ELIMINATED; heading detection is now normalize-and-equate
+# against the skill's own canonical `## Validation` heading. The reduction strips a closing `#` run
+# ONLY when it is preceded by whitespace (a true CommonMark §4.3 closing sequence); a `#` run GLUED to
+# the heading text with no preceding whitespace is PART OF the text. Therefore `## Validation#` and
+# `## Validation##` (no space) reduce to text `Validation#`/`Validation##` ≠ `Validation` → NOT the
+# heading → ABSENT → the real `## Validation` section is created. `## Validation #` /
+# `## Validation ###` (space before the run) STAY recognized as the existing section. This matrix
+# locks the canonical-equate primitive against any revert to the prior unconditional closing-hash trim.
+#
+# (a) `## Validation#` (closing hash, NO preceding space) + fenced body → text `Validation#` ≠
+# `Validation` → ABSENT → `added`, real `## Validation` section created. LOAD-BEARING: pre-fix the
+# unconditional trim reduced this to `Validation` → wrongly `already documented`.
+fg_claude_ch1="$WORKDIR/fg-claude-closinghash1.md"
+printf '# Project\n\n## Validation#\n\n```bash\nnpm test\n```\n' > "$fg_claude_ch1"
+fg_ch1_res="$(hivemind_guard_validation_section "$fg_claude_ch1" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-nospace-added" "added" "$fg_ch1_res" "## Validation# (glued closing hash, no space) → text Validation# → ABSENT → added"
+assert_eq "file-guard:validation-closinghash-nospace-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch1")" "real ## Validation heading created beside ## Validation#"
+assert_eq "file-guard:validation-closinghash-nospace-preserved" "1" \
+  "$(grep -c '^## Validation#$' "$fg_claude_ch1")" "## Validation# (text-bearing closing hash) preserved verbatim"
+
+# (b) `## Validation##` (double closing hash, NO preceding space) + body → text `Validation##` →
+# ABSENT → `added`. LOAD-BEARING: pre-fix the unconditional trim reduced this to `Validation`.
+fg_claude_ch2="$WORKDIR/fg-claude-closinghash2.md"
+printf '# Project\n\n## Validation##\n\n```bash\nnpm test\n```\n' > "$fg_claude_ch2"
+fg_ch2_res="$(hivemind_guard_validation_section "$fg_claude_ch2" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-double-added" "added" "$fg_ch2_res" "## Validation## (glued double closing hash, no space) → text Validation## → ABSENT → added"
+assert_eq "file-guard:validation-closinghash-double-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch2")" "real ## Validation heading created beside ## Validation##"
+assert_eq "file-guard:validation-closinghash-double-preserved" "1" \
+  "$(grep -c '^## Validation##$' "$fg_claude_ch2")" "## Validation## (text-bearing double closing hash) preserved verbatim"
+
+# (c) `## Validation #` (single closing hash WITH a preceding space) + body → true §4.3 closing
+# sequence → text `Validation` → recognized → `already documented`, byte-unchanged.
+fg_claude_ch3="$WORKDIR/fg-claude-closinghash3.md"
+printf '# Project\n\n## Validation #\n\n```bash\nmake test\n```\n' > "$fg_claude_ch3"
+fg_ch3_before="$(cat "$fg_claude_ch3")"
+fg_ch3_res="$(hivemind_guard_validation_section "$fg_claude_ch3" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-space-documented" "already documented" "$fg_ch3_res" "## Validation # (space before closing hash, §4.3 closing seq) with command → already documented"
+assert_eq "file-guard:validation-closinghash-space-bytes" "$fg_ch3_before" "$(cat "$fg_claude_ch3")" "## Validation # heading file byte-unchanged"
+
+# (d) `## Validation ###` (closing-hash RUN WITH a preceding space) + body → §4.3 closing sequence →
+# text `Validation` → recognized → `already documented`, byte-unchanged.
+fg_claude_ch4="$WORKDIR/fg-claude-closinghash4.md"
+printf '# Project\n\n## Validation ###\n\n```bash\nmake test\n```\n' > "$fg_claude_ch4"
+fg_ch4_before="$(cat "$fg_claude_ch4")"
+fg_ch4_res="$(hivemind_guard_validation_section "$fg_claude_ch4" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-run-documented" "already documented" "$fg_ch4_res" "## Validation ### (space before closing-hash run) with command → already documented"
+assert_eq "file-guard:validation-closinghash-run-bytes" "$fg_ch4_before" "$(cat "$fg_claude_ch4")" "## Validation ### heading file byte-unchanged"
+
+# (e) SIBLING `## Other#` (glued closing hash on a SIBLING) still bounds the `## Validation` section:
+# it is a LEVEL-2 heading (text `Other#`), so it ENDS the Validation section AFTER the fenced block,
+# leaving the command in range → already documented, byte-unchanged, sibling preserved. Regression
+# guard that the level path is UNCHANGED by the text-extraction fix (closing-hash glue does not
+# demote a sibling out of level-2 heading status).
+fg_claude_ch5="$WORKDIR/fg-claude-closinghash-sibling.md"
+printf '# Project\n\n## Validation\n\n```bash\nmake test\n```\n\n## Other#\n\nbody.\n' > "$fg_claude_ch5"
+fg_ch5_before="$(cat "$fg_claude_ch5")"
+fg_ch5_res="$(hivemind_guard_validation_section "$fg_claude_ch5" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-closinghash-sibling-documented" "already documented" "$fg_ch5_res" "## Other# sibling (level-2, glued closing hash) bounds the section; in-range command → already documented"
+assert_eq "file-guard:validation-closinghash-sibling-bytes" "$fg_ch5_before" "$(cat "$fg_claude_ch5")" "## Other# sibling-bound file byte-unchanged (no duplicate)"
+assert_eq "file-guard:validation-closinghash-sibling-preserved" "1" \
+  "$(grep -c '^## Other#$' "$fg_claude_ch5")" "## Other# sibling heading preserved verbatim (still a level-2 bound)"
+
+# (f) `####### Validation` (7 `#`s) is NOT an ATX heading → ABSENT → real `## Validation` created.
+# Regression guard for the level path (7+ marker reject) under the new reduction.
+fg_claude_ch6="$WORKDIR/fg-claude-closinghash-seven.md"
+printf '# Project\n\n####### Validation\n\nnot a heading.\n' > "$fg_claude_ch6"
+fg_ch6_res="$(hivemind_guard_validation_section "$fg_claude_ch6" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-sevenhash-added" "added" "$fg_ch6_res" "####### Validation (7 hashes, not ATX) → ABSENT → added"
+assert_eq "file-guard:validation-sevenhash-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch6")" "real ## Validation heading created beside the 7-hash line"
+
+# (g) `##5 Validation` (no space after the marker run) is NOT an ATX heading → ABSENT → real
+# `## Validation` created. Regression guard for the after-marker-whitespace requirement.
+fg_claude_ch7="$WORKDIR/fg-claude-closinghash-nomarkerws.md"
+printf '# Project\n\n##5 Validation\n\nnot a heading.\n' > "$fg_claude_ch7"
+fg_ch7_res="$(hivemind_guard_validation_section "$fg_claude_ch7" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-nomarkerws-added" "added" "$fg_ch7_res" "##5 Validation (no space after marker) → not ATX → ABSENT → added"
+assert_eq "file-guard:validation-nomarkerws-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch7")" "real ## Validation heading created beside ##5 Validation"
+
+# (h) `## Validation` indented 4 spaces is an indented code block, NOT a heading → ABSENT → real
+# column-0 `## Validation` created. Regression guard for the 4+-indent reject.
+fg_claude_ch8="$WORKDIR/fg-claude-closinghash-indent4.md"
+printf '# Project\n\n    ## Validation\n\nnot a heading (indented).\n' > "$fg_claude_ch8"
+fg_ch8_res="$(hivemind_guard_validation_section "$fg_claude_ch8" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-ch-indent4-added" "added" "$fg_ch8_res" "    ## Validation (4-space indent) → not a heading → ABSENT → added"
+assert_eq "file-guard:validation-ch-indent4-real-heading" "1" \
+  "$(grep -c '^## Validation$' "$fg_claude_ch8")" "real column-0 ## Validation heading created"
+
+# (i) `##\tValidation` (TAB after the marker) WITH a fenced command → reduces to the canonical
+# `Validation` → recognized → already documented, byte-unchanged. Regression guard for tab-after-marker.
+fg_claude_ch9="$WORKDIR/fg-claude-closinghash-tabmarker.md"
+printf '# Project\n\n##\tValidation\n\n```bash\nmake test\n```\n' > "$fg_claude_ch9"
+fg_ch9_before="$(cat "$fg_claude_ch9")"
+fg_ch9_res="$(hivemind_guard_validation_section "$fg_claude_ch9" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-ch-tabmarker-documented" "already documented" "$fg_ch9_res" "##<tab>Validation (tab marker) with command → reduces to Validation → already documented"
+assert_eq "file-guard:validation-ch-tabmarker-bytes" "$fg_ch9_before" "$(cat "$fg_claude_ch9")" "##<tab>Validation heading file byte-unchanged"
+
+# (j) CRLF `## Validation\r` WITH a fenced command → the `\r` is stripped before the equate →
+# reduces to `Validation` → recognized → already documented, byte-unchanged. Regression guard for CRLF.
+fg_claude_ch10="$WORKDIR/fg-claude-closinghash-crlf.md"
+printf '# Project\r\n\r\n## Validation\r\n\r\n```bash\r\nmake test\r\n```\r\n' > "$fg_claude_ch10"
+fg_ch10_before="$(cat "$fg_claude_ch10")"
+fg_ch10_res="$(hivemind_guard_validation_section "$fg_claude_ch10" "$FG_VALIDATION_BODY")"
+assert_eq "file-guard:validation-ch-crlf-documented" "already documented" "$fg_ch10_res" "CRLF ## Validation\\r with command → \\r stripped before equate → already documented"
+assert_eq "file-guard:validation-ch-crlf-bytes" "$fg_ch10_before" "$(cat "$fg_claude_ch10")" "CRLF ## Validation file byte-unchanged"
+
+# 14h. INERT: a hostile entry value crafted as a command-substitution payload is written as plain
+# text, never executed (proves the text guards never eval/source the entry).
+rm -f "$PWN_MARKER"
+fg_inert="$WORKDIR/fg-inert-gitignore"
+rm -f "$fg_inert"
+hivemind_append_if_absent "$fg_inert" "\$(touch $PWN_MARKER)" >/dev/null
+if [ -e "$PWN_MARKER" ]; then
+  failed "file-guard:inert-no-side-effect" "an entry value triggered command substitution: $PWN_MARKER created"
+else
+  pass "file-guard:inert-no-side-effect" "no entry value triggered command substitution"
+fi
+
+# ── Section 15: test-detect.sh — ecosystem signal→command projector + ## Validation recorder ──
+echo '=== test-detect.sh: ecosystem detection + JS sub-signal ordering + ## Validation recorder ==='
+#
+# AUTHORITATIVE regression tests for the seed-hive step-14 test-command detector (SKILL.md step
+# 14a/b/c/d/f). Every case is HERMETIC: it builds its own tmp PROJECT dir under $WORKDIR holding
+# only the signal files under test, then asserts the EXACT ecosystem→command mapping, the JS
+# sub-signal ordering, the runner-agnostic `npm init` placeholder rejection, non-string
+# scripts.test fall-through, monorepo multi-match (root signals only), and the file-guard
+# delegation for the `## Validation` append.
+
+# Helper: build a fresh empty project dir and echo its path.
+td_new_project() {
+  local p
+  p="$(mktemp -d "$WORKDIR/td-proj.XXXXXX")"
+  printf '%s' "$p"
+}
+
+# 15a. Each ecosystem emits its correct command (one focused project per ecosystem).
+# JS curated scripts.test → npm test.
+td_js="$(td_new_project)"
+printf '{"scripts":{"test":"jest --runInBand"}}\n' > "$td_js/package.json"
+assert_eq "test-detect:js-curated" "npm test" "$(hivemind_detect_test_commands "$td_js")" "curated scripts.test → npm test"
+
+# Python pytest (pyproject.toml with a pytest dependency signal) → pytest.
+td_py="$(td_new_project)"
+printf '[project]\ndependencies = ["pytest"]\n' > "$td_py/pyproject.toml"
+assert_eq "test-detect:python" "pytest" "$(hivemind_detect_test_commands "$td_py")" "pyproject pytest signal → pytest"
+
+# Python pytest NESTED test file (tests/unit/test_api.py, no direct-child test file) → pytest.
+# NON-VACUITY: the old shallow ls-glob misses tests/unit/test_api.py so this case FAILS against
+# the unfixed code (emitting nothing) and PASSES only with the recursive find fix.
+td_py_nested="$(td_new_project)"
+printf '[tool.pytest.ini_options]\n' > "$td_py_nested/pyproject.toml"
+mkdir -p "$td_py_nested/tests/unit"
+printf '# unit test\n' > "$td_py_nested/tests/unit/test_api.py"
+assert_eq "test-detect:python-nested-test-file" "pytest" \
+  "$(hivemind_detect_test_commands "$td_py_nested")" \
+  "pyproject.toml [tool.pytest] + nested tests/unit/test_api.py → pytest"
+
+# Python pytest DIRECT-CHILD regression: tests/test_foo.py still detected after the recursive fix.
+td_py_direct="$(td_new_project)"
+printf '[tool.pytest.ini_options]\n' > "$td_py_direct/pyproject.toml"
+mkdir -p "$td_py_direct/tests"
+printf '# test\n' > "$td_py_direct/tests/test_foo.py"
+assert_eq "test-detect:python-direct-test-file" "pytest" \
+  "$(hivemind_detect_test_commands "$td_py_direct")" \
+  "direct-child tests/test_foo.py still detected (recursive find includes depth-1)"
+
+# Python pytest NO-SIGNAL regression: pyproject.toml without a pytest signal AND no test files → no pytest.
+td_py_nosig="$(td_new_project)"
+printf '[project]\nname = "myapp"\n' > "$td_py_nosig/pyproject.toml"
+mkdir -p "$td_py_nosig/tests"
+printf '# helper\n' > "$td_py_nosig/tests/helpers.py"
+assert_eq "test-detect:python-no-signal" "" \
+  "$(hivemind_detect_test_commands "$td_py_nosig")" \
+  "pyproject without pytest signal and no test_*.py/*_test.py → no pytest command"
+
+# Go → go test ./...
+td_go="$(td_new_project)"
+printf 'module example.com/x\n\ngo 1.22\n' > "$td_go/go.mod"
+assert_eq "test-detect:go" "go test ./..." "$(hivemind_detect_test_commands "$td_go")" "go.mod → go test ./..."
+
+# Rust → cargo test.
+td_rs="$(td_new_project)"
+printf '[package]\nname = "x"\n' > "$td_rs/Cargo.toml"
+assert_eq "test-detect:rust" "cargo test" "$(hivemind_detect_test_commands "$td_rs")" "Cargo.toml → cargo test"
+
+# .NET csproj referencing Microsoft.NET.Test.Sdk → dotnet test.
+td_net="$(td_new_project)"
+printf '<Project><ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" /></ItemGroup></Project>\n' > "$td_net/app.csproj"
+assert_eq "test-detect:dotnet" "dotnet test" "$(hivemind_detect_test_commands "$td_net")" "csproj with Test.Sdk → dotnet test"
+# .NET csproj WITHOUT the Test.Sdk reference → no signal (file existence alone insufficient).
+td_net_bare="$(td_new_project)"
+printf '<Project></Project>\n' > "$td_net_bare/app.csproj"
+assert_eq "test-detect:dotnet-no-sdk" "" "$(hivemind_detect_test_commands "$td_net_bare")" "csproj without Test.Sdk → no command"
+
+# Elixir → mix test.
+td_ex="$(td_new_project)"
+printf 'defmodule X.MixProject do\nend\n' > "$td_ex/mix.exs"
+assert_eq "test-detect:elixir" "mix test" "$(hivemind_detect_test_commands "$td_ex")" "mix.exs → mix test"
+
+# Ruby Gemfile with rspec → bundle exec rspec.
+td_rb="$(td_new_project)"
+printf 'gem "rspec"\n' > "$td_rb/Gemfile"
+assert_eq "test-detect:ruby" "bundle exec rspec" "$(hivemind_detect_test_commands "$td_rb")" "Gemfile rspec signal → bundle exec rspec"
+
+# Ruby rspec NESTED spec file (spec/unit/foo_spec.rb, no direct-child spec file) → bundle exec rspec.
+# NON-VACUITY: the old shallow ls-glob misses spec/unit/foo_spec.rb so this case FAILS against
+# the unfixed code and PASSES only with the recursive find fix.
+td_rb_nested="$(td_new_project)"
+mkdir -p "$td_rb_nested/spec/unit"
+printf '# unit spec\n' > "$td_rb_nested/spec/unit/foo_spec.rb"
+assert_eq "test-detect:ruby-nested-spec-file" "bundle exec rspec" \
+  "$(hivemind_detect_test_commands "$td_rb_nested")" \
+  "nested spec/unit/foo_spec.rb with no Gemfile rspec → bundle exec rspec"
+
+# Ruby rspec DIRECT-CHILD regression: spec/bar_spec.rb still detected after the recursive fix.
+td_rb_direct="$(td_new_project)"
+mkdir -p "$td_rb_direct/spec"
+printf '# spec\n' > "$td_rb_direct/spec/bar_spec.rb"
+assert_eq "test-detect:ruby-direct-spec-file" "bundle exec rspec" \
+  "$(hivemind_detect_test_commands "$td_rb_direct")" \
+  "direct-child spec/bar_spec.rb still detected (recursive find includes depth-1)"
+
+# Make TARGET-vs-ASSIGNMENT-vs-RECIPE grammar matrix. The matcher classifies each line by make's
+# rule grammar; every assertion below carries a non-vacuity note tied to the pre-fix OPEN regex
+# `^[ ]*test[[:space:]]*:` (which matched `test` + optional space + ANY colon, so it false-positived
+# on `:=`/`::=` assignment lines) or to a behavior that must be PRESERVED.
+# (1) column-0 real target → make test [preserved].
+td_mk="$(td_new_project)"
+printf 'test:\n\tgo test ./...\n' > "$td_mk/Makefile"
+assert_eq "test-detect:make" "make test" "$(hivemind_detect_test_commands "$td_mk")" "column-0 test: target → make test [preserved]"
+# (2) space-leading target → make test [Fix-1 guard: column-0-anchored regex would miss this].
+td_mk_sp="$(td_new_project)"
+printf ' test:\n\t@echo run\n' > "$td_mk_sp/Makefile"
+assert_eq "test-detect:make-space-target" "make test" "$(hivemind_detect_test_commands "$td_mk_sp")" "space-indented test: target → make test [Fix-1 guard]"
+# (3) double-colon rule target → make test [non-vacuity: a naive reject-any-second-char-after-colon
+# would wrongly drop this VALID target].
+td_mk_dc="$(td_new_project)"
+printf 'test::\n\t@echo dc\n' > "$td_mk_dc/Makefile"
+assert_eq "test-detect:make-double-colon" "make test" "$(hivemind_detect_test_commands "$td_mk_dc")" "double-colon test:: rule → make test [non-vacuity: valid target, second char is a colon]"
+# (4) THE Codex P2: `test :=` recursive assignment, no real target → empty [pre-fix the regex
+# matched the `:` of `:=` → false positive; rejected post-fix by the assignment-operator grammar].
+td_mk_assign="$(td_new_project)"
+printf 'test := foo\nbuild:\n\tgo build ./...\n' > "$td_mk_assign/Makefile"
+assert_eq "test-detect:make-assign-colon-eq" "" "$(hivemind_detect_test_commands "$td_mk_assign")" "test := assignment, no target → empty [Codex P2: pre-fix matched the : of :=]"
+# (5) `test ::=` POSIX simple assignment → empty [pre-fix regex matched the first `:` of `::=` →
+# false positive; rejected post-fix].
+td_mk_assign2="$(td_new_project)"
+printf 'test ::= foo\nbuild:\n\tgo build ./...\n' > "$td_mk_assign2/Makefile"
+assert_eq "test-detect:make-assign-dcolon-eq" "" "$(hivemind_detect_test_commands "$td_mk_assign2")" "test ::= assignment → empty [pre-fix matched first : of ::=]"
+# (6) `test ?=` conditional assignment → empty [grammar class lock: rejected by the assignment-operator
+# branch, never reached the pre-fix regex's colon at all but locks the class].
+td_mk_q="$(td_new_project)"
+printf 'test ?= foo\nbuild:\n\tgo build ./...\n' > "$td_mk_q/Makefile"
+assert_eq "test-detect:make-assign-qeq" "" "$(hivemind_detect_test_commands "$td_mk_q")" "test ?= assignment → empty [grammar class lock]"
+# (7) `test +=` append assignment → empty [grammar class lock].
+td_mk_plus="$(td_new_project)"
+printf 'test += foo\nbuild:\n\tgo build ./...\n' > "$td_mk_plus/Makefile"
+assert_eq "test-detect:make-assign-pluseq" "" "$(hivemind_detect_test_commands "$td_mk_plus")" "test += assignment → empty [grammar class lock]"
+# (8) `test !=` shell assignment → empty [grammar class lock].
+td_mk_bang="$(td_new_project)"
+printf 'test != echo foo\nbuild:\n\tgo build ./...\n' > "$td_mk_bang/Makefile"
+assert_eq "test-detect:make-assign-bangeq" "" "$(hivemind_detect_test_commands "$td_mk_bang")" "test != shell-assignment → empty [grammar class lock]"
+# (9) `.PHONY: test` with NO `test:` recipe → empty [non-vacuity: locks the decision that a phony
+# DECLARATION with no recipe is not a runnable `make test`; first token is `.PHONY`, not `test`].
+td_mk_phony="$(td_new_project)"
+printf '.PHONY: test\nbuild:\n\tgo build ./...\n' > "$td_mk_phony/Makefile"
+assert_eq "test-detect:make-phony-only" "" "$(hivemind_detect_test_commands "$td_mk_phony")" ".PHONY: test with no test: recipe → empty [first token is .PHONY, not test]"
+# (10) `.PHONY: test` PLUS a real `test:` recipe elsewhere → make test [the real target line matches
+# independently of the phony declaration].
+td_mk_phony2="$(td_new_project)"
+printf '.PHONY: test\ntest:\n\tgo test ./...\n' > "$td_mk_phony2/Makefile"
+assert_eq "test-detect:make-phony-plus-target" "make test" "$(hivemind_detect_test_commands "$td_mk_phony2")" ".PHONY: test plus real test: recipe → make test [real target matches independently]"
+# (11) TAB-indented `test:` recipe line under another target → empty [regresses if the leading class
+# is loosened to `[[:space:]]*`; locks the literal-space invariant — a TAB-led line is a recipe].
+td_mk_tab="$(td_new_project)"
+printf 'build:\n\ttest: not-a-target\n' > "$td_mk_tab/Makefile"
+assert_eq "test-detect:make-tab-recipe" "" "$(hivemind_detect_test_commands "$td_mk_tab")" "TAB-indented test: recipe line → empty [locks literal-space leading invariant]"
+# (12) `testing:` near-miss → empty [token-boundary guard: first token is `testing`, not `test`].
+td_mk_near="$(td_new_project)"
+printf 'testing:\n\t@echo x\n' > "$td_mk_near/Makefile"
+assert_eq "test-detect:make-near-miss" "" "$(hivemind_detect_test_commands "$td_mk_near")" "testing: near-miss → empty [token-boundary guard]"
+# (13) `test: VAR=x` target-specific variable line → make test [non-vacuity: a matcher rejecting ANY
+# `=` after the colon would wrongly drop this REAL target — distinguishes the assignment OPERATOR
+# (`:=`/`::=`/`?=`/`+=`/`!=`) from any plain `=` appearing in the recipe/prereqs].
+td_mk_tsv="$(td_new_project)"
+printf 'test: VAR=x\n\tgo test ./...\n' > "$td_mk_tsv/Makefile"
+assert_eq "test-detect:make-target-specific-var" "make test" "$(hivemind_detect_test_commands "$td_mk_tsv")" "test: VAR=x target-specific variable → make test [non-vacuity: any-= reject would drop a real target]"
+# Makefile WITHOUT any test: target → no signal [preserved].
+td_mk_bare="$(td_new_project)"
+printf 'build:\n\tgo build ./...\n' > "$td_mk_bare/Makefile"
+assert_eq "test-detect:make-no-target" "" "$(hivemind_detect_test_commands "$td_mk_bare")" "Makefile lacking test: target → no command [preserved]"
+
+# 15b. JS sub-signal ordering: a curated scripts.test WINS over a parallel vitest/jest dependency
+# (the fallback is NOT taken when sub-signal 1 matches).
+td_js_order="$(td_new_project)"
+printf '{"scripts":{"test":"vitest run --coverage"},"devDependencies":{"vitest":"^1.0.0","jest":"^29.0.0"}}\n' > "$td_js_order/package.json"
+assert_eq "test-detect:js-curated-wins" "npm test" "$(hivemind_detect_test_commands "$td_js_order")" "curated scripts.test wins over vitest/jest deps"
+# vitest fallback fires only when scripts.test is unmatched.
+td_js_vitest="$(td_new_project)"
+printf '{"devDependencies":{"vitest":"^1.0.0"}}\n' > "$td_js_vitest/package.json"
+assert_eq "test-detect:js-vitest-fallback" "npx vitest run" "$(hivemind_detect_test_commands "$td_js_vitest")" "no scripts.test, vitest dep → npx vitest run"
+# jest fallback fires only when scripts.test AND vitest are both unmatched.
+td_js_jest="$(td_new_project)"
+printf '{"devDependencies":{"jest":"^29.0.0"}}\n' > "$td_js_jest/package.json"
+assert_eq "test-detect:js-jest-fallback" "npx jest" "$(hivemind_detect_test_commands "$td_js_jest")" "no scripts.test/vitest, jest dep → npx jest"
+# vitest precedes jest when BOTH deps present and scripts.test is unmatched.
+td_js_both="$(td_new_project)"
+printf '{"devDependencies":{"vitest":"^1.0.0","jest":"^29.0.0"}}\n' > "$td_js_both/package.json"
+assert_eq "test-detect:js-vitest-over-jest" "npx vitest run" "$(hivemind_detect_test_commands "$td_js_both")" "vitest precedes jest fallback"
+
+# 15c. `npm init` placeholder (`Error: no test specified`) → UNMATCHED, falls through to the
+# fallbacks. Runner-AGNOSTIC: prove the substring rejection with EACH of the npm/yarn/pnpm init
+# default prefixes; none of them is ever emitted as `npm test`.
+for td_init_prefix in 'echo "Error: no test specified" && exit 1' \
+                      'echo \"Error: no test specified\" && exit 1'; do
+  td_init="$(td_new_project)"
+  jq -n --arg t "$td_init_prefix" '{scripts:{test:$t},devDependencies:{vitest:"^1.0.0"}}' > "$td_init/package.json"
+  assert_eq "test-detect:placeholder-fallthrough" "npx vitest run" "$(hivemind_detect_test_commands "$td_init")" \
+    "init placeholder scripts.test rejected → falls through to vitest (not npm test)"
+done
+# Placeholder with NO fallback present → JS contributes nothing (no-signal path).
+td_init_only="$(td_new_project)"
+jq -n '{scripts:{test:"echo \"Error: no test specified\" && exit 1"}}' > "$td_init_only/package.json"
+assert_eq "test-detect:placeholder-only" "" "$(hivemind_detect_test_commands "$td_init_only")" \
+  "init placeholder with no vitest/jest fallback → no command emitted"
+# Case-insensitivity of the substring guard.
+td_init_case="$(td_new_project)"
+jq -n '{scripts:{test:"echo \"ERROR: NO TEST SPECIFIED\" && exit 1"},devDependencies:{jest:"^29.0.0"}}' > "$td_init_case/package.json"
+assert_eq "test-detect:placeholder-case-insensitive" "npx jest" "$(hivemind_detect_test_commands "$td_init_case")" \
+  "uppercase placeholder still rejected (case-insensitive) → jest fallback"
+
+# 15d. Non-string scripts.test (object / number) → UNMATCHED, falls through to fallbacks.
+td_nonstr_obj="$(td_new_project)"
+printf '{"scripts":{"test":{"cmd":"x"}},"devDependencies":{"vitest":"^1.0.0"}}\n' > "$td_nonstr_obj/package.json"
+assert_eq "test-detect:nonstring-object" "npx vitest run" "$(hivemind_detect_test_commands "$td_nonstr_obj")" \
+  "object scripts.test unmatched → vitest fallback"
+td_nonstr_num="$(td_new_project)"
+printf '{"scripts":{"test":42},"devDependencies":{"jest":"^29.0.0"}}\n' > "$td_nonstr_num/package.json"
+assert_eq "test-detect:nonstring-number" "npx jest" "$(hivemind_detect_test_commands "$td_nonstr_num")" \
+  "numeric scripts.test unmatched → jest fallback"
+# Non-string scripts.test with NO fallback → JS contributes nothing.
+td_nonstr_only="$(td_new_project)"
+printf '{"scripts":{"test":["a","b"]}}\n' > "$td_nonstr_only/package.json"
+assert_eq "test-detect:nonstring-only" "" "$(hivemind_detect_test_commands "$td_nonstr_only")" \
+  "array scripts.test, no fallback → no command"
+
+# 15e. Monorepo multi-match: root package.json (curated) + go.mod → BOTH commands, in canonical
+# order, NEVER combined. A NESTED package.json is ignored (root signals only).
+td_mono="$(td_new_project)"
+printf '{"scripts":{"test":"npm run jest"}}\n' > "$td_mono/package.json"
+printf 'module example.com/x\n\ngo 1.22\n' > "$td_mono/go.mod"
+mkdir -p "$td_mono/packages/nested"
+printf '{"scripts":{"test":"echo nested"}}\n' > "$td_mono/packages/nested/package.json"
+assert_eq "test-detect:monorepo-both" "npm test
+go test ./..." "$(hivemind_detect_test_commands "$td_mono")" \
+  "root package.json + go.mod → both commands, JS before Go, never combined, nested ignored"
+
+# 15f. No-signal project → detector emits nothing; recorder reports recommend-manual and writes
+# NOTHING (nothing fabricated).
+td_empty="$(td_new_project)"
+printf '# Just docs\n' > "$td_empty/README.md"
+assert_eq "test-detect:no-signal-detect" "" "$(hivemind_detect_test_commands "$td_empty")" "no signal → empty detector output"
+td_empty_claude="$td_empty/CLAUDE.md"
+rm -f "$td_empty_claude"
+td_rec_none="$(hivemind_record_validation "$td_empty" "$td_empty_claude")"
+assert_eq "test-detect:no-signal-recorder" "none detected (recommend manual)" "$td_rec_none" "no signal → recommend manual"
+if [ -e "$td_empty_claude" ]; then
+  failed "test-detect:no-signal-no-write" "recorder fabricated a CLAUDE.md on the no-signal path"
+else
+  pass "test-detect:no-signal-no-write" "no-signal recorder wrote nothing (no fabrication)"
+fi
+
+# 15g. Recorder DELEGATES the `## Validation` append to file-guard.sh: absent CLAUDE.md → `added`
+# with a fenced block per command; existing `## Validation` → `already documented`, prose
+# byte-untouched.
+td_rec="$(td_new_project)"
+printf 'module example.com/x\n\ngo 1.22\n' > "$td_rec/go.mod"
+td_rec_claude="$td_rec/CLAUDE.md"
+rm -f "$td_rec_claude"
+td_rec_added="$(hivemind_record_validation "$td_rec" "$td_rec_claude")"
+assert_eq "test-detect:recorder-added" "added" "$td_rec_added" "absent CLAUDE.md, go signal → added (delegated to file-guard)"
+assert_eq "test-detect:recorder-section" "1" "$(grep -c '^## Validation$' "$td_rec_claude")" "## Validation heading written once"
+assert_eq "test-detect:recorder-command" "1" "$(grep -cF 'go test ./...' "$td_rec_claude")" "detected command in the fenced block"
+# Already-documented project → already documented, existing prose untouched (file-guard delegation).
+td_doc="$(td_new_project)"
+printf 'module example.com/x\n\ngo 1.22\n' > "$td_doc/go.mod"
+td_doc_claude="$td_doc/CLAUDE.md"
+printf '# Project\n\n## Validation\n\n```bash\nmake test\n```\n' > "$td_doc_claude"
+td_doc_before="$(cat "$td_doc_claude")"
+td_doc_res="$(hivemind_record_validation "$td_doc" "$td_doc_claude")"
+assert_eq "test-detect:recorder-already-documented" "already documented" "$td_doc_res" "existing ## Validation → already documented"
+assert_eq "test-detect:recorder-prose-untouched" "$td_doc_before" "$(cat "$td_doc_claude")" "existing ## Validation prose left byte-unchanged"
+
+# 15h. Monorepo recorder: multiple commands → one fenced block PER command, both present.
+td_mono_rec="$(td_new_project)"
+printf '{"scripts":{"test":"npm run x"}}\n' > "$td_mono_rec/package.json"
+printf 'module example.com/x\n\ngo 1.22\n' > "$td_mono_rec/go.mod"
+td_mono_claude="$td_mono_rec/CLAUDE.md"
+rm -f "$td_mono_claude"
+hivemind_record_validation "$td_mono_rec" "$td_mono_claude" >/dev/null
+assert_eq "test-detect:monorepo-recorder-js" "1" "$(grep -cF 'npm test' "$td_mono_claude")" "npm test fenced block present"
+assert_eq "test-detect:monorepo-recorder-go" "1" "$(grep -cF 'go test ./...' "$td_mono_claude")" "go test ./... fenced block present"
+
+# ── Section 16: root-cluster class-locking matrix (RR3-STEP-005) ────────────────────
+echo ''
+echo '=== root-cluster class-locking matrix: seed-hive merge-predicate-gap regression lock ==='
+#
+# CLASS LOCK for the seed-hive MERGE-PREDICATE-GAP cluster (PR #297). The site fixes that closed the
+# cluster each replaced a presence-only predicate with a VALUE-STATE NORMALIZATION (or its approach-
+# level extension). Clauses (1)-(3) are the RR3 closure; (4)-(5) are the RR4 approach-level closure:
+#   (1) file-guard `## Validation`  — bare-heading presence → BODY presence (heading-only stub is ABSENT)
+#   (2) settings-merge `agent`      — any-present-string → empty/whitespace normalizes to ABSENT
+#   (3) claude-mem CLAUDE_CODE_PATH — present-non-empty-string → present-non-string/null is NEVER clobbered
+#   (4) file-guard `## Validation`  — PRESENT-NO-COMMAND is APPENDED-UNDER (prose byte-preserved, not replaced)
+#   (5) settings-merge containers   — wrong-typed container → canon_obj/canon_arr empty → merge stays `ok` (no jq abort)
+#   (6) settings-merge enabledPlugins — present-but-false value-equality → classified `added` AND corrected to `true`
+#   (7) BOTH settings-merge + claude-mem — multi-document JSON STREAM rejected via the shared json-normalize.sh
+#       single-document gate (settings-merge → `malformed`; claude-mem → `skipped (malformed json)`, byte-unchanged)
+# This single test asserts ALL SEVEN together as the NAMED root-cluster lock so a future single-SITE
+# regression (reverting just one predicate / one approach-level fix / either single-document gate) trips
+# it. It is NON-VACUOUS: each clause below fails independently if its corresponding site fix reverts, so
+# no one site can silently regress while the others hold.
+mx_fail=0
+
+# Matrix clause (1): heading-only `## Validation` → command appended (file-guard body-presence).
+# Reverts-as: a bare-heading predicate would report `already documented` and write no fenced block.
+mx_claude="$WORKDIR/mx-claude.md"
+printf '# Project\n\n## Validation\n' > "$mx_claude"
+mx_v="$(hivemind_guard_validation_section "$mx_claude" "$FG_VALIDATION_BODY")"
+[ "$mx_v" = "added" ] || { mx_fail=1; echo "  matrix-1 FAIL: heading-only stub status=$mx_v (want added)"; }
+grep -q "$(printf '^\140\140\140bash$')" "$mx_claude" || { mx_fail=1; echo "  matrix-1 FAIL: command body not appended into stub"; }
+
+# Matrix clause (2): `agent:""` → `added` not conflict (settings-merge value-state normalization).
+# Reverts-as: an any-present-string predicate would classify "" as a real value → conflict.
+mx_sm="$(hivemind_settings_merge '{"agent":""}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+mx_sm_class="$(printf '%s' "$mx_sm" | jq -r '.keys.agent')"
+mx_sm_status="$(printf '%s' "$mx_sm" | jq -r '.status')"
+[ "$mx_sm_class" = "added" ] || { mx_fail=1; echo "  matrix-2 FAIL: empty agent class=$mx_sm_class (want added)"; }
+[ "$mx_sm_status" = "ok" ] || { mx_fail=1; echo "  matrix-2 FAIL: empty agent status=$mx_sm_status (want ok)"; }
+
+# Matrix clause (3): present non-string CLAUDE_CODE_PATH → skipped-not-clobbered (claude-mem never-clobber).
+# Reverts-as: a normalize-non-string-to-absent predicate would resolve+write → status `set`, bytes change.
+mx_home="$(cm_setup_home mx-claude-mem)"
+mx_cm_file="$mx_home/.claude-mem/settings.json"
+printf '{\n  "CLAUDE_CODE_PATH": false,\n  "logLevel": "info"\n}\n' > "$mx_cm_file"
+mx_cm_before="$(cat "$mx_cm_file")"
+mx_cm_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$mx_cm_file" "$mx_home")"
+[ "$mx_cm_status" = "already set" ] || { mx_fail=1; echo "  matrix-3 FAIL: non-string status=$mx_cm_status (want already set)"; }
+[ "$mx_cm_before" = "$(cat "$mx_cm_file")" ] || { mx_fail=1; echo "  matrix-3 FAIL: non-string file was clobbered"; }
+
+# Matrix clause (4) [RR4]: PROSE-PRESERVATION — a prose-only `## Validation` is APPENDED-UNDER, the
+# prose byte-PRESERVED while the command body is inserted (file-guard append-under, not replace).
+# Reverts-as: the RR3 replace-in-place code would DROP the prose line (grep -F empty).
+mx_prose="$WORKDIR/mx-prose.md"
+printf '## Validation\n\nRun the tests manually before pushing.\n' > "$mx_prose"
+mx_pv="$(hivemind_guard_validation_section "$mx_prose" "$FG_VALIDATION_BODY")"
+[ "$mx_pv" = "added" ] || { mx_fail=1; echo "  matrix-4 FAIL: prose-only stub status=$mx_pv (want added)"; }
+[ "$(grep -cF 'Run the tests manually before pushing.' "$mx_prose")" = "1" ] || { mx_fail=1; echo "  matrix-4 FAIL: existing prose dropped (data loss)"; }
+
+# Matrix clause (5) [RR4]: WRONG-TYPED-CONTAINER-NO-CRASH — a wrong-typed container (enabledPlugins as
+# a string) collapses to its canonical empty via canon_obj BEFORE any predicate runs, so the merge
+# returns status `ok` and seeds the required key (settings-merge shape-normalization at one chokepoint).
+# Reverts-as: without canon_obj/canon_arr the wrong-typed container aborts jq (rc=5) → empty `.status`.
+mx_wt="$(hivemind_settings_merge '{"enabledPlugins":"oops"}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+mx_wt_status="$(printf '%s' "$mx_wt" | jq -r '.status')"
+mx_wt_value="$(printf '%s' "$mx_wt" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')"
+[ "$mx_wt_status" = "ok" ] || { mx_fail=1; echo "  matrix-5 FAIL: wrong-typed container status=$mx_wt_status (want ok)"; }
+[ "$mx_wt_value" = "true" ] || { mx_fail=1; echo "  matrix-5 FAIL: required key not seeded over canonical empty (value=$mx_wt_value)"; }
+
+# Matrix clause (6) [SWEEP-STEP-004]: VALUE-EQUALITY — enabledPlugins["hivemind@brenpike"] present
+# but == false is classified `added` (NOT `already present`) AND the build CORRECTS it to true. This
+# is the value-not-presence predicate (enabled_true), not has()-presence.
+# Reverts-as: a presence-only has() predicate would report `already present` and leave the value false.
+mx_ve="$(hivemind_settings_merge '{"enabledPlugins":{"hivemind@brenpike":false}}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
+mx_ve_class="$(printf '%s' "$mx_ve" | jq -r '.keys["enabledPlugins.hivemind@brenpike"]')"
+mx_ve_value="$(printf '%s' "$mx_ve" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')"
+[ "$mx_ve_class" = "added" ] || { mx_fail=1; echo "  matrix-6 FAIL: present-false enabledPlugin class=$mx_ve_class (want added)"; }
+[ "$mx_ve_value" = "true" ] || { mx_fail=1; echo "  matrix-6 FAIL: present-false enabledPlugin not corrected (value=$mx_ve_value, want true)"; }
+
+# Matrix clause (7) [JSON-stream sweep, STEP-005]: MULTI-DOCUMENT-STREAM REJECTION across BOTH sites
+# sharing the json-normalize.sh single-document primitive. A STREAM of two concatenated top-level
+# objects (`{"a":1}{"b":2}`) is NOT a single object, so BOTH precheck sites must take their fail-closed
+# path together: settings-merge → status `malformed` (settings null); claude-mem → `skipped (malformed
+# json)` with the target file BYTE-UNCHANGED (binary present, so the skip is the stream gate, not a
+# missing binary). Reverts-as: a `type=="object"` precheck on EITHER site STREAMS both docs and exits 0
+# on the last → settings-merge crashes its `--argjson` build (status no longer `malformed`) and
+# claude-mem resolves+writes (status `set`, bytes change). Reverting EITHER single-doc gate trips this
+# one matrix case.
+mx_sm_stream="$(hivemind_settings_merge '{"a":1}{"b":2}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
+mx_sm_stream_status="$(printf '%s' "$mx_sm_stream" | jq -r '.status')"
+[ "$mx_sm_stream_status" = "malformed" ] || { mx_fail=1; echo "  matrix-7 FAIL: settings-merge stream status=$mx_sm_stream_status (want malformed)"; }
+mx_stream_home="$(cm_setup_home mx-claude-mem-stream)"
+mx_stream_file="$mx_stream_home/.claude-mem/settings.json"
+printf '{"a":1}{"b":2}' > "$mx_stream_file"
+mx_stream_before="$(cat "$mx_stream_file")"
+mx_stream_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$mx_stream_file" "$mx_stream_home")"
+[ "$mx_stream_status" = "skipped (malformed json)" ] || { mx_fail=1; echo "  matrix-7 FAIL: claude-mem stream status=$mx_stream_status (want skipped malformed json)"; }
+[ "$mx_stream_before" = "$(cat "$mx_stream_file")" ] || { mx_fail=1; echo "  matrix-7 FAIL: claude-mem stream file was clobbered"; }
+
+if [ "$mx_fail" -eq 0 ]; then
+  pass "matrix:root-cluster-class-lock" "all seven merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered + prose-preservation append-under + wrong-typed-container normalizes to ok + present-false enabledPlugin value-equality corrected to true + multi-doc-stream rejected by both settings-merge[malformed] and claude-mem[skipped malformed, byte-unchanged])"
+else
+  failed "matrix:root-cluster-class-lock" "a seed-hive merge-predicate-gap site fix regressed (see matrix-N FAIL lines above)"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
