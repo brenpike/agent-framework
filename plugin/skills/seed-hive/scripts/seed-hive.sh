@@ -264,11 +264,18 @@ phase_apply() {
   mkdir -p "$settings_dir"
 
   local current_settings=""
-  if [ -f "$settings_file" ]; then
-    # Class A: bash $(cat ...) silently strips NUL bytes (and trailing newlines), so a NUL-bearing
-    # or torn on-disk settings.json would pass the in-variable single-object check and get clobbered
-    # while apply reports complete. Validate the file ON ITS PATH before the lossy read — same root
-    # as the ledger-project.sh hivemind_path_has_nul-before-$(cat) NUL precedent.
+  # An EMPTY existing settings.json (zero-byte OR whitespace-only) is treated the SAME as an absent
+  # file: current_settings stays "" and hivemind_settings_merge seeds {} defaults. The on-path single-
+  # object gate returns non-zero for empty content, so without this special-case an empty file would be
+  # misclassified malformed→blocked even though an absent file seeds fine. Emptiness is probed at the
+  # BYTE level (-s for zero-byte, grep for any non-whitespace byte) — never via $(cat) capture, which
+  # strips NUL/trailing newlines and would mask a torn file as empty.
+  # NON-EMPTY content (any non-whitespace byte, including a NUL-bearing file) still runs the on-path
+  # gate below — Class A: bash $(cat ...) silently strips NUL bytes (and trailing newlines), so a
+  # NUL-bearing or torn on-disk settings.json would pass the in-variable single-object check and get
+  # clobbered while apply reports complete. Validate the file ON ITS PATH before the lossy read — same
+  # root as the ledger-project.sh hivemind_path_has_nul-before-$(cat) NUL precedent.
+  if [ -f "$settings_file" ] && [ -s "$settings_file" ] && grep -q '[^[:space:]]' "$settings_file"; then
     if ! hivemind_jq_is_single_object_file "$settings_file"; then
       emit_blocked_output "$project_root" "malformed" "" "$companions_json"
       return 0

@@ -232,6 +232,78 @@ else
 fi
 assert_eq "nul:byte-count" "$BYTES3N_BEFORE" "$(wc -c < "$ROOT3N/.claude/settings.json")" "settings.json byte-count unchanged"
 
+# ── Case 3e: EMPTY existing settings (zero-byte) → seed defaults, status complete ─
+# Regression guard (PR #297, e0e75ab): the on-path single-object gate returns NON-ZERO for a
+# zero-byte file, so pre-fix an empty existing settings.json was misclassified malformed→blocked
+# even though an ABSENT file seeds fine and the merge core treats empty as `{}`. The empty==absent
+# special-case routes zero-byte content to current_settings="" → seed defaults. Non-vacuous: pre-fix
+# the gate fired emit_blocked_output malformed → status blocked, flipping these assertions.
+echo '=== Case 3e: EMPTY (zero-byte) existing settings — seed defaults, status complete ==='
+ROOT3E="$(new_project empty-zero)"
+mkdir -p "$ROOT3E/.claude"
+: > "$ROOT3E/.claude/settings.json"
+INPUTS3E="$(jq -nc --arg r "$ROOT3E" '{ project_root: $r, agent_target: "hivemind:overlord", caveman: "no", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT3E="$(run_apply "$ROOT3E" "$INPUTS3E")"
+assert_eq "empty-zero:exit" "0" "$?" "zero-byte seed exit"
+assert_contains "empty-zero:status" "status: complete" "$OUT3E"
+assert_eq "empty-zero:settings.agent" "hivemind:overlord" \
+  "$(jq -r '.agent' "$ROOT3E/.claude/settings.json" 2>/dev/null)" "seeded agent"
+assert_eq "empty-zero:settings.hive" "true" \
+  "$(jq -r '.enabledPlugins["hivemind@brenpike"]' "$ROOT3E/.claude/settings.json" 2>/dev/null)" "seeded hive key"
+
+# ── Case 3w: WHITESPACE-ONLY existing settings → seed defaults, status complete ───
+# Same empty==absent special-case as Case 3e, exercising the byte-level non-whitespace probe (not
+# just -s): a file with only spaces/newlines/tabs has no non-whitespace byte → empty branch → seed.
+echo '=== Case 3w: WHITESPACE-ONLY existing settings — seed defaults, status complete ==='
+ROOT3W="$(new_project empty-ws)"
+mkdir -p "$ROOT3W/.claude"
+printf '  \n\t\n' > "$ROOT3W/.claude/settings.json"
+INPUTS3W="$(jq -nc --arg r "$ROOT3W" '{ project_root: $r, agent_target: "hivemind:overlord", caveman: "no", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT3W="$(run_apply "$ROOT3W" "$INPUTS3W")"
+assert_eq "empty-ws:exit" "0" "$?" "whitespace-only seed exit"
+assert_contains "empty-ws:status" "status: complete" "$OUT3W"
+assert_eq "empty-ws:settings.agent" "hivemind:overlord" \
+  "$(jq -r '.agent' "$ROOT3W/.claude/settings.json" 2>/dev/null)" "seeded agent"
+assert_eq "empty-ws:settings.hive" "true" \
+  "$(jq -r '.enabledPlugins["hivemind@brenpike"]' "$ROOT3W/.claude/settings.json" 2>/dev/null)" "seeded hive key"
+
+# ── Case 3g: GUARD — non-empty malformed/multi-doc still blocked (validation NOT loosened) ─
+# Proves the empty==absent special-case did NOT loosen non-empty validation: any non-whitespace byte
+# reaches the on-path single-object gate, which blocks malformed `{`, multi-doc `{}{}`, and NUL.
+echo '=== Case 3g: GUARD non-empty malformed `{` — still blocked ==='
+ROOT3G="$(new_project guard-brace)"
+mkdir -p "$ROOT3G/.claude"
+printf '{' > "$ROOT3G/.claude/settings.json"
+BEFORE3G="$(cat "$ROOT3G/.claude/settings.json")"
+INPUTS3G="$(jq -nc --arg r "$ROOT3G" '{ project_root: $r, caveman: "no", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT3G="$(run_apply "$ROOT3G" "$INPUTS3G")"
+assert_contains "guard-brace:status" "status: blocked" "$OUT3G"
+assert_eq "guard-brace:byte-unchanged" "$BEFORE3G" "$(cat "$ROOT3G/.claude/settings.json")" "malformed brace untouched"
+
+echo '=== Case 3g: GUARD multi-doc `{}{}` — still blocked ==='
+ROOT3GM="$(new_project guard-multidoc)"
+mkdir -p "$ROOT3GM/.claude"
+printf '{}{}' > "$ROOT3GM/.claude/settings.json"
+BEFORE3GM="$(cat "$ROOT3GM/.claude/settings.json")"
+INPUTS3GM="$(jq -nc --arg r "$ROOT3GM" '{ project_root: $r, caveman: "no", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT3GM="$(run_apply "$ROOT3GM" "$INPUTS3GM")"
+assert_contains "guard-multidoc:status" "status: blocked" "$OUT3GM"
+assert_eq "guard-multidoc:byte-unchanged" "$BEFORE3GM" "$(cat "$ROOT3GM/.claude/settings.json")" "multi-doc untouched"
+
+echo '=== Case 3g: GUARD NUL-bearing — still blocked, byte-unchanged ==='
+ROOT3GN="$(new_project guard-nul)"
+mkdir -p "$ROOT3GN/.claude"
+printf '{\000}' > "$ROOT3GN/.claude/settings.json"
+cp "$ROOT3GN/.claude/settings.json" "$ROOT3GN/settings.fixture"
+INPUTS3GN="$(jq -nc --arg r "$ROOT3GN" '{ project_root: $r, caveman: "no", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT3GN="$(run_apply "$ROOT3GN" "$INPUTS3GN")"
+assert_contains "guard-nul:status" "status: blocked" "$OUT3GN"
+if cmp -s "$ROOT3GN/settings.fixture" "$ROOT3GN/.claude/settings.json"; then
+  pass "guard-nul:byte-unchanged" "NUL-bearing settings.json byte-exact vs fixture"
+else
+  failed "guard-nul:byte-unchanged" "NUL-bearing settings.json was mutated (expected byte-exact fixture)"
+fi
+
 # ── Case 4: all-companions-no reduced Output (already covered by Case 1) + caveman yes ──
 echo '=== Case 4: caveman=yes seed — envrc + hook + pluginConfigs written ==='
 ROOT4="$(new_project caveman)"
