@@ -210,18 +210,54 @@ _hivemind_ruby_has_rspec_signal() {
 }
 
 # _hivemind_makefile_has_test_target <makefile>
-# Return 0 when <makefile> declares a REAL `test:` target (a line whose first token is `test`
-# immediately followed by `:`), per SKILL.md step 14a "a real test: target". Mere file existence
-# is insufficient.
+# Return 0 when <makefile> declares a REAL `test:` target, per SKILL.md step 14a "a real test:
+# target". Mere file existence is insufficient.
 #
-# LEADING WHITESPACE: a leading run of SPACES is allowed (`[ ]*`) because GNU make 4.3 still treats
-# a space-indented `test:` line as a target. The leading class is deliberately literal-space-only,
-# NOT `[[:space:]]*`: a TAB-leading line (`\ttest:`) is a make RECIPE command under some other
-# target, NOT a target declaration, and must stay UNmatched.
+# This classifies a line as make TARGET vs ASSIGNMENT vs RECIPE by rule grammar — assignment-operator
+# lines beginning with `test` can no longer be misread as a target. The discriminator is the make
+# rule grammar, encoded as a single awk tokenizer (POSIX ERE has no lookahead, so distinguishing a
+# rule `:` from an assignment `:=`/`::=` is awkward in a regex):
+#   - LEADING WHITESPACE: only literal SPACES are stripped. A line whose leading whitespace contains
+#     a TAB (i.e. starts with a TAB) is a make RECIPE command under another target, NOT a target —
+#     never matched. The leading class stays literal-space-only, NEVER `[[:space:]]*`/`\s`.
+#   - FIRST TOKEN must be EXACTLY `test` (whole token): `testing:` and `.PHONY: test` both fail
+#     because their first token is not `test`.
+#   - After `test` and optional spaces, the next significant character must be a RULE colon — a
+#     single `:` or double `::` (double-colon rule is a VALID target) — and that colon run must NOT
+#     be immediately followed by `=` (`:=`/`::=` are ASSIGNMENTS, not targets).
+#   - `test` followed by an assignment operator `?=`/`+=`/`!=` (instead of a colon) is an ASSIGNMENT,
+#     not a target — never matched.
+# A target-specific variable line like `test: VAR=x` IS a real target: the discriminator is the
+# assignment OPERATOR (`:=`/`::=`/`?=`/`+=`/`!=`), not the presence of any `=` on the line.
 _hivemind_makefile_has_test_target() {
   local makefile="$1"
   [ -f "$makefile" ] || return 1
-  grep -Eq '^[ ]*test[[:space:]]*:' "$makefile" 2>/dev/null
+  awk '
+    # A leading TAB marks a recipe command line — never a target.
+    /^\t/ { next }
+    {
+      line = $0
+      # Strip leading literal spaces only.
+      sub(/^ +/, "", line)
+      # First token must be exactly `test`.
+      if (substr(line, 1, 4) != "test") next
+      rest = substr(line, 5)
+      # `test` may be followed by optional spaces, then the operator.
+      sub(/^ +/, "", rest)
+      # Assignment operators directly after `test` → ASSIGNMENT, not a target.
+      if (rest ~ /^[?+!]=/) next
+      # Next significant char must be a rule colon.
+      if (substr(rest, 1, 1) != ":") next
+      # Consume the colon run (single `:` or double `::`).
+      if (substr(rest, 1, 2) == "::") after = substr(rest, 3)
+      else after = substr(rest, 2)
+      # A colon run immediately followed by `=` is `:=`/`::=` → ASSIGNMENT, not a target.
+      if (substr(after, 1, 1) == "=") next
+      found = 1
+      exit
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$makefile" 2>/dev/null
 }
 
 # hivemind_detect_test_commands <project_root>

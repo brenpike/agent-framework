@@ -3090,32 +3090,75 @@ assert_eq "test-detect:ruby-direct-spec-file" "bundle exec rspec" \
   "$(hivemind_detect_test_commands "$td_rb_direct")" \
   "direct-child spec/bar_spec.rb still detected (recursive find includes depth-1)"
 
-# Make with a real test: target → make test.
+# Make TARGET-vs-ASSIGNMENT-vs-RECIPE grammar matrix. The matcher classifies each line by make's
+# rule grammar; every assertion below carries a non-vacuity note tied to the pre-fix OPEN regex
+# `^[ ]*test[[:space:]]*:` (which matched `test` + optional space + ANY colon, so it false-positived
+# on `:=`/`::=` assignment lines) or to a behavior that must be PRESERVED.
+# (1) column-0 real target → make test [preserved].
 td_mk="$(td_new_project)"
 printf 'test:\n\tgo test ./...\n' > "$td_mk/Makefile"
-assert_eq "test-detect:make" "make test" "$(hivemind_detect_test_commands "$td_mk")" "Makefile real test: target → make test"
-# Makefile WITHOUT a test: target → no signal.
-td_mk_bare="$(td_new_project)"
-printf 'build:\n\tgo build ./...\n' > "$td_mk_bare/Makefile"
-assert_eq "test-detect:make-no-target" "" "$(hivemind_detect_test_commands "$td_mk_bare")" "Makefile lacking test: target → no command"
-
-# (a) SPACE-leading target: a `test:` line indented with SPACES is still a target GNU make 4.3 runs.
-# Non-vacuity: pre-fix the predicate anchored at column 0 (`^test[[:space:]]*:`) → leading space
-# missed → empty; this assertion (expecting `make test`) FAILS pre-fix, passes once the leading
-# class becomes `[ ]*`.
+assert_eq "test-detect:make" "make test" "$(hivemind_detect_test_commands "$td_mk")" "column-0 test: target → make test [preserved]"
+# (2) space-leading target → make test [Fix-1 guard: column-0-anchored regex would miss this].
 td_mk_sp="$(td_new_project)"
 printf ' test:\n\t@echo run\n' > "$td_mk_sp/Makefile"
-assert_eq "test-detect:make-space-target" "make test" "$(hivemind_detect_test_commands "$td_mk_sp")" "space-indented test: target → make test"
-# (b) TAB-recipe guard: the only test-bearing line is a TAB-indented RECIPE under another target —
-# a make command, NOT a target. Must stay UNmatched. Recurrence guard: would regress if the fix
-# naively used a `[[:space:]]*` leading class (which would admit the tab).
+assert_eq "test-detect:make-space-target" "make test" "$(hivemind_detect_test_commands "$td_mk_sp")" "space-indented test: target → make test [Fix-1 guard]"
+# (3) double-colon rule target → make test [non-vacuity: a naive reject-any-second-char-after-colon
+# would wrongly drop this VALID target].
+td_mk_dc="$(td_new_project)"
+printf 'test::\n\t@echo dc\n' > "$td_mk_dc/Makefile"
+assert_eq "test-detect:make-double-colon" "make test" "$(hivemind_detect_test_commands "$td_mk_dc")" "double-colon test:: rule → make test [non-vacuity: valid target, second char is a colon]"
+# (4) THE Codex P2: `test :=` recursive assignment, no real target → empty [pre-fix the regex
+# matched the `:` of `:=` → false positive; rejected post-fix by the assignment-operator grammar].
+td_mk_assign="$(td_new_project)"
+printf 'test := foo\nbuild:\n\tgo build ./...\n' > "$td_mk_assign/Makefile"
+assert_eq "test-detect:make-assign-colon-eq" "" "$(hivemind_detect_test_commands "$td_mk_assign")" "test := assignment, no target → empty [Codex P2: pre-fix matched the : of :=]"
+# (5) `test ::=` POSIX simple assignment → empty [pre-fix regex matched the first `:` of `::=` →
+# false positive; rejected post-fix].
+td_mk_assign2="$(td_new_project)"
+printf 'test ::= foo\nbuild:\n\tgo build ./...\n' > "$td_mk_assign2/Makefile"
+assert_eq "test-detect:make-assign-dcolon-eq" "" "$(hivemind_detect_test_commands "$td_mk_assign2")" "test ::= assignment → empty [pre-fix matched first : of ::=]"
+# (6) `test ?=` conditional assignment → empty [grammar class lock: rejected by the assignment-operator
+# branch, never reached the pre-fix regex's colon at all but locks the class].
+td_mk_q="$(td_new_project)"
+printf 'test ?= foo\nbuild:\n\tgo build ./...\n' > "$td_mk_q/Makefile"
+assert_eq "test-detect:make-assign-qeq" "" "$(hivemind_detect_test_commands "$td_mk_q")" "test ?= assignment → empty [grammar class lock]"
+# (7) `test +=` append assignment → empty [grammar class lock].
+td_mk_plus="$(td_new_project)"
+printf 'test += foo\nbuild:\n\tgo build ./...\n' > "$td_mk_plus/Makefile"
+assert_eq "test-detect:make-assign-pluseq" "" "$(hivemind_detect_test_commands "$td_mk_plus")" "test += assignment → empty [grammar class lock]"
+# (8) `test !=` shell assignment → empty [grammar class lock].
+td_mk_bang="$(td_new_project)"
+printf 'test != echo foo\nbuild:\n\tgo build ./...\n' > "$td_mk_bang/Makefile"
+assert_eq "test-detect:make-assign-bangeq" "" "$(hivemind_detect_test_commands "$td_mk_bang")" "test != shell-assignment → empty [grammar class lock]"
+# (9) `.PHONY: test` with NO `test:` recipe → empty [non-vacuity: locks the decision that a phony
+# DECLARATION with no recipe is not a runnable `make test`; first token is `.PHONY`, not `test`].
+td_mk_phony="$(td_new_project)"
+printf '.PHONY: test\nbuild:\n\tgo build ./...\n' > "$td_mk_phony/Makefile"
+assert_eq "test-detect:make-phony-only" "" "$(hivemind_detect_test_commands "$td_mk_phony")" ".PHONY: test with no test: recipe → empty [first token is .PHONY, not test]"
+# (10) `.PHONY: test` PLUS a real `test:` recipe elsewhere → make test [the real target line matches
+# independently of the phony declaration].
+td_mk_phony2="$(td_new_project)"
+printf '.PHONY: test\ntest:\n\tgo test ./...\n' > "$td_mk_phony2/Makefile"
+assert_eq "test-detect:make-phony-plus-target" "make test" "$(hivemind_detect_test_commands "$td_mk_phony2")" ".PHONY: test plus real test: recipe → make test [real target matches independently]"
+# (11) TAB-indented `test:` recipe line under another target → empty [regresses if the leading class
+# is loosened to `[[:space:]]*`; locks the literal-space invariant — a TAB-led line is a recipe].
 td_mk_tab="$(td_new_project)"
 printf 'build:\n\ttest: not-a-target\n' > "$td_mk_tab/Makefile"
-assert_eq "test-detect:make-tab-recipe" "" "$(hivemind_detect_test_commands "$td_mk_tab")" "TAB-indented test: recipe line → no command (not a target)"
-# (c) near-miss guard: `testing:` is not a `test:` target. Recurrence guard, must stay empty.
+assert_eq "test-detect:make-tab-recipe" "" "$(hivemind_detect_test_commands "$td_mk_tab")" "TAB-indented test: recipe line → empty [locks literal-space leading invariant]"
+# (12) `testing:` near-miss → empty [token-boundary guard: first token is `testing`, not `test`].
 td_mk_near="$(td_new_project)"
 printf 'testing:\n\t@echo x\n' > "$td_mk_near/Makefile"
-assert_eq "test-detect:make-near-miss" "" "$(hivemind_detect_test_commands "$td_mk_near")" "testing: near-miss → no command"
+assert_eq "test-detect:make-near-miss" "" "$(hivemind_detect_test_commands "$td_mk_near")" "testing: near-miss → empty [token-boundary guard]"
+# (13) `test: VAR=x` target-specific variable line → make test [non-vacuity: a matcher rejecting ANY
+# `=` after the colon would wrongly drop this REAL target — distinguishes the assignment OPERATOR
+# (`:=`/`::=`/`?=`/`+=`/`!=`) from any plain `=` appearing in the recipe/prereqs].
+td_mk_tsv="$(td_new_project)"
+printf 'test: VAR=x\n\tgo test ./...\n' > "$td_mk_tsv/Makefile"
+assert_eq "test-detect:make-target-specific-var" "make test" "$(hivemind_detect_test_commands "$td_mk_tsv")" "test: VAR=x target-specific variable → make test [non-vacuity: any-= reject would drop a real target]"
+# Makefile WITHOUT any test: target → no signal [preserved].
+td_mk_bare="$(td_new_project)"
+printf 'build:\n\tgo build ./...\n' > "$td_mk_bare/Makefile"
+assert_eq "test-detect:make-no-target" "" "$(hivemind_detect_test_commands "$td_mk_bare")" "Makefile lacking test: target → no command [preserved]"
 
 # 15b. JS sub-signal ordering: a curated scripts.test WINS over a parallel vitest/jest dependency
 # (the fallback is NOT taken when sub-signal 1 matches).
