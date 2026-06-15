@@ -138,6 +138,15 @@ hivemind_claude_mem_provision_path() {
     return 0
   fi
 
+  # SCALAR VALUE-STATE NORMALIZATION AT ONE CHOKEPOINT (ABSENT / PRESENT-CANONICAL /
+  # PRESENT-MALFORMED): this lib touches ONE scalar key (CLAUDE_CODE_PATH) on a top-level object
+  # already validated by the pre-check above. It does NOT index any nested container-typed key
+  # (no enabledPlugins / permissions / hooks / array read), so NO canon_obj/canon_arr helper is
+  # needed or applicable here. This is the scalar-only conforming site of the cluster rule; the
+  # three-state classification and never-clobber decision are complete at this single predicate.
+  # Cluster peers: settings-merge.sh (SHAPE-NORMALIZE-AT-ONE-CHOKEPOINT, container keys via
+  # canon_obj/canon_arr) and file-guard.sh (VALUE-STATE NORMALIZATION, prose section states).
+  #
   # Key value-state normalization (never-clobber). The key is PRESENT-CANONICAL (a non-empty
   # string) OR PRESENT-MALFORMED (present but a non-string: boolean/null/number/object/array) →
   # `already set`, write NOTHING. Both are user-provided values that must NEVER be overwritten,
