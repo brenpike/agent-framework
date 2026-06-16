@@ -42,7 +42,16 @@
 #   emitted token can contain a literal tab and break the framing. Fields, in order:
 #
 #     STRAIN <TAB> brood_id <TAB> name <TAB> worktree_path <TAB> branch <TAB> tmux_session \
-#            <TAB> manifest_status <TAB> state_current <TAB> run_status
+#            <TAB> manifest_status <TAB> state_current <TAB> run_status <TAB> live_branch
+#
+#   `live_branch` (the LAST field, index 10) is the selected worktree's git-reported LIVE branch
+#   (`branch refs/heads/<name>` from the porcelain parse), gated through the identifier value-class.
+#   It is APPENDED so indices 2-9 are unchanged. It is DISTINCT from the display-only manifest
+#   `branch` column (field 5, the stale spawn-time scratch ref): the collector keys its `gh pr list
+#   --head` PR probe on THIS live branch (#270), because a brood child opens its PR from the
+#   DERIVED branch it switched onto, not the manifest scratch ref. A no-match/detached worktree
+#   yields MISSING; an identifier reject yields MALFORMED (so the collector's sentinel gate skips
+#   the probe rather than probing a literal token).
 #
 #   `brood_id` is the FIRST field of every STRAIN line: a single value read
 #   from the manifest TOP-LEVEL `brood_id`, validated ONCE against ^brood-[0-9a-f-]+$ and emitted
@@ -59,10 +68,10 @@
 #   This is DISTINCT from MISSING (a ledger pointer exists but the child has not yet written
 #   started-evidence) and from MALFORMED (a present-but-rejected ledger). Example (tabs shown as
 #   <TAB>):
-#     STRAIN<TAB>brood-1a2b<TAB>auth<TAB>/abs/wt/auth<TAB>strain/brood-1a2b/auth<TAB>brood-1a2b-auth<TAB>spawned<TAB>implement_step<TAB>running
+#     STRAIN<TAB>brood-1a2b<TAB>auth<TAB>/abs/wt/auth<TAB>strain/brood-1a2b/auth<TAB>brood-1a2b-auth<TAB>spawned<TAB>implement_step<TAB>running<TAB>bugfix/auth-fix-9f3a
 #
 #   The full field ORDER is: brood_id, name, worktree_path, branch, tmux_session,
-#   manifest_status, state_current, run_status.
+#   manifest_status, state_current, run_status, live_branch.
 #
 #   INTEGRITY SENTINEL (distinct from any STRAIN line): when the manifest is PRESENT but
 #   UNREADABLE — either UNPARSEABLE (torn / truncated / invalid JSON) OR VALID-JSON-BUT-WRONG-SHAPE
@@ -128,7 +137,7 @@ blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 #   2. Escape `|` (0x7C) -> `\|` (the Markdown cell escape), so an inert quoted `|` cannot forge a
 #      table column.
 # The TAB field SEPARATOR is NOT touched here: this operates WITHIN a single field value only; the
-# caller still joins fields with literal TABs, preserving the 9-field TAB-delimited STRAIN grammar.
+# caller still joins fields with literal TABs, preserving the 10-field TAB-delimited STRAIN grammar.
 encode_cell() {
   # `tr -d` drops C0 + DEL; `sed` escapes any remaining `|`. Order: strip controls first, then
   # escape `|`, so a stripped control byte can never split the `|` escape. Operates on stdin via a
@@ -301,19 +310,34 @@ esac
 # worktree path containing a TAB/newline cannot occur in a sane checkout and would at worst fail
 # to match — never forge a different worktree. The set is built record-at-a-time so a `bare` line
 # can retroactively drop the current record's path before the record terminates.)
+# PARALLEL LIVE-BRANCH SET (#270 PR-probe re-anchor): alongside the path set, capture each
+# record's git-reported LIVE branch from its `branch refs/heads/<name>` line, stored as a
+# newline-delimited `<path>\t<live_branch>` set keyed by the SAME exact git path. The live branch
+# is the GROUND-TRUTH branch the worktree HEAD points at NOW — it tracks a child's switch off the
+# spawn-time scratch ref onto its derived working branch, so it is the correct `gh pr list --head`
+# argument (the manifest `branch` column is the stale scratch ref and is display-only). A
+# detached-HEAD record emits no `branch` line → its live branch stays empty (→ MISSING downstream).
+# live_branch is TRUSTED ground-truth metadata, NEVER a path and NEVER a confinement input — the
+# git PATH remains the SOLE confinement anchor.
 worktree_set=""
+worktree_branch_set=""
 {
   cur_wt=""
   cur_bare=0
+  cur_branch=""
   flush_record() {
     # Commit the current record's path to the set UNLESS it is a bare repo. Called at each
-    # record terminator (blank line) and once at EOF for a trailing record.
+    # record terminator (blank line) and once at EOF for a trailing record. The parallel
+    # live-branch row is committed in lock-step, keyed by the SAME path.
     if [ -n "$cur_wt" ] && [ "$cur_bare" -eq 0 ]; then
       worktree_set="$worktree_set$cur_wt
+"
+      worktree_branch_set="$worktree_branch_set$cur_wt	$cur_branch
 "
     fi
     cur_wt=""
     cur_bare=0
+    cur_branch=""
   }
   while IFS= read -r porcelain_line || [ -n "$porcelain_line" ]; do
     case "$porcelain_line" in
@@ -322,6 +346,11 @@ worktree_set=""
         # opens a fresh record; flush any prior in case of a missing trailing blank line.)
         flush_record
         cur_wt="${porcelain_line#worktree }"
+        ;;
+      "branch refs/heads/"*)
+        # The record's LIVE branch (ground truth). Absent for a detached-HEAD record, so
+        # cur_branch stays empty there → live branch resolves to MISSING at selection time.
+        cur_branch="${porcelain_line#branch refs/heads/}"
         ;;
       "bare")
         # Marks the current record as the bare repo → excluded from the selectable set.
@@ -459,6 +488,28 @@ $worktree_set
 EOF
   fi
 
+  # ── LIVE BRANCH for the selected worktree (#270 PR-probe re-anchor) ──────────────
+  # Resolve the matched worktree's git-reported LIVE branch from the parallel `<path>\t<branch>`
+  # set, keyed by the SAME exact path match used above. This becomes the collector's `gh --head`
+  # probe argument, so it is gated through the SAME strict IDENTIFIER class as the display branch
+  # (same trust/charset class). No-match or detached(empty live branch) → MISSING; an identifier
+  # reject → MALFORMED. Reusing the MISSING/MALFORMED sentinel vocabulary makes the collector's
+  # existing sentinel gate skip the PR probe for a worktree with no resolvable live branch. The
+  # live branch is GROUND-TRUTH metadata, NEVER a path and NEVER a confinement input.
+  live_branch_out="MISSING"
+  if [ -n "$gt_worktree" ]; then
+    live_branch_raw=""
+    while IFS="	" read -r set_path set_branch; do
+      [ "$set_path" = "$gt_worktree" ] && { live_branch_raw="$set_branch"; break; }
+    done <<EOF
+$worktree_branch_set
+EOF
+    if [ -n "$live_branch_raw" ]; then
+      live_branch_out="MALFORMED"
+      hivemind_assert_identifier "$live_branch_raw" && live_branch_out="$live_branch_raw"
+    fi
+  fi
+
   # 3. Derive the ledger path under the GROUND-TRUTH worktree:
   #    "<git-worktree>/.hivemind/runs/<suggested_id>/state.json". Only <suggested_id> is
   #    manifest-sourced; gate it as a STRICT single-component identifier (no slash, no space) so it
@@ -540,18 +591,21 @@ EOF
 
   # 5. Emit exactly one TAB-delimited STRAIN line. Field order:
   #    brood_id, name, worktree_path, branch, tmux_session, manifest_status, state_current,
-  #    run_status. brood_id is the single top-level value validated ONCE before the loop and
-  #    emitted verbatim on every strain line.
+  #    run_status, live_branch. brood_id is the single top-level value validated ONCE before the
+  #    loop and emitted verbatim on every strain line. live_branch (field 10) is APPENDED LAST so
+  #    existing 1-based field indices 2-9 are unchanged (#270 PR-probe re-anchor): it carries the
+  #    selected worktree's git-reported LIVE branch (or MISSING/MALFORMED), distinct from the
+  #    display-only manifest `branch` column (field 5).
   #
   #    ENCODE-AT-OUTPUT (see encode_cell above): every display column is run through encode_cell
   #    UNIFORMLY before emission — not per-class carve-outs. The strict columns (brood_id,
-  #    tmux/status/state/run identifier-class tokens) and the fixed tokens (MISSING / MALFORMED)
-  #    need no escaping, but applying the encoder to them too keeps the boundary uniform and
-  #    self-documenting; encode_cell is a no-op on values that already lack `|` and controls. Only
-  #    the value-classes that can carry a `|` as inert quoted data (worktree_path / branch — the
-  #    FLOOR-ONLY path/identifier inputs) are materially affected. The literal TABs joining the
-  #    fields are added by printf AFTER per-field encoding, so the 9-field framing is preserved.
-  printf 'STRAIN\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  #    tmux/status/state/run identifier-class tokens, live_branch) and the fixed tokens (MISSING /
+  #    MALFORMED) need no escaping, but applying the encoder to them too keeps the boundary uniform
+  #    and self-documenting; encode_cell is a no-op on values that already lack `|` and controls.
+  #    Only the value-classes that can carry a `|` as inert quoted data (worktree_path / branch —
+  #    the FLOOR-ONLY path/identifier inputs) are materially affected. The literal TABs joining the
+  #    fields are added by printf AFTER per-field encoding, so the 10-field framing is preserved.
+  printf 'STRAIN\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(encode_cell "$brood_id_out")" \
     "$(encode_cell "$name_out")" \
     "$(encode_cell "$wt_out")" \
@@ -559,7 +613,8 @@ EOF
     "$(encode_cell "$tmux_out")" \
     "$(encode_cell "$status_out")" \
     "$(encode_cell "$state_out")" \
-    "$(encode_cell "$run_out")"
+    "$(encode_cell "$run_out")" \
+    "$(encode_cell "$live_branch_out")"
 
   idx=$((idx + 1))
 done
