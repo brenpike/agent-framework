@@ -298,6 +298,39 @@ assert_brood_instruction_flag_parity() {
     fi
 }
 
+# ── Assertion 3b: injected-task working-branch derivation parity (#270) ──────────
+# Producer/consumer parity (static grep, mirrors assertion 3 above) over the spawn-brood.sh
+# `printf '  - ...'` child-instruction emission lines. The child boots on the throwaway scratch ref
+# strain/<brood-id>/<short> and must derive its OWN compliant <type>/<slug>-<token> working branch
+# via create-working-branch off base BEFORE delivery/PR (#270). This asserts the injected
+# instructions carry the three load-bearing elements of that contract:
+#   1. classification-hint PASS-THROUGH — the instructions reference workflow_hint as the
+#      (non-binding) classification hint (no prefix mapping in bash).
+#   2. uniqueness-token REFERENCE — the instructions reference the uniqueness token sourced from the
+#      existing injected identity (strain.id / parent.brood_id).
+#   3. DERIVE-via-create-working-branch — the instructions tell the child to run
+#      create-working-branch to switch the worktree HEAD onto its derived compliant working branch.
+# Restricted to the `printf '  - ...` instruction emission lines so a stray mention in a comment or
+# heredoc elsewhere cannot satisfy the check (same discipline as assertion 3).
+assert_brood_instruction_working_branch_parity() {
+    local name="PARITY:child-instructions-cover-working-branch-derivation"
+    local missing=""
+    # 1. classification-hint pass-through (workflow_hint named as the classification hint).
+    grep -E "printf '[[:space:]]*-.*workflow_hint.*classification" "$SPAWN_SCRIPT" >/dev/null \
+        || missing+=" classification-hint(workflow_hint)"
+    # 2. uniqueness-token reference (strain.id / parent.brood_id as the uniqueness token).
+    grep -E "printf '[[:space:]]*-.*uniqueness token" "$SPAWN_SCRIPT" >/dev/null \
+        || missing+=" uniqueness-token"
+    # 3. derive-compliant-branch via create-working-branch.
+    grep -E "printf '[[:space:]]*-.*create-working-branch" "$SPAWN_SCRIPT" >/dev/null \
+        || missing+=" create-working-branch"
+    if [[ -z "$missing" ]]; then
+        pass "$name" "child instructions cover classification-hint pass-through, uniqueness-token reference, and derive-via-create-working-branch"
+    else
+        failed "$name" "instructions missing:[${missing# }]"
+    fi
+}
+
 # ── Assertion 4: spawn-brood symlink-escape early-blocker ───────────────────────
 # spawn-brood.sh (commit 3872551) sources the shared containment helper right after
 # repo_root resolution and asserts containment for the `.hivemind/brood` and
@@ -1660,7 +1693,8 @@ write_ledger() {
 # strain_field: split the FIRST STRAIN line of $1 (entrypoint output) on TAB and echo the field at
 # 1-based index $2. NEW v4/#168 grammar (brood_id inserted as field 2 — every index after shifts
 # +1 vs the pre-#168 grammar): 1=STRAIN 2=brood_id 3=name 4=worktree_path 5=branch 6=tmux_session
-# 7=manifest_status 8=state_current 9=run_status.
+# 7=manifest_status 8=state_current 9=run_status 10=live_branch (the worktree's git-reported LIVE
+# branch, appended for #270 — distinct from the display-only manifest `branch` at field 5).
 strain_field() {
     local output="$1" idx="$2"
     printf '%s\n' "$output" | awk -F'\t' -v i="$idx" '/^STRAIN\t/ { print $i; exit }'
@@ -1875,21 +1909,25 @@ assert_proj_missing_ledger_file() {
     fi
 }
 
-# ── Projection 3b: NO live worktree for the branch → fail-closed (MISSING) ────────
-# The manifest branch matches NO worktree git reports — even though the manifest carries a perfectly
-# valid worktree_path and suggested_id. The engine MUST fail closed: ledger columns MISSING, and it
-# must NEVER fall back to reading under the manifest's worktree_path. We prove the no-fallback by
-# planting a valid ledger UNDER the manifest worktree_path and asserting its sentinel never surfaces.
+# ── Projection 3b: worktree_path matches NO live worktree → fail-closed (MISSING) ─
+# The manifest worktree_path matches NO path git reports in its worktree set — even though the
+# manifest carries a valid-looking worktree_path and suggested_id. The engine MUST fail closed:
+# ledger columns MISSING, and it must NEVER fall back to reading under the manifest's worktree_path
+# as a path anchor (it is ONLY an exact-match selector into git's trusted set). We prove the
+# no-fallback by planting a valid ledger UNDER the manifest worktree_path and asserting its sentinel
+# never surfaces — adapted to the PATH key (the path is a plain dir, never registered with git).
 assert_proj_no_live_worktree() {
-    local name="PROJ-NOWT:branch-without-live-worktree-fail-closed"
+    local name="PROJ-NOWT:worktree_path-without-live-worktree-fail-closed"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/nowt"
     local wt="$wd/wt"
     # wt is a PLAIN dir (NOT a registered git worktree) carrying a valid-looking ledger whose
-    # sentinel would surface IF the engine fell back to the manifest worktree_path. It must not.
+    # sentinel would surface IF the engine fell back to the manifest worktree_path as a path anchor.
+    # It must not: a path matching no git worktree-set entry selects NOTHING.
     mkdir -p "$wt/.hivemind/runs/$GT_BROOD_ID--ghost"
     write_ledger "$wt/.hivemind/runs/$GT_BROOD_ID--ghost/state.json" running ghostsentinel
     local manifest="$wd/manifest.json"
-    # Branch that no `git worktree add` ever registered.
+    # worktree_path ($wt) that no `git worktree add` ever registered; branch is irrelevant to the
+    # lookup now (display-only) but kept well-formed so only the unregistered path drives the miss.
     write_manifest_v4 "$manifest" "api" "$wt" "strain/$GT_BROOD_ID/ghost" "brood-api" "running" \
         "$GT_BROOD_ID--ghost"
 
@@ -1899,45 +1937,167 @@ assert_proj_no_live_worktree() {
           && "$(strain_field "$out" 8)" == "MISSING" \
           && "$(strain_field "$out" 9)" == "MISSING" ]] \
           && ! printf '%s' "$out" | grep -q 'ghostsentinel'; then
-        pass "$name" "exit 0; no live worktree -> ledger MISSING; manifest-worktree_path NOT used as fallback (sentinel absent)"
+        pass "$name" "exit 0; worktree_path matches no live worktree -> ledger MISSING; NOT used as path-anchor fallback (sentinel absent)"
     else
         failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9); leaked=$(printf '%s' "$out" | grep -q ghostsentinel && echo yes || echo no)"
     fi
 }
 
-# ── Projection 3c: branch on TWO worktrees (duplicate) → MALFORMED ───────────────
-# A branch git reports on more than one worktree is ambiguous ground truth. The engine records it as
-# a duplicate and renders the ledger columns MALFORMED for the matching strain (never an arbitrary
-# pick). We force a duplicate by adding the same branch to a second worktree path with --force.
-assert_proj_duplicate_branch() {
-    local name="PROJ-DUPBRANCH:branch-on-two-worktrees-malformed"
-    ensure_proj_workdir; local wd="$PROJ_WORKDIR/dup"
+# ── Projection 3c: RE-KEY REGRESSION LOCK — worktree branch DIFFERS from manifest branch (#270) ──
+# The blocker case: a strain's REAL git worktree is checked out on a DIFFERENT branch than the
+# manifest `branch` field records — exactly what happens after the child runs create-working-branch
+# to switch the worktree HEAD off the spawn-time scratch ref onto its derived compliant branch.
+# Under the OLD branch-keying lookup this would MISS (manifest branch no longer matches any live
+# worktree) and fail closed to MISSING — the bug #270 fixes. Under PATH-keying the worktree is still
+# located by worktree_path, so the ledger projects (state_current/run_status NON-MISSING).
+#
+# NON-VACUITY: the manifest `branch` is set to the SCRATCH ref strain/<brood-id>/<short> while the
+# REAL worktree is checked out on a DIFFERENT derived branch. A branch-keyed lookup keyed on the
+# manifest scratch branch finds NO live worktree (the worktree reports the derived branch), so it
+# would render MISSING. Path-keying matches worktree_path and projects the ledger — proving the fix.
+assert_proj_rekey_branch_switched() {
+    local name="PROJ-REKEY:worktree-branch-differs-from-manifest-branch-located-by-path"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/rekey"
     mkdir -p "$wd"
-    local branch="strain/$GT_BROOD_ID/dup" sid="$GT_BROOD_ID--dup"
-    local wt_a="$wd/wt-a" wt_b="$wd/wt-b"
-    gt_add_worktree "" "$branch" "$wt_a"
-    # Force a SECOND worktree checked out on the SAME branch so `git worktree list` reports the
-    # branch twice. --force bypasses git's "already checked out" guard for exactly this duplicate.
-    git -C "$PROJ_WORKDIR" worktree add -q --force "$wt_b" "$branch" 2>/dev/null
-    mkdir -p "$wt_a/.hivemind/runs/$sid"
-    write_ledger "$wt_a/.hivemind/runs/$sid/state.json" running implement_step
+    # The DERIVED compliant working branch the child switched the worktree HEAD onto (what git
+    # actually reports). This is what a real child's create-working-branch produces.
+    local derived_branch="bugfix/rekey-$RANDOM" sid="$GT_BROOD_ID--rekey"
+    # The SCRATCH ref the manifest still records (spawn-time strain/<brood-id>/<short>). It is
+    # DIFFERENT from the worktree's actual checked-out branch.
+    local scratch_branch="strain/$GT_BROOD_ID/rekey"
+    local wt="$wd/wt"
+    # Register the REAL worktree on the DERIVED branch (not the scratch branch).
+    gt_add_worktree "" "$derived_branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
     local manifest="$wd/manifest.json"
-    write_manifest_v4 "$manifest" "api" "$wt_a" "$branch" "brood-api" "running" "$sid"
+    # Manifest records the STALE scratch branch + the REAL worktree_path. Path-keying must locate.
+    write_manifest_v4 "$manifest" "api" "$wt" "$scratch_branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
-    # Only assert MALFORMED if the duplicate actually registered (git may decline on some versions).
-    local dupcount; dupcount="$(git -C "$PROJ_WORKDIR" worktree list --porcelain 2>/dev/null | grep -c "branch refs/heads/$branch")"
-    if [[ "$dupcount" -lt 2 ]]; then
-        skip "$name" "could not register a duplicate-branch worktree on this git ($dupcount checkout(s)); cannot exercise the dup guard"
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 5)" == "$scratch_branch" \
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; worktree on derived branch != manifest scratch branch, still located by worktree_path; ledger projects (branch-keying would MISS)"
+    else
+        failed "$name" "rc=$rc branch_col=$(strain_field "$out" 5) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+    fi
+}
+
+# ── Projection 3d: DETACHED-HEAD worktree located by PATH (#270) ─────────────────
+# A detached-HEAD worktree carries a `worktree` line but NO `branch refs/heads/...` line in
+# `git worktree list --porcelain`. Branch-keying DROPPED such a record (no branch to key on); the
+# strain failed closed to MISSING. Path-keying locates it by worktree_path, so its ledger projects.
+assert_proj_detached_head_located() {
+    local name="PROJ-DETACHED:detached-head-worktree-located-by-path"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/detached"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/detached" sid="$GT_BROOD_ID--detached"
+    local wt="$wd/wt"
+    gt_add_worktree "" "$branch" "$wt"
+    # Detach the worktree HEAD so `git worktree list --porcelain` emits no `branch` line for it.
+    git -C "$wt" checkout --detach -q 2>/dev/null
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
+    local manifest="$wd/manifest.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
+
+    # Confirm the worktree really is detached (no branch line) so the case is non-vacuous.
+    local has_branch_line
+    has_branch_line="$(git -C "$PROJ_WORKDIR" worktree list --porcelain 2>/dev/null \
+        | awk -v p="$wt" '$1=="worktree" && $2==p {f=1; next} f && $1=="branch" {print "yes"; exit} f && NF==0 {exit}')"
+    if [[ "$has_branch_line" == "yes" ]]; then
+        skip "$name" "worktree did not detach on this git; cannot exercise the detached-HEAD path"
         return
     fi
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 8)" == "MALFORMED" \
-          && "$(strain_field "$out" 9)" == "MALFORMED" ]]; then
-        pass "$name" "exit 0; duplicate branch on two worktrees -> ledger columns MALFORMED (no arbitrary pick)"
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; detached-HEAD worktree located by worktree_path; ledger projects (branch-keying would DROP it)"
     else
-        failed "$name" "rc=$rc dupcount=$dupcount state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+    fi
+}
+
+# ── Projection 3e: LIVE BRANCH emitted as field 10, distinct from display branch (#270) ──
+# The PR-probe re-anchor: the projector emits the selected worktree's git-reported LIVE branch as
+# field 10, distinct from the display-only manifest `branch` (field 5). After a child switches its
+# worktree HEAD off the spawn-time scratch ref onto its derived working branch, field 5 keeps the
+# stale scratch ref (display/context) while field 10 reports what git actually reports NOW — the
+# branch the collector keys its `gh pr list --head` PR probe on. Mirrors assert_proj_rekey_branch_
+# switched: register the REAL worktree on a DERIVED branch DIFFERENT from the manifest scratch ref.
+#
+# NON-VACUITY: field 5 == scratch ref AND field 10 == derived branch, and the two DIFFER — proving
+# field 10 tracks git ground truth, not the manifest, so the downstream PR probe follows the HEAD.
+assert_proj_live_branch_emitted() {
+    local name="PROJ-LIVE-BRANCH:field10-live-branch-differs-from-display-branch"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/livebranch"
+    mkdir -p "$wd"
+    local derived_branch="bugfix/live-$RANDOM" sid="$GT_BROOD_ID--live"
+    local scratch_branch="strain/$GT_BROOD_ID/live"
+    local wt="$wd/wt"
+    # Register the REAL worktree on the DERIVED branch (git reports this as the live branch).
+    gt_add_worktree "" "$derived_branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
+    local manifest="$wd/manifest.json"
+    # Manifest records the STALE scratch ref as `branch` + the REAL worktree_path.
+    write_manifest_v4 "$manifest" "api" "$wt" "$scratch_branch" "brood-api" "running" "$sid"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 5)" == "$scratch_branch" \
+          && "$(strain_field "$out" 10)" == "$derived_branch" ]]; then
+        pass "$name" "exit 0; display branch (field 5)=$scratch_branch; live branch (field 10)=$derived_branch (git ground truth, differs)"
+    else
+        failed "$name" "rc=$rc display_branch=$(strain_field "$out" 5) live_branch=$(strain_field "$out" 10)"
+    fi
+}
+
+# ── Projection 3f: DETACHED-HEAD worktree → live_branch field 10 MISSING (#270 fail-closed) ──
+# A detached-HEAD worktree carries no `branch refs/heads/...` line, so its live branch is unresolved.
+# Field 10 must be the fixed token MISSING (NOT garbage, NOT a stale value), so the collector's
+# sentinel gate SKIPS the PR probe rather than probing a literal token. The ledger columns must STILL
+# project (the worktree is located by PATH per #270), proving live_branch failure is independent of
+# the path-keyed ledger projection. Mirrors assert_proj_detached_head_located.
+assert_proj_live_branch_detached() {
+    local name="PROJ-LIVE-DETACHED:detached-head-live-branch-missing-ledger-still-projects"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/livedetached"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/livedetached" sid="$GT_BROOD_ID--livedetached"
+    local wt="$wd/wt"
+    gt_add_worktree "" "$branch" "$wt"
+    # Detach the worktree HEAD so `git worktree list --porcelain` emits no `branch` line for it.
+    git -C "$wt" checkout --detach -q 2>/dev/null
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
+    local manifest="$wd/manifest.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
+
+    # Confirm the worktree really is detached (non-vacuous): no branch line in porcelain output.
+    local has_branch_line
+    has_branch_line="$(git -C "$PROJ_WORKDIR" worktree list --porcelain 2>/dev/null \
+        | awk -v p="$wt" '$1=="worktree" && $2==p {f=1; next} f && $1=="branch" {print "yes"; exit} f && NF==0 {exit}')"
+    if [[ "$has_branch_line" == "yes" ]]; then
+        skip "$name" "worktree did not detach on this git; cannot exercise the detached-HEAD live-branch path"
+        return
+    fi
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 10)" == "MISSING" \
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; detached-HEAD live_branch (field 10)=MISSING (fail-closed); ledger still projects by path"
+    else
+        failed "$name" "rc=$rc live_branch=$(strain_field "$out" 10) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
     fi
 }
 
@@ -2012,6 +2172,111 @@ assert_proj_metachar_worktree() {
           && "$(strain_field "$out" 9)" == "MISSING" \
           && ! -e "$marker" ]]; then
         pass "$name" "exit 0; display worktree_path MALFORMED; ledger MISSING (no live worktree); no command-sub side-effect"
+    else
+        failed "$name" "rc=$rc wt=$(strain_field "$out" 4) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
+    fi
+}
+
+# ── Projection 6a: SELECTOR-DOTDOT — worktree under a `..`-bearing DIR NAME is located (#270) ──
+# The P1-A regression lock: a LEGITIMATE checkout whose worktree path contains a `..` directory-NAME
+# substring (e.g. <wd>/hm..repo/wt). Under the OLD hivemind_assert_path gate the shared floor's
+# blanket `*..*` reject false-rejected the selector to MALFORMED → the worktree was never looked up
+# → the ledger fell to false MISSING. STEP-001/002 re-gate worktree_path through the path-SELECTOR
+# class, which PERMITS the `..` dir-name substring (validity is git-set membership, never a traversal
+# check), so the REAL git-reported worktree is located by EXACT-MATCH and its ledger projects
+# (state_current/run_status NON-MISSING). git reports the `..`-bearing path verbatim — it is a real
+# directory name, not a parent-traversal component — so the exact-string selector matches it.
+#
+# NON-VACUITY: the worktree path carries a literal `..` dir-name segment; before STEP-001/002 the
+# floor's `..` reject made wt_out=MALFORMED and the lookup never ran (MISSING ledger). This case
+# FAILS before the fix and passes after.
+assert_proj_selector_dotdot_located() {
+    local name="PROJ-SELECTOR-DOTDOT:worktree-under-dotdot-dirname-located-by-selector"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/dotdot"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/dotdot" sid="$GT_BROOD_ID--dotdot"
+    # Worktree path with a `..`-bearing DIRECTORY NAME (not a traversal component). git reports it
+    # verbatim, so the exact-match selector locates it once the `..` reject is dropped.
+    local wt="$wd/hm..repo/wt"
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
+    local manifest="$wd/manifest.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 4)" == "$wt" \
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; worktree under a '..'-bearing dir name located by the path-selector; ledger projects (the old '..' floor reject would MISS)"
+    else
+        failed "$name" "rc=$rc wt=$(strain_field "$out" 4) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+    fi
+}
+
+# ── Projection 6b: TRAVERSAL selector matches NO git entry → fail-closed MISSING, no fallback ─
+# A traversal-style worktree_path (carries a `..` PATH component that resolves elsewhere) passes the
+# path-SELECTOR floor (which permits `..`) but matches NO entry in git's trusted worktree-path set
+# (git's reported paths never contain an un-collapsed traversal component pointing into a sibling),
+# so it selects NOTHING and fails closed to MISSING. The engine MUST NEVER fall back to reading
+# under the selector as a path anchor. We prove no-fallback with the planted-sentinel-absent pattern
+# (mirrors assert_proj_no_live_worktree): a valid ledger is planted under a path the traversal would
+# resolve to, and we assert its sentinel never surfaces.
+assert_proj_traversal_selector_missing() {
+    local name="PROJ-TRAVERSAL-SELECTOR:traversal-worktree_path-matches-nothing-fail-closed"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/trav"
+    mkdir -p "$wd"
+    # Plant a valid-looking ledger under the path the traversal selector would resolve to IF the
+    # engine ever consumed the selector as a path. It must not: a value absent from git's set
+    # selects nothing.
+    local resolved="$wd/realwt"
+    mkdir -p "$resolved/.hivemind/runs/$GT_BROOD_ID--trav"
+    write_ledger "$resolved/.hivemind/runs/$GT_BROOD_ID--trav/state.json" running travsentinel
+    local manifest="$wd/manifest.json"
+    # A traversal-style worktree_path: passes the selector floor (permits '..') but matches NO
+    # git-reported worktree path → MISSING. branch is display-only and kept well-formed.
+    write_manifest_v4 "$manifest" "api" "$wd/decoy/../realwt" "strain/$GT_BROOD_ID/trav" \
+        "brood-api" "running" "$GT_BROOD_ID--trav"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 9)" == "MISSING" ]] \
+          && ! printf '%s' "$out" | grep -q 'travsentinel'; then
+        pass "$name" "exit 0; traversal selector matches no git entry -> ledger MISSING; NOT consumed as path-anchor fallback (sentinel absent)"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9); leaked=$(printf '%s' "$out" | grep -q travsentinel && echo yes || echo no)"
+    fi
+}
+
+# ── Projection 6c: framing/command-sub worktree_path → field MALFORMED, no read, no side-effect ─
+# The selector floor STILL rejects framing (TAB/LF/CR) and command-substitution ($/backtick) even
+# though it permits `..` — those bytes could forge the TAB-delimited STRAIN grammar or expand in a
+# command word. A command-sub-bearing worktree_path fails the selector gate → the worktree_path COLUMN
+# renders MALFORMED, no live worktree is selected → ledger fails closed to MISSING, and NO command
+# executes. Mirrors assert_proj_metachar_worktree; locks that dropping the `..` reject did NOT relax
+# the framing/command-sub protection.
+assert_proj_selector_framing_rejected() {
+    local name="PROJ-SELECTOR-FRAMING:framing-commandsub-worktree_path-still-MALFORMED"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/selframe"
+    mkdir -p "$wd"
+    local marker="$wd/pwn_sel_marker"
+    local manifest="$wd/manifest.json"
+    # worktree_path carries a command-sub payload; branch matches no live worktree (fail-closed).
+    write_manifest_v4 "$manifest" "api" "/tmp/\$(touch $marker)/wt" "strain/$GT_BROOD_ID/selframe" \
+        "brood-api" "running" "$GT_BROOD_ID--selframe"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 4)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 9)" == "MISSING" \
+          && ! -e "$marker" ]]; then
+        pass "$name" "exit 0; selector still rejects command-sub worktree_path -> MALFORMED; ledger MISSING; no side-effect (the '..' permit did NOT relax framing/command-sub)"
     else
         failed "$name" "rc=$rc wt=$(strain_field "$out" 4) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
     fi
@@ -2907,6 +3172,7 @@ echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (
 assert_v1_old
 assert_v2_new
 assert_brood_instruction_flag_parity
+assert_brood_instruction_working_branch_parity
 assert_spawn_brood_symlink_escape_blocked
 assert_spawn_brood_inputs_external_rejected
 assert_spawn_brood_child_worktree_symlink_escape_blocked
@@ -2925,10 +3191,16 @@ assert_proj_happy_path
 assert_proj_v1_no_run_block
 assert_proj_missing_ledger_file
 assert_proj_no_live_worktree
-assert_proj_duplicate_branch
+assert_proj_rekey_branch_switched
+assert_proj_detached_head_located
+assert_proj_live_branch_emitted
+assert_proj_live_branch_detached
 assert_proj_malformed_run_status
 assert_proj_injection_state_current
 assert_proj_metachar_worktree
+assert_proj_selector_dotdot_located
+assert_proj_traversal_selector_missing
+assert_proj_selector_framing_rejected
 assert_proj_symlink_leaf
 assert_proj_unreadable_ledger
 assert_proj_suggested_id_escape
@@ -3301,6 +3573,171 @@ assert_collect_legacy_no_pointer_running() {
     fi
 }
 
+# ── COLLECT-PR-PROBE-LIVE-BRANCH: PR probe keys on the git live branch, not the manifest branch (#270) ──
+# The core #270 fix at the collector seam: a brood child switched its worktree HEAD off the spawn-time
+# scratch ref onto its derived working branch and opened its PR from THAT derived branch. The manifest
+# `branch` column still records the stale scratch ref. The collector MUST key `gh pr list --head` on the
+# git LIVE branch (projector field 10 = the derived branch), NOT the manifest scratch ref — else the
+# probe finds nothing and a DEAD+merged child falsely derives `failed (session ended, no PR)`.
+#
+# A test-scoped `gh` stub on PATH records the `--head` argument it received to a per-case marker and
+# returns a synthetic MERGED PR. We assert the recorded `--head` == the DERIVED live branch (NOT the
+# scratch ref) AND derived_status == complete (dead session + merged PR → complete). DEAD session: no
+# tmux session is created, so the strain reads session=dead.
+assert_collect_pr_probe_uses_live_branch() {
+    local name="COLLECT-PR-PROBE-LIVE-BRANCH:probe-keys-derived-branch-not-manifest-scratch"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    local scratch_branch="strain/$COLLECT_BROOD_ID/api" sid="$COLLECT_BROOD_ID--api"
+    local derived_branch="bugfix/collect-live-$RANDOM"
+    local wt="$root/wt-api"
+    # Register the REAL worktree on the DERIVED branch (git reports it as the live branch).
+    git -C "$root" worktree add -q -b "$derived_branch" "$wt" HEAD 2>/dev/null
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    jq -n '{run:{status:"running"}, state:{current:"implement_step"}}' > "$wt/.hivemind/runs/$sid/state.json"
+    # Manifest records the STALE scratch ref as `branch`; DEAD session (no tmux session created).
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" --arg wt "$wt" --arg branch "$scratch_branch" --arg sid "$sid" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", worktree_path:$wt, branch:$branch,
+                     tmux_session:"\($brood_id)-api", status:"running",
+                     run:{suggested_id:$sid, workflow_hint:"standard-delivery"}}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+
+    # Test-scoped `gh` stub: records the value following `--head` to $marker and returns a synthetic
+    # MERGED PR (the contract probe_pr parses: `gh pr list --head <b> --state all --json ... --jq ...`).
+    local gh_stub; gh_stub="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-gh-stub.XXXXXX")"
+    if [ ! -d "$gh_stub" ]; then
+        skip "$name" "could not create gh stub dir; skipping"
+        rm -rf "$tmp"
+        return
+    fi
+    local marker="$gh_stub/head_marker"
+    cat > "$gh_stub/gh" <<'GH_EOF'
+#!/usr/bin/env bash
+# Test-scoped gh stub: record the --head argument, return a synthetic MERGED PR as compact JSON
+# (probe_pr runs `gh pr list ... --json number,state --jq '.[0] // empty'`, so emit the jq result).
+head=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --head) head="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+printf '%s\n' "$head" >> "${HIVEMIND_GH_HEAD_MARKER:-/dev/null}" 2>/dev/null || true
+printf '%s\n' '{"number":4242,"state":"MERGED"}'
+exit 0
+GH_EOF
+    chmod +x "$gh_stub/gh"
+
+    local out rc=0
+    out="$( cd "$root" && PATH="$gh_stub:$PATH" HIVEMIND_GH_HEAD_MARKER="$marker" bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local recorded_head=""
+    [ -f "$marker" ] && recorded_head="$(head -n1 "$marker" 2>/dev/null)"
+    local ok=no
+    if printf '%s' "$out" | jq -e \
+        --arg id "$COLLECT_BROOD_ID" \
+        '.broods[0].strains[0].session=="dead"
+         and .broods[0].strains[0].pr.state=="merged"
+         and .broods[0].strains[0].pr.number==4242
+         and .broods[0].strains[0].derived_status=="complete"' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    git -C "$root" worktree remove --force "$wt" 2>/dev/null || true
+    rm -rf "$gh_stub" "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" && "$recorded_head" == "$derived_branch" ]]; then
+        pass "$name" "exit 0; PR probe --head=$recorded_head (derived live branch, NOT scratch '$scratch_branch'); dead+merged -> complete"
+    else
+        failed "$name" "rc=$rc ok=$ok recorded_head=[$recorded_head] expected=[$derived_branch] out=[$out]"
+    fi
+}
+
+# ── COLLECT-DETACHED-NO-FALSE-FAILED: detached-HEAD (live_branch MISSING) + DEAD → probe SKIPPED ──
+# A detached-HEAD worktree has no live branch (live_branch=MISSING), so the collector's sentinel gate
+# must SKIP the PR probe — never fabricate a PR. We install a gh stub that would FABRICATE a merged PR
+# if ever called, and assert it is NEVER invoked (no marker written) and the strain derives the
+# conservative fail-closed terminal. DEAD session + no PR head → `failed (session ended, no PR)` is the
+# ACCEPTED fail-closed terminal for a detached-HEAD-dead worktree (no worse than before; no crash, no
+# garbage probe). This is the safety mirror of assert_collect_pr_probe_uses_live_branch.
+assert_collect_detached_no_false_failed() {
+    local name="COLLECT-DETACHED-NO-FALSE-FAILED:detached-head-dead-probe-skipped-no-fabricated-pr"
+    if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+        skip "$name" "collect needs jq+git; skipping (missing dep)"
+        return
+    fi
+    local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-brood-collect.XXXXXX")"
+    local root="$tmp/repo"; mkdir -p "$root"
+    collect_seed_repo "$root"
+    local brood_dir="$root/.hivemind/broods/$COLLECT_BROOD_ID"
+    mkdir -p "$brood_dir"
+    local branch="strain/$COLLECT_BROOD_ID/api" sid="$COLLECT_BROOD_ID--api"
+    local wt="$root/wt-api"
+    git -C "$root" worktree add -q -b "$branch" "$wt" HEAD 2>/dev/null
+    # Detach the worktree HEAD so there is no live branch line.
+    git -C "$wt" checkout --detach -q 2>/dev/null
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    jq -n '{run:{status:"running"}, state:{current:"implement_step"}}' > "$wt/.hivemind/runs/$sid/state.json"
+    jq -n \
+        --arg brood_id "$COLLECT_BROOD_ID" --arg wt "$wt" --arg branch "$branch" --arg sid "$sid" \
+        '{ manifest_version:4, brood_id:$brood_id, created_at:"2026-06-01T00:00:00Z",
+           base:"main", overlap_risk:"low",
+           strains:[{name:"api", description:"d", worktree_path:$wt, branch:$branch,
+                     tmux_session:"\($brood_id)-api", status:"running",
+                     run:{suggested_id:$sid, workflow_hint:"standard-delivery"}}],
+           merge_order:[] }' > "$brood_dir/manifest.json"
+
+    # Confirm detachment is non-vacuous (no branch line for this worktree).
+    local has_branch_line
+    has_branch_line="$(git -C "$root" worktree list --porcelain 2>/dev/null \
+        | awk -v p="$wt" '$1=="worktree" && $2==p {f=1; next} f && $1=="branch" {print "yes"; exit} f && NF==0 {exit}')"
+    if [[ "$has_branch_line" == "yes" ]]; then
+        git -C "$root" worktree remove --force "$wt" 2>/dev/null || true
+        rm -rf "$tmp"
+        skip "$name" "worktree did not detach on this git; cannot exercise the detached-HEAD probe-skip path"
+        return
+    fi
+
+    # gh stub that would FABRICATE a merged PR IF ever called — its invocation marker proves a probe.
+    local gh_stub; gh_stub="$(mktemp -d "${TMPDIR:-/tmp}/hivemind-gh-stub.XXXXXX")"
+    local marker="$gh_stub/called_marker"
+    cat > "$gh_stub/gh" <<'GH_EOF'
+#!/usr/bin/env bash
+printf 'CALLED\n' >> "${HIVEMIND_GH_CALLED_MARKER:-/dev/null}" 2>/dev/null || true
+printf '%s\n' '{"number":9999,"state":"MERGED"}'
+exit 0
+GH_EOF
+    chmod +x "$gh_stub/gh"
+
+    local out rc=0
+    out="$( cd "$root" && PATH="$gh_stub:$PATH" HIVEMIND_GH_CALLED_MARKER="$marker" bash "$COLLECT_SCRIPT" 2>/dev/null )" || rc=$?
+    local probe_called=no
+    [ -f "$marker" ] && probe_called=yes
+    local ok=no
+    # Probe SKIPPED -> pr.state none, no fabricated number; dead+none -> failed (session ended, no PR).
+    if printf '%s' "$out" | jq -e \
+        '.broods[0].strains[0].session=="dead"
+         and .broods[0].strains[0].pr.state=="none"
+         and .broods[0].strains[0].pr.number==null
+         and (.broods[0].strains[0].derived_status|startswith("failed"))' >/dev/null 2>&1; then
+        ok=yes
+    fi
+    git -C "$root" worktree remove --force "$wt" 2>/dev/null || true
+    rm -rf "$gh_stub" "$tmp"
+    if [[ "$rc" -eq 0 && "$ok" == "yes" && "$probe_called" == "no" ]]; then
+        pass "$name" "exit 0; detached-HEAD live_branch=MISSING -> PR probe SKIPPED (gh never called); dead+no-PR -> failed (accepted fail-closed)"
+    else
+        failed "$name" "rc=$rc ok=$ok probe_called=$probe_called out=[$out]"
+    fi
+}
+
 echo ''
 echo '=== brood-status-collect.sh collection-loop entrypoint tests (#186, ADR-0020) ==='
 assert_collect_empty
@@ -3312,6 +3749,8 @@ assert_collect_broodid_mismatch_empty_blocker
 assert_collect_started_running
 assert_collect_alive_unstarted_starting
 assert_collect_legacy_no_pointer_running
+assert_collect_pr_probe_uses_live_branch
+assert_collect_detached_no_false_failed
 
 echo ''
 echo '=== Summary ==='

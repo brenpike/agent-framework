@@ -42,7 +42,16 @@
 #   emitted token can contain a literal tab and break the framing. Fields, in order:
 #
 #     STRAIN <TAB> brood_id <TAB> name <TAB> worktree_path <TAB> branch <TAB> tmux_session \
-#            <TAB> manifest_status <TAB> state_current <TAB> run_status
+#            <TAB> manifest_status <TAB> state_current <TAB> run_status <TAB> live_branch
+#
+#   `live_branch` (the LAST field, index 10) is the selected worktree's git-reported LIVE branch
+#   (`branch refs/heads/<name>` from the porcelain parse), gated through the identifier value-class.
+#   It is APPENDED so indices 2-9 are unchanged. It is DISTINCT from the display-only manifest
+#   `branch` column (field 5, the stale spawn-time scratch ref): the collector keys its `gh pr list
+#   --head` PR probe on THIS live branch (#270), because a brood child opens its PR from the
+#   DERIVED branch it switched onto, not the manifest scratch ref. A no-match/detached worktree
+#   yields MISSING; an identifier reject yields MALFORMED (so the collector's sentinel gate skips
+#   the probe rather than probing a literal token).
 #
 #   `brood_id` is the FIRST field of every STRAIN line: a single value read
 #   from the manifest TOP-LEVEL `brood_id`, validated ONCE against ^brood-[0-9a-f-]+$ and emitted
@@ -59,10 +68,10 @@
 #   This is DISTINCT from MISSING (a ledger pointer exists but the child has not yet written
 #   started-evidence) and from MALFORMED (a present-but-rejected ledger). Example (tabs shown as
 #   <TAB>):
-#     STRAIN<TAB>brood-1a2b<TAB>auth<TAB>/abs/wt/auth<TAB>strain/brood-1a2b/auth<TAB>brood-1a2b-auth<TAB>spawned<TAB>implement_step<TAB>running
+#     STRAIN<TAB>brood-1a2b<TAB>auth<TAB>/abs/wt/auth<TAB>strain/brood-1a2b/auth<TAB>brood-1a2b-auth<TAB>spawned<TAB>implement_step<TAB>running<TAB>bugfix/auth-fix-9f3a
 #
 #   The full field ORDER is: brood_id, name, worktree_path, branch, tmux_session,
-#   manifest_status, state_current, run_status.
+#   manifest_status, state_current, run_status, live_branch.
 #
 #   INTEGRITY SENTINEL (distinct from any STRAIN line): when the manifest is PRESENT but
 #   UNREADABLE — either UNPARSEABLE (torn / truncated / invalid JSON) OR VALID-JSON-BUT-WRONG-SHAPE
@@ -128,7 +137,7 @@ blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 #   2. Escape `|` (0x7C) -> `\|` (the Markdown cell escape), so an inert quoted `|` cannot forge a
 #      table column.
 # The TAB field SEPARATOR is NOT touched here: this operates WITHIN a single field value only; the
-# caller still joins fields with literal TABs, preserving the 9-field TAB-delimited STRAIN grammar.
+# caller still joins fields with literal TABs, preserving the 10-field TAB-delimited STRAIN grammar.
 encode_cell() {
   # `tr -d` drops C0 + DEL; `sed` escapes any remaining `|`. Order: strip controls first, then
   # escape `|`, so a stripped control byte can never split the `|` escape. Operates on stdin via a
@@ -231,12 +240,16 @@ if ! hivemind_manifest_validate_shape "$manifest_content"; then
 fi
 
 # Canonical containment anchor for the per-strain GROUND-TRUTH worktree-containment chain below.
-# (locked OQ3): the per-strain ledger anchor is NO LONGER the manifest's UNTRUSTED
-# `worktree_path` (display-only now). It is the REAL worktree git itself reports for the strain's
-# branch (ground-truth discovery, below). The full containment chain is
-# CHECKOUT_ROOT ⊇ git-worktree ⊇ ledger: the git-derived worktree must still canonically sit
+# (locked OQ3, PATH-keyed for #270): the per-strain ledger anchor is the REAL worktree git itself
+# reports — selected by EXACT-MATCH of the manifest's UNTRUSTED `worktree_path` against git's
+# trusted worktree-path set (the manifest path is ONLY a selector string, never a path anchor).
+# Path-keying is STABLE across a child branch switch (a brood child creates its compliant working
+# branch off the spawn-time scratch ref; the worktree PATH does not move), which is the whole point
+# — branch-keying broke the moment the child switched. The full containment chain is unchanged:
+# CHECKOUT_ROOT ⊇ git-worktree ⊇ ledger — the git-derived worktree must still canonically sit
 # beneath this checkout (git may report linked/sibling worktrees deliberately OUTSIDE the
-# checkout — those are fail-closed), and the ledger leaf must sit beneath that worktree.
+# checkout — those are fail-closed), and the ledger leaf must sit beneath that worktree. The git
+# path stays the SOLE confinement anchor; no manifest value reaches a path derivation un-anchored.
 # Canonicalize CHECKOUT_ROOT once here.
 canon_checkout="$(hivemind_canon_root "$CHECKOUT_ROOT")"
 [ -n "$canon_checkout" ] \
@@ -263,57 +276,94 @@ case "$brood_id_raw" in
     ;;
 esac
 
-# ── Ground-truth worktree discovery (locked OQ3 anchor) ───────────────────────────
-# Parse `git worktree list --porcelain` ONCE into a branch→path map. Each porcelain record is a
-# blank-line-separated block whose first line is `worktree <abs-path>` and which MAY carry a
-# `branch refs/heads/<name>` line (absent for a detached-HEAD worktree; a `bare` line marks the
-# bare repo). We key REAL worktree paths by their checked-out branch. The manifest's per-strain
-# `branch` is UNTRUSTED and is used ONLY as a lookup KEY to select among these git-reported paths;
-# it NEVER becomes a path itself, so a garbage/non-matching branch selects NOTHING (fail-closed).
-# A branch that appears on MORE THAN ONE worktree is recorded as a DUPLICATE and rendered
-# MALFORMED for the matching strain (never a silent mismatch). git is run against CHECKOUT_ROOT
-# (-C) so we enumerate the worktrees of the checkout the manifest belongs to. tmux/claude are not
-# required on this path, but git is — if git is unavailable the map is empty and every strain
-# fails closed to MISSING worktree/ledger columns.
+# ── Ground-truth worktree discovery (locked OQ3 anchor, PATH-keyed) ───────────────
+# Parse `git worktree list --porcelain` ONCE into a SET of git-reported worktree ABSOLUTE PATHS.
+# Each porcelain record is a blank-line-separated block whose FIRST line is ALWAYS
+# `worktree <abs-path>`; that path — present on EVERY record — is the STABLE key. The optional
+# `branch refs/heads/<name>` line is NO LONGER the key: it is absent for a detached-HEAD worktree
+# and changes when a child switches branches, so keying on it broke the lookup the instant a
+# brood child created its compliant working branch off the spawn-time scratch ref. The worktree
+# PATH does not move when HEAD switches, so it is the stable anchor (#270).
 #
-# Storage without associative arrays (portable to bash 3.2): a newline-delimited
-# "<branch>\t<path>" index string. Each branch's value is looked up by exact line match. Both
-# branch and path come from git (trusted) here; the manifest branch we match against is gated by
-# the identifier value-class before it is used as a lookup key, so no untrusted byte drives the
-# match. (A worktree path containing a TAB/newline cannot occur in a sane checkout and would at
-# worst fail to match — never forge a different worktree.)
-worktree_index=""
-worktree_dupes=""
+# The manifest's per-strain `worktree_path` is UNTRUSTED and is used ONLY as an exact-match
+# SELECTOR string against this git-reported set; it NEVER becomes a path itself, so a
+# garbage/non-matching/absent worktree_path selects NOTHING (fail-closed → MISSING). git
+# guarantees worktree-path uniqueness across the set, so a path key cannot collide — the prior
+# duplicate-branch→MALFORMED case is unreachable for a path key and is gone.
+#
+# Record-class handling:
+#   - a `bare` record (carries a `worktree` line AND a `bare` line) is the bare repo and is
+#     EXCLUDED from the selectable set — a manifest worktree_path pointing at the bare repo must
+#     not match a selectable worktree.
+#   - a detached-HEAD worktree (a `worktree` line, no `branch` line) is now INCLUDED: path-keying
+#     locates it, fixing the prior branch-keying drop.
+#   - every other `worktree` record contributes its path to the set regardless of branch.
+#
+# git is run against CHECKOUT_ROOT (-C) so we enumerate the worktrees of the checkout the manifest
+# belongs to. tmux/claude are not required on this path, but git is — if git is unavailable the
+# set is empty and every strain fails closed to MISSING worktree/ledger columns.
+#
+# Storage without associative arrays (portable to bash 3.2): a newline-delimited set of git
+# worktree paths, one per line. A manifest worktree_path is looked up by exact whole-line match.
+# Every path in the set comes from git (trusted); the manifest path we match against is gated by
+# the path value-class before it is used as a selector, so no untrusted byte drives the match. (A
+# worktree path containing a TAB/newline cannot occur in a sane checkout and would at worst fail
+# to match — never forge a different worktree. The set is built record-at-a-time so a `bare` line
+# can retroactively drop the current record's path before the record terminates.)
+# PARALLEL LIVE-BRANCH SET (#270 PR-probe re-anchor): alongside the path set, capture each
+# record's git-reported LIVE branch from its `branch refs/heads/<name>` line, stored as a
+# newline-delimited `<path>\t<live_branch>` set keyed by the SAME exact git path. The live branch
+# is the GROUND-TRUTH branch the worktree HEAD points at NOW — it tracks a child's switch off the
+# spawn-time scratch ref onto its derived working branch, so it is the correct `gh pr list --head`
+# argument (the manifest `branch` column is the stale scratch ref and is display-only). A
+# detached-HEAD record emits no `branch` line → its live branch stays empty (→ MISSING downstream).
+# live_branch is TRUSTED ground-truth metadata, NEVER a path and NEVER a confinement input — the
+# git PATH remains the SOLE confinement anchor.
+worktree_set=""
+worktree_branch_set=""
 {
   cur_wt=""
+  cur_bare=0
+  cur_branch=""
+  flush_record() {
+    # Commit the current record's path to the set UNLESS it is a bare repo. Called at each
+    # record terminator (blank line) and once at EOF for a trailing record. The parallel
+    # live-branch row is committed in lock-step, keyed by the SAME path.
+    if [ -n "$cur_wt" ] && [ "$cur_bare" -eq 0 ]; then
+      worktree_set="$worktree_set$cur_wt
+"
+      worktree_branch_set="$worktree_branch_set$cur_wt	$cur_branch
+"
+    fi
+    cur_wt=""
+    cur_bare=0
+    cur_branch=""
+  }
   while IFS= read -r porcelain_line || [ -n "$porcelain_line" ]; do
     case "$porcelain_line" in
       "worktree "*)
+        # A new record begins. (Records are blank-line separated, so a `worktree` line always
+        # opens a fresh record; flush any prior in case of a missing trailing blank line.)
+        flush_record
         cur_wt="${porcelain_line#worktree }"
         ;;
       "branch refs/heads/"*)
-        wt_branch="${porcelain_line#branch refs/heads/}"
-        if [ -n "$cur_wt" ] && [ -n "$wt_branch" ]; then
-          # Detect a duplicate branch key (same branch on two worktrees) — record it so the
-          # per-strain lookup renders MALFORMED rather than picking arbitrarily.
-          existing="$(printf '%s' "$worktree_index" | { while IFS="$(printf '\t')" read -r b p; do [ "$b" = "$wt_branch" ] && { printf '%s' "$p"; break; }; done; })"
-          if [ -n "$existing" ]; then
-            worktree_dupes="$worktree_dupes$wt_branch
-"
-          else
-            worktree_index="$worktree_index$wt_branch$(printf '\t')$cur_wt
-"
-          fi
-        fi
-        cur_wt=""
+        # The record's LIVE branch (ground truth). Absent for a detached-HEAD record, so
+        # cur_branch stays empty there → live branch resolves to MISSING at selection time.
+        cur_branch="${porcelain_line#branch refs/heads/}"
+        ;;
+      "bare")
+        # Marks the current record as the bare repo → excluded from the selectable set.
+        cur_bare=1
         ;;
       "")
-        # Blank line terminates a record. Detached-HEAD/bare records carry no `branch` line and
-        # are simply dropped (cur_wt reset).
-        cur_wt=""
+        # Blank line terminates a record: commit its path (unless bare). Detached-HEAD records
+        # (no `branch` line) are committed here just like branch-bearing ones — path-keyed.
+        flush_record
         ;;
     esac
   done
+  flush_record   # trailing record with no terminating blank line
 } <<EOF
 $(git -C "$CHECKOUT_ROOT" worktree list --porcelain 2>/dev/null)
 EOF
@@ -321,9 +371,10 @@ EOF
 # ── Per-strain projection ───────────────────────────────────────────────────────
 # For each strain, extract the manifest static fields out-of-band into inert vars, re-gate every
 # downstream value through the allowlist, select the strain's GROUND-TRUTH worktree from the
-# git-derived map (keyed by the strain's untrusted branch), confine the ledger path beneath that
-# REAL worktree, and project the two ledger scalars. Any per-strain problem renders the affected
-# field(s) as a token and CONTINUES — never aborts the whole read.
+# git-derived path set (keyed by EXACT-MATCH on the strain's untrusted worktree_path — STABLE
+# across a child branch switch, #270), confine the ledger path beneath that REAL worktree, and
+# project the two ledger scalars. Any per-strain problem renders the affected field(s) as a token
+# and CONTINUES — never aborts the whole read.
 #
 # DELIMITER-INJECTION AVOIDANCE: the loop is driven by INDEX off the strain COUNT, not by
 # splitting a newline-delimited name stream. An untrusted strain name containing a newline is
@@ -369,26 +420,36 @@ while [ "$idx" -lt "$strain_count" ]; do
   name_out="MALFORMED"
   hivemind_assert_presentation "$strain_name" && name_out="$strain_name"
 
-  # worktree_path is now DISPLAY-ONLY (locked OQ3): it is NEVER a ledger anchor. The
-  # ground-truth worktree (below) comes from `git worktree list`, keyed by the strain's branch —
-  # a tampered manifest path can no longer redirect the bounded ledger reader. We still gate the
-  # manifest value for safe RENDERING with the PATH class (rejects the shared floor: '..', leading
-  # '-', command-sub, framing bytes), then emit it verbatim in the output field. rc 1 -> MISSING
-  # (absent), rc 2 -> MALFORMED (rejected), rc 0 -> the path-class-clean value (else MALFORMED).
+  # worktree_path is the WORKTREE LOOKUP SELECTOR (locked OQ3, re-keyed for #270): it keys the
+  # strain's REAL git-reported worktree by EXACT-MATCH against the trusted git path set built above.
+  # It is NEVER a path itself — it is ONLY ever compared as a string against git's set, so a
+  # tampered/non-matching value selects NOTHING and fails closed (it can never redirect the bounded
+  # ledger reader). Because git-set MEMBERSHIP is the validation (a value absent from git's trusted
+  # set selects nothing), the gate is the PATH-SELECTOR value-class (hivemind_assert_path_selector):
+  # it rejects empty, leading '-', command-sub ($/backtick), and framing bytes (TAB/LF/CR) — the
+  # bytes that could forge the TAB-delimited output grammar or expand in a command word — but it
+  # PERMITS a `..` directory-NAME substring, since the selector is never traversed and a legitimate
+  # worktree under a `..`-bearing dir name (e.g. /tmp/hm..repo/wt) must match its real git entry
+  # rather than false-reject to MALFORMED → false MISSING. This is NARROWER than the path class ONLY
+  # in dropping the `..` reject; it does NOT widen confinement — the matched GIT path (never this
+  # manifest value) remains the sole anchor. rc 1 -> MISSING (absent), rc 2 -> MALFORMED (rejected),
+  # rc 0 -> the selector-clean value (else MALFORMED). Only a fully-clean wt_out (not a token) drives
+  # the lookup below.
   if [ "$wt_rc" -eq 1 ]; then
     wt_out="MISSING"
   elif [ "$wt_rc" -eq 2 ]; then
     wt_out="MALFORMED"
   else
     wt_out="MALFORMED"
-    hivemind_assert_path "$worktree_path" && wt_out="$worktree_path"
+    hivemind_assert_path_selector "$worktree_path" && wt_out="$worktree_path"
   fi
 
-  # branch: now used as the ground-truth WORKTREE LOOKUP KEY (no longer a trusted probe token
-  # straight from the scalar). Still read via the same safe exit-code contract and gated by the
-  # strict IDENTIFIER class before it may key the git-worktree map. rc 1 -> MISSING, rc 2 ->
-  # MALFORMED, rc 0 -> identifier-clean value (else MALFORMED). Only a fully-clean branch_out value
-  # (not a token) is allowed to drive the lookup below.
+  # branch is now DISPLAY-ONLY (re-keyed for #270): it is the display `branch` column, NO LONGER
+  # the worktree selector. The worktree PATH is stable across a child branch switch; the branch is
+  # not (the child creates its compliant working branch off the spawn-time scratch ref), so it
+  # cannot key the lookup. Still read via the same safe exit-code contract and gated by the strict
+  # IDENTIFIER class for safe DISPLAY only. rc 1 -> MISSING, rc 2 -> MALFORMED, rc 0 ->
+  # identifier-clean value (else MALFORMED).
   if [ "$branch_rc" -eq 1 ]; then
     branch_out="MISSING"
   elif [ "$branch_rc" -eq 2 ]; then
@@ -416,23 +477,43 @@ while [ "$idx" -lt "$strain_count" ]; do
     hivemind_assert_identifier "$manifest_status" && status_out="$manifest_status"
   fi
 
-  # ── GROUND-TRUTH WORKTREE for this strain (locked OQ3 anchor) ────────────────────
-  # Select the strain's REAL worktree from the git-derived map, keyed by the IDENTIFIER-clean
-  # branch_out. The manifest branch is ONLY a lookup key — a garbage/non-matching/duplicate branch
-  # selects NOTHING and fails closed (worktree/ledger columns become MISSING/unavailable; we NEVER
-  # fall back to the manifest worktree_path). gt_worktree holds the matched real path or empty.
+  # ── GROUND-TRUTH WORKTREE for this strain (locked OQ3 anchor, PATH-keyed) ─────────
+  # Select the strain's REAL worktree from the git-derived path SET by EXACT-MATCH on the
+  # path-class-clean wt_out. The manifest worktree_path is ONLY a selector string — a
+  # garbage/non-matching/absent path matches no set entry and fails closed (worktree/ledger
+  # columns become MISSING/unavailable). gt_worktree holds the matched real path (identical to
+  # wt_out on a hit, since both are the same git-reported path) or empty on a miss.
+  #
+  # git guarantees worktree-path uniqueness, so a path key cannot duplicate; the prior
+  # duplicate-key→MALFORMED branch-collision case is unreachable here and has been removed.
   gt_worktree=""
-  gt_dup=0
-  if [ "$branch_out" != "MALFORMED" ] && [ "$branch_out" != "MISSING" ]; then
-    # Duplicate-branch guard first: a branch git reports on two worktrees is ambiguous -> MALFORMED.
-    case "
-$worktree_dupes" in
-      *"
-$branch_out
-"*) gt_dup=1 ;;
-    esac
-    if [ "$gt_dup" -ne 1 ]; then
-      gt_worktree="$(printf '%s' "$worktree_index" | { while IFS="$(printf '\t')" read -r b p; do [ "$b" = "$branch_out" ] && { printf '%s' "$p"; break; }; done; })"
+  if [ "$wt_out" != "MALFORMED" ] && [ "$wt_out" != "MISSING" ]; then
+    while IFS= read -r set_path; do
+      [ "$set_path" = "$wt_out" ] && { gt_worktree="$set_path"; break; }
+    done <<EOF
+$worktree_set
+EOF
+  fi
+
+  # ── LIVE BRANCH for the selected worktree (#270 PR-probe re-anchor) ──────────────
+  # Resolve the matched worktree's git-reported LIVE branch from the parallel `<path>\t<branch>`
+  # set, keyed by the SAME exact path match used above. This becomes the collector's `gh --head`
+  # probe argument, so it is gated through the SAME strict IDENTIFIER class as the display branch
+  # (same trust/charset class). No-match or detached(empty live branch) → MISSING; an identifier
+  # reject → MALFORMED. Reusing the MISSING/MALFORMED sentinel vocabulary makes the collector's
+  # existing sentinel gate skip the PR probe for a worktree with no resolvable live branch. The
+  # live branch is GROUND-TRUTH metadata, NEVER a path and NEVER a confinement input.
+  live_branch_out="MISSING"
+  if [ -n "$gt_worktree" ]; then
+    live_branch_raw=""
+    while IFS="	" read -r set_path set_branch; do
+      [ "$set_path" = "$gt_worktree" ] && { live_branch_raw="$set_branch"; break; }
+    done <<EOF
+$worktree_branch_set
+EOF
+    if [ -n "$live_branch_raw" ]; then
+      live_branch_out="MALFORMED"
+      hivemind_assert_identifier "$live_branch_raw" && live_branch_out="$live_branch_raw"
     fi
   fi
 
@@ -454,13 +535,11 @@ $branch_out
        esac ;;
   esac
 
-  if [ "$gt_dup" -eq 1 ]; then
-    # Branch keys two live worktrees: ambiguous ground truth, never read.
-    state_out="MALFORMED"
-    run_out="MALFORMED"
-  elif [ -z "$gt_worktree" ]; then
-    # No live worktree matches this branch -> fail-closed: worktree/ledger unavailable. NEVER fall
-    # back to the manifest worktree_path. "Nothing to anchor on" -> MISSING.
+  if [ -z "$gt_worktree" ]; then
+    # No live worktree matches this strain's worktree_path selector -> fail-closed: worktree/ledger
+    # unavailable. We NEVER fall back to the manifest worktree_path as a path anchor (it is only an
+    # exact-match selector into git's trusted set). "Nothing to anchor on" -> MISSING. (git
+    # guarantees path uniqueness, so there is no ambiguous-duplicate case to handle here.)
     state_out="MISSING"
     run_out="MISSING"
   elif [ "$sid_rc" -eq 1 ]; then
@@ -519,18 +598,21 @@ $branch_out
 
   # 5. Emit exactly one TAB-delimited STRAIN line. Field order:
   #    brood_id, name, worktree_path, branch, tmux_session, manifest_status, state_current,
-  #    run_status. brood_id is the single top-level value validated ONCE before the loop and
-  #    emitted verbatim on every strain line.
+  #    run_status, live_branch. brood_id is the single top-level value validated ONCE before the
+  #    loop and emitted verbatim on every strain line. live_branch (field 10) is APPENDED LAST so
+  #    existing 1-based field indices 2-9 are unchanged (#270 PR-probe re-anchor): it carries the
+  #    selected worktree's git-reported LIVE branch (or MISSING/MALFORMED), distinct from the
+  #    display-only manifest `branch` column (field 5).
   #
   #    ENCODE-AT-OUTPUT (see encode_cell above): every display column is run through encode_cell
   #    UNIFORMLY before emission — not per-class carve-outs. The strict columns (brood_id,
-  #    tmux/status/state/run identifier-class tokens) and the fixed tokens (MISSING / MALFORMED)
-  #    need no escaping, but applying the encoder to them too keeps the boundary uniform and
-  #    self-documenting; encode_cell is a no-op on values that already lack `|` and controls. Only
-  #    the value-classes that can carry a `|` as inert quoted data (worktree_path / branch — the
-  #    FLOOR-ONLY path/identifier inputs) are materially affected. The literal TABs joining the
-  #    fields are added by printf AFTER per-field encoding, so the 9-field framing is preserved.
-  printf 'STRAIN\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  #    tmux/status/state/run identifier-class tokens, live_branch) and the fixed tokens (MISSING /
+  #    MALFORMED) need no escaping, but applying the encoder to them too keeps the boundary uniform
+  #    and self-documenting; encode_cell is a no-op on values that already lack `|` and controls.
+  #    Only the value-classes that can carry a `|` as inert quoted data (worktree_path / branch —
+  #    the FLOOR-ONLY path/identifier inputs) are materially affected. The literal TABs joining the
+  #    fields are added by printf AFTER per-field encoding, so the 10-field framing is preserved.
+  printf 'STRAIN\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(encode_cell "$brood_id_out")" \
     "$(encode_cell "$name_out")" \
     "$(encode_cell "$wt_out")" \
@@ -538,7 +620,8 @@ $branch_out
     "$(encode_cell "$tmux_out")" \
     "$(encode_cell "$status_out")" \
     "$(encode_cell "$state_out")" \
-    "$(encode_cell "$run_out")"
+    "$(encode_cell "$run_out")" \
+    "$(encode_cell "$live_branch_out")"
 
   idx=$((idx + 1))
 done

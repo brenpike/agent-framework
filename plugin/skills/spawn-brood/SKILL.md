@@ -39,7 +39,19 @@ After:
 - [ ] Each strain has a worktree + branch off `base`, a detached tmux session
       `<brood-id>-<short>` running claude, and its injected `task.md` — which
       emits the data-boundary preamble FIRST, THEN the YAML child-task metadata
-      block (`parent`, `strain`, `run`, `instructions`), THEN the description.
+      block (`parent`, `strain`, `run`, `working_branch`, `instructions`), THEN
+      the description. The `strain/<brood-id>/<short>` branch is a throwaway
+      WORKTREE SCRATCH ref: the injected task hands the child a classification
+      hint (`run.workflow_hint`, passed through AS-IS — no prefix mapping in this
+      script), slug material (`strain.name`/`strain.description`), a uniqueness
+      token (`strain.id` / `parent.brood_id`), and `working_branch.base` +
+      `working_branch.trunk_freshness: skipped`. The child is instructed to derive
+      its OWN compliant `<type>/<slug>-<token>` working branch by judgment, run
+      `hivemind:create-working-branch` off `base` to switch the worktree HEAD onto
+      it, and open its PR from THAT branch — NOT from the scratch ref. The
+      branch-naming taxonomy/prefix decision lives in the child's prose judgment;
+      this script injects no taxonomy or prefix logic and keeps the child
+      brood-unaware (these are framed as ordinary task inputs).
       A pre-launch identity guard runs before each strain's session is started:
       if the strain's `task.md` `strain.id` would not match its `run.suggested_id`,
       the strain is refused (failed-pre-launch) and never spawned. The engine

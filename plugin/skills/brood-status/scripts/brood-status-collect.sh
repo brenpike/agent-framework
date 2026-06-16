@@ -86,15 +86,15 @@ fi
 # ── Per-strain observable probes (IMPURE) ─────────────────────────────────────────
 # Each probe consumes a projector-VALIDATED token. Skip a probe when its required token is EITHER
 # of the projector's two fixed sentinels — `MISSING` (absent field) or `MALFORMED` (rejected
-# field): tmux_session gates the tmux probe; branch gates the PR probe. Both sentinels are FIXED
-# tokens the projector emits in lieu of a real identifier (see brood-status-project.sh field
-# emission), NOT probeable observables — probing `tmux has-session -t MISSING` or
-# `gh pr list --head MISSING` would let an unrelated real session/branch/PR literally named
-# `MISSING`/`MALFORMED` masquerade as this strain's observable, fabricating alive/open/merged/
-# running status and hiding the very manifest corruption the sentinel signals. A MALFORMED/MISSING
-# *ledger* scalar still NEVER suppresses an observable probe (informational-only); only the probe's
-# OWN gating token (tmux_session / branch) is checked here. These tokens are inert "$var" args,
-# never command source.
+# field): tmux_session gates the tmux probe; the git LIVE branch (live_branch, field 10) gates the
+# PR probe. Both sentinels are FIXED tokens the projector emits in lieu of a real identifier (see
+# brood-status-project.sh field emission), NOT probeable observables — probing
+# `tmux has-session -t MISSING` or `gh pr list --head MISSING` would let an unrelated real
+# session/branch/PR literally named `MISSING`/`MALFORMED` masquerade as this strain's observable,
+# fabricating alive/open/merged/running status and hiding the very manifest corruption the sentinel
+# signals. A MALFORMED/MISSING *ledger* scalar still NEVER suppresses an observable probe
+# (informational-only); only the probe's OWN gating token (tmux_session / live_branch) is checked
+# here. These tokens are inert "$var" args, never command source.
 SENTINEL_RE='^(MISSING|MALFORMED)$'
 
 # probe_session_alive <tmux_session> -> echoes 1 (alive) or 0 (dead/skip).
@@ -109,10 +109,14 @@ probe_session_alive() {
   return 0
 }
 
-# probe_pr <branch> -> echoes "<state>\t<number>" where state is open|merged|none|unknown and
-# number is the PR number or empty. A MISSING/MALFORMED branch skips the probe — both are fixed
-# projector sentinels, not real branch names (state=unknown is reserved for a real gh failure; a
-# sentinel branch yields none with no number, never a probe against a branch literally named
+# probe_pr <live_branch> -> echoes "<state>\t<number>" where state is open|merged|none|unknown and
+# number is the PR number or empty. The argument is the selected worktree's git GROUND-TRUTH LIVE
+# branch (projector field 10), NOT the manifest `branch` column: a brood child opens its PR from
+# the DERIVED branch it switched its worktree HEAD onto, so keying on the stale manifest scratch ref
+# would find no PR and falsely derive `failed (session ended, no PR)` (#270). A MISSING/MALFORMED
+# live branch skips the probe — both are fixed projector sentinels (a detached-HEAD worktree or an
+# identifier-rejected branch), not real branch names (state=unknown is reserved for a real gh
+# failure; a sentinel yields none with no number, never a probe against a branch literally named
 # `MISSING`/`MALFORMED`). gh failure -> unknown.
 probe_pr() {
   local branch="$1"
@@ -216,11 +220,14 @@ for manifest in "${manifests[@]}"; do
   # Brood-id integrity holds. Parse STRAIN lines. Zero strains -> empty brood.
   strain_objects=()
   buckets=()
-  while IFS="$TAB" read -r sentinel f_brood f_name f_wt f_branch f_tmux f_status f_state f_run; do
+  while IFS="$TAB" read -r sentinel f_brood f_name f_wt f_branch f_tmux f_status f_state f_run f_live_branch; do
     [ "$sentinel" = "STRAIN" ] || continue
     # Probe observables using the projector-validated tokens (inert "$var").
     session_alive="$(probe_session_alive "$f_tmux")"
-    pr_pair="$(probe_pr "$f_branch")"
+    # PR probe keys on the git GROUND-TRUTH live branch of the selected worktree (f_live_branch,
+    # field 10), NOT the display-only manifest `branch` (f_branch). A brood child opens its PR from
+    # the DERIVED branch it switched onto, so the stale manifest scratch ref would find no PR (#270).
+    pr_pair="$(probe_pr "$f_live_branch")"
     pr_state="${pr_pair%%$TAB*}"
     pr_number="${pr_pair#*$TAB}"
 
@@ -241,6 +248,10 @@ for manifest in "${manifests[@]}"; do
       pr_num_json="null"
     fi
 
+    # The display object's `branch` shows the manifest branch (f_branch — the spawn-time context
+    # ref), while the PR probe above keys on the git-ground-truth live branch (f_live_branch). This
+    # divergence is INTENTIONAL: the dashboard surfaces the manifest's recorded branch for context,
+    # but the probe must follow the worktree's actual HEAD to find the child's derived-branch PR.
     strain_objects+=( "$(jq -n \
       --arg name "$f_name" \
       --arg branch "$f_branch" \

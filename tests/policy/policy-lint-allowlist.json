@@ -17,7 +17,7 @@
   {
     "rule": "CHECK13",
     "path": "plugin/skills/brood-status/scripts/brood-status-project.sh",
-    "line": 97,
+    "line": 106,
     "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — per-strain field/ledger problems are rendered as MALFORMED/MISSING tokens and must not abort the whole read; pre-flight failures route through blocker() with explicit exit codes."
   },
   {
