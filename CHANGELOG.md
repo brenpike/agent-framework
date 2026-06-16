@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [2.35.0] - 2026-06-15
+
 ### Added
+
+- brood children now derive a taxonomy-compliant `<type>/<slug>-<token>` working branch via `hivemind:create-working-branch` (off `base`, `trunk-freshness: skipped`) from the spawn-time worktree scratch ref `strain/<brood-id>/<short>` and open their PR from that derived branch; the injected child-task contract now carries a `working_branch` block (`base`, `trunk_freshness`) plus the classification-hint (`workflow_hint`) pass-through, slug material, and uniqueness token, with the branch-naming judgment living in the child's prose (no taxonomy/prefix logic in `spawn-brood`) (#270).
 
 ### Changed
 
-### Fixed
+- brood-status worktree lookup re-keyed from the mutable per-strain `branch` onto the stable worktree `worktree_path` — fixes the lookup break when a brood child switches its worktree HEAD off the scratch ref onto its derived working branch; the manifest `worktree_path` is now an exact-match selector into git's worktree-path set (never a path anchor) and `branch` becomes display-only. Detached-HEAD worktrees are now located (branch-keying dropped them) and the duplicate-branch→MALFORMED case is gone (git guarantees worktree-path uniqueness); `manifest_version` stays 4, no migration (#270).
 
 ### Deferred
 
