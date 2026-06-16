@@ -756,9 +756,23 @@ for idx in $(seq 0 $((strain_count - 1))); do
     printf '  suggested_id: |-\n';      printf '%s\n' "${S_RUN_ID[$idx]}"     | sed 's/^/    /'
     printf '  suggested_ledger: |-\n';  printf '%s\n' "${S_RUN_LEDGER[$idx]}" | sed 's/^/    /'
     printf '  workflow_hint: |-\n';     printf '%s\n' "${S_RUN_HINT[$idx]}"   | sed 's/^/    /'
+    # working-branch derivation inputs (#270): the child boots on the throwaway SCRATCH ref
+    # strain/<brood-id>/<short> and must derive its OWN compliant <type>/<slug>-<token> working
+    # branch via create-working-branch BEFORE delivery/PR. We hand it the BASE it branches from
+    # (the brood base, already validated) and a `trunk_freshness: skipped` equivalent so its
+    # create-working-branch preflight is satisfiable while booted detached on the scratch ref.
+    # workflow_hint above doubles as the NON-BINDING classification hint (passed through AS-IS;
+    # no prefix mapping happens in this script). slug material = strain.name/description + the
+    # existing identity tokens (strain.id=<short>, parent.brood_id) as the uniqueness-token source.
+    printf 'working_branch:\n'
+    printf '  base: |-\n';              printf '%s\n' "$base"               | sed 's/^/    /'
+    printf '  trunk_freshness: |-\n';   printf '%s\n' "skipped"             | sed 's/^/    /'
     printf 'instructions:\n'
     printf '  - You are a normal hivemind:overlord instance assigned to one strain of a brood.\n'
     printf '  - Use the normal workflow router and workflow state machine.\n'
+    printf '  - You may BOOT on a throwaway/scratch working branch (strain/<brood-id>/<short>); it is NOT a compliant working branch.\n'
+    printf '  - Derive a compliant <type>/<slug>-<token> working branch BY JUDGMENT: use working_branch.base as base, run.workflow_hint as the NON-BINDING classification hint, strain.name/strain.description as slug material, and strain.id (or parent.brood_id) as the uniqueness token. Do NOT deliver or open a PR on the scratch ref.\n'
+    printf '  - Run hivemind:create-working-branch off working_branch.base with trunk-freshness set from working_branch.trunk_freshness (skipped) to switch this worktree HEAD onto your derived working branch BEFORE delivery/PR.\n'
     printf '  - Initialize your OWN run ledger in this worktree (suggested path under run.suggested_ledger).\n'
     printf '  - init-run-ledger takes a single positional JSON inputs file you author via Write; set its parent block, not CLI flags.\n'
     printf '  - Set parent.kind = brood in the init inputs JSON.\n'

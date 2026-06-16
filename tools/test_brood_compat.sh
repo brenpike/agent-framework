@@ -298,6 +298,39 @@ assert_brood_instruction_flag_parity() {
     fi
 }
 
+# ── Assertion 3b: injected-task working-branch derivation parity (#270) ──────────
+# Producer/consumer parity (static grep, mirrors assertion 3 above) over the spawn-brood.sh
+# `printf '  - ...'` child-instruction emission lines. The child boots on the throwaway scratch ref
+# strain/<brood-id>/<short> and must derive its OWN compliant <type>/<slug>-<token> working branch
+# via create-working-branch off base BEFORE delivery/PR (#270). This asserts the injected
+# instructions carry the three load-bearing elements of that contract:
+#   1. classification-hint PASS-THROUGH — the instructions reference workflow_hint as the
+#      (non-binding) classification hint (no prefix mapping in bash).
+#   2. uniqueness-token REFERENCE — the instructions reference the uniqueness token sourced from the
+#      existing injected identity (strain.id / parent.brood_id).
+#   3. DERIVE-via-create-working-branch — the instructions tell the child to run
+#      create-working-branch to switch the worktree HEAD onto its derived compliant working branch.
+# Restricted to the `printf '  - ...` instruction emission lines so a stray mention in a comment or
+# heredoc elsewhere cannot satisfy the check (same discipline as assertion 3).
+assert_brood_instruction_working_branch_parity() {
+    local name="PARITY:child-instructions-cover-working-branch-derivation"
+    local missing=""
+    # 1. classification-hint pass-through (workflow_hint named as the classification hint).
+    grep -E "printf '[[:space:]]*-.*workflow_hint.*classification" "$SPAWN_SCRIPT" >/dev/null \
+        || missing+=" classification-hint(workflow_hint)"
+    # 2. uniqueness-token reference (strain.id / parent.brood_id as the uniqueness token).
+    grep -E "printf '[[:space:]]*-.*uniqueness token" "$SPAWN_SCRIPT" >/dev/null \
+        || missing+=" uniqueness-token"
+    # 3. derive-compliant-branch via create-working-branch.
+    grep -E "printf '[[:space:]]*-.*create-working-branch" "$SPAWN_SCRIPT" >/dev/null \
+        || missing+=" create-working-branch"
+    if [[ -z "$missing" ]]; then
+        pass "$name" "child instructions cover classification-hint pass-through, uniqueness-token reference, and derive-via-create-working-branch"
+    else
+        failed "$name" "instructions missing:[${missing# }]"
+    fi
+}
+
 # ── Assertion 4: spawn-brood symlink-escape early-blocker ───────────────────────
 # spawn-brood.sh (commit 3872551) sources the shared containment helper right after
 # repo_root resolution and asserts containment for the `.hivemind/brood` and
@@ -1875,21 +1908,25 @@ assert_proj_missing_ledger_file() {
     fi
 }
 
-# ── Projection 3b: NO live worktree for the branch → fail-closed (MISSING) ────────
-# The manifest branch matches NO worktree git reports — even though the manifest carries a perfectly
-# valid worktree_path and suggested_id. The engine MUST fail closed: ledger columns MISSING, and it
-# must NEVER fall back to reading under the manifest's worktree_path. We prove the no-fallback by
-# planting a valid ledger UNDER the manifest worktree_path and asserting its sentinel never surfaces.
+# ── Projection 3b: worktree_path matches NO live worktree → fail-closed (MISSING) ─
+# The manifest worktree_path matches NO path git reports in its worktree set — even though the
+# manifest carries a valid-looking worktree_path and suggested_id. The engine MUST fail closed:
+# ledger columns MISSING, and it must NEVER fall back to reading under the manifest's worktree_path
+# as a path anchor (it is ONLY an exact-match selector into git's trusted set). We prove the
+# no-fallback by planting a valid ledger UNDER the manifest worktree_path and asserting its sentinel
+# never surfaces — adapted to the PATH key (the path is a plain dir, never registered with git).
 assert_proj_no_live_worktree() {
-    local name="PROJ-NOWT:branch-without-live-worktree-fail-closed"
+    local name="PROJ-NOWT:worktree_path-without-live-worktree-fail-closed"
     ensure_proj_workdir; local wd="$PROJ_WORKDIR/nowt"
     local wt="$wd/wt"
     # wt is a PLAIN dir (NOT a registered git worktree) carrying a valid-looking ledger whose
-    # sentinel would surface IF the engine fell back to the manifest worktree_path. It must not.
+    # sentinel would surface IF the engine fell back to the manifest worktree_path as a path anchor.
+    # It must not: a path matching no git worktree-set entry selects NOTHING.
     mkdir -p "$wt/.hivemind/runs/$GT_BROOD_ID--ghost"
     write_ledger "$wt/.hivemind/runs/$GT_BROOD_ID--ghost/state.json" running ghostsentinel
     local manifest="$wd/manifest.json"
-    # Branch that no `git worktree add` ever registered.
+    # worktree_path ($wt) that no `git worktree add` ever registered; branch is irrelevant to the
+    # lookup now (display-only) but kept well-formed so only the unregistered path drives the miss.
     write_manifest_v4 "$manifest" "api" "$wt" "strain/$GT_BROOD_ID/ghost" "brood-api" "running" \
         "$GT_BROOD_ID--ghost"
 
@@ -1899,45 +1936,90 @@ assert_proj_no_live_worktree() {
           && "$(strain_field "$out" 8)" == "MISSING" \
           && "$(strain_field "$out" 9)" == "MISSING" ]] \
           && ! printf '%s' "$out" | grep -q 'ghostsentinel'; then
-        pass "$name" "exit 0; no live worktree -> ledger MISSING; manifest-worktree_path NOT used as fallback (sentinel absent)"
+        pass "$name" "exit 0; worktree_path matches no live worktree -> ledger MISSING; NOT used as path-anchor fallback (sentinel absent)"
     else
         failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9); leaked=$(printf '%s' "$out" | grep -q ghostsentinel && echo yes || echo no)"
     fi
 }
 
-# ── Projection 3c: branch on TWO worktrees (duplicate) → MALFORMED ───────────────
-# A branch git reports on more than one worktree is ambiguous ground truth. The engine records it as
-# a duplicate and renders the ledger columns MALFORMED for the matching strain (never an arbitrary
-# pick). We force a duplicate by adding the same branch to a second worktree path with --force.
-assert_proj_duplicate_branch() {
-    local name="PROJ-DUPBRANCH:branch-on-two-worktrees-malformed"
-    ensure_proj_workdir; local wd="$PROJ_WORKDIR/dup"
+# ── Projection 3c: RE-KEY REGRESSION LOCK — worktree branch DIFFERS from manifest branch (#270) ──
+# The blocker case: a strain's REAL git worktree is checked out on a DIFFERENT branch than the
+# manifest `branch` field records — exactly what happens after the child runs create-working-branch
+# to switch the worktree HEAD off the spawn-time scratch ref onto its derived compliant branch.
+# Under the OLD branch-keying lookup this would MISS (manifest branch no longer matches any live
+# worktree) and fail closed to MISSING — the bug #270 fixes. Under PATH-keying the worktree is still
+# located by worktree_path, so the ledger projects (state_current/run_status NON-MISSING).
+#
+# NON-VACUITY: the manifest `branch` is set to the SCRATCH ref strain/<brood-id>/<short> while the
+# REAL worktree is checked out on a DIFFERENT derived branch. A branch-keyed lookup keyed on the
+# manifest scratch branch finds NO live worktree (the worktree reports the derived branch), so it
+# would render MISSING. Path-keying matches worktree_path and projects the ledger — proving the fix.
+assert_proj_rekey_branch_switched() {
+    local name="PROJ-REKEY:worktree-branch-differs-from-manifest-branch-located-by-path"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/rekey"
     mkdir -p "$wd"
-    local branch="strain/$GT_BROOD_ID/dup" sid="$GT_BROOD_ID--dup"
-    local wt_a="$wd/wt-a" wt_b="$wd/wt-b"
-    gt_add_worktree "" "$branch" "$wt_a"
-    # Force a SECOND worktree checked out on the SAME branch so `git worktree list` reports the
-    # branch twice. --force bypasses git's "already checked out" guard for exactly this duplicate.
-    git -C "$PROJ_WORKDIR" worktree add -q --force "$wt_b" "$branch" 2>/dev/null
-    mkdir -p "$wt_a/.hivemind/runs/$sid"
-    write_ledger "$wt_a/.hivemind/runs/$sid/state.json" running implement_step
+    # The DERIVED compliant working branch the child switched the worktree HEAD onto (what git
+    # actually reports). This is what a real child's create-working-branch produces.
+    local derived_branch="bugfix/rekey-$RANDOM" sid="$GT_BROOD_ID--rekey"
+    # The SCRATCH ref the manifest still records (spawn-time strain/<brood-id>/<short>). It is
+    # DIFFERENT from the worktree's actual checked-out branch.
+    local scratch_branch="strain/$GT_BROOD_ID/rekey"
+    local wt="$wd/wt"
+    # Register the REAL worktree on the DERIVED branch (not the scratch branch).
+    gt_add_worktree "" "$derived_branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
     local manifest="$wd/manifest.json"
-    write_manifest_v4 "$manifest" "api" "$wt_a" "$branch" "brood-api" "running" "$sid"
+    # Manifest records the STALE scratch branch + the REAL worktree_path. Path-keying must locate.
+    write_manifest_v4 "$manifest" "api" "$wt" "$scratch_branch" "brood-api" "running" "$sid"
 
     local out rc=0
     out="$(run_project "$manifest")" || rc=$?
-    # Only assert MALFORMED if the duplicate actually registered (git may decline on some versions).
-    local dupcount; dupcount="$(git -C "$PROJ_WORKDIR" worktree list --porcelain 2>/dev/null | grep -c "branch refs/heads/$branch")"
-    if [[ "$dupcount" -lt 2 ]]; then
-        skip "$name" "could not register a duplicate-branch worktree on this git ($dupcount checkout(s)); cannot exercise the dup guard"
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 5)" == "$scratch_branch" \
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; worktree on derived branch != manifest scratch branch, still located by worktree_path; ledger projects (branch-keying would MISS)"
+    else
+        failed "$name" "rc=$rc branch_col=$(strain_field "$out" 5) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+    fi
+}
+
+# ── Projection 3d: DETACHED-HEAD worktree located by PATH (#270) ─────────────────
+# A detached-HEAD worktree carries a `worktree` line but NO `branch refs/heads/...` line in
+# `git worktree list --porcelain`. Branch-keying DROPPED such a record (no branch to key on); the
+# strain failed closed to MISSING. Path-keying locates it by worktree_path, so its ledger projects.
+assert_proj_detached_head_located() {
+    local name="PROJ-DETACHED:detached-head-worktree-located-by-path"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/detached"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/detached" sid="$GT_BROOD_ID--detached"
+    local wt="$wd/wt"
+    gt_add_worktree "" "$branch" "$wt"
+    # Detach the worktree HEAD so `git worktree list --porcelain` emits no `branch` line for it.
+    git -C "$wt" checkout --detach -q 2>/dev/null
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
+    local manifest="$wd/manifest.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
+
+    # Confirm the worktree really is detached (no branch line) so the case is non-vacuous.
+    local has_branch_line
+    has_branch_line="$(git -C "$PROJ_WORKDIR" worktree list --porcelain 2>/dev/null \
+        | awk -v p="$wt" '$1=="worktree" && $2==p {f=1; next} f && $1=="branch" {print "yes"; exit} f && NF==0 {exit}')"
+    if [[ "$has_branch_line" == "yes" ]]; then
+        skip "$name" "worktree did not detach on this git; cannot exercise the detached-HEAD path"
         return
     fi
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
     if [[ "$rc" -eq 0 \
-          && "$(strain_field "$out" 8)" == "MALFORMED" \
-          && "$(strain_field "$out" 9)" == "MALFORMED" ]]; then
-        pass "$name" "exit 0; duplicate branch on two worktrees -> ledger columns MALFORMED (no arbitrary pick)"
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; detached-HEAD worktree located by worktree_path; ledger projects (branch-keying would DROP it)"
     else
-        failed "$name" "rc=$rc dupcount=$dupcount state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
     fi
 }
 
@@ -2907,6 +2989,7 @@ echo '=== Brood manifest back-compat tests: brood-status reads v1 (old) and v2 (
 assert_v1_old
 assert_v2_new
 assert_brood_instruction_flag_parity
+assert_brood_instruction_working_branch_parity
 assert_spawn_brood_symlink_escape_blocked
 assert_spawn_brood_inputs_external_rejected
 assert_spawn_brood_child_worktree_symlink_escape_blocked
@@ -2925,7 +3008,8 @@ assert_proj_happy_path
 assert_proj_v1_no_run_block
 assert_proj_missing_ledger_file
 assert_proj_no_live_worktree
-assert_proj_duplicate_branch
+assert_proj_rekey_branch_switched
+assert_proj_detached_head_located
 assert_proj_malformed_run_status
 assert_proj_injection_state_current
 assert_proj_metachar_worktree

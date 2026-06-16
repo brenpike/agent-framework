@@ -54,7 +54,7 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
    - Absent — emit `printf 'blocker: trunk-freshness session fact not provided by orchestrator' >&2; exit 1`.
 4. Confirm `working_branch` follows the branch taxonomy and naming rules.
 5. Confirm there are no unexpected unstaged/uncommitted changes that make switching unsafe.
-6. Create or switch to `working_branch` from `base`. Suppress command output (`>/dev/null 2>&1`).
+6. Create or switch to `working_branch` from `base` via `git switch -c <working_branch> <base>`. This repoints the CURRENT worktree HEAD onto `working_branch` even when invoked while booted on a NON-trunk scratch ref (e.g. a brood child booted on `strain/<brood-id>/<short>`); the skill creates and removes NO worktrees (worktree ownership stays with `hivemind:spawn-brood`). Suppress command output (`>/dev/null 2>&1`).
 7. After the `git switch` or `git checkout` command in step 6 succeeds, suppress its output (`>/dev/null 2>&1`) and emit explicit YAML as the final Bash tool call: `printf 'branch: %s\n' "$working_branch"`. This YAML line is the routing data. If any prerequisite check fails (missing inputs, unsafe state, bad branch name), emit blocker to stderr and exit 1.
 
 ## Silence Discipline
