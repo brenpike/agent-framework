@@ -420,21 +420,28 @@ while [ "$idx" -lt "$strain_count" ]; do
   name_out="MALFORMED"
   hivemind_assert_presentation "$strain_name" && name_out="$strain_name"
 
-  # worktree_path is now the WORKTREE LOOKUP SELECTOR (locked OQ3, re-keyed for #270): it keys the
+  # worktree_path is the WORKTREE LOOKUP SELECTOR (locked OQ3, re-keyed for #270): it keys the
   # strain's REAL git-reported worktree by EXACT-MATCH against the trusted git path set built above.
-  # It is STILL never a path itself — it is ONLY ever compared as a string against git's set, so a
+  # It is NEVER a path itself — it is ONLY ever compared as a string against git's set, so a
   # tampered/non-matching value selects NOTHING and fails closed (it can never redirect the bounded
-  # ledger reader). We gate the manifest value through the PATH class floor (rejects '..', leading
-  # '-', command-sub, framing bytes) BEFORE it may key the set, AND emit it verbatim in the display
-  # field. rc 1 -> MISSING (absent), rc 2 -> MALFORMED (rejected), rc 0 -> the path-class-clean
-  # value (else MALFORMED). Only a fully-clean wt_out value (not a token) drives the lookup below.
+  # ledger reader). Because git-set MEMBERSHIP is the validation (a value absent from git's trusted
+  # set selects nothing), the gate is the PATH-SELECTOR value-class (hivemind_assert_path_selector):
+  # it rejects empty, leading '-', command-sub ($/backtick), and framing bytes (TAB/LF/CR) — the
+  # bytes that could forge the TAB-delimited output grammar or expand in a command word — but it
+  # PERMITS a `..` directory-NAME substring, since the selector is never traversed and a legitimate
+  # worktree under a `..`-bearing dir name (e.g. /tmp/hm..repo/wt) must match its real git entry
+  # rather than false-reject to MALFORMED → false MISSING. This is NARROWER than the path class ONLY
+  # in dropping the `..` reject; it does NOT widen confinement — the matched GIT path (never this
+  # manifest value) remains the sole anchor. rc 1 -> MISSING (absent), rc 2 -> MALFORMED (rejected),
+  # rc 0 -> the selector-clean value (else MALFORMED). Only a fully-clean wt_out (not a token) drives
+  # the lookup below.
   if [ "$wt_rc" -eq 1 ]; then
     wt_out="MISSING"
   elif [ "$wt_rc" -eq 2 ]; then
     wt_out="MALFORMED"
   else
     wt_out="MALFORMED"
-    hivemind_assert_path "$worktree_path" && wt_out="$worktree_path"
+    hivemind_assert_path_selector "$worktree_path" && wt_out="$worktree_path"
   fi
 
   # branch is now DISPLAY-ONLY (re-keyed for #270): it is the display `branch` column, NO LONGER

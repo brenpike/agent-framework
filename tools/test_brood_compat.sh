@@ -2177,6 +2177,111 @@ assert_proj_metachar_worktree() {
     fi
 }
 
+# ── Projection 6a: SELECTOR-DOTDOT — worktree under a `..`-bearing DIR NAME is located (#270) ──
+# The P1-A regression lock: a LEGITIMATE checkout whose worktree path contains a `..` directory-NAME
+# substring (e.g. <wd>/hm..repo/wt). Under the OLD hivemind_assert_path gate the shared floor's
+# blanket `*..*` reject false-rejected the selector to MALFORMED → the worktree was never looked up
+# → the ledger fell to false MISSING. STEP-001/002 re-gate worktree_path through the path-SELECTOR
+# class, which PERMITS the `..` dir-name substring (validity is git-set membership, never a traversal
+# check), so the REAL git-reported worktree is located by EXACT-MATCH and its ledger projects
+# (state_current/run_status NON-MISSING). git reports the `..`-bearing path verbatim — it is a real
+# directory name, not a parent-traversal component — so the exact-string selector matches it.
+#
+# NON-VACUITY: the worktree path carries a literal `..` dir-name segment; before STEP-001/002 the
+# floor's `..` reject made wt_out=MALFORMED and the lookup never ran (MISSING ledger). This case
+# FAILS before the fix and passes after.
+assert_proj_selector_dotdot_located() {
+    local name="PROJ-SELECTOR-DOTDOT:worktree-under-dotdot-dirname-located-by-selector"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/dotdot"
+    mkdir -p "$wd"
+    local branch="strain/$GT_BROOD_ID/dotdot" sid="$GT_BROOD_ID--dotdot"
+    # Worktree path with a `..`-bearing DIRECTORY NAME (not a traversal component). git reports it
+    # verbatim, so the exact-match selector locates it once the `..` reject is dropped.
+    local wt="$wd/hm..repo/wt"
+    gt_add_worktree "" "$branch" "$wt"
+    mkdir -p "$wt/.hivemind/runs/$sid"
+    write_ledger "$wt/.hivemind/runs/$sid/state.json" running implement_step
+    local manifest="$wd/manifest.json"
+    write_manifest_v4 "$manifest" "api" "$wt" "$branch" "brood-api" "running" "$sid"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 4)" == "$wt" \
+          && "$(strain_field "$out" 8)" == "implement_step" \
+          && "$(strain_field "$out" 9)" == "running" ]]; then
+        pass "$name" "exit 0; worktree under a '..'-bearing dir name located by the path-selector; ledger projects (the old '..' floor reject would MISS)"
+    else
+        failed "$name" "rc=$rc wt=$(strain_field "$out" 4) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9)"
+    fi
+}
+
+# ── Projection 6b: TRAVERSAL selector matches NO git entry → fail-closed MISSING, no fallback ─
+# A traversal-style worktree_path (carries a `..` PATH component that resolves elsewhere) passes the
+# path-SELECTOR floor (which permits `..`) but matches NO entry in git's trusted worktree-path set
+# (git's reported paths never contain an un-collapsed traversal component pointing into a sibling),
+# so it selects NOTHING and fails closed to MISSING. The engine MUST NEVER fall back to reading
+# under the selector as a path anchor. We prove no-fallback with the planted-sentinel-absent pattern
+# (mirrors assert_proj_no_live_worktree): a valid ledger is planted under a path the traversal would
+# resolve to, and we assert its sentinel never surfaces.
+assert_proj_traversal_selector_missing() {
+    local name="PROJ-TRAVERSAL-SELECTOR:traversal-worktree_path-matches-nothing-fail-closed"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/trav"
+    mkdir -p "$wd"
+    # Plant a valid-looking ledger under the path the traversal selector would resolve to IF the
+    # engine ever consumed the selector as a path. It must not: a value absent from git's set
+    # selects nothing.
+    local resolved="$wd/realwt"
+    mkdir -p "$resolved/.hivemind/runs/$GT_BROOD_ID--trav"
+    write_ledger "$resolved/.hivemind/runs/$GT_BROOD_ID--trav/state.json" running travsentinel
+    local manifest="$wd/manifest.json"
+    # A traversal-style worktree_path: passes the selector floor (permits '..') but matches NO
+    # git-reported worktree path → MISSING. branch is display-only and kept well-formed.
+    write_manifest_v4 "$manifest" "api" "$wd/decoy/../realwt" "strain/$GT_BROOD_ID/trav" \
+        "brood-api" "running" "$GT_BROOD_ID--trav"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 9)" == "MISSING" ]] \
+          && ! printf '%s' "$out" | grep -q 'travsentinel'; then
+        pass "$name" "exit 0; traversal selector matches no git entry -> ledger MISSING; NOT consumed as path-anchor fallback (sentinel absent)"
+    else
+        failed "$name" "rc=$rc state=$(strain_field "$out" 8) run=$(strain_field "$out" 9); leaked=$(printf '%s' "$out" | grep -q travsentinel && echo yes || echo no)"
+    fi
+}
+
+# ── Projection 6c: framing/command-sub worktree_path → field MALFORMED, no read, no side-effect ─
+# The selector floor STILL rejects framing (TAB/LF/CR) and command-substitution ($/backtick) even
+# though it permits `..` — those bytes could forge the TAB-delimited STRAIN grammar or expand in a
+# command word. A command-sub-bearing worktree_path fails the selector gate → the worktree_path COLUMN
+# renders MALFORMED, no live worktree is selected → ledger fails closed to MISSING, and NO command
+# executes. Mirrors assert_proj_metachar_worktree; locks that dropping the `..` reject did NOT relax
+# the framing/command-sub protection.
+assert_proj_selector_framing_rejected() {
+    local name="PROJ-SELECTOR-FRAMING:framing-commandsub-worktree_path-still-MALFORMED"
+    ensure_proj_workdir; local wd="$PROJ_WORKDIR/selframe"
+    mkdir -p "$wd"
+    local marker="$wd/pwn_sel_marker"
+    local manifest="$wd/manifest.json"
+    # worktree_path carries a command-sub payload; branch matches no live worktree (fail-closed).
+    write_manifest_v4 "$manifest" "api" "/tmp/\$(touch $marker)/wt" "strain/$GT_BROOD_ID/selframe" \
+        "brood-api" "running" "$GT_BROOD_ID--selframe"
+
+    local out rc=0
+    out="$(run_project "$manifest")" || rc=$?
+    if [[ "$rc" -eq 0 \
+          && "$(strain_field "$out" 4)" == "MALFORMED" \
+          && "$(strain_field "$out" 8)" == "MISSING" \
+          && "$(strain_field "$out" 9)" == "MISSING" \
+          && ! -e "$marker" ]]; then
+        pass "$name" "exit 0; selector still rejects command-sub worktree_path -> MALFORMED; ledger MISSING; no side-effect (the '..' permit did NOT relax framing/command-sub)"
+    else
+        failed "$name" "rc=$rc wt=$(strain_field "$out" 4) state=$(strain_field "$out" 8) run=$(strain_field "$out" 9) marker_exists=$([ -e "$marker" ] && echo yes || echo no)"
+    fi
+}
+
 # ── Projection 7: symlinked state.json leaf under GT worktree → MALFORMED, target NOT read ─
 assert_proj_symlink_leaf() {
     local name="PROJ-SYMLINK-LEAF:symlinked-state-json-rejected"
@@ -3093,6 +3198,9 @@ assert_proj_live_branch_detached
 assert_proj_malformed_run_status
 assert_proj_injection_state_current
 assert_proj_metachar_worktree
+assert_proj_selector_dotdot_located
+assert_proj_traversal_selector_missing
+assert_proj_selector_framing_rejected
 assert_proj_symlink_leaf
 assert_proj_unreadable_ledger
 assert_proj_suggested_id_escape

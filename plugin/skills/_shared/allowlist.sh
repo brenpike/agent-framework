@@ -25,30 +25,44 @@
 # the class matching that field, so a value never reaches a path derivation, a shell
 # context, or the TAB-delimited output grammar un-vetted.
 #
-# THE SHARED SECURITY FLOOR (the boundary — NEVER relaxed by any class):
-#   1. command-substitution bytes — `$` and backtick `` ` ``. These are EXPANDED by the
-#      shell even inside double quotes when a value reaches a re-parsed command word, so
-#      they are forbidden in EVERY class regardless of how "display-only" the field is.
-#   2. `..` traversal — closes path traversal in any class.
-#   3. leading `-` — closes argument injection (a value reaching a command word as `-x`).
-#   4. framing bytes — TAB, newline (LF), carriage-return (CR). The engine emits values
-#      into a TAB-delimited, newline-terminated per-strain output grammar; any of these
-#      would let a crafted value forge or split the framing the navigator parses.
-#   5. empty — never a valid value in any class.
-# Every validator below applies this floor FIRST.
+# THE SHARED SECURITY FLOOR (the boundary). It is split into a BASE predicate plus one
+# additional reject, so a single class (the path-selector) can opt out of the `..` reject
+# WITHOUT loosening it for any other class:
+#   BASE (hivemind__assert_floor_base — applied by EVERY class):
+#     1. command-substitution bytes — `$` and backtick `` ` ``. These are EXPANDED by the
+#        shell even inside double quotes when a value reaches a re-parsed command word, so
+#        they are forbidden in EVERY class regardless of how "display-only" the field is.
+#     3. leading `-` — closes argument injection (a value reaching a command word as `-x`).
+#     4. framing bytes — TAB, newline (LF), carriage-return (CR). The engine emits values
+#        into a TAB-delimited, newline-terminated per-strain output grammar; any of these
+#        would let a crafted value forge or split the framing the navigator parses.
+#     5. empty — never a valid value in any class.
+#   FULL (hivemind__assert_floor = BASE plus):
+#     2. `..` traversal — closes path traversal. Applied by identifier/path/presentation
+#        (their values reach cd/--arg/pwd -P/command tokens). The path-SELECTOR class
+#        deliberately OMITS this reject (BASE only) because its value is only ever a
+#        never-traversed exact-match key into git's trusted worktree-path set — see
+#        hivemind_assert_path_selector.
+# Every validator below applies the BASE floor FIRST (most via the FULL floor).
 #
-# THE THREE CLASSES, with the fields that map to each:
+# THE VALUE CLASSES, with the fields that map to each:
 #   hivemind_assert_identifier   FLOOR + strict charset ^[A-Za-z0-9._/-]+$ (strictest).
 #       FIELDS: branch, tmux_session, manifest status, ledger id-segment. Values used as
 #       shell-probe tokens / command arguments — no space, no shell-metachar, ever. This
 #       class is deliberately strict and is NOT loosened by the floor-at-input model.
-#   hivemind_assert_path         FLOOR-ONLY (no charset enumeration).
-#       FIELDS: worktree_path, suggested_ledger. Paths are used ONLY as quoted data
-#       (`cd "$dir"`, jq `--arg`, `pwd -P` canonicalization) and are never re-parsed, so the
-#       floor IS the full security boundary. Arbitrary filesystem-path bytes that pass the
+#   hivemind_assert_path         FULL-FLOOR-ONLY (no charset enumeration).
+#       FIELDS: suggested_ledger (and any path consumed as quoted data). Paths are used ONLY as
+#       quoted data (`cd "$dir"`, jq `--arg`, `pwd -P` canonicalization) and are never re-parsed,
+#       so the floor IS the full security boundary. Arbitrary filesystem-path bytes that pass the
 #       floor — including spaces, `+ @ , %`, etc. — are ACCEPTED as quoted data. A per-byte
 #       charset enumeration here was the source of a recurring false-reject treadmill;
-#       do NOT re-add per-byte charset rules to this class.
+#       do NOT re-add per-byte charset rules to this class. STILL rejects `..` (full floor).
+#   hivemind_assert_path_selector BASE-FLOOR-ONLY — PERMITS `..`.
+#       FIELD: brood-status manifest `worktree_path` USED AS A LOOKUP SELECTOR. The value is an
+#       exact-match key into git's TRUSTED worktree-path set and is NEVER traversed/consumed as a
+#       path, so git-set membership IS the validation and a `..` directory NAME is safe. Drops ONLY
+#       the `..` reject vs hivemind_assert_path; keeps framing/command-sub/leading-dash/empty.
+#       See the validator header for the full why and the does-not-loosen-other-classes statement.
 #   hivemind_assert_presentation FLOOR + positive display allowlist.
 #       FIELDS: strain `name` (display-only — emitted into the output field and used only as
 #       the quoted jq/awk `--arg`/`-v` lookup key, NEVER a shell-probe token). Markdown-cell
@@ -56,13 +70,15 @@
 #       render boundary; this class no longer carries that responsibility and keeps only a
 #       positive allowlist over the floor for its remaining display-label role.
 
-# ── Shared security floor ────────────────────────────────────────────────────────
-# hivemind__assert_floor <value>
-# Returns 0 iff <value> is non-empty AND does not start with '-' AND contains neither '..'
-# nor any command-substitution byte ($ or backtick) nor any framing byte (TAB/LF/CR).
-# INTERNAL: the three public validators call this first; not intended as a caller entry
-# point (double-underscore marks it private). Pure: no side effects, no exit, echoes nothing.
-hivemind__assert_floor() {
+# ── Shared security floor: base predicate (NO `..` reject) ───────────────────────
+# hivemind__assert_floor_base <value>
+# Returns 0 iff <value> is non-empty AND does not start with '-' AND contains neither any
+# command-substitution byte ($ or backtick) nor any framing byte (TAB/LF/CR). This is the
+# floor MINUS the `..` traversal reject — the separable base shared by the full floor (which
+# adds `..`) and the path-selector class (which does NOT reject `..`, see
+# hivemind_assert_path_selector). INTERNAL (double-underscore): not a caller entry point.
+# Pure: no side effects, no exit, echoes nothing.
+hivemind__assert_floor_base() {
   local value="$1"
   # Empty is never valid in any class.
   if [ -z "$value" ]; then
@@ -71,8 +87,6 @@ hivemind__assert_floor() {
   case "$value" in
     # Leading dash: argument-injection guard.
     -*) return 1 ;;
-    # '..': path-traversal guard.
-    *..*) return 1 ;;
   esac
   # Command-substitution bytes: `$` and backtick. Forbidden in EVERY class — these expand
   # even inside double quotes when a value reaches a re-parsed command word.
@@ -84,6 +98,23 @@ hivemind__assert_floor() {
   local tab=$'\t' nl=$'\n' cr=$'\r'
   case "$value" in
     *"$tab"*|*"$nl"*|*"$cr"*) return 1 ;;
+  esac
+  return 0
+}
+
+# ── Shared security floor (the full boundary — base PLUS `..` traversal reject) ───
+# hivemind__assert_floor <value>
+# Returns 0 iff <value> passes hivemind__assert_floor_base AND contains no '..' substring.
+# This is BYTE-IDENTICAL to the historical floor: the identifier / path / presentation
+# classes call this and so continue to reject `..` exactly as before. INTERNAL: not a caller
+# entry point (double-underscore marks it private). Pure: no side effects, no exit, echoes nothing.
+hivemind__assert_floor() {
+  local value="$1"
+  hivemind__assert_floor_base "$value" || return 1
+  case "$value" in
+    # '..': path-traversal guard. Closed for identifier/path/presentation — their values reach
+    # cd/--arg/pwd -P/command tokens, so traversal must stay rejected.
+    *..*) return 1 ;;
   esac
   return 0
 }
@@ -121,6 +152,36 @@ hivemind_assert_identifier() {
 hivemind_assert_path() {
   local value="$1"
   hivemind__assert_floor "$value" || return 1
+  return 0
+}
+
+# ── Class 2b: path-selector (BASE-FLOOR-ONLY, PERMITS `..`) ───────────────────────
+# hivemind_assert_path_selector <value>
+# Returns 0 iff <value> passes hivemind__assert_floor_base — i.e. it rejects empty, leading
+# `-`, command-substitution ($/backtick), and framing bytes (TAB/LF/CR), but DOES NOT reject a
+# `..` substring.
+# FIELD: brood-status manifest `worktree_path` USED AS A LOOKUP SELECTOR.
+#
+# WHY `..` IS SAFE FOR THIS CLASS — and ONLY this class: the value is EXACT-MATCHED as a string
+# against git's TRUSTED `git worktree list --porcelain` path set and is NEVER traversed, never
+# `cd`'d into, never canonicalized, never reaches a command word — git-set MEMBERSHIP is the
+# validation. A traversal value (e.g. `/a/../b`) cannot appear in git's canonical reported set,
+# so it simply selects nothing and fails closed; permitting `..` here only lets a LEGITIMATE
+# checkout under a `..`-bearing directory NAME (e.g. `/tmp/hm..repo/wt`) match its real git entry
+# instead of false-rejecting to MALFORMED → false MISSING. The floor here still blocks the bytes
+# that COULD do harm even on a never-traversed selector: framing (which would forge/split the
+# TAB-delimited STRAIN output grammar), command-substitution (defense-in-depth on quoted data),
+# leading `-`, and empty.
+#
+# THIS DOES NOT LOOSEN `..` FOR ANY OTHER CLASS. hivemind_assert_identifier, hivemind_assert_path,
+# and hivemind_assert_presentation all call the FULL hivemind__assert_floor and keep rejecting
+# `..` — their values DO reach cd/--arg/pwd -P/command tokens, where the traversal/command-token
+# guard must remain. Only this selector class, whose value is a never-consumed git-set lookup key,
+# drops the `..` reject.
+# Pure: no side effects, no exit.
+hivemind_assert_path_selector() {
+  local value="$1"
+  hivemind__assert_floor_base "$value" || return 1
   return 0
 }
 

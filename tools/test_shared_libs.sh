@@ -170,6 +170,43 @@ for v in "a;b" 'a|b' 'a>b' 'a&b' '/a/(b)/wt' "a${vt}b" "a${ff}b"; do
   fi
 done
 
+# ── Class 2b: path-selector (BASE-FLOOR-ONLY — PERMITS `..`; #270 worktree_path selector). ──
+# The selector value-class gates brood-status' manifest worktree_path, which is EXACT-MATCHED
+# against git's trusted worktree-path set and NEVER traversed. It drops ONLY the `..` reject vs
+# the path class (so a legitimate worktree under a `..`-bearing dir name is located instead of
+# false-rejected), while STILL rejecting empty, leading-dash, command-sub, and framing bytes.
+# ACCEPT: a `..`-bearing value passes (this is the whole point of the class).
+for v in "/tmp/hm..repo/wt" "/a/../b" "a..b" "/repo/.claude/worktrees/api" "feat/x"; do
+  if hivemind_assert_path_selector "$v"; then
+    pass "selector:accept" "path-selector accepted '$v' (permits '..')"
+  else
+    failed "selector:accept" "path-selector wrongly rejected a value it must permit: '$v'"
+  fi
+done
+# REJECT: the base floor still fires — empty, leading-dash, command-sub ($/backtick), framing.
+for v in "" "-rf" "x\$(touch $PWN_MARKER)" "\`touch $PWN_MARKER\`" "a${tab}b" "a${nl}b" "a${cr}b"; do
+  if hivemind_assert_path_selector "$v"; then
+    failed "selector:reject" "path-selector accepted a value the base floor must reject: '$v'"
+  else
+    pass "selector:reject" "path-selector rejected base-floor value '$v'"
+  fi
+done
+# DRIFT REGRESSION GUARD: dropping `..` for the SELECTOR class must NOT loosen `..` for the
+# path or identifier classes — their values reach cd/--arg/pwd -P/command tokens and keep the
+# full floor. A `..`-bearing value MUST still be REJECTED by both.
+for v in "/tmp/hm..repo/wt" "/a/../b" "a..b"; do
+  if hivemind_assert_path "$v"; then
+    failed "selector:path-still-rejects-dotdot" "hivemind_assert_path wrongly accepted a '..' value (full floor relaxed?): '$v'"
+  else
+    pass "selector:path-still-rejects-dotdot" "hivemind_assert_path still rejects '..' value '$v'"
+  fi
+  if hivemind_assert_identifier "$v"; then
+    failed "selector:id-still-rejects-dotdot" "hivemind_assert_identifier wrongly accepted a '..' value (full floor relaxed?): '$v'"
+  else
+    pass "selector:id-still-rejects-dotdot" "hivemind_assert_identifier still rejects '..' value '$v'"
+  fi
+done
+
 # ── Class 3: presentation (positive allowlist; display-only name). ──
 # Space-bearing display name ACCEPTS — this is what lets `api worker` render not MALFORMED.
 # The permitted set is: A-Za-z0-9 space . _ - / ( ) : , + @ # = ~ !
