@@ -129,6 +129,14 @@ Append-only blocker log.
 
 **Convention (proactive-recurrence-origin marker):** on a `root-cluster-suspected` transition, `event.outputs` MAY carry the named origin-marker key (`recurrence_origin`). Its presence distinguishes a proactively-derived zoom-out from a reviewer-returned one. The key's name, values, and absence semantics are defined SOLELY in `${CLAUDE_PLUGIN_ROOT}/governance/remediation-doctrine.md (### Proactive Zoom-Out Ledger Marker)` — that subsection is the single source; this note does not restate them.
 
+**Convention (decision-journal array):** `event.outputs` MAY carry an OPTIONAL, free-form `decisions[]` array, recorded verbatim like `recurrence_origin`. Each entry carries the fields `ts`, `state`, `situation`, `options`, `tradeoffs`, `rec_strength`, `gate`, `disposition`, `decision`, `rationale`, and `reversible`. The semantics single source — the autonomy posture, the 2x2, the promotion gate, the disposition vocabulary, and these fields — is `${CLAUDE_PLUGIN_ROOT}/governance/decision-autonomy.md (## Decision Journal)`; this note does not restate the 2x2 or promotion-gate mechanics. `decisions[]`, `recurrence_origin`, and the `plan.steps` plan-steps writers are DISTINCT keys/paths on or around `event.outputs` and do not collide.
+
+**Non-change clarifications (so a future reader does not "fix" a non-bug):**
+
+- NO `schema_version` bump is implied by the decision-journal convention — `decisions[]` is a free-form `event.outputs` key, not a required ledger field.
+- NO new `run.status` value is introduced — the enum stays `running | complete | blocked | cancelled`. The post-merge report's "awaiting" condition is DERIVED at Resume-On-Start (a PR exists, `event.outputs.decisions[]` carries ≥1 entry, and the run-dir report file is absent), NOT stored.
+- NO `artifacts.decision_report` ledger marker is used — the post-merge report's idempotency token is the EXISTENCE of `decision-report.md` in the run dir, owned in the run directory rather than the ledger.
+
 ## Blocker shape
 
 ```json
