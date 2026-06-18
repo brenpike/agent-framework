@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [2.36.0] - 2026-06-17
+
+### Added
+
+- overlord decision-autonomy posture: a Tier-A/Tier-B 2x2 classifies in-run decisions by reversibility and blast radius, with a promotion gate governing when a Tier-B decision must escalate to the user rather than proceed autonomously; autonomous decisions are recorded so the run remains auditable (ADR-0026, which supersedes ADR-0003).
+- run-scoped `decisions[]` decision journal capturing each autonomous decision (tier, rationale, alternatives considered) for post-merge review.
+- new deferred post-merge `hivemind:decision-report` skill that renders the decision journal in the consumer project's ubiquitous language. Additive free-form ledger conventions only — `run.status` enum, `schema_version`, and existing `event.outputs`/`artifacts` fields are unchanged (additions are backward-compatible).
+
 ## [2.35.0] - 2026-06-15
 
 ### Added
