@@ -110,14 +110,23 @@ run_suite() {
   esac
 }
 
-# run_suites: run a de-duped, CI-ordered subset. Prints a header per suite. Exits non-zero if
-# any suite fails, after attempting every selected suite (no early abort — full signal).
+# run_suites: run a de-duped, CI-ordered subset CONCURRENTLY, then replay results in canonical
+# CI order so the report is byte-deterministic regardless of completion order. Exits non-zero if
+# any suite fails, after waiting on EVERY selected suite (no early abort — full signal).
+#
+# Parallelism is pure-bash (`&` + a bounded pid pool + `wait`); GNU parallel is NOT required.
+# Concurrency is capped at min(nproc, N) where N is the number of selected suites, so a single
+# selected suite (N=1) launches exactly one job and waits on it — no empty-wait, no deadlock.
+#
+# INVARIANT: aggregate rc is computed AFTER every job is waited on; a non-zero per-suite rc is
+# never lost (a lost failure = false-green merge gate). Under `set -e`, both the background job's
+# captured rc and `wait` are guarded with `|| rc=$?` so a failing suite cannot abort the dispatcher.
 run_suites() {
   local -a requested=("$@")
   local -a ordered=()
   local s w
   # Reorder the requested set into canonical CI order so output is stable and the cheap
-  # policy_check/json parse run first.
+  # policy_check/json parse appear first in the replayed report.
   for s in "${ALL_SUITES[@]}"; do
     for w in "${requested[@]}"; do
       if [[ "$s" == "$w" ]]; then
@@ -132,17 +141,95 @@ run_suites() {
     return 0
   fi
 
+  local n=${#ordered[@]}
+
+  # Concurrency cap: min(nproc, N). nproc self-adjusts across machines/CI runners; if it is
+  # unavailable for any reason, fall back to N (run all concurrently) rather than serialize.
+  local cap procs
+  procs="$(nproc 2>/dev/null || echo "$n")"
+  [[ "$procs" =~ ^[0-9]+$ && "$procs" -ge 1 ]] || procs="$n"
+  if [[ "$procs" -lt "$n" ]]; then cap="$procs"; else cap="$n"; fi
+
+  # Per-suite scratch: each job writes its OWN combined stdout/stderr to out.<i> and its OWN exit
+  # status to rc.<i>, keyed by canonical index so suites with spaces in their token (e.g.
+  # "policy_check.sh --strict") never collide on a filename.
+  local scratch
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/validate-suites.XXXXXX")"
+  # shellcheck disable=SC2064 # expand scratch now so the trap removes THIS run's dir.
+  trap "rm -rf '$scratch'" EXIT
+
+  # run_one_suite: execute suite index $1 in the current (sub)shell, capturing combined output to
+  # the scratch out file and the exit status to the scratch rc file. Never aborts the dispatcher.
+  run_one_suite() {
+    local idx="$1"
+    local suite="${ordered[$idx]}"
+    local start end
+    start="$(date +%s.%N)"
+    local job_rc=0
+    run_suite "$suite" >"$scratch/out.$idx" 2>&1 || job_rc=$?
+    end="$(date +%s.%N)"
+    printf '%s\n' "$job_rc" >"$scratch/rc.$idx"
+    # Elapsed wall-time (seconds, one decimal) via awk to avoid bc/float-shell dependencies.
+    awk -v s="$start" -v e="$end" 'BEGIN { printf "%.1f\n", e - s }' >"$scratch/sec.$idx"
+  }
+
+  # Launch with a bounded pid pool: never exceed `cap` concurrent jobs. wait -n drains the
+  # earliest-finishing job (bash 5+) so a slow suite cannot starve the pool.
+  local -a pids=()
+  local i running
+  for ((i = 0; i < n; i++)); do
+    running=${#pids[@]}
+    if [[ "$running" -ge "$cap" ]]; then
+      # Block until at least one job finishes, then prune completed pids from the pool.
+      wait -n 2>/dev/null || true
+      local -a still=()
+      local p
+      for p in "${pids[@]}"; do
+        if kill -0 "$p" 2>/dev/null; then still+=("$p"); fi
+      done
+      pids=("${still[@]}")
+    fi
+    run_one_suite "$i" &
+    pids+=("$!")
+  done
+
+  # Drain the remaining jobs. Guard wait under `set -e` so a non-zero job rc cannot abort here;
+  # the authoritative per-suite rc is read back from the scratch rc files below, not from wait.
+  local p
+  for p in "${pids[@]}"; do
+    wait "$p" 2>/dev/null || true
+  done
+
+  # Replay in canonical CI order (NOT completion order) so the report is byte-deterministic.
   local rc=0
-  for s in "${ordered[@]}"; do
+  local -a summary=()
+  for ((i = 0; i < n; i++)); do
+    s="${ordered[$i]}"
+    local suite_rc suite_sec
+    suite_rc="$(cat "$scratch/rc.$i" 2>/dev/null || echo 1)"
+    suite_sec="$(cat "$scratch/sec.$i" 2>/dev/null || echo 0.0)"
     echo
     echo "=== validate.sh: running [$s] ==="
-    if run_suite "$s"; then
+    cat "$scratch/out.$i" 2>/dev/null || true
+    if [[ "$suite_rc" -eq 0 ]]; then
       echo "--- [$s] PASS ---"
     else
       echo "--- [$s] FAIL ---" >&2
       rc=1
     fi
+    echo "[$s] ${suite_sec}s"
+    summary+=("$suite_sec"$'\t'"$s")
   done
+
+  # Timing summary, slowest-first (always-on). Sort numerically descending on the elapsed column.
+  echo
+  echo "=== validate.sh: timing summary (slowest first) ==="
+  local line sec name
+  while IFS=$'\t' read -r sec name; do
+    [[ -z "$name" ]] && continue
+    printf '  %6ss  %s\n' "$sec" "$name"
+  done < <(printf '%s\n' "${summary[@]}" | sort -t$'\t' -k1,1 -rn)
+
   return "$rc"
 }
 
