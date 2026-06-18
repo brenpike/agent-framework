@@ -6,6 +6,7 @@ description: >-
   run's PR merges or closes when the run journaled at least one auto-decision.
 allowed-tools:
   - Read
+  - Write   # report-file ONLY: write the rendered narrative to the caller-passed report path as DATA (no shell interpretation); path is the caller's OWN ground-truth run dir, never untrusted-derived
   - Bash(git rev-parse *)
   - Bash(jq *)   # parse the passed decisions content only; never derives a run-dir path
 shell: bash
@@ -23,17 +24,36 @@ The decision journal this skill renders is defined in
 field shape and free-form `event.outputs.decisions[]` location are documented in
 `${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md` (Event shape).
 
-This is a **render skill**, not a silent pipeline skill. Its product IS narrative chat text:
-the rendered report is RETURNED as the skill's chat output so the user sees it immediately. The
-caller owns persisting it next to the run's `state.json`; this skill writes
-nothing. Do NOT apply the zero-text Silence Discipline that the ledger-mutation skills use —
+This is a **render-and-persist skill**, not a silent pipeline skill. Its product IS narrative
+chat text: the rendered report is RETURNED as the skill's chat output so the user sees it
+immediately, AND it is WRITTEN to the report-file path the caller passes — written with the
+**Write tool**, which treats the narrative as DATA (no shell interpretation, no heredoc/quote
+splicing), so untrusted reviewer/issue text quoted inside a decision entry can never escape into
+a shell command. The caller passes the report PATH (its OWN ground-truth run dir, e.g.
+`<rundir>/decision-report.md`); this skill does NOT derive that path, take a `run_id`, or read
+any ledger. Do NOT apply the zero-text Silence Discipline that the ledger-mutation skills use —
 the report text is the deliverable.
+
+The Write grant is scoped to the report file ONLY. The `file_path` is the caller-passed
+report path — the caller's OWN run dir, enumerated from its ground-truth glob
+(`git rev-parse --show-toplevel` + `.hivemind/runs/<run_id>/`), NEVER an untrusted-derived or
+caller-supplied `run_id`. Because the path comes from the caller's own ground truth (the same
+dir it already wrote `state.json` into) there is no path-derivation oracle here, so no
+path-containment guard is reintroduced — the security gain is purely that the untrusted report
+BYTES are written as Write-tool DATA instead of spliced into a shell command.
 
 ## Required Inputs
 
-The caller resolves and passes these as CONTENT; the skill does not invent, derive, read, or
-write any run-dir path.
+The caller resolves and passes these as CONTENT (plus the report-file PATH below); the skill
+does not invent or derive any run-dir path — the only path it touches is the report path the
+caller passes.
 
+- `report_path`: the absolute path the rendered narrative is WRITTEN to via the Write tool. The
+  caller resolves this from its OWN ground-truth run dir (`git rev-parse
+  --show-toplevel` + the `.hivemind/runs/<run_id>/` dir it created and owns), e.g.
+  `<rundir>/decision-report.md`. The skill does NOT derive, glob, or validate this path and does
+  NOT take a `run_id` — it writes the narrative there verbatim as DATA. The path is trusted
+  because it is the caller's OWN run dir, never an externally-supplied `run_id`.
 - `decisions[]`: the journaled decision entries, passed by the caller as content. The caller
   reads these from its OWN run ledger (the run dir it owns and wrote) and hands them to this
   skill. This skill does NOT take a `run_id` and does NOT read any ledger or
@@ -116,10 +136,14 @@ user reads the auto-decisions in that light.
    - Decision N (surfaced): you were asked — <one-line situation, domain terms>.
    ```
 
-4. **Return the narrative.** RETURN the rendered narrative as the skill's chat text so the user
-   sees the report immediately. The render-and-return-to-chat narrative is the deliverable. The
-   skill writes NO file — the caller persists the returned narrative next to the
-   run's `state.json`.
+4. **Write the narrative, then return it.** WRITE the rendered narrative to the caller-passed
+   `report_path` using the **Write tool** — the narrative (including any untrusted reviewer/issue
+   text quoted from a decision entry) is passed as the Write `content`, so it is persisted as
+   DATA with no shell interpretation and no heredoc/quote splicing. Then RETURN the same narrative
+   as the skill's chat text so the user sees the report immediately. The write-then-return
+   narrative is the deliverable. The skill writes ONLY the caller-passed `report_path` (its OWN
+   run dir, the same dir the caller already wrote `state.json` into); it derives no path and
+   reads/writes no other file.
 
 ## Pointers
 
@@ -134,19 +158,24 @@ user reads the auto-decisions in that light.
 
 ## Output
 
-This skill RETURNS the rendered report as chat text. It is a render skill — the narrative is the
-deliverable, not a silent tool-call pipeline:
+This skill WRITES the rendered report to the caller-passed `report_path` via the Write tool and
+RETURNS it as chat text. It is a render-and-persist skill — the narrative is the deliverable, not
+a silent tool-call pipeline:
 
-- Normal path: the rendered report is the chat output.
-- No-fire path (zero Tier-B AUTO decisions): a single-line note explaining why nothing was
-  rendered.
+- Normal path: the rendered report is written to `report_path` (as Write-tool DATA) and is also
+  the chat output.
+- No-fire path (zero Tier-B AUTO decisions): no file is written; a single-line note explaining
+  why nothing was rendered.
 
 ## Do Not
 
-- take a `run_id`, or derive / read / write any `.hivemind/runs/<run_id>/...` path — the caller
-  passes the decision entries as content and persists the returned narrative itself.
+- take a `run_id`, or derive / glob / read any `.hivemind/runs/<run_id>/...` path — the caller
+  passes the decision entries as content AND the report-file path; the skill writes ONLY that
+  caller-passed `report_path` and derives no path of its own.
 - read the run ledger — render only from the passed `decisions[]` content.
-- write any file with the Write tool — this skill has no `Write` grant and returns chat text only.
+- write any file other than the caller-passed `report_path` — the Write grant is scoped to the
+  report file only; the narrative is written as Write-tool DATA (never spliced into a shell
+  command).
 - color the narrative with the plugin's internal glossary — speak the consumer project's domain.
 - name a decision tier, the 2x2, or the promotion gate by its internal name in user-facing prose —
   render the auto mechanic as plain English.

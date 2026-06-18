@@ -103,7 +103,7 @@ After the PR for a run merges, the overlord ALWAYS surfaces a report of the deci
 
 The report is deferred-on-merge — it is not produced at merge time but on a subsequent session start. The overlord's Resume-On-Start scan (per `${CLAUDE_PLUGIN_ROOT}/agents/overlord.md` `## Resume On Start`) derives an AWAITING-REPORT run when ALL of the following hold:
 
-- a PR is DERIVABLE for the run — read from the recorded `open_pr` state-result event's `event.outputs` (the PR URL `hivemind:open-plan-pr` returns as a state output), NOT from `facts.pr` (init seeds `facts.pr` `null` and no sanctioned writer populates it)
+- a PR is DERIVABLE for the run — workflow-agnostic across both delivery families: read from the recorded `open_pr` state-result event's `event.outputs` (the PR URL `hivemind:open-plan-pr` returns as a state output) for a standard-delivery run; ELSE, for a remediation-only run that has no `open_pr` state (`pr-feedback-remediation` watches/fixes an EXISTING PR — it journals Tier-B decisions but never emits `open_pr`), read the PR the run resolved at `intake` / `pr_branch_preflight` from `facts.pr` (the run's reconciliation anchor). The two sources are complementary: `open_pr` output covers standard delivery (where `facts.pr` stays `null`), and the `facts.pr` anchor covers remediation runs (which never emit `open_pr`)
 - the run's `event.outputs.decisions[]` carries at least one journaled entry
 - the run-dir report file does NOT yet exist
 
