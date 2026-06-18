@@ -253,7 +253,7 @@ map_path() {
   # Also containment.sh: test_engine.sh copies the shared containment guard into its fake plugin
   # and exercises engine symlink/external-path containment cases, so a containment.sh change must
   # trigger test_engine or record/init engine containment regressions go untested under --changed.
-  # Also ledger-engine-io.sh: sourced by all three engine entrypoints; test_engine.sh is the
+  # Also ledger-engine-io.sh: sourced by the three ledger engine entrypoints; test_engine.sh is the
   # behavior oracle for those engines, so a lib-only edit must trigger test_engine or engine
   # regressions go untested under --changed (test_shared_libs alone is not sufficient).
   if [[ "$p" == plugin/skills/record-state-result/scripts/* \

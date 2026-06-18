@@ -196,6 +196,28 @@ _Avoid_: auto-merge, merge signal, approved-to-merge
 The shared, store-agnostic detection skill (`hivemind:detect-remediation-signals`) invoked by both reviewers over a supplied fix-ledger; returns ONE verdict across four detectors (root-cluster, break-fix, diminishing-returns, merge-advisory). Emits a verdict, not an exit_reason — each reviewer maps the verdict to its own terminal. Operationalizes the **Remediation Doctrine**; carries the detection mechanics that the Mutation Decay / Creep Stagnation / GitHub Review Loop glossary entries point to.
 _Avoid_: signal detector, classifier, cluster checker
 
+### Decision Autonomy
+
+**Decision Tier**:
+The A/B classification of an overlord decision. Tier A = always surfaced to the Overmind (safety rails, merge recommendations, genuine ambiguity-with-risk); Tier B = auto-decided and journaled by default.
+_Avoid_: priority, severity
+
+**Promotion Gate**:
+The test that promotes a Tier-B decision back to a surface — trips when the recommended action is irreversible OR architectural blast radius OR safety-relevant (destructive-fix categories).
+_Avoid_: escalation gate, risk gate
+
+**Decision Journal**:
+The per-decision record (situation, options, trade-offs, recommendation strength, gate outcome, disposition, decision, rationale, reversibility) the overlord appends to the run ledger's `event.outputs.decisions[]` for every autonomous (and surfaced) decision.
+_Avoid_: audit log, decision log
+
+**Decision Report**:
+The post-merge narrative the overlord ALWAYS surfaces after a PR merges, recounting each autonomous decision in the consumer project's ubiquitous language; produced by `hivemind:decision-report`.
+_Avoid_: summary, changelog
+
+**Disposition**:
+The outcome of a Tier-B decision — `did-now` (auto-executed), `deferred` (tracked follow-up), or `surfaced` (returned to the Overmind).
+_Avoid_: status, resolution
+
 ### Plugin Structure
 
 **Skill**:
@@ -352,6 +374,10 @@ _Avoid_: degraded mode, manual mode, safe mode
 - A **Worker Report** is the structured output of every **Phase**, consumed as input to an **Essence**
 - **Intent-Based Governance** defines which rules remain mechanical (**Unsafe Git State**, **Destructive Fix Gate**, **External Content Boundary**, report schemas) vs intent-described
 - An **Unsafe Git State** blocks all modifying agent operations until resolved
+
+- An **Overlord** records a **Decision Journal** entry for every Tier-B decision; the **Promotion Gate** decides whether the decision is auto-taken or surfaced to the **Overmind**
+- A **Decision Report** is produced once per merged PR that contains ≥1 auto **Disposition** (`did-now` or `deferred`), rendered in the consumer's ubiquitous language
+- **Remediation** Tier-B choices (planner-escalation, root-cluster routing) are auto-taken + journaled unless the **Promotion Gate** trips
 
 - A **Brood** contains one or more **Strains**, each running in a separate git worktree
 - A **Brood-Plan** produces exactly one **Strain** per independent work bucket

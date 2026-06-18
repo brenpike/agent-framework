@@ -173,7 +173,8 @@ for dep in jq sha256sum git; do
         || { echo "FAIL: required dependency '$dep' is not installed" >&2; exit 2; }
 done
 
-for required in "$ENGINE" "$INIT_ENGINE" "$INTENT_FALLBACK_ENGINE" "$SPAWN_BROOD_ENGINE" "$WORKFLOW_DEF" \
+for required in "$ENGINE" "$INIT_ENGINE" "$INTENT_FALLBACK_ENGINE" "$SPAWN_BROOD_ENGINE" \
+    "$WORKFLOW_DEF" \
     "$LEDGER_AT_PLAN" "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION" \
     "$LEDGER_AT_REMEDIATION_PLAN"; do
     [[ -f "$required" ]] \
