@@ -57,6 +57,7 @@ SUITE_TEST_LEDGER_RECONSTRUCT='test_ledger_reconstruct.sh'
 SUITE_TEST_TRIAGE_OPS='test_triage_ops.sh'
 SUITE_TEST_SUBISSUE_OPS='test_subissue_ops.sh'
 SUITE_TEST_SEED_HIVE='test_seed_hive.sh'
+SUITE_TEST_VALIDATE_SUITES='test_validate_suites.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -78,6 +79,7 @@ ALL_SUITES=(
   "$SUITE_TEST_TRIAGE_OPS"
   "$SUITE_TEST_SUBISSUE_OPS"
   "$SUITE_TEST_SEED_HIVE"
+  "$SUITE_TEST_VALIDATE_SUITES"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -100,6 +102,7 @@ KNOWN_SUITES=(
   test_triage_ops.sh
   test_subissue_ops.sh
   test_seed_hive.sh
+  test_validate_suites.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -312,6 +315,18 @@ force_full_bootstrap() {
 map_path() {
   local p="$1"
   local matched=0
+
+  # test_validate_suites: the harness that exercises THIS dispatcher's suite-machinery wiring
+  # (KNOWN_SUITES / ALL_SUITES / map_path coverage). It has no plugin/* subject and no fixture
+  # dir — it drives validate.sh directly, so unlike the other behavioral suites it has no
+  # non-tools probe path. This leg self-routes a probe of the harness's OWN path to its own
+  # suite so --self-test check #1 finds it reachable. It runs BEFORE (and does NOT return early
+  # from) the tools/** escalation below: a real edit to this file still fail-closes to the full
+  # suite via that leg, so the tools/** bootstrap guarantee is preserved.
+  if [[ "$p" == tools/test_validate_suites.sh ]]; then
+    add_selected "$SUITE_TEST_VALIDATE_SUITES" "$p (validate-suites harness)"
+    matched=1
+  fi
 
   # tools/** -> validator bootstrap: re-run everything (including this script's --self-test).
   if [[ "$p" == tools/* ]]; then
@@ -722,6 +737,7 @@ self_test() {
     ["test_triage_ops.sh"]="tests/triage-backlog/case-x.json"
     ["test_subissue_ops.sh"]="tests/prd-to-issues/case-x.json"
     ["test_seed_hive.sh"]="plugin/skills/seed-hive/scripts/seed-hive.sh"
+    ["test_validate_suites.sh"]="tools/test_validate_suites.sh"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do
