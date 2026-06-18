@@ -109,6 +109,8 @@ The report is deferred-on-merge — it is not produced at merge time but on a su
 
 For an awaiting-report run the overlord checks PR state and, on `MERGED` or `CLOSED`, invokes `hivemind:decision-report`, surfaces the returned narrative to the user, then `touch`es the zero-byte `.decision-report-done` marker in the run dir.
 
+This scan is BEST-EFFORT and FAIL-OPEN: a PR-state lookup failure for a deferred-report run leaves the run AWAITING (no marker written) and is skipped without blocking session startup — never a session-blocking stop — and is retried on a future session (see `${CLAUDE_PLUGIN_ROOT}/agents/overlord.md` `## Resume On Start`).
+
 Firing condition and idempotency:
 
 - The report fires ONLY when at least one Tier-B AUTO decision (`disposition: did-now` or `deferred`) was journaled. A run whose journal holds only `surfaced` entries produces no report.
