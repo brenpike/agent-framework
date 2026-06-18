@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - run-scoped `decisions[]` decision journal capturing each autonomous decision (tier, rationale, alternatives considered) for post-merge review.
 - new deferred post-merge `hivemind:decision-report` skill that renders the decision journal in the consumer project's ubiquitous language. Additive free-form ledger conventions only — `run.status` enum, `schema_version`, and existing `event.outputs`/`artifacts` fields are unchanged (additions are backward-compatible).
 
+### Security
+
+- `hivemind:decision-report` report write is now routed through a committed containment-checked engine (`decision-report.sh`) instead of the agent Write tool. The skill renders the narrative and authors a fixed-literal inert inputs file (`.hivemind/runs/.decision-report-inputs-<token>.json`); the engine derives the report path from `run_id` + the git root, runs the shared `hivemind_assert_file_contained` guard on the resolved `.hivemind/runs/<run_id>/decision-report.md` write-target leaf, and writes atomically. This closes the run-dir symlink-escape vector — a committed symlinked `<run_id>` dir or `decision-report.md` leaf can no longer redirect the report write outside the checkout (the agent Write of the caller-derived `<run_id>` path fired before any inline check; an inline check was unsound). Conforms `hivemind:decision-report` to the Inert Inputs-File Navigator Pattern transport-path invariant (security-policy.md), making it the fourth covered navigator.
+
 ## [2.35.0] - 2026-06-15
 
 ### Added

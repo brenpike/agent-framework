@@ -247,18 +247,23 @@ map_path() {
   fi
 
   # test_engine: engine scripts + engine fixtures (validate_workflows also reads tests/engine).
-  # The three engine scripts (record-state-result, init-run-ledger, mark-intent-fallback) are the
-  # engine oracle's subjects: test_engine.sh is the behavior oracle for all three, so an edit to
-  # any of them must trigger test_engine or engine regressions go untested under --changed.
+  # The four engine scripts (record-state-result, init-run-ledger, mark-intent-fallback,
+  # decision-report) are the engine oracle's subjects: test_engine.sh is the behavior oracle for
+  # all four, so an edit to any of them must trigger test_engine or engine regressions go untested
+  # under --changed. decision-report.sh is a WRITE engine (derives+containment-guards+writes the
+  # report leaf via hivemind_assert_file_contained); test_engine exercises its run-dir/leaf
+  # symlink-escape + happy-path cases.
   # Also containment.sh: test_engine.sh copies the shared containment guard into its fake plugin
   # and exercises engine symlink/external-path containment cases, so a containment.sh change must
-  # trigger test_engine or record/init engine containment regressions go untested under --changed.
-  # Also ledger-engine-io.sh: sourced by all three engine entrypoints; test_engine.sh is the
+  # trigger test_engine or record/init/decision-report engine containment regressions go untested
+  # under --changed.
+  # Also ledger-engine-io.sh: sourced by the three ledger engine entrypoints; test_engine.sh is the
   # behavior oracle for those engines, so a lib-only edit must trigger test_engine or engine
   # regressions go untested under --changed (test_shared_libs alone is not sufficient).
   if [[ "$p" == plugin/skills/record-state-result/scripts/* \
      || "$p" == plugin/skills/init-run-ledger/scripts/* \
      || "$p" == plugin/skills/mark-intent-fallback/scripts/* \
+     || "$p" == plugin/skills/decision-report/scripts/* \
      || "$p" == plugin/skills/_shared/containment.sh \
      || "$p" == plugin/skills/_shared/ledger-engine-io.sh \
      || "$p" == tests/engine/* ]]; then

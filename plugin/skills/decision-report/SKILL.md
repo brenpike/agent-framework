@@ -8,7 +8,8 @@ allowed-tools:
   - Read
   - Bash(git rev-parse *)
   - Bash(jq *)
-  - Write   # report file only: authors <git-root>/.hivemind/runs/<run_id>/decision-report.md and nothing else
+  - Bash(${CLAUDE_PLUGIN_ROOT}/skills/decision-report/scripts/decision-report.sh *)
+  - Write   # inert inputs file only: authors the fixed-literal .hivemind/runs/.decision-report-inputs-<token>.json and nothing else
 shell: bash
 ---
 
@@ -124,11 +125,43 @@ user reads the auto-decisions in that light.
    - Decision N (surfaced): you were asked — <one-line situation, domain terms>.
    ```
 
-5. **Write the report and return it.** Write the rendered narrative to
-   `<git-root>/.hivemind/runs/<run_id>/decision-report.md` with the Write tool. This is the ONLY
-   file this skill writes and the ONLY use of the Write tool. The file's existence is the
-   idempotency marker. Then RETURN the same narrative as the skill's chat text so the user sees
-   the report immediately.
+5. **Persist via the engine, then return the narrative.** The agent does NOT write the report
+   file directly — the report path's `<run_id>` component is caller-derived and sits BELOW the
+   fixed-literal `.hivemind/runs/` level, so a committed symlinked `<run_id>` dir or
+   `decision-report.md` leaf could redirect a raw Write outside the checkout before any check
+   runs (the F1 P0 transport-path vector forbidden by
+   `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md`, Inert Inputs-File Navigator Pattern →
+   Transport-path invariant #1). Instead:
+
+   a. **Author the inert inputs file.** Generate a per-invocation-unique `<token>` (a UTC
+      timestamp plus a random component, mirroring `record-state-result`) so two concurrent
+      invocations in one checkout never clobber a shared inputs file. Write the inputs JSON to
+      the FIXED-LITERAL path `<git-root>/.hivemind/runs/.decision-report-inputs-<token>.json`
+      (a sibling of the run dirs — NO caller-derived component below the fixed level) with the
+      Write tool. This is the ONLY use of the Write tool. Shape:
+      ```json
+      {
+        "run_id": "<the run id>",
+        "report_markdown": "<the full rendered narrative from step 4>",
+        "pr_state": "MERGED | CLOSED"
+      }
+      ```
+      `report_markdown` is the rendered narrative VERBATIM; the engine writes it to disk inert
+      (never interpreted as a path, shell, or instruction).
+
+   b. **Invoke the engine.** Run
+      `${CLAUDE_PLUGIN_ROOT}/skills/decision-report/scripts/decision-report.sh <inputs-file>`.
+      The engine DERIVES the report path from `run_id` + the git root, runs the shared
+      `hivemind_assert_file_contained` containment guard on the resolved
+      `<git-root>/.hivemind/runs/<run_id>/decision-report.md` write-target leaf (rejecting a
+      symlinked `<run_id>` dir or `decision-report.md` leaf), and writes the report atomically.
+      On a containment reject or any invalid input it prints a `blocker:` line and exits 1
+      without writing; surface that as the blocked note. On success it prints a `report:` routing
+      line. The report file's existence is the idempotency marker (no ledger marker is written).
+
+   c. **Return the narrative.** RETURN the same narrative (from step 4) as the skill's chat text
+      so the user sees the report immediately. The render-and-return-to-chat narrative is the
+      deliverable; the engine performs only the persist-to-disk hop.
 
 ## Pointers
 
@@ -145,16 +178,21 @@ user reads the auto-decisions in that light.
 This skill RETURNS the rendered report as chat text. It is a render skill — the narrative is the
 deliverable, not a silent tool-call pipeline:
 
-- Normal path: the rendered report (also written to the run dir) is the chat output.
+- Normal path: the rendered report (also persisted to the run dir by the engine) is the chat
+  output.
 - No-fire path (zero Tier-B AUTO decisions, or the report file already exists): a single-line
-  note explaining why nothing was rendered, and no Write.
-- Blocked path (not a git checkout, ledger missing or invalid JSON): a single-line blocker note;
-  nothing is written.
+  note explaining why nothing was rendered, and no inputs file is written and the engine is not
+  invoked.
+- Blocked path (not a git checkout, ledger missing or invalid JSON, or the engine returns a
+  `blocker:` containment reject): a single-line blocker note; no report is written.
 
 ## Do Not
 
-- accept a caller-supplied ledger or report PATH — derive both from `run_id` and the git root.
-- write the ledger or any file other than `<git-root>/.hivemind/runs/<run_id>/decision-report.md`.
+- accept a caller-supplied ledger or report PATH — the engine derives both from `run_id` and the
+  git root.
+- write the report file with the Write tool — author ONLY the fixed-literal inert inputs file
+  `<git-root>/.hivemind/runs/.decision-report-inputs-<token>.json` and let the engine persist the
+  report; never write the ledger or any other file.
 - color the narrative with the plugin's internal glossary — speak the consumer project's domain.
 - name a decision tier, the 2x2, or the promotion gate by its internal name in user-facing prose —
   render the auto mechanic as plain English.
