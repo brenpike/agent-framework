@@ -1,0 +1,25 @@
+{
+  "rule": "Decision-autonomy governance doc consumer coupling",
+  "source": {
+    "file": "plugin/governance/decision-autonomy.md",
+    "pattern": "## Post-Merge Decision Report Trigger"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "${CLAUDE_PLUGIN_ROOT}/governance/decision-autonomy.md`"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "(Post-Merge Decision Report Trigger)"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "(Decision Tiers → Tier B)"
+    },
+    {
+      "file": "plugin/references/run-ledger-schema.md",
+      "pattern": "decision-autonomy.md (## Decision Journal)"
+    }
+  ]
+}
