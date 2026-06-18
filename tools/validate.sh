@@ -23,6 +23,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
+# Scratch dir for the parallel suite runner. Declared at SCRIPT scope (not `local` inside
+# run_suites) so the EXIT-trap cleanup can still reference it after run_suites returns —
+# a `local` would be out of scope when the trap fires, tripping `set -u`. Empty until the
+# runner creates it; the cleanup is guarded with `${SUITES_SCRATCH:-}` so it is a no-op when
+# unset/empty.
+SUITES_SCRATCH=""
+# Cleanup closes over SUITES_SCRATCH by NAME (the value is never interpolated into executable
+# trap-string source), so a path derived from a TMPDIR containing a single quote or any shell
+# metacharacter cannot break out and run arbitrary shell when the trap fires. The value is only
+# ever expanded as a single quoted "$SUITES_SCRATCH" argument to rm.
+cleanup_suites_scratch() {
+  [[ -n "${SUITES_SCRATCH:-}" ]] && rm -rf -- "$SUITES_SCRATCH"
+}
+
 # ── Suite invocations (CI parity — see .github/workflows/policy-check.yml) ────────
 # Each constant is the exact command CI runs, in CI order. --all replays them verbatim.
 SUITE_JSON_MANIFESTS='json-manifests'   # special: two python3 json.load parses
@@ -153,10 +167,14 @@ run_suites() {
   # Per-suite scratch: each job writes its OWN combined stdout/stderr to out.<i> and its OWN exit
   # status to rc.<i>, keyed by canonical index so suites with spaces in their token (e.g.
   # "policy_check.sh --strict") never collide on a filename.
-  local scratch
-  scratch="$(mktemp -d "${TMPDIR:-/tmp}/validate-suites.XXXXXX")"
-  # shellcheck disable=SC2064 # expand scratch now so the trap removes THIS run's dir.
-  trap "rm -rf '$scratch'" EXIT
+  # Assign the SCRIPT-scope scratch var (declared at top) and install the EXIT-trap cleanup.
+  # Script scope (not `local`) is required so cleanup_suites_scratch can still see the path
+  # after this function returns — the EXIT trap fires post-return, where a `local` would be
+  # unbound under `set -u`. `local scratch` below is just a convenience alias used within
+  # this function; the trap reads SUITES_SCRATCH.
+  SUITES_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/validate-suites.XXXXXX")"
+  trap cleanup_suites_scratch EXIT
+  local scratch="$SUITES_SCRATCH"
 
   # run_one_suite: execute suite index $1 in the current (sub)shell, capturing combined output to
   # the scratch out file and the exit status to the scratch rc file. Never aborts the dispatcher.
@@ -218,17 +236,22 @@ run_suites() {
       rc=1
     fi
     echo "[$s] ${suite_sec}s"
-    summary+=("$suite_sec"$'\t'"$s")
+    # Carry the canonical ALL_SUITES index ($i) as the THIRD column so the timing sort can
+    # break duration ties in canonical order rather than sort's unstable/locale fallback.
+    summary+=("$suite_sec"$'\t'"$i"$'\t'"$s")
   done
 
-  # Timing summary, slowest-first (always-on). Sort numerically descending on the elapsed column.
+  # Timing summary, slowest-first (always-on). Sort by elapsed DESCENDING (k1), then by canonical
+  # index ASCENDING (k2) as an explicit, byte-deterministic tie-breaker: suites whose rounded
+  # elapsed value ties replay in canonical ALL_SUITES order, never in sort's locale fallback. The
+  # index column is consumed by the sort key only — it is dropped from the printed line.
   echo
   echo "=== validate.sh: timing summary (slowest first) ==="
-  local line sec name
-  while IFS=$'\t' read -r sec name; do
+  local sec idx name
+  while IFS=$'\t' read -r sec idx name; do
     [[ -z "$name" ]] && continue
     printf '  %6ss  %s\n' "$sec" "$name"
-  done < <(printf '%s\n' "${summary[@]}" | sort -t$'\t' -k1,1 -rn)
+  done < <(printf '%s\n' "${summary[@]}" | sort -t$'\t' -k1,1rn -k2,2n)
 
   return "$rc"
 }
