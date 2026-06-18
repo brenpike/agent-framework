@@ -23,6 +23,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
+# Scratch dir for the parallel suite runner. Declared at SCRIPT scope (not `local` inside
+# run_suites) so the EXIT-trap cleanup can still reference it after run_suites returns —
+# a `local` would be out of scope when the trap fires, tripping `set -u`. Empty until the
+# runner creates it; the cleanup is guarded with `${SUITES_SCRATCH:-}` so it is a no-op when
+# unset/empty.
+SUITES_SCRATCH=""
+# Cleanup closes over SUITES_SCRATCH by NAME (the value is never interpolated into executable
+# trap-string source), so a path derived from a TMPDIR containing a single quote or any shell
+# metacharacter cannot break out and run arbitrary shell when the trap fires. The value is only
+# ever expanded as a single quoted "$SUITES_SCRATCH" argument to rm.
+cleanup_suites_scratch() {
+  [[ -n "${SUITES_SCRATCH:-}" ]] && rm -rf -- "$SUITES_SCRATCH"
+}
+
 # ── Suite invocations (CI parity — see .github/workflows/policy-check.yml) ────────
 # Each constant is the exact command CI runs, in CI order. --all replays them verbatim.
 SUITE_JSON_MANIFESTS='json-manifests'   # special: two python3 json.load parses
@@ -43,6 +57,7 @@ SUITE_TEST_LEDGER_RECONSTRUCT='test_ledger_reconstruct.sh'
 SUITE_TEST_TRIAGE_OPS='test_triage_ops.sh'
 SUITE_TEST_SUBISSUE_OPS='test_subissue_ops.sh'
 SUITE_TEST_SEED_HIVE='test_seed_hive.sh'
+SUITE_TEST_VALIDATE_SUITES='test_validate_suites.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -64,6 +79,7 @@ ALL_SUITES=(
   "$SUITE_TEST_TRIAGE_OPS"
   "$SUITE_TEST_SUBISSUE_OPS"
   "$SUITE_TEST_SEED_HIVE"
+  "$SUITE_TEST_VALIDATE_SUITES"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -86,6 +102,7 @@ KNOWN_SUITES=(
   test_triage_ops.sh
   test_subissue_ops.sh
   test_seed_hive.sh
+  test_validate_suites.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -110,14 +127,23 @@ run_suite() {
   esac
 }
 
-# run_suites: run a de-duped, CI-ordered subset. Prints a header per suite. Exits non-zero if
-# any suite fails, after attempting every selected suite (no early abort — full signal).
+# run_suites: run a de-duped, CI-ordered subset CONCURRENTLY, then replay results in canonical
+# CI order so the report is byte-deterministic regardless of completion order. Exits non-zero if
+# any suite fails, after waiting on EVERY selected suite (no early abort — full signal).
+#
+# Parallelism is pure-bash (`&` + a bounded pid pool + `wait`); GNU parallel is NOT required.
+# Concurrency is capped at min(nproc, N) where N is the number of selected suites, so a single
+# selected suite (N=1) launches exactly one job and waits on it — no empty-wait, no deadlock.
+#
+# INVARIANT: aggregate rc is computed AFTER every job is waited on; a non-zero per-suite rc is
+# never lost (a lost failure = false-green merge gate). Under `set -e`, both the background job's
+# captured rc and `wait` are guarded with `|| rc=$?` so a failing suite cannot abort the dispatcher.
 run_suites() {
   local -a requested=("$@")
   local -a ordered=()
   local s w
   # Reorder the requested set into canonical CI order so output is stable and the cheap
-  # policy_check/json parse run first.
+  # policy_check/json parse appear first in the replayed report.
   for s in "${ALL_SUITES[@]}"; do
     for w in "${requested[@]}"; do
       if [[ "$s" == "$w" ]]; then
@@ -132,17 +158,104 @@ run_suites() {
     return 0
   fi
 
+  local n=${#ordered[@]}
+
+  # Concurrency cap: min(nproc, N). nproc self-adjusts across machines/CI runners; if it is
+  # unavailable for any reason, fall back to N (run all concurrently) rather than serialize.
+  local cap procs
+  procs="$(nproc 2>/dev/null || echo "$n")"
+  [[ "$procs" =~ ^[0-9]+$ && "$procs" -ge 1 ]] || procs="$n"
+  if [[ "$procs" -lt "$n" ]]; then cap="$procs"; else cap="$n"; fi
+
+  # Per-suite scratch: each job writes its OWN combined stdout/stderr to out.<i> and its OWN exit
+  # status to rc.<i>, keyed by canonical index so suites with spaces in their token (e.g.
+  # "policy_check.sh --strict") never collide on a filename.
+  # Assign the SCRIPT-scope scratch var (declared at top) and install the EXIT-trap cleanup.
+  # Script scope (not `local`) is required so cleanup_suites_scratch can still see the path
+  # after this function returns — the EXIT trap fires post-return, where a `local` would be
+  # unbound under `set -u`. `local scratch` below is just a convenience alias used within
+  # this function; the trap reads SUITES_SCRATCH.
+  SUITES_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/validate-suites.XXXXXX")"
+  trap cleanup_suites_scratch EXIT
+  local scratch="$SUITES_SCRATCH"
+
+  # run_one_suite: execute suite index $1 in the current (sub)shell, capturing combined output to
+  # the scratch out file and the exit status to the scratch rc file. Never aborts the dispatcher.
+  run_one_suite() {
+    local idx="$1"
+    local suite="${ordered[$idx]}"
+    local start end
+    start="$(date +%s.%N)"
+    local job_rc=0
+    run_suite "$suite" >"$scratch/out.$idx" 2>&1 || job_rc=$?
+    end="$(date +%s.%N)"
+    printf '%s\n' "$job_rc" >"$scratch/rc.$idx"
+    # Elapsed wall-time (seconds, one decimal) via awk to avoid bc/float-shell dependencies.
+    awk -v s="$start" -v e="$end" 'BEGIN { printf "%.1f\n", e - s }' >"$scratch/sec.$idx"
+  }
+
+  # Launch with a bounded pid pool: never exceed `cap` concurrent jobs. wait -n drains the
+  # earliest-finishing job (bash 5+) so a slow suite cannot starve the pool.
+  local -a pids=()
+  local i running
+  for ((i = 0; i < n; i++)); do
+    running=${#pids[@]}
+    if [[ "$running" -ge "$cap" ]]; then
+      # Block until at least one job finishes, then prune completed pids from the pool.
+      wait -n 2>/dev/null || true
+      local -a still=()
+      local p
+      for p in "${pids[@]}"; do
+        if kill -0 "$p" 2>/dev/null; then still+=("$p"); fi
+      done
+      pids=("${still[@]}")
+    fi
+    run_one_suite "$i" &
+    pids+=("$!")
+  done
+
+  # Drain the remaining jobs. Guard wait under `set -e` so a non-zero job rc cannot abort here;
+  # the authoritative per-suite rc is read back from the scratch rc files below, not from wait.
+  local p
+  for p in "${pids[@]}"; do
+    wait "$p" 2>/dev/null || true
+  done
+
+  # Replay in canonical CI order (NOT completion order) so the report is byte-deterministic.
   local rc=0
-  for s in "${ordered[@]}"; do
+  local -a summary=()
+  for ((i = 0; i < n; i++)); do
+    s="${ordered[$i]}"
+    local suite_rc suite_sec
+    suite_rc="$(cat "$scratch/rc.$i" 2>/dev/null || echo 1)"
+    suite_sec="$(cat "$scratch/sec.$i" 2>/dev/null || echo 0.0)"
     echo
     echo "=== validate.sh: running [$s] ==="
-    if run_suite "$s"; then
+    cat "$scratch/out.$i" 2>/dev/null || true
+    if [[ "$suite_rc" -eq 0 ]]; then
       echo "--- [$s] PASS ---"
     else
       echo "--- [$s] FAIL ---" >&2
       rc=1
     fi
+    echo "[$s] ${suite_sec}s"
+    # Carry the canonical ALL_SUITES index ($i) as the THIRD column so the timing sort can
+    # break duration ties in canonical order rather than sort's unstable/locale fallback.
+    summary+=("$suite_sec"$'\t'"$i"$'\t'"$s")
   done
+
+  # Timing summary, slowest-first (always-on). Sort by elapsed DESCENDING (k1), then by canonical
+  # index ASCENDING (k2) as an explicit, byte-deterministic tie-breaker: suites whose rounded
+  # elapsed value ties replay in canonical ALL_SUITES order, never in sort's locale fallback. The
+  # index column is consumed by the sort key only — it is dropped from the printed line.
+  echo
+  echo "=== validate.sh: timing summary (slowest first) ==="
+  local sec idx name
+  while IFS=$'\t' read -r sec idx name; do
+    [[ -z "$name" ]] && continue
+    printf '  %6ss  %s\n' "$sec" "$name"
+  done < <(printf '%s\n' "${summary[@]}" | sort -t$'\t' -k1,1rn -k2,2n)
+
   return "$rc"
 }
 
@@ -202,6 +315,18 @@ force_full_bootstrap() {
 map_path() {
   local p="$1"
   local matched=0
+
+  # test_validate_suites: the harness that exercises THIS dispatcher's suite-machinery wiring
+  # (KNOWN_SUITES / ALL_SUITES / map_path coverage). It has no plugin/* subject and no fixture
+  # dir — it drives validate.sh directly, so unlike the other behavioral suites it has no
+  # non-tools probe path. This leg self-routes a probe of the harness's OWN path to its own
+  # suite so --self-test check #1 finds it reachable. It runs BEFORE (and does NOT return early
+  # from) the tools/** escalation below: a real edit to this file still fail-closes to the full
+  # suite via that leg, so the tools/** bootstrap guarantee is preserved.
+  if [[ "$p" == tools/test_validate_suites.sh ]]; then
+    add_selected "$SUITE_TEST_VALIDATE_SUITES" "$p (validate-suites harness)"
+    matched=1
+  fi
 
   # tools/** -> validator bootstrap: re-run everything (including this script's --self-test).
   if [[ "$p" == tools/* ]]; then
@@ -612,6 +737,7 @@ self_test() {
     ["test_triage_ops.sh"]="tests/triage-backlog/case-x.json"
     ["test_subissue_ops.sh"]="tests/prd-to-issues/case-x.json"
     ["test_seed_hive.sh"]="plugin/skills/seed-hive/scripts/seed-hive.sh"
+    ["test_validate_suites.sh"]="tools/test_validate_suites.sh"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do

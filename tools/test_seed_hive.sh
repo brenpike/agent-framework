@@ -383,6 +383,12 @@ JQLESS_BIN="$WORKDIR/jqless-bin"
 mkdir -p "$JQLESS_BIN"
 IFS=':' read -r -a sh_path_dirs <<< "$PATH"
 for sh_dir in "${sh_path_dirs[@]}"; do
+  # Skip Windows mounts under WSL (/mnt/*): each stat/symlink across the DrvFs 9p mount is
+  # ~10000x slower than a native dir, and those thousands of Windows .exe entries are never
+  # CLIs the bash entrypoint invokes. The jq-less guarantee is unaffected — the omission set is
+  # still {jq}, and every real POSIX/git CLI the entrypoint needs lives in native PATH dirs. On
+  # non-WSL hosts there are no /mnt/* PATH dirs, so this is a no-op (identical farm contents).
+  case "$sh_dir" in /mnt/*) continue ;; esac
   [ -d "$sh_dir" ] || continue
   for tool in "$sh_dir"/*; do
     [ -x "$tool" ] || continue

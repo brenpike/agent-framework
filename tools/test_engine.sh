@@ -288,13 +288,25 @@ assert_single_blocker_no_detail() {
 
 # ── Per-case git-root helpers ────────────────────────────────────────────────
 
-# new_gitroot <name> -> prints the path to a fresh throwaway git checkout under $WORKDIR.
+# GITROOT_TEMPLATE — a single empty `git init`'d checkout, built ONCE and reused read-only as the
+# source for every per-case git root. Re-running `git init` for each of the ~43 cases is redundant:
+# every case needs only A git checkout (so `git rev-parse --show-toplevel` resolves a root), and the
+# template's contents (an empty repo, no `.hivemind`) are identical across cases. `cp -r` of the
+# template is materially cheaper than re-initializing git per case. The template carries NO
+# `.hivemind` — each case (including the symlink-escape cases T/U/V which replace `.hivemind` with a
+# symlink) stages its own `.hivemind` into its OWN copied root, so the copies remain fully isolated:
+# no case can leak state into another because each is a distinct, independently-mutated directory.
+GITROOT_TEMPLATE="$WORKDIR/.gitroot-template"
+mkdir -p "$GITROOT_TEMPLATE"
+git -C "$GITROOT_TEMPLATE" init -q
+
+# new_gitroot <name> -> prints the path to a fresh throwaway git checkout under $WORKDIR, materialized
+# as a `cp -r` of $GITROOT_TEMPLATE (equivalent to a fresh `git init` but without re-paying its cost).
 # Separate from $FAKEPLUGIN so the engine self-locates into the fakeplugin while
 # `git rev-parse --show-toplevel` (run with cd "$gitroot") resolves this checkout.
 new_gitroot() {
     local root="$WORKDIR/$1"
-    mkdir -p "$root"
-    git -C "$root" init -q
+    cp -r "$GITROOT_TEMPLATE" "$root"
     printf '%s' "$root"
 }
 
