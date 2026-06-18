@@ -99,17 +99,17 @@ The recurrence mechanics — the counting unit, the trip threshold, the Gate-A r
 
 ## Post-Merge Decision Report Trigger
 
-After the PR for a run merges, the overlord ALWAYS surfaces a report of the decisions it made on the user's behalf, rendered in the CONSUMER project's ubiquitous language. This section defines the TRIGGER and policy only; the rendering mechanics live in the `hivemind:decision-report` skill and are not restated here.
+After the PR for a run merges, the overlord ALWAYS surfaces a report of the decisions it made on the user's behalf, rendered in the CONSUMER project's ubiquitous language. The report is CHAT-ONLY: it is RENDERED to chat and surfaced to the user — NO report file is written to disk. This section defines the TRIGGER and policy only; the rendering mechanics live in the `hivemind:decision-report` skill and are not restated here.
 
 The report is deferred-on-merge — it is not produced at merge time but on a subsequent session start. The overlord's Resume-On-Start scan (per `${CLAUDE_PLUGIN_ROOT}/agents/overlord.md` `## Resume On Start`) derives an AWAITING-REPORT run when ALL of the following hold:
 
 - a PR is DERIVABLE for the run — workflow-agnostic across both delivery families: read from the recorded `open_pr` state-result event's `event.outputs` (the PR URL `hivemind:open-plan-pr` returns as a state output) for a standard-delivery run; ELSE, for a remediation-only run that has no `open_pr` state (`pr-feedback-remediation` watches/fixes an EXISTING PR — it journals Tier-B decisions but never emits `open_pr`), read the PR the run resolved at `intake` / `pr_branch_preflight` from `facts.pr` (the run's reconciliation anchor). The two sources are complementary: `open_pr` output covers standard delivery (where `facts.pr` stays `null`), and the `facts.pr` anchor covers remediation runs (which never emit `open_pr`)
-- the run's `event.outputs.decisions[]` carries at least one journaled entry
-- the run-dir report file does NOT yet exist
+- the run's `event.outputs.decisions[]` carries at least one entry whose `disposition` is `did-now` or `deferred` — a run whose journal holds only `surfaced` entries is NOT awaiting-report (it would never warrant a report and would otherwise reprocess every session)
+- the run dir does NOT yet contain the zero-byte `.decision-report-done` marker
 
-For an awaiting-report run the overlord checks PR state and, on `MERGED` or `CLOSED`, invokes `hivemind:decision-report`.
+For an awaiting-report run the overlord checks PR state and, on `MERGED` or `CLOSED`, invokes `hivemind:decision-report`, surfaces the returned narrative to the user, then `touch`es the zero-byte `.decision-report-done` marker in the run dir.
 
 Firing condition and idempotency:
 
 - The report fires ONLY when at least one Tier-B AUTO decision (`disposition: did-now` or `deferred`) was journaled. A run whose journal holds only `surfaced` entries produces no report.
-- The report FILE's existence in the run dir is the SOLE idempotency marker — there is NO ledger marker. The run-status enum is unchanged; no new `run.status` value is introduced.
+- The EXISTENCE of the zero-byte `.decision-report-done` marker in the run dir is the SOLE idempotency marker — there is NO ledger marker and NO `decision-report.md` content file (the report is chat-only). The marker is created with `touch` and holds NO content, so it carries no splice/injection surface. The run-status enum is unchanged; no new `run.status` value is introduced.
