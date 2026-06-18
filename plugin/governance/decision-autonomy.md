@@ -103,7 +103,7 @@ After the PR for a run merges, the overlord ALWAYS surfaces a report of the deci
 
 The report is deferred-on-merge — it is not produced at merge time but on a subsequent session start. The overlord's Resume-On-Start scan (per `${CLAUDE_PLUGIN_ROOT}/agents/overlord.md` `## Resume On Start`) derives an AWAITING-REPORT run when ALL of the following hold:
 
-- a PR exists for the run
+- a PR is DERIVABLE for the run — read from the recorded `open_pr` state-result event's `event.outputs` (the PR URL `hivemind:open-plan-pr` returns as a state output), NOT from `facts.pr` (init seeds `facts.pr` `null` and no sanctioned writer populates it)
 - the run's `event.outputs.decisions[]` carries at least one journaled entry
 - the run-dir report file does NOT yet exist
 
