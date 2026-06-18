@@ -29,7 +29,7 @@ These were previously surfaced for confirmation; they are now taken autonomously
 - the Creep-Stagnation / diminishing-returns advisory early-exit decision
 - a validation failure — attempt remediation autonomously, surface ONLY if it cannot be resolved
 - a version-bump TYPE when it is inferable from the compatibility impact (when it cannot be inferred, that is Tier A — surface it)
-- root-cluster zoom-out routing to cerebrate
+- root-cluster zoom-out routing to cerebrate — ONLY the ROUTING of the reviewer's read-only root-cluster signal to cerebrate for a remediation plan is auto-decided and journaled here. ACCEPTING/EXECUTING the resulting architectural remediation plan is architectural blast radius: it TRIPS the **Promotion Gate** and SURFACES before execution. Auto-take covers the route, not the architectural fix.
 - remediation-approach choices where the overlord holds a confident recommendation
 
 A Tier-B decision is auto-taken only while the promotion gate is CLEAN. When the gate trips on the recommended action, the decision promotes to a surface (Tier A behavior) regardless of its tier listing here.
@@ -58,6 +58,8 @@ The promotion gate TRIPS — forcing a surface to the user — when the RECOMMEN
 3. **Safety-relevant** — touches any Destructive Fix category 1-10 per `${CLAUDE_PLUGIN_ROOT}/governance/safety-rails.md` (Destructive Fix Gate).
 
 Otherwise the gate is CLEAN and the Tier-B decision is auto-taken per the 2x2. The gate is evaluated against the recommended action only, per the key rule in **The Autonomy 2x2**.
+
+This split is why the root-cluster zoom-out in **Tier B** auto-takes only the ROUTING to cerebrate: routing the reviewer's read-only signal is a contained action with a clean gate, but the architectural remediation plan cerebrate returns is gate clause 2 (architectural blast radius), so ACCEPTING/EXECUTING that plan surfaces before execution. The same distinction governs the forced proactive zoom-out in **Recurrence Interplay**.
 
 ## Disposition Vocabulary
 
@@ -91,7 +93,9 @@ The single source for the `event.outputs` shape — its free-form, recorded-verb
 
 ## Recurrence Interplay
 
-Auto-take NEVER disables the proactive same-surface recurrence tracking defined in `${CLAUDE_PLUGIN_ROOT}/governance/remediation-doctrine.md` (`## Overlord Recurrence Tracking & Zoom-Out Routing Asymmetry`). Contained remediation fixes auto-flow under the 2x2 as ordinary `did-now` work, but the SECOND non-closing structural fix on a young surface forces an approach-level zoom-out that questions the key/primitive. That zoom-out is architectural by construction, so it TRIPS the promotion gate (architectural blast radius) and SURFACES — it is never auto-taken. The recurrence mechanics — the counting unit, the threshold, the Gate-A/Gate-B youth call, and the `recurrence_origin` marker — live in remediation-doctrine.md and are referenced here by name, not restated.
+Auto-take NEVER disables the proactive same-surface recurrence tracking. Contained remediation fixes auto-flow under the 2x2 as ordinary `did-now` work, but the forced zoom-out that recurrence tracking triggers is architectural by construction, so it TRIPS the promotion gate (architectural blast radius) and SURFACES before execution — it is never auto-taken. This is the same routing-vs-execution split as the root-cluster bullet in **Tier B**.
+
+The recurrence mechanics — the counting unit, the trip threshold, the Gate-A recurrence / Gate-B youth call, and the forced-zoom-out trigger — are defined SOLELY in `${CLAUDE_PLUGIN_ROOT}/governance/remediation-doctrine.md` (`## Overlord Recurrence Tracking & Zoom-Out Routing Asymmetry`, `## Cross-Iteration Same-Surface Recurrence`); the `recurrence_origin` marker is defined in `${CLAUDE_PLUGIN_ROOT}/governance/remediation-doctrine.md` (`### Proactive Zoom-Out Ledger Marker`) and referenced for the ledger in `${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md`. This section references those by name and does NOT restate them.
 
 ## Post-Merge Decision Report Trigger
 

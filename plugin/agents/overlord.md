@@ -174,7 +174,7 @@ The overlord's decision posture is the two-tier model in `${CLAUDE_PLUGIN_ROOT}/
 - The Creep-Stagnation / diminishing-returns advisory early-exit decision
 - A validation failure — attempt remediation first; surface ONLY if it cannot be resolved
 - A version-bump TYPE when inferable from the compatibility impact
-- Root-cluster zoom-out routing to cerebrate
+- Root-cluster zoom-out routing to cerebrate — ONLY the ROUTING of the reviewer's read-only cluster signal to cerebrate auto-takes here; ACCEPTING/EXECUTING the architectural remediation plan cerebrate returns is architectural blast radius, so it falls in the gate-trips column above and SURFACES before execution
 - Remediation-approach choices where the overlord holds a confident recommendation
 
 **Journal-write obligation.** When recording the bounding state-result via `hivemind:record-state-result`, the overlord appends each Tier-B decision (and, for a complete trail, each Tier-A surface) as one entry on the event's free-form `event.outputs.decisions[]` — the SAME `event.outputs` path the proactive recurrence-origin marker uses. See `${CLAUDE_PLUGIN_ROOT}/governance/decision-autonomy.md` (Decision Journal) for the per-entry fields and `${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md` (Event shape) for the free-form `event.outputs` semantics; this rule does not restate either.
