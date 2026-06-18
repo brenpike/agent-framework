@@ -158,7 +158,6 @@ ENGINE="$REPO_ROOT/plugin/skills/record-state-result/scripts/record-state-result
 INIT_ENGINE="$REPO_ROOT/plugin/skills/init-run-ledger/scripts/init-run-ledger.sh"
 INTENT_FALLBACK_ENGINE="$REPO_ROOT/plugin/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
 SPAWN_BROOD_ENGINE="$REPO_ROOT/plugin/skills/spawn-brood/scripts/spawn-brood.sh"
-DECISION_REPORT_ENGINE="$REPO_ROOT/plugin/skills/decision-report/scripts/decision-report.sh"
 FIXTURES_DIR="$REPO_ROOT/tests/engine"
 WORKFLOW_DEF="$FIXTURES_DIR/workflow-engine-fixture.json"
 LEDGER_AT_PLAN="$FIXTURES_DIR/ledger-at-plan.json"
@@ -175,7 +174,7 @@ for dep in jq sha256sum git; do
 done
 
 for required in "$ENGINE" "$INIT_ENGINE" "$INTENT_FALLBACK_ENGINE" "$SPAWN_BROOD_ENGINE" \
-    "$DECISION_REPORT_ENGINE" "$WORKFLOW_DEF" \
+    "$WORKFLOW_DEF" \
     "$LEDGER_AT_PLAN" "$LEDGER_AT_BUILD" "$LEDGER_WRONG_WORKFLOW" "$LEDGER_WRONG_VERSION" \
     "$LEDGER_AT_REMEDIATION_PLAN"; do
     [[ -f "$required" ]] \
@@ -198,11 +197,9 @@ FAKE_ENGINE="$FAKEPLUGIN/skills/record-state-result/scripts/record-state-result.
 FAKE_INIT_ENGINE="$FAKEPLUGIN/skills/init-run-ledger/scripts/init-run-ledger.sh"
 FAKE_INTENT_FALLBACK_ENGINE="$FAKEPLUGIN/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh"
 FAKE_SPAWN_BROOD_ENGINE="$FAKEPLUGIN/skills/spawn-brood/scripts/spawn-brood.sh"
-FAKE_DECISION_REPORT_ENGINE="$FAKEPLUGIN/skills/decision-report/scripts/decision-report.sh"
 FAKE_WORKFLOW_DEF="$FAKEPLUGIN/workflows/engine-fixture.json"
 mkdir -p "$(dirname "$FAKE_ENGINE")" "$(dirname "$FAKE_INIT_ENGINE")" \
     "$(dirname "$FAKE_INTENT_FALLBACK_ENGINE")" "$(dirname "$FAKE_SPAWN_BROOD_ENGINE")" \
-    "$(dirname "$FAKE_DECISION_REPORT_ENGINE")" \
     "$FAKEPLUGIN/workflows"
 cp "$ENGINE" "$FAKE_ENGINE"
 cp "$INIT_ENGINE" "$FAKE_INIT_ENGINE"
@@ -240,13 +237,6 @@ SHARED_LEDGER_ENGINE_IO="$REPO_ROOT/plugin/skills/_shared/ledger-engine-io.sh"
 [[ -f "$SHARED_LEDGER_ENGINE_IO" ]] \
     || { echo "FAIL: required input missing: $SHARED_LEDGER_ENGINE_IO" >&2; exit 2; }
 cp "$SHARED_LEDGER_ENGINE_IO" "$FAKEPLUGIN/skills/_shared/ledger-engine-io.sh"
-# decision-report.sh self-locates plugin_root=<fakeplugin> (3 dirs up from its scripts/ dir)
-# and sources BOTH the shared containment.sh AND ledger-engine-io.sh (both staged above) — the
-# WRITE mode derives + containment-guards + writes the report leaf, and the READ mode
-# (`--read-decisions <run_id>`) routes the <run_id>-derived ledger read through the shared
-# hivemind_open_ledger guard before any jq/Read. It reads NO workflow definition. A COPY, never a
-# symlink: pwd -P would resolve a symlink back to the real tree and defeat the isolation.
-cp "$DECISION_REPORT_ENGINE" "$FAKE_DECISION_REPORT_ENGINE"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -2519,292 +2509,6 @@ assert_canon_ledger_round_trips_to_routed_path() {
     fi
 }
 
-# ── PP. decision-report symlinked <run_id> RUN-dir rejected: no external write ──
-
-assert_decision_report_symlink_rundir_rejected() {
-    local name="PP:decision-report-symlink-rundir-rejected"
-    # decision-report.sh derives the report path <git-root>/.hivemind/runs/<run_id>/decision-report.md
-    # and runs the shared hivemind_assert_file_contained guard on the write-target leaf BEFORE the
-    # write. Here the <run_id> RUN dir itself is a symlink to an EXTERNAL dir outside the checkout
-    # (mirrors the F1 P0 vector: a committed symlinked <run_id> dir below the fixed .hivemind/runs/
-    # level). The depth-complete ancestor walk in hivemind_assert_file_contained sees the symlinked
-    # <run_id> ancestor and rejects BEFORE any mkdir/mktemp/mv: non-zero exit AND no decision-report.md
-    # written under the external target. The inputs file is a REAL in-checkout path so only the
-    # write-target containment guard can block.
-    local gitroot external run_id inputs rc=0
-    gitroot="$(new_gitroot pp-git)"
-    run_id="engine-case-pp"
-    # REAL .hivemind/runs/ in the gitroot (only the <run_id> leaf is hostile).
-    mkdir -p "$gitroot/.hivemind/runs"
-    # External dir OUTSIDE the gitroot (a sibling under $WORKDIR), the symlink's escape target.
-    external="$WORKDIR/pp-external"
-    mkdir -p "$external"
-    # Symlink the <run_id> RUN dir to the external dir: the derived
-    # <gitroot>/.hivemind/runs/<run_id>/decision-report.md resolves THROUGH the symlink to external.
-    ln -s "$external" "$gitroot/.hivemind/runs/$run_id"
-    inputs="$gitroot/pp-inputs.json"
-
-    # Valid decision-report inputs (run_id + rendered narrative + MERGED state), authored SAFELY
-    # via jq. The ONLY hostile element is the symlinked <run_id> run dir.
-    jq -n \
-        --arg run_id "$run_id" \
-        --arg report_markdown "# Decision Report (engine test PP)" \
-        --arg pr_state MERGED \
-        '{run_id: $run_id, report_markdown: $report_markdown, pr_state: $pr_state}' \
-        > "$inputs"
-
-    ( cd "$gitroot" && bash "$FAKE_DECISION_REPORT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
-
-    # The guard must reject (non-zero) AND no decision-report.md may have been written under the
-    # external escape target (a successful escape would land it there via the symlink).
-    local escaped=no
-    if find "$external" -name decision-report.md -print 2>/dev/null | grep -q .; then
-        escaped=yes
-    fi
-    if [[ "$rc" -ne 0 && "$escaped" == "no" ]]; then
-        pass "$name" "symlinked <run_id> run dir rejected (exit $rc); no report written under external target"
-    else
-        failed "$name" "expected non-zero exit + no external report; rc=$rc escaped=$escaped"
-    fi
-}
-
-# ── QQ. decision-report symlinked decision-report.md LEAF rejected: no external write ──
-
-assert_decision_report_symlink_leaf_rejected() {
-    local name="QQ:decision-report-symlink-leaf-rejected"
-    # The REAL run dir <gitroot>/.hivemind/runs/<run_id>/ exists, but the decision-report.md LEAF
-    # itself is a symlink to a VALID-but-EXTERNAL file outside the checkout. The ledger reads /
-    # writes would follow it, so absent a guard the engine's mv would overwrite the external file.
-    # hivemind_assert_file_contained [ -L ]-rejects the symlinked leaf on the raw path BEFORE any
-    # write. Pre-stage the external target with sentinel content and assert it is BYTE-UNCHANGED
-    # (rejection by CONTAINMENT, not file-absence). Inputs file is a REAL in-checkout path.
-    local gitroot external run_id rundir leaf ext_target inputs before after rc=0
-    local stderr is_containment_blocker
-    gitroot="$(new_gitroot qq-git)"
-    run_id="engine-case-qq"
-    external="$WORKDIR/qq-external"
-    mkdir -p "$external"
-    # Pre-stage a sentinel external file the engine would clobber absent the leaf guard.
-    ext_target="$external/decision-report.md"
-    printf '%s\n' 'SENTINEL-external-report-must-not-be-overwritten' > "$ext_target"
-    before="$(sha256sum "$ext_target" | awk '{print $1}')"
-    # REAL run dir in the checkout; only the decision-report.md LEAF is a symlink -> external file.
-    rundir="$gitroot/.hivemind/runs/$run_id"
-    mkdir -p "$rundir"
-    leaf="$rundir/decision-report.md"
-    ln -s "$ext_target" "$leaf"
-    inputs="$gitroot/qq-inputs.json"
-
-    jq -n \
-        --arg run_id "$run_id" \
-        --arg report_markdown "# Decision Report (engine test QQ)" \
-        --arg pr_state MERGED \
-        '{run_id: $run_id, report_markdown: $report_markdown, pr_state: $pr_state}' \
-        > "$inputs"
-
-    stderr="$gitroot/qq-stderr.txt"
-    ( cd "$gitroot" && bash "$FAKE_DECISION_REPORT_ENGINE" "$inputs" ) >/dev/null 2>"$stderr" || rc=$?
-    after="$(sha256sum "$ext_target" | awk '{print $1}')"
-
-    # No engine temp file (.decision-report.md.XXXXXX) may have leaked under the external dir.
-    local leaked=no
-    if find "$external" -name '.decision-report.md.*' -print 2>/dev/null | grep -q .; then
-        leaked=yes
-    fi
-    is_containment_blocker=no
-    grep -q 'resolves outside the checkout' "$stderr" && is_containment_blocker=yes
-    if [[ "$rc" -ne 0 && "$before" == "$after" && "$leaked" == "no" \
-          && "$is_containment_blocker" == "yes" ]]; then
-        pass "$name" "symlinked decision-report.md leaf rejected by containment (exit $rc): external file byte-unchanged, no temp leaked"
-    else
-        failed "$name" "expected non-zero exit + containment blocker + external file byte-unchanged + no temp; rc=$rc containment=$is_containment_blocker changed=$([[ "$before" != "$after" ]] && echo yes || echo no) leaked=$leaked"
-    fi
-    # Two-line ordering oracle: the leaf guard's inner helper emits its own UNPREFIXED detail
-    # line ("refusing symlinked file leaf ...") ABOVE the engine's blocker line.
-    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
-        "refusing symlinked file leaf"
-}
-
-# ── RR. decision-report happy path: writes report under a real run dir ───────
-
-assert_decision_report_happy_path_writes() {
-    local name="RR:decision-report-happy-path-writes"
-    # A REAL, non-symlinked run dir under the checkout. decision-report.sh derives the report path,
-    # the containment guard passes (no symlink anywhere), and the engine writes the rendered
-    # narrative atomically. Assert: exit 0; the report file exists at the derived canonical path;
-    # its content round-trips the rendered narrative VERBATIM; the routed `report:` line equals the
-    # on-disk path.
-    local gitroot run_id rundir inputs rc=0 out
-    gitroot="$(new_gitroot rr-git)"
-    run_id="engine-case-rr"
-    rundir="$gitroot/.hivemind/runs/$run_id"
-    mkdir -p "$rundir"
-    inputs="$gitroot/rr-inputs.json"
-
-    local narrative='# Decision Report (engine test RR)
-
-2 decisions made on your behalf — 1 did-now, 1 deferred, 0 surfaced.'
-    jq -n \
-        --arg run_id "$run_id" \
-        --arg report_markdown "$narrative" \
-        --arg pr_state CLOSED \
-        '{run_id: $run_id, report_markdown: $report_markdown, pr_state: $pr_state}' \
-        > "$inputs"
-
-    out="$(cd "$gitroot" && bash "$FAKE_DECISION_REPORT_ENGINE" "$inputs" 2>&1)" || rc=$?
-
-    if [[ "$rc" -ne 0 ]]; then
-        failed "$name" "decision-report engine exited $rc on a valid happy path (expected 0): $out"
-        return
-    fi
-
-    local routed expected got
-    routed="$(printf '%s\n' "$out" | sed -n 's/^report: //p')"
-    # Canonicalize the EXPECTED path the same way the engine does (cd dirname && pwd -P) so a
-    # /tmp -> /private/tmp realpath divergence on macOS does not produce a spurious mismatch.
-    expected="$(cd "$rundir" && pwd -P)/decision-report.md"
-    if [[ -z "$routed" || "$routed" != "$expected" || ! -f "$routed" ]]; then
-        failed "$name" "expected report routed to $expected (existing file); got routed=$routed is_file=$([[ -f "$routed" ]] && echo yes || echo no)"
-        return
-    fi
-    got="$(cat "$routed")"
-    if [[ "$got" == "$narrative" ]]; then
-        pass "$name" "report written to canonical path ($routed) with verbatim narrative round-trip, exit 0"
-    else
-        failed "$name" "expected verbatim narrative round-trip at $routed; content differs"
-    fi
-}
-
-# ── decision-report READ-mode ledger fixture helper ─────────────────────────
-# stage_decision_ledger <dir> <run-id> -> writes a minimal valid ledger at <dir>/state.json whose
-# .run.id == <run-id> (so hivemind_open_ledger's coherence check passes) carrying two decision
-# entries spread across the append-only events[] so the flatten `[.events[].outputs.decisions[]?]`
-# yields a non-empty chronological list. Prints the ledger path. <dir> must already exist.
-stage_decision_ledger() {
-    local dir="$1" run_id="$2"
-    local ledger="$dir/state.json"
-    jq -n --arg id "$run_id" '{
-        run: {id: $id, status: "complete"},
-        state: {current: "complete"},
-        events: [
-            {state: "build", outputs: {decisions: [{ts: "2026-06-17T00:00:00Z", disposition: "did-now", decision: "first"}]}},
-            {state: "validate", outputs: {}},
-            {state: "pr", outputs: {decisions: [{ts: "2026-06-17T01:00:00Z", disposition: "deferred", decision: "second"}]}}
-        ]
-    }' > "$ledger"
-    printf '%s' "$ledger"
-}
-
-# ── SS. decision-report READ symlinked <run_id> RUN-dir rejected: no external read ──
-
-assert_decision_report_read_symlink_rundir_rejected() {
-    local name="SS:decision-report-read-symlink-rundir-rejected"
-    # READ-oracle twin of PP. `decision-report.sh --read-decisions <run_id>` derives the ledger
-    # <git-root>/.hivemind/runs/<run_id>/state.json and routes the read through hivemind_open_ledger
-    # BEFORE any jq/Read. Here the <run_id> RUN dir is a symlink to an EXTERNAL dir holding a VALID
-    # ledger (so the ledger is REACHABLE through the symlink — rejection is by CONTAINMENT, not
-    # file-absence). The shared ancestor guard sees the symlinked <run_id> and rejects: non-zero
-    # exit AND the engine emits NO ledger content on stdout (no decision list leaked from the
-    # external file). Mirrors PP's no-external-write assertion as a no-external-read assertion.
-    local gitroot external run_id out rc=0
-    gitroot="$(new_gitroot ss-git)"
-    run_id="engine-case-ss"
-    mkdir -p "$gitroot/.hivemind/runs"
-    # External dir OUTSIDE the gitroot holding a VALID ledger that self-identifies as <run_id> —
-    # so the ONLY thing that can block the read is the containment guard, not a missing/invalid file.
-    external="$WORKDIR/ss-external"
-    mkdir -p "$external"
-    stage_decision_ledger "$external" "$run_id" >/dev/null
-    # Symlink the <run_id> RUN dir to the external dir: the derived
-    # <gitroot>/.hivemind/runs/<run_id>/state.json resolves THROUGH the symlink to the external ledger.
-    ln -s "$external" "$gitroot/.hivemind/runs/$run_id"
-
-    out="$(cd "$gitroot" && bash "$FAKE_DECISION_REPORT_ENGINE" --read-decisions "$run_id" 2>/dev/null)" || rc=$?
-
-    # The guard must reject (non-zero) AND emit NO decision content on stdout (the external ledger's
-    # "first"/"second" decisions must not leak — a successful escape would flatten and print them).
-    local leaked=no
-    printf '%s' "$out" | grep -q 'first\|second\|did-now\|deferred' && leaked=yes
-    if [[ "$rc" -ne 0 && "$leaked" == "no" ]]; then
-        pass "$name" "symlinked <run_id> run dir rejected (exit $rc); no external ledger content emitted"
-    else
-        failed "$name" "expected non-zero exit + no emitted ledger content; rc=$rc leaked=$leaked out=$(printf '%s' "$out" | tr '\n' '|')"
-    fi
-}
-
-# ── TT. decision-report READ symlinked state.json LEAF rejected: no external read ──
-
-assert_decision_report_read_symlink_leaf_rejected() {
-    local name="TT:decision-report-read-symlink-leaf-rejected"
-    # READ-oracle twin of QQ. The REAL run dir <gitroot>/.hivemind/runs/<run_id>/ exists, but the
-    # state.json LEAF itself is a symlink to a VALID-but-EXTERNAL ledger outside the checkout. The
-    # [ -f ]/jq reads would follow it, so absent the leaf guard the engine would flatten and emit
-    # the external ledger's decisions (a read oracle). hivemind_assert_ledger_contained (orchestrated
-    # by hivemind_open_ledger) [ -L ]-rejects the symlinked leaf on the raw path BEFORE any read.
-    # Assert: non-zero exit, NO external decision content emitted, and the two-line containment-reject
-    # stderr ordering (the inner helper's UNPREFIXED detail line ABOVE the engine's blocker line).
-    local gitroot external run_id rundir leaf ext_target out stderr rc=0
-    gitroot="$(new_gitroot tt-git)"
-    run_id="engine-case-tt"
-    external="$WORKDIR/tt-external"
-    mkdir -p "$external"
-    # Pre-stage a VALID external ledger the read would flatten absent the leaf guard.
-    ext_target="$(stage_decision_ledger "$external" "$run_id")"
-    # REAL run dir in the checkout; only the state.json LEAF is a symlink -> external ledger file.
-    rundir="$gitroot/.hivemind/runs/$run_id"
-    mkdir -p "$rundir"
-    leaf="$rundir/state.json"
-    ln -s "$ext_target" "$leaf"
-
-    stderr="$gitroot/tt-stderr.txt"
-    out="$(cd "$gitroot" && bash "$FAKE_DECISION_REPORT_ENGINE" --read-decisions "$run_id" 2>"$stderr")" || rc=$?
-
-    local leaked=no
-    printf '%s' "$out" | grep -q 'first\|second\|did-now\|deferred' && leaked=yes
-    if [[ "$rc" -ne 0 && "$leaked" == "no" ]]; then
-        pass "$name" "symlinked state.json leaf rejected by containment (exit $rc): no external ledger content emitted"
-    else
-        failed "$name" "expected non-zero exit + no emitted ledger content; rc=$rc leaked=$leaked out=$(printf '%s' "$out" | tr '\n' '|')"
-    fi
-    # Two-line ordering oracle: the leaf guard's inner helper emits its own UNPREFIXED detail line
-    # ("refusing symlinked ledger file leaf ...") ABOVE the engine's blocker line.
-    assert_reject_detail_above_blocker "$name:stderr-two-line-order" "$stderr" \
-        "refusing symlinked ledger file leaf"
-}
-
-# ── UU. decision-report READ happy path: emits flattened decision list ───────
-
-assert_decision_report_read_happy_path() {
-    local name="UU:decision-report-read-happy-path"
-    # A REAL, non-symlinked run dir under the checkout with a valid coherent ledger carrying two
-    # decision entries across two events. `--read-decisions <run_id>` passes the full guard chain,
-    # flattens `[.events[].outputs.decisions[]?]` chronologically, and emits ONE JSON line. Assert:
-    # exit 0; the emitted line is valid JSON; it carries exactly the two decisions in append order
-    # (first, then second).
-    local gitroot run_id rundir out rc=0
-    gitroot="$(new_gitroot uu-git)"
-    run_id="engine-case-uu"
-    rundir="$gitroot/.hivemind/runs/$run_id"
-    mkdir -p "$rundir"
-    stage_decision_ledger "$rundir" "$run_id" >/dev/null
-
-    out="$(cd "$gitroot" && bash "$FAKE_DECISION_REPORT_ENGINE" --read-decisions "$run_id" 2>&1)" || rc=$?
-
-    if [[ "$rc" -ne 0 ]]; then
-        failed "$name" "read engine exited $rc on a valid happy path (expected 0): $out"
-        return
-    fi
-    local len first second
-    len="$(printf '%s' "$out" | jq -r 'length' 2>/dev/null || echo BAD)"
-    first="$(printf '%s' "$out" | jq -r '.[0].decision' 2>/dev/null || echo BAD)"
-    second="$(printf '%s' "$out" | jq -r '.[1].decision' 2>/dev/null || echo BAD)"
-    if [[ "$len" == "2" && "$first" == "first" && "$second" == "second" ]]; then
-        pass "$name" "guarded read emitted the 2 journaled decisions in chronological order (first, second), exit 0"
-    else
-        failed "$name" "expected a 2-element JSON list [first, second]; got len=$len first=$first second=$second out=$(printf '%s' "$out" | tr '\n' '|')"
-    fi
-}
-
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -2849,12 +2553,6 @@ assert_record_ledger_symlink_leaf_rejected
 assert_intent_fallback_ledger_symlink_leaf_rejected
 assert_missing_ledger_engine_io_fails_closed
 assert_canon_ledger_round_trips_to_routed_path
-assert_decision_report_symlink_rundir_rejected
-assert_decision_report_symlink_leaf_rejected
-assert_decision_report_happy_path_writes
-assert_decision_report_read_symlink_rundir_rejected
-assert_decision_report_read_symlink_leaf_rejected
-assert_decision_report_read_happy_path
 
 echo ''
 echo '=== Summary ==='
