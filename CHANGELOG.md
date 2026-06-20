@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [2.37.0] - 2026-06-20
+
+### Fixed
+
+- Post-merge decision report now fires for pr-feedback-remediation runs: the overlord persists the resolved PR identity (event.outputs.pr / head_ref_oid) at the pr_branch_preflight state, and the report's PR derivation reads that event as a second source alongside open_pr. A merged/closed pr-feedback-remediation run with >=1 did-now/deferred decision now produces a report. Additive free-form event.outputs convention only — no schema change, no new ledger field, no new run.status. Closes #302.
+
 ## [2.36.0] - 2026-06-17
 
 ### Added
