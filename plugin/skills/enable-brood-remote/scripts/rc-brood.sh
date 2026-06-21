@@ -99,6 +99,15 @@ manifest="$root/.hivemind/broods/$brood_id/manifest.json"
 jq -e 'type == "object"' "$manifest" >/dev/null 2>&1 \
   || blocker "brood manifest is not valid JSON: $manifest"
 
+# ── Manifest brood-id coherence gate (target-trust) ───────────────────────────────
+# The manifest's OWN top-level brood_id MUST equal the requested brood-id. A manifest whose
+# recorded brood_id disagrees with the directory it was located under is stale or tampered — its
+# strain sessions cannot be trusted as THIS brood's targets. Reject as a pre-flight blocker BEFORE
+# any session is probed or addressed. A non-string / missing brood_id also fails this gate.
+manifest_brood_id="$(jq -r 'if (.brood_id | type) == "string" then .brood_id else "" end' "$manifest" 2>/dev/null || true)"
+[ "$manifest_brood_id" = "$brood_id" ] \
+  || blocker "manifest brood_id does not match requested brood-id (stale/tampered manifest): $manifest"
+
 # ── Enumerate strains (DATA reads — never command source) ─────────────────────────
 # Read the name + tmux_session of each strain as TAB-separated DATA via a single jq pass. jq
 # emits each value as a string; we strip C0 control bytes defensively at the read boundary (a
@@ -106,19 +115,35 @@ jq -e 'type == "object"' "$manifest" >/dev/null 2>&1 \
 # values are consumed ONLY as inert "$var" args below; they never enter generated command source.
 TAB="$(printf '\t')"
 
-strain_names=()
-strain_sessions=()
-while IFS="$TAB" read -r s_name s_session; do
-  strain_names+=("$s_name")
-  strain_sessions+=("$s_session")
-done < <(
+# Project the strain (name, tmux_session) pairs in a SINGLE jq pass and CAPTURE both the output and
+# the exit status BEFORE the loop. Running jq inside process substitution would hide a jq error from
+# the surrounding `while`, so the fan-out could exit 0 with a "success" summary after silently
+# dropping the bad and remaining strains. The projection is TYPE-STRICT: each strain's `name` and
+# `tmux_session` MUST be a JSON string (a present-but-non-string field is a corrupt manifest). The
+# `error(...)` makes jq exit non-zero on the first malformed field; the captured `|| blocker` then
+# converts that into a PRE-FLIGHT BLOCKER (no keystroke delivered) instead of a silent drop. A
+# missing/null field defaults to the empty string and is handled by the slug/session skips below.
+projection="$(
   jq -r '
+    def reqstr($f): if . == null then "" elif (type == "string") then . else error("strain field \($f) is not a string") end;
     (.strains // [])[]
-    | [ (.name // "" | gsub("[[:cntrl:]]"; "")),
-        (.tmux_session // "" | gsub("[[:cntrl:]]"; "")) ]
+    | [ (.name         | reqstr("name")         | gsub("[[:cntrl:]]"; "")),
+        (.tmux_session | reqstr("tmux_session") | gsub("[[:cntrl:]]"; "")) ]
     | @tsv
   ' "$manifest"
-)
+)" || blocker "failed to project strains from manifest (corrupt/non-string name or tmux_session): $manifest"
+
+strain_names=()
+strain_sessions=()
+# Guard the empty projection (zero strains): a herestring of "" still yields one empty line, which
+# would otherwise register as a spurious skipped strain. Only iterate when there is real output, so
+# the zero-strain run reports "0 strains" exactly as before.
+if [ -n "$projection" ]; then
+  while IFS="$TAB" read -r s_name s_session; do
+    strain_names+=("$s_name")
+    strain_sessions+=("$s_session")
+  done <<< "$projection"
+fi
 
 # ── Fan-out ───────────────────────────────────────────────────────────────────────
 # Per strain: sanitize the name to the slug, guard session liveness, then deliver the FIXED
@@ -152,6 +177,22 @@ while [ "$idx" -lt "$strain_count" ]; do
     skipped=$((skipped + 1))
     continue
   fi
+
+  # Target-namespace gate (target-trust): a strain's tmux_session MUST live in THIS brood's session
+  # namespace — `spawn-brood` names every strain session `<brood_id>-<...>`, so a session not carrying
+  # the `<brood_id>-` prefix is NOT a session this brood spawned. Probing/addressing it would type
+  # `/rc ...` into an unrelated alive session if the manifest were stale or tampered. SKIP such a
+  # target (never address it); the manifest brood_id coherence gate above already rejected a manifest
+  # whose own brood_id disagrees, and this prefix gate closes the per-strain mismatch within an
+  # otherwise-coherent manifest.
+  case "$session" in
+    "$brood_id"-*) : ;;
+    *)
+      printf 'skipped: %s (session %s outside brood namespace %s-)\n' "$slug" "$session" "$brood_id"
+      skipped=$((skipped + 1))
+      continue
+      ;;
+  esac
 
   # Liveness guard: a dead/missing session is SKIPPED, never failed — it simply is not a delivery
   # target. `has-session` against an absent session is a normal negative, not an error.

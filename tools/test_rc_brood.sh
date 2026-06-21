@@ -311,6 +311,59 @@ done
 INJECT_HITS="$(find "$WORKDIR" \( -name 'PWNED' -o -name 'SUBPWN' -o -name 'BTPWN' \) 2>/dev/null | head -n 1)"
 assert_eq "hostile:no-side-effect" "" "$INJECT_HITS" "no injected file (PWNED/SUBPWN/BTPWN) created"
 
+# ── Case 6: manifest brood_id mismatch → pre-flight blocker, zero send-keys ───────
+# A well-formed REQUESTED brood-id, a manifest staged under that id, but the manifest's OWN top-level
+# brood_id disagrees (stale/tampered) → pre-flight blocker, exit 1, send-keys EMPTY. We stage the
+# all-alive fixture (whose recorded brood_id is ...0001) under a DIFFERENT requested id.
+echo '=== Case 6: manifest brood_id mismatch — blocker, exit 1, zero send-keys ==='
+BID6="brood-feedface-0000-4000-8000-000000000006"
+ROOT6="$(new_brood_root brood-mismatch "$BID6" "$FIXTURES/rc-manifest-all-alive.json")"
+ALIVE6="$WORKDIR/alive6"; : > "$ALIVE6"
+LOG6="$WORKDIR/log6"; : > "$LOG6"
+run_engine "$ROOT6" "$BID6" "$ALIVE6" "$LOG6"
+assert_eq "brood-mismatch:exit" "1" "$RUN_RC" "manifest brood_id mismatch is a pre-flight blocker"
+assert_contains "brood-mismatch:blocker" "manifest brood_id does not match" "$(cat "${LOG6}.stderr")" "mismatch blocker line"
+assert_eq "brood-mismatch:zero-sendkeys" "0" "$(count_records "$LOG6")" "no keystroke on brood_id mismatch"
+
+# ── Case 7: foreign-namespace session → per-strain skip, others delivered ─────────
+# A coherent manifest (brood_id matches) where one strain's tmux_session points OUTSIDE this brood's
+# `<brood_id>-` namespace at an alive unrelated session. That strain is SKIPPED (never addressed); the
+# legitimate in-namespace strain is still delivered. The unrelated session is "alive" in the fake
+# tmux, proving the gate is what blocks it (not liveness).
+echo '=== Case 7: foreign-namespace session — skipped, never addressed ==='
+BID7="brood-feedface-0000-4000-8000-000000000004"
+ROOT7="$(new_brood_root foreign-session "$BID7" "$FIXTURES/rc-manifest-foreign-session.json")"
+ALIVE7="$WORKDIR/alive7"
+LOG7="$WORKDIR/log7"
+: > "$LOG7"
+# Both the legitimate in-namespace session AND the unrelated victim session are alive.
+printf '%s\n' \
+  "$BID7-api" \
+  "victim-unrelated-session" > "$ALIVE7"
+run_engine "$ROOT7" "$BID7" "$ALIVE7" "$LOG7"
+OUT7="$(cat "${LOG7}.stdout")"
+assert_eq "foreign:exit" "0" "$RUN_RC" "foreign-session skip does not abort fan-out"
+PAYLOADS7="$(literal_payloads "$LOG7")"
+assert_contains "foreign:slug-api" "/rc api" "$PAYLOADS7" "in-namespace strain delivered"
+assert_not_contains "foreign:no-victim" "/rc evil" "$PAYLOADS7" "foreign-session strain never delivered"
+assert_eq "foreign:literal-count" "1" "$(printf '%s\n' "$PAYLOADS7" | grep -c '^/rc ')" "exactly 1 /rc literal (foreign skipped)"
+assert_contains "foreign:skip-line" "skipped: evil (session victim-unrelated-session outside brood namespace" "$OUT7" "foreign-namespace skip disposition"
+assert_contains "foreign:summary" "1 applied, 1 skipped, 0 failed (of 2 strains)" "$OUT7" "summary counts"
+
+# ── Case 8: malformed strain field → pre-flight blocker, zero send-keys ───────────
+# A manifest whose strain `name`/`tmux_session` is a non-string (object/array). The type-strict jq
+# projection errors; the captured status converts it to a pre-flight blocker rather than a silent
+# drop hidden by process substitution. blocker on stderr, exit 1, send-keys EMPTY.
+echo '=== Case 8: malformed strain field (non-string) — blocker, exit 1, zero send-keys ==='
+BID8="brood-feedface-0000-4000-8000-000000000003"
+ROOT8="$(new_brood_root malformed "$BID8" "$FIXTURES/rc-manifest-malformed-name.json")"
+ALIVE8="$WORKDIR/alive8"; : > "$ALIVE8"
+LOG8="$WORKDIR/log8"; : > "$LOG8"
+run_engine "$ROOT8" "$BID8" "$ALIVE8" "$LOG8"
+assert_eq "malformed:exit" "1" "$RUN_RC" "non-string strain field is a pre-flight blocker"
+assert_contains "malformed:blocker" "failed to project strains from manifest" "$(cat "${LOG8}.stderr")" "projection-failure blocker line"
+assert_eq "malformed:zero-sendkeys" "0" "$(count_records "$LOG8")" "no keystroke on malformed projection"
+
 # ── Case 5: summary correctness already asserted per case above ───────────────────
 # Cases 1, 2 assert the exact applied/skipped/failed triple; Case 4 asserts the hostile slug path
 # still summarises applied=1. Re-assert the hostile summary explicitly for the failed=0 dimension.
