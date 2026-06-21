@@ -17,7 +17,7 @@
       "description": "Hostile strain name attempting shell injection through send-keys.",
       "worktree_path": "/repo/.claude/worktrees/brood-feedface-0000-4000-8000-000000000002/hostile",
       "branch": "strain/brood-feedface-0000-4000-8000-000000000002/hostile",
-      "tmux_session": "brood-feedface-0000-4000-8000-000000000002-hostile",
+      "tmux_session": "brood-feedface-0000-4000-8000-000000000002-abc--touch-pwned---touch-subpwn---touch-btpwn---etc-x",
       "status": "running",
       "pr": null,
       "merged": false,

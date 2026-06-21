@@ -101,6 +101,9 @@ case "$sub" in
         *)  shift ;;
       esac
     done
+    # The engine addresses sessions with tmux's exact-match `=` prefix (`-t "=<session>"`). Strip a
+    # single leading `=` before comparing to the plain alive-set lines so fixtures stay plain names.
+    target="${target#=}"
     [ -n "${TMUX_ALIVE_FILE:-}" ] || exit 1
     [ -f "$TMUX_ALIVE_FILE" ]     || exit 1
     if grep -qxF -- "$target" "$TMUX_ALIVE_FILE"; then
@@ -200,7 +203,7 @@ LOG1="$WORKDIR/log1"
 printf '%s\n' \
   "$BID1-api" \
   "$BID1-web-ui" \
-  "$BID1-db" > "$ALIVE1"
+  "$BID1-db-migrations" > "$ALIVE1"
 run_engine "$ROOT1" "$BID1" "$ALIVE1" "$LOG1"
 OUT1="$(cat "${LOG1}.stdout")"
 assert_eq "all-alive:exit" "0" "$RUN_RC" "fan-out completed"
@@ -214,6 +217,14 @@ assert_contains "all-alive:slug-db"    "/rc db.migrations" "$PAYLOADS1" "db.migr
 assert_eq "all-alive:literal-payload-count" "3" "$(printf '%s\n' "$PAYLOADS1" | grep -c '^/rc ')" "exactly 3 /rc literals"
 assert_contains "all-alive:summary" "3 applied, 0 skipped, 0 failed (of 3 strains)" "$OUT1" "summary counts"
 assert_contains "all-alive:applied-api" "applied: api" "$OUT1"
+# Exact-match targeting: every delivered send-keys addresses the GROUND-TRUTH identity with tmux's
+# `=` exact-match prefix (`-t "=<brood_id>-<short>"`). The fake tmux logs full argv, so assert the
+# `=`-prefixed target ARG appears for each delivered strain (and that the derived db-migrations
+# identity — not the manifest's old `-db` value — is the address).
+LOGTEXT1="$(cat "$LOG1")"
+assert_contains "all-alive:exact-target-api"    "ARG:=$BID1-api"           "$LOGTEXT1" "api addressed with = exact-match prefix"
+assert_contains "all-alive:exact-target-webui"  "ARG:=$BID1-web-ui"        "$LOGTEXT1" "web-ui addressed with = exact-match prefix"
+assert_contains "all-alive:exact-target-db"     "ARG:=$BID1-db-migrations" "$LOGTEXT1" "db.migrations addressed at derived identity with = prefix"
 
 # ── Case 2: fail-soft on dead session ─────────────────────────────────────────────
 # Same 3-strain manifest, but the web-ui session is NOT alive → web-ui skipped, api + db.migrations
@@ -226,7 +237,7 @@ LOG2="$WORKDIR/log2"
 # web-ui session intentionally OMITTED → has-session returns failure for it.
 printf '%s\n' \
   "$BID1-api" \
-  "$BID1-db" > "$ALIVE2"
+  "$BID1-db-migrations" > "$ALIVE2"
 run_engine "$ROOT2" "$BID1" "$ALIVE2" "$LOG2"
 OUT2="$(cat "${LOG2}.stdout")"
 assert_eq "dead:exit" "0" "$RUN_RC" "dead session does not abort fan-out"
@@ -284,8 +295,13 @@ ROOT4="$(new_brood_root hostile "$BID4" "$FIXTURES/rc-manifest-hostile-name.json
 ALIVE4="$WORKDIR/alive4"
 LOG4="$WORKDIR/log4"
 : > "$LOG4"
-printf '%s\n' "$BID4-hostile" > "$ALIVE4"
-# The expected slug is the hostile name reduced to [A-Za-z0-9._-]:
+# The strain session is addressed at its GROUND-TRUTH-derived identity, not the manifest's old
+# `-hostile` value. spawn-brood derives `short = name | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-'`,
+# so the hostile name reduces to the long `-` token below; the fixture's tmux_session records exactly
+# this so the coherence gate passes and the delivery (sanitization) path actually runs.
+HOSTILE_SESSION4="$BID4-abc--touch-pwned---touch-subpwn---touch-btpwn---etc-x"
+printf '%s\n' "$HOSTILE_SESSION4" > "$ALIVE4"
+# The expected slug is the hostile name reduced to [A-Za-z0-9._-] (a DIFFERENT, command-arg charset):
 #   "abc; touch PWNED $(touch SUBPWN) `touch BTPWN` /etc/x" -> abctouchPWNEDtouchSUBPWNtouchBTPWNetcx
 EXPECT_SLUG="abctouchPWNEDtouchSUBPWNtouchBTPWNetcx"
 run_engine "$ROOT4" "$BID4" "$ALIVE4" "$LOG4"
@@ -310,6 +326,11 @@ done
 # No side-effect file the hostile name attempted to create exists — search the whole workdir + cwd.
 INJECT_HITS="$(find "$WORKDIR" \( -name 'PWNED' -o -name 'SUBPWN' -o -name 'BTPWN' \) 2>/dev/null | head -n 1)"
 assert_eq "hostile:no-side-effect" "" "$INJECT_HITS" "no injected file (PWNED/SUBPWN/BTPWN) created"
+# The delivery addresses the GROUND-TRUTH-derived identity with tmux's `=` exact-match prefix — proving
+# the coherence gate passed and the sanitized payload was actually delivered (not skipped). The slug
+# (command-arg charset) and the session identity (lowercased `-` charset) legitimately differ.
+LOGTEXT4="$(cat "$LOG4")"
+assert_contains "hostile:exact-target" "ARG:=$HOSTILE_SESSION4" "$LOGTEXT4" "hostile strain addressed at derived identity with = prefix"
 
 # ── Case 6: manifest brood_id mismatch → pre-flight blocker, zero send-keys ───────
 # A well-formed REQUESTED brood-id, a manifest staged under that id, but the manifest's OWN top-level
@@ -325,12 +346,15 @@ assert_eq "brood-mismatch:exit" "1" "$RUN_RC" "manifest brood_id mismatch is a p
 assert_contains "brood-mismatch:blocker" "manifest brood_id does not match" "$(cat "${LOG6}.stderr")" "mismatch blocker line"
 assert_eq "brood-mismatch:zero-sendkeys" "0" "$(count_records "$LOG6")" "no keystroke on brood_id mismatch"
 
-# ── Case 7: foreign-namespace session → per-strain skip, others delivered ─────────
-# A coherent manifest (brood_id matches) where one strain's tmux_session points OUTSIDE this brood's
-# `<brood_id>-` namespace at an alive unrelated session. That strain is SKIPPED (never addressed); the
-# legitimate in-namespace strain is still delivered. The unrelated session is "alive" in the fake
-# tmux, proving the gate is what blocks it (not liveness).
-echo '=== Case 7: foreign-namespace session — skipped, never addressed ==='
+# ── Case 7: foreign-session → exact-identity mismatch skip, others delivered ──────
+# A coherent manifest (brood_id matches) where the `evil` strain's tmux_session points at an alive
+# UNRELATED session (`victim-unrelated-session`) that does NOT equal its ground-truth-derived identity
+# `<brood_id>-evil`. With exact-identity targeting the recorded value is only a coherence signal: it
+# mismatches the derived identity, so the strain is SKIPPED and the victim session is NEVER addressed
+# (the engine targets the derived identity, never the manifest value). The legitimate in-namespace
+# strain is still delivered. The victim session is "alive" in the fake tmux, proving the identity gate
+# is what blocks it — not liveness.
+echo '=== Case 7: foreign session — exact-identity mismatch skip, never addressed ==='
 BID7="brood-feedface-0000-4000-8000-000000000004"
 ROOT7="$(new_brood_root foreign-session "$BID7" "$FIXTURES/rc-manifest-foreign-session.json")"
 ALIVE7="$WORKDIR/alive7"
@@ -342,13 +366,72 @@ printf '%s\n' \
   "victim-unrelated-session" > "$ALIVE7"
 run_engine "$ROOT7" "$BID7" "$ALIVE7" "$LOG7"
 OUT7="$(cat "${LOG7}.stdout")"
+LOGTEXT7="$(cat "$LOG7")"
 assert_eq "foreign:exit" "0" "$RUN_RC" "foreign-session skip does not abort fan-out"
 PAYLOADS7="$(literal_payloads "$LOG7")"
 assert_contains "foreign:slug-api" "/rc api" "$PAYLOADS7" "in-namespace strain delivered"
 assert_not_contains "foreign:no-victim" "/rc evil" "$PAYLOADS7" "foreign-session strain never delivered"
 assert_eq "foreign:literal-count" "1" "$(printf '%s\n' "$PAYLOADS7" | grep -c '^/rc ')" "exactly 1 /rc literal (foreign skipped)"
-assert_contains "foreign:skip-line" "skipped: evil (session victim-unrelated-session outside brood namespace" "$OUT7" "foreign-namespace skip disposition"
+assert_contains "foreign:skip-line" "skipped: evil (manifest session victim-unrelated-session does not match derived identity $BID7-evil)" "$OUT7" "exact-identity-mismatch skip disposition"
+# The victim session is NEVER addressed: neither has-session nor send-keys ever carries it as a target.
+assert_not_contains "foreign:victim-never-addressed" "ARG:=victim-unrelated-session" "$LOGTEXT7" "victim session never targeted"
+assert_not_contains "foreign:victim-bare-never-addressed" "ARG:victim-unrelated-session" "$LOGTEXT7" "victim session never targeted (bare)"
 assert_contains "foreign:summary" "1 applied, 1 skipped, 0 failed (of 2 strains)" "$OUT7" "summary counts"
+
+# ── Case 7s: sibling/prefix rejection — the iter2 prefix-glob bypass, now closed ──
+# REGRESSION GUARD for the old prefix-membership target-trust. A COHERENT manifest (brood_id matches)
+# whose single strain `name=api` derives `expected_session=<brood_id>-api`, but whose recorded
+# `tmux_session` is a SAME-PREFIX SIBLING `<brood_id>-api-sibling`. Under the old prefix/fnmatch
+# membership check this sibling (and a glob-adjacent name) would have passed the namespace gate and
+# been addressed. Under exact-identity targeting the recorded value is only a coherence signal: it does
+# NOT equal the derived identity, so the strain is SKIPPED, ZERO `/rc` is delivered, and neither the
+# sibling nor the fnmatch-adjacent session is ever addressed. The manifest is built inline (no fixture
+# file) so the test owns the sibling-bypass shape directly.
+echo '=== Case 7s: sibling/prefix rejection — exact-identity mismatch, zero delivery ==='
+BID7S="brood-feedface-0000-4000-8000-000000000005"
+ROOT7S="$WORKDIR/sibling-bypass"
+mkdir -p "$ROOT7S/.hivemind/broods/$BID7S"
+git -C "$ROOT7S" init -q
+# name=api derives <bid>-api, but tmux_session records the same-prefix sibling <bid>-api-sibling.
+jq -n --arg bid "$BID7S" '{
+  manifest_version: 4,
+  brood_id: $bid,
+  created_at: "2026-06-21T00:00:00Z",
+  hatchery_session: "",
+  base: "main",
+  hatchery: { run_id: ($bid + "-hatchery"), ledger: (".hivemind/runs/" + $bid + "-hatchery/state.json"), workflow: "hatchery-dispatch" },
+  overlap_risk: "low",
+  overlap_details: "No shared file scopes detected.",
+  strains: [ {
+    name: "api",
+    description: "Coherent strain whose recorded tmux_session is a same-prefix sibling of its derived identity.",
+    worktree_path: ("/repo/.claude/worktrees/" + $bid + "/api"),
+    branch: ("strain/" + $bid + "/api"),
+    tmux_session: ($bid + "-api-sibling"),
+    status: "running",
+    pr: null,
+    merged: false,
+    rebased_after: [],
+    run: { suggested_id: ($bid + "--api"), workflow_hint: "standard-delivery" }
+  } ],
+  merge_order: []
+}' > "$ROOT7S/.hivemind/broods/$BID7S/manifest.json"
+ALIVE7S="$WORKDIR/alive7s"
+LOG7S="$WORKDIR/log7s"
+: > "$LOG7S"
+# The sibling session AND an fnmatch-adjacent name are BOTH alive — proving the gate, not liveness,
+# is what rejects them. The derived identity <bid>-api is intentionally NOT alive here.
+printf '%s\n' \
+  "$BID7S-api-sibling" \
+  "$BID7S-api-x" > "$ALIVE7S"
+run_engine "$ROOT7S" "$BID7S" "$ALIVE7S" "$LOG7S"
+OUT7S="$(cat "${LOG7S}.stdout")"
+LOGTEXT7S="$(cat "$LOG7S")"
+assert_eq "sibling:exit" "0" "$RUN_RC" "sibling mismatch skip does not abort fan-out"
+assert_eq "sibling:zero-sendkeys" "0" "$(count_records "$LOG7S")" "ZERO /rc delivered to the sibling (prefix bypass gone)"
+assert_contains "sibling:skip-line" "skipped: api (manifest session $BID7S-api-sibling does not match derived identity $BID7S-api)" "$OUT7S" "exact-identity-mismatch skip disposition"
+assert_not_contains "sibling:never-addressed" "ARG:=$BID7S-api-sibling" "$LOGTEXT7S" "sibling session never targeted"
+assert_contains "sibling:summary" "0 applied, 1 skipped, 0 failed (of 1 strains)" "$OUT7S" "summary shows the skip"
 
 # ── Case 8: malformed strain field → pre-flight blocker, zero send-keys ───────────
 # A manifest whose strain `name`/`tmux_session` is a non-string (object/array). The type-strict jq

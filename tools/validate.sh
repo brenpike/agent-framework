@@ -435,7 +435,9 @@ map_path() {
   # test_shared_libs above. (tools/test_rc_brood.sh itself self-routes via the leg near the top.)
   if [[ "$p" == plugin/skills/enable-brood-remote/* \
      || "$p" == tests/brood/rc-manifest-all-alive.json \
-     || "$p" == tests/brood/rc-manifest-hostile-name.json ]]; then
+     || "$p" == tests/brood/rc-manifest-hostile-name.json \
+     || "$p" == tests/brood/rc-manifest-foreign-session.json \
+     || "$p" == tests/brood/rc-manifest-malformed-name.json ]]; then
     add_selected "$SUITE_TEST_RC_BROOD" "$p (rc-brood skill/fixture)"
     matched=1
   fi

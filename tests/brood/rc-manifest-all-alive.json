@@ -47,7 +47,7 @@
       "description": "Implement the database migrations slice.",
       "worktree_path": "/repo/.claude/worktrees/brood-feedface-0000-4000-8000-000000000001/db.migrations",
       "branch": "strain/brood-feedface-0000-4000-8000-000000000001/db.migrations",
-      "tmux_session": "brood-feedface-0000-4000-8000-000000000001-db",
+      "tmux_session": "brood-feedface-0000-4000-8000-000000000001-db-migrations",
       "status": "running",
       "pr": null,
       "merged": false,

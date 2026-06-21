@@ -46,6 +46,19 @@
 #   into shell command SOURCE, into a buffer file, or into `send-keys` unsanitized. A strain name
 #   that fails sanitization (or is empty) is SKIPPED — no malformed `/rc` is ever sent.
 #
+# TARGET-TRUST (identity invariant — ground-truth-derived exact addressing):
+#   The tmux session a strain's `/rc` is delivered to is NOT taken from the untrusted manifest
+#   `tmux_session` field. Each strain's EXPECTED session is DERIVED FROM GROUND TRUTH exactly as
+#   spawn-brood derives it at spawn time — `<brood_id>-<short>`, where `short` is the strain name
+#   piped `tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-'` (replicated verbatim from
+#   spawn-brood.sh). The manifest `tmux_session` is then a VALIDATED COHERENCE SIGNAL only: it MUST
+#   equal the derived identity by EXACT EQUALITY, and any mismatch (sibling, prefix, glob, foreign,
+#   or stale) SKIPS the strain — it never becomes the targeting key. Both tmux calls address the
+#   derived identity with tmux's exact-match `=` prefix (`-t "=$expected_session"`), which forces
+#   tmux to accept ONLY an exact session-name match and kills tmux's default prefix/fnmatch
+#   fallback. A stale/tampered manifest therefore cannot steer `/rc` into a sibling or wrong live
+#   pane: the address is ground-truth, and the manifest value is merely cross-checked.
+#
 # CONVENTIONS (mirrors brood-status-collect.sh / spawn-brood.sh): `set -euo pipefail`, an EXIT
 # trap ending in a guaranteed-zero `:`, self-location via `cd && pwd -P` (NO realpath/readlink, NO
 # ${CLAUDE_PLUGIN_ROOT} inside an engine script).
@@ -171,33 +184,43 @@ while [ "$idx" -lt "$strain_count" ]; do
     continue
   fi
 
-  # A strain whose recorded session is empty or sentinel-shaped has no live target to address.
+  # Derive the EXPECTED session from GROUND TRUTH (target-trust): spawn-brood names every strain
+  # session `<brood_id>-<short>`, where `short` is the strain name lowercased then mapped to the
+  # [a-z0-9-] charset. Replicate that derivation VERBATIM from spawn-brood.sh (lines ~394 + ~408) so
+  # the address is computed from the brood-id + name we already trust — NOT taken from the untrusted
+  # manifest `tmux_session` field. If `short` sanitizes to empty (name was empty or wholly outside
+  # [a-z0-9-]) there is no derivable identity to address — SKIP, mirroring the empty-slug skip above.
+  # Do NOT fall back to a bare `<brood_id>-` prefix target.
+  short="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
+  if [ -z "$short" ]; then
+    printf 'skipped: %s (name does not derive a session identity)\n' "$slug"
+    skipped=$((skipped + 1))
+    continue
+  fi
+  expected_session="$brood_id-$short"
+
+  # A strain whose recorded session is empty or sentinel-shaped has no recorded value to cross-check.
   if [ -z "$session" ]; then
     printf 'skipped: %s (no tmux session recorded)\n' "$slug"
     skipped=$((skipped + 1))
     continue
   fi
 
-  # Target-namespace gate (target-trust): a strain's tmux_session MUST live in THIS brood's session
-  # namespace — `spawn-brood` names every strain session `<brood_id>-<...>`, so a session not carrying
-  # the `<brood_id>-` prefix is NOT a session this brood spawned. Probing/addressing it would type
-  # `/rc ...` into an unrelated alive session if the manifest were stale or tampered. SKIP such a
-  # target (never address it); the manifest brood_id coherence gate above already rejected a manifest
-  # whose own brood_id disagrees, and this prefix gate closes the per-strain mismatch within an
-  # otherwise-coherent manifest.
-  case "$session" in
-    "$brood_id"-*) : ;;
-    *)
-      printf 'skipped: %s (session %s outside brood namespace %s-)\n' "$slug" "$session" "$brood_id"
-      skipped=$((skipped + 1))
-      continue
-      ;;
-  esac
+  # Coherence gate (target-trust): the manifest-recorded session is now a VALIDATED SIGNAL, not the
+  # targeting key. It MUST equal the ground-truth-derived identity by EXACT EQUALITY. Any mismatch —
+  # sibling, prefix, glob, foreign, or stale — SKIPS the strain; we never address the manifest value.
+  if [ "$session" != "$expected_session" ]; then
+    printf 'skipped: %s (manifest session %s does not match derived identity %s)\n' "$slug" "$session" "$expected_session"
+    skipped=$((skipped + 1))
+    continue
+  fi
 
   # Liveness guard: a dead/missing session is SKIPPED, never failed — it simply is not a delivery
-  # target. `has-session` against an absent session is a normal negative, not an error.
-  if ! tmux has-session -t "$session" 2>/dev/null; then
-    printf 'skipped: %s (session not alive: %s)\n' "$slug" "$session"
+  # target. Address the GROUND-TRUTH identity with tmux's exact-match `=` prefix so tmux accepts ONLY
+  # an exact session-name match (no prefix/fnmatch fallback into a sibling pane). `has-session`
+  # against an absent session is a normal negative, not an error.
+  if ! tmux has-session -t "=$expected_session" 2>/dev/null; then
+    printf 'skipped: %s (session not alive: %s)\n' "$slug" "$expected_session"
     skipped=$((skipped + 1))
     continue
   fi
@@ -208,19 +231,20 @@ while [ "$idx" -lt "$strain_count" ]; do
   #      literal send-keys is sufficient — no bracketed-paste needed (per the delivery decision).
   #   2. a SEPARATE Enter key event submits the slash command.
   # The slug is a sanitized [A-Za-z0-9._-] token, so the literal payload cannot carry framing or
-  # control bytes. Any tmux failure for THIS strain is recorded `failed` and the loop continues —
-  # a per-strain error never aborts the fan-out.
-  if ! tmux send-keys -t "$session" -l -- "/rc $slug" 2>/dev/null; then
-    printf 'failed: %s (send-keys literal failed for session %s)\n' "$slug" "$session"
+  # control bytes. Address the GROUND-TRUTH identity with tmux's exact-match `=` prefix on BOTH
+  # sends. Any tmux failure for THIS strain is recorded `failed` and the loop continues — a
+  # per-strain error never aborts the fan-out.
+  if ! tmux send-keys -t "=$expected_session" -l -- "/rc $slug" 2>/dev/null; then
+    printf 'failed: %s (send-keys literal failed for session %s)\n' "$slug" "$expected_session"
     failed=$((failed + 1))
     continue
   fi
-  if ! tmux send-keys -t "$session" Enter 2>/dev/null; then
-    printf 'failed: %s (send-keys Enter failed for session %s)\n' "$slug" "$session"
+  if ! tmux send-keys -t "=$expected_session" Enter 2>/dev/null; then
+    printf 'failed: %s (send-keys Enter failed for session %s)\n' "$slug" "$expected_session"
     failed=$((failed + 1))
     continue
   fi
-  printf 'applied: %s (/rc %s -> %s)\n' "$slug" "$slug" "$session"
+  printf 'applied: %s (/rc %s -> %s)\n' "$slug" "$slug" "$expected_session"
   applied=$((applied + 1))
 done
 
