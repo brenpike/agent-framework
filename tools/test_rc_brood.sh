@@ -11,16 +11,18 @@
 # non-zero exit on any failed assertion. Writes nothing into this repo's tree.
 #
 # LOCKED INVARIANTS (each a PASS/FAIL case):
-#   1. All-alive fan-out: N strains, all sessions alive → one `/rc <slug>` + one Enter per strain,
-#      correct sanitized slug per strain, exit 0, summary applied=N.
+#   1. All-alive fan-out: N strains, all sessions alive → one `/rc <short>` + one Enter per strain,
+#      correct canonical `short` per strain, exit 0, summary applied=N.
 #   2. Fail-soft on dead session: one strain's session NOT alive → that strain skipped, the OTHER
 #      strains still get their send-keys, exit 0, summary shows the skip.
 #   3. Pre-flight blocker → ZERO send-keys: (a) bad/empty/traversal brood-id, (b) missing manifest
 #      → `blocker:` on stderr, exit 1, send-keys log EMPTY.
 #   4. Injection-safety: a hostile strain name (`;`, `$()`, backticks, spaces, slashes) → the bytes
-#      sent are ONLY the sanitized `/rc <slug>` literal; no shell metacharacter reaches send-keys and
-#      no side-effect file the hostile name tried to create exists.
+#      sent are ONLY the `/rc <short>` literal (`short` is [a-z0-9-]-only); no shell metacharacter
+#      reaches send-keys and no side-effect file the hostile name tried to create exists.
 #   5. Summary correctness: applied/skipped/failed counts match the scenario.
+#   6. RC-name collision guard: two strains whose names collide under the OLD delete-slug but are
+#      DISTINCT under `short` receive DISTINCT `/rc <short>` names (the de-dup-inheritance fix).
 #
 # Usage:
 #   ./tools/test_rc_brood.sh
@@ -192,9 +194,9 @@ enter_count() {
 }
 
 # ── Case 1: all-alive fan-out ─────────────────────────────────────────────────────
-# 3 strains, all sessions alive → one `/rc <slug>` literal + one Enter per strain, correct slug per
-# strain, exit 0, summary applied=3 skipped=0 failed=0.
-echo '=== Case 1: all-alive fan-out — one /rc <slug> + Enter per strain, exit 0 ==='
+# 3 strains, all sessions alive → one `/rc <short>` literal + one Enter per strain, correct `short`
+# per strain, exit 0, summary applied=3 skipped=0 failed=0.
+echo '=== Case 1: all-alive fan-out — one /rc <short> + Enter per strain, exit 0 ==='
 BID1="brood-feedface-0000-4000-8000-000000000001"
 ROOT1="$(new_brood_root all-alive "$BID1" "$FIXTURES/rc-manifest-all-alive.json")"
 ALIVE1="$WORKDIR/alive1"
@@ -211,9 +213,12 @@ assert_eq "all-alive:exit" "0" "$RUN_RC" "fan-out completed"
 assert_eq "all-alive:record-count" "6" "$(count_records "$LOG1")" "two send-keys per strain"
 assert_eq "all-alive:enter-count" "3" "$(enter_count "$LOG1")" "one Enter per strain"
 PAYLOADS1="$(literal_payloads "$LOG1")"
-assert_contains "all-alive:slug-api"   "/rc api"           "$PAYLOADS1" "api slug"
-assert_contains "all-alive:slug-webui" "/rc web-ui"        "$PAYLOADS1" "web-ui slug"
-assert_contains "all-alive:slug-db"    "/rc db.migrations" "$PAYLOADS1" "db.migrations slug"
+# `/rc` payload is now the canonical `short` (the session-identity token), NOT a separate slug.
+# api → api, web-ui → web-ui (already short-equal); db.migrations → db-migrations (`.` REPLACE-mapped
+# to `-` by the short derivation, not deleted as the old slug did).
+assert_contains "all-alive:short-api"   "/rc api"           "$PAYLOADS1" "api short"
+assert_contains "all-alive:short-webui" "/rc web-ui"        "$PAYLOADS1" "web-ui short"
+assert_contains "all-alive:short-db"    "/rc db-migrations" "$PAYLOADS1" "db.migrations short"
 assert_eq "all-alive:literal-payload-count" "3" "$(printf '%s\n' "$PAYLOADS1" | grep -c '^/rc ')" "exactly 3 /rc literals"
 assert_contains "all-alive:summary" "3 applied, 0 skipped, 0 failed (of 3 strains)" "$OUT1" "summary counts"
 assert_contains "all-alive:applied-api" "applied: api" "$OUT1"
@@ -242,8 +247,8 @@ run_engine "$ROOT2" "$BID1" "$ALIVE2" "$LOG2"
 OUT2="$(cat "${LOG2}.stdout")"
 assert_eq "dead:exit" "0" "$RUN_RC" "dead session does not abort fan-out"
 PAYLOADS2="$(literal_payloads "$LOG2")"
-assert_contains "dead:slug-api" "/rc api"           "$PAYLOADS2" "api still delivered"
-assert_contains "dead:slug-db"  "/rc db.migrations" "$PAYLOADS2" "db still delivered"
+assert_contains "dead:short-api" "/rc api"           "$PAYLOADS2" "api still delivered"
+assert_contains "dead:short-db"  "/rc db-migrations" "$PAYLOADS2" "db still delivered"
 assert_not_contains "dead:no-webui" "/rc web-ui" "$PAYLOADS2" "dead web-ui never delivered"
 assert_eq "dead:literal-payload-count" "2" "$(printf '%s\n' "$PAYLOADS2" | grep -c '^/rc ')" "exactly 2 /rc literals (1 skipped)"
 assert_eq "dead:enter-count" "2" "$(enter_count "$LOG2")" "one Enter per applied strain"
@@ -289,7 +294,7 @@ assert_eq "nomanifest:zero-sendkeys" "0" "$(count_records "$LOG3B")" "no keystro
 # A hostile strain name carrying `;`, `$()`, backticks, spaces and slashes. The ONLY bytes sent are
 # the sanitized `/rc <slug>` literal. No shell metacharacter reaches send-keys; no side-effect file
 # the hostile name tried to create exists anywhere.
-echo '=== Case 4: injection-safety — only the sanitized /rc <slug> literal is sent ==='
+echo '=== Case 4: injection-safety — only the /rc <short> literal is sent ==='
 BID4="brood-feedface-0000-4000-8000-000000000002"
 ROOT4="$(new_brood_root hostile "$BID4" "$FIXTURES/rc-manifest-hostile-name.json")"
 ALIVE4="$WORKDIR/alive4"
@@ -301,26 +306,28 @@ LOG4="$WORKDIR/log4"
 # this so the coherence gate passes and the delivery (sanitization) path actually runs.
 HOSTILE_SESSION4="$BID4-abc--touch-pwned---touch-subpwn---touch-btpwn---etc-x"
 printf '%s\n' "$HOSTILE_SESSION4" > "$ALIVE4"
-# The expected slug is the hostile name reduced to [A-Za-z0-9._-] (a DIFFERENT, command-arg charset):
-#   "abc; touch PWNED $(touch SUBPWN) `touch BTPWN` /etc/x" -> abctouchPWNEDtouchSUBPWNtouchBTPWNetcx
-EXPECT_SLUG="abctouchPWNEDtouchSUBPWNtouchBTPWNetcx"
+# The `/rc` payload is now the canonical `short` (the REPLACE-based session-identity token), the same
+# value embedded in HOSTILE_SESSION4 after the brood-id prefix:
+#   "abc; touch PWNED $(touch SUBPWN) `touch BTPWN` /etc/x"
+#   -> abc--touch-pwned---touch-subpwn---touch-btpwn---etc-x   (lowercase, non-[a-z0-9-] -> '-')
+EXPECT_SHORT="abc--touch-pwned---touch-subpwn---touch-btpwn---etc-x"
 run_engine "$ROOT4" "$BID4" "$ALIVE4" "$LOG4"
 OUT4="$(cat "${LOG4}.stdout")"
 assert_eq "hostile:exit" "0" "$RUN_RC" "hostile name still completes fan-out"
 PAYLOADS4="$(literal_payloads "$LOG4")"
-# Exactly ONE literal payload, and it is the sanitized form verbatim.
+# Exactly ONE literal payload, and it is the canonical `short` form verbatim.
 assert_eq "hostile:literal-count" "1" "$(printf '%s\n' "$PAYLOADS4" | grep -c '^/rc ')" "exactly one /rc literal"
-assert_eq "hostile:exact-payload" "/rc $EXPECT_SLUG" "$PAYLOADS4" "sent payload is the sanitized literal only"
-# No shell metacharacter from the hostile name survived into the delivered slug. The fixed `/rc `
-# command prefix legitimately carries a space and a leading `/`; the SLUG (everything after `/rc `)
-# is the only untrusted-derived portion and must be a pure [A-Za-z0-9._-] token. Strip the fixed
-# prefix and assert the remaining slug bytes carry none of the hostile metacharacters.
-SLUG4="${PAYLOADS4#/rc }"
+assert_eq "hostile:exact-payload" "/rc $EXPECT_SHORT" "$PAYLOADS4" "sent payload is the canonical short only"
+# No shell metacharacter from the hostile name survived into the delivered short. The fixed `/rc `
+# command prefix legitimately carries a space and a leading `/`; the SHORT (everything after `/rc `)
+# is the only untrusted-derived portion and must be a pure [a-z0-9-] token. Strip the fixed prefix
+# and assert the remaining short bytes carry none of the hostile metacharacters.
+SHORT4="${PAYLOADS4#/rc }"
 for meta in ';' '$(' '`' ' ' '/'; do
-  if printf '%s' "$SLUG4" | grep -qF -- "$meta"; then
-    failed "hostile:no-meta" "metacharacter '$meta' reached the send-keys slug"
+  if printf '%s' "$SHORT4" | grep -qF -- "$meta"; then
+    failed "hostile:no-meta" "metacharacter '$meta' reached the send-keys short"
   else
-    pass "hostile:no-meta" "(slug free of metacharacter '$meta')"
+    pass "hostile:no-meta" "(short free of metacharacter '$meta')"
   fi
 done
 # No side-effect file the hostile name attempted to create exists — search the whole workdir + cwd.
@@ -446,6 +453,71 @@ run_engine "$ROOT8" "$BID8" "$ALIVE8" "$LOG8"
 assert_eq "malformed:exit" "1" "$RUN_RC" "non-string strain field is a pre-flight blocker"
 assert_contains "malformed:blocker" "failed to project strains from manifest" "$(cat "${LOG8}.stderr")" "projection-failure blocker line"
 assert_eq "malformed:zero-sendkeys" "0" "$(count_records "$LOG8")" "no keystroke on malformed projection"
+
+# ── Case 9: RC-name collision guard — distinct `short`, distinct /rc names ─────────
+# THE FIX'S REGRESSION GUARD. Two strains whose names COLLIDE under the OLD delete-based slug
+# (`api/v1` and `apiv1` both deleted `/` -> `apiv1`) but are DISTINCT under the REPLACE-based `short`
+# spawn-brood de-dupes: `api/v1` -> `api-v1`, `apiv1` -> `apiv1`. Because the `/rc` payload is now the
+# `short` (not the slug), the two strains MUST receive DISTINCT `/rc` names, each into its OWN exact
+# `=`-session. Built inline via jq -n (no committed fixture). Both derived sessions are alive.
+echo '=== Case 9: RC-name collision guard — distinct short -> distinct /rc names ==='
+BID9="brood-feedface-0000-4000-8000-000000000009"
+ROOT9="$WORKDIR/rc-collision"
+mkdir -p "$ROOT9/.hivemind/broods/$BID9"
+git -C "$ROOT9" init -q
+# name "api/v1" -> short "api-v1" -> session <bid>-api-v1
+# name "apiv1"  -> short "apiv1"  -> session <bid>-apiv1
+# Under the OLD slug both names collapsed to "apiv1" (ambiguous /rc). Under `short` they diverge.
+jq -n --arg bid "$BID9" '{
+  manifest_version: 4,
+  brood_id: $bid,
+  created_at: "2026-06-21T00:00:00Z",
+  hatchery_session: "",
+  base: "main",
+  hatchery: { run_id: ($bid + "-hatchery"), ledger: (".hivemind/runs/" + $bid + "-hatchery/state.json"), workflow: "hatchery-dispatch" },
+  overlap_risk: "low",
+  overlap_details: "No shared file scopes detected.",
+  strains: [
+    {
+      name: "api/v1",
+      description: "Strain whose name collides with apiv1 under the old delete-slug.",
+      worktree_path: ("/repo/.claude/worktrees/" + $bid + "/api-v1"),
+      branch: ("strain/" + $bid + "/api-v1"),
+      tmux_session: ($bid + "-api-v1"),
+      status: "running", pr: null, merged: false, rebased_after: [],
+      run: { suggested_id: ($bid + "--api-v1"), workflow_hint: "standard-delivery" }
+    },
+    {
+      name: "apiv1",
+      description: "Strain whose name collides with api/v1 under the old delete-slug.",
+      worktree_path: ("/repo/.claude/worktrees/" + $bid + "/apiv1"),
+      branch: ("strain/" + $bid + "/apiv1"),
+      tmux_session: ($bid + "-apiv1"),
+      status: "running", pr: null, merged: false, rebased_after: [],
+      run: { suggested_id: ($bid + "--apiv1"), workflow_hint: "standard-delivery" }
+    }
+  ],
+  merge_order: []
+}' > "$ROOT9/.hivemind/broods/$BID9/manifest.json"
+ALIVE9="$WORKDIR/alive9"
+LOG9="$WORKDIR/log9"
+: > "$LOG9"
+printf '%s\n' \
+  "$BID9-api-v1" \
+  "$BID9-apiv1" > "$ALIVE9"
+run_engine "$ROOT9" "$BID9" "$ALIVE9" "$LOG9"
+OUT9="$(cat "${LOG9}.stdout")"
+LOGTEXT9="$(cat "$LOG9")"
+assert_eq "collision:exit" "0" "$RUN_RC" "collision fan-out completes"
+PAYLOADS9="$(literal_payloads "$LOG9")"
+# DISTINCT /rc names — the whole point of the fix.
+assert_contains "collision:rc-api-v1" "/rc api-v1" "$PAYLOADS9" "api/v1 -> distinct /rc api-v1"
+assert_contains "collision:rc-apiv1"  "/rc apiv1"  "$PAYLOADS9" "apiv1 -> distinct /rc apiv1"
+assert_eq "collision:literal-count" "2" "$(printf '%s\n' "$PAYLOADS9" | grep -c '^/rc ')" "two distinct /rc literals"
+# Each into its OWN exact `=`-session.
+assert_contains "collision:target-api-v1" "ARG:=$BID9-api-v1" "$LOGTEXT9" "api-v1 addressed at own = session"
+assert_contains "collision:target-apiv1"  "ARG:=$BID9-apiv1"  "$LOGTEXT9" "apiv1 addressed at own = session"
+assert_contains "collision:summary" "2 applied, 0 skipped, 0 failed (of 2 strains)" "$OUT9" "both applied, no collision"
 
 # ── Case 5: summary correctness already asserted per case above ───────────────────
 # Cases 1, 2 assert the exact applied/skipped/failed triple; Case 4 asserts the hostile slug path
