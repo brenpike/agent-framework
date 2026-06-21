@@ -1,0 +1,62 @@
+{
+  "manifest_version": 4,
+  "brood_id": "brood-feedface-0000-4000-8000-000000000001",
+  "created_at": "2026-06-21T00:00:00Z",
+  "hatchery_session": "",
+  "base": "main",
+  "hatchery": {
+    "run_id": "brood-feedface-0000-4000-8000-000000000001-hatchery",
+    "ledger": ".hivemind/runs/brood-feedface-0000-4000-8000-000000000001-hatchery/state.json",
+    "workflow": "hatchery-dispatch"
+  },
+  "overlap_risk": "low",
+  "overlap_details": "No shared file scopes detected.",
+  "strains": [
+    {
+      "name": "api",
+      "description": "Implement the API slice.",
+      "worktree_path": "/repo/.claude/worktrees/brood-feedface-0000-4000-8000-000000000001/api",
+      "branch": "strain/brood-feedface-0000-4000-8000-000000000001/api",
+      "tmux_session": "brood-feedface-0000-4000-8000-000000000001-api",
+      "status": "running",
+      "pr": null,
+      "merged": false,
+      "rebased_after": [],
+      "run": {
+        "suggested_id": "brood-feedface-0000-4000-8000-000000000001--api",
+        "workflow_hint": "standard-delivery"
+      }
+    },
+    {
+      "name": "web-ui",
+      "description": "Implement the web UI slice.",
+      "worktree_path": "/repo/.claude/worktrees/brood-feedface-0000-4000-8000-000000000001/web-ui",
+      "branch": "strain/brood-feedface-0000-4000-8000-000000000001/web-ui",
+      "tmux_session": "brood-feedface-0000-4000-8000-000000000001-web-ui",
+      "status": "running",
+      "pr": null,
+      "merged": false,
+      "rebased_after": [],
+      "run": {
+        "suggested_id": "brood-feedface-0000-4000-8000-000000000001--web-ui",
+        "workflow_hint": "standard-delivery"
+      }
+    },
+    {
+      "name": "db.migrations",
+      "description": "Implement the database migrations slice.",
+      "worktree_path": "/repo/.claude/worktrees/brood-feedface-0000-4000-8000-000000000001/db.migrations",
+      "branch": "strain/brood-feedface-0000-4000-8000-000000000001/db.migrations",
+      "tmux_session": "brood-feedface-0000-4000-8000-000000000001-db",
+      "status": "running",
+      "pr": null,
+      "merged": false,
+      "rebased_after": [],
+      "run": {
+        "suggested_id": "brood-feedface-0000-4000-8000-000000000001--db",
+        "workflow_hint": "standard-delivery"
+      }
+    }
+  ],
+  "merge_order": []
+}

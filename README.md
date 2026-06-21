@@ -256,6 +256,7 @@ All skills are invoked using the namespaced form:
 | `hivemind:tdd` | Implement features using Test-Driven Development (TDD) with the red-green-refactor cycle — invoke only in a context that can modify source and test files |
 | `hivemind:spawn-brood` | Dispatch parallel overlord sessions — spawns N Claude Code instances in separate git worktrees via tmux |
 | `hivemind:brood-status` | Check status of broods under the current checkout, with per-strain status — reports per-strain tmux session state, branch existence, and PR status |
+| `hivemind:enable-brood-remote` | User-invoked: fan the Claude `/rc` remote-control command out to every strain in a brood (tmux keystroke injection) |
 | `hivemind:route-workflow` | Sole workflow classifier — selects which workflow handles a non-Reflex request by judgment (never a keyword table); emits selected / ambiguous / exploratory / blocked |
 | `hivemind:init-run-ledger` | Initialize the run ledger for the current overlord instance — creates `.hivemind/runs/<run-id>/` and writes the initial `state.json` via the committed engine script |
 | `hivemind:record-state-result` | Record the outcome of the current workflow state into the run ledger and advance `state.current` to the legal next state, validated against the workflow definition |

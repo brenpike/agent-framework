@@ -1,0 +1,32 @@
+{
+  "manifest_version": 4,
+  "brood_id": "brood-feedface-0000-4000-8000-000000000002",
+  "created_at": "2026-06-21T00:00:00Z",
+  "hatchery_session": "",
+  "base": "main",
+  "hatchery": {
+    "run_id": "brood-feedface-0000-4000-8000-000000000002-hatchery",
+    "ledger": ".hivemind/runs/brood-feedface-0000-4000-8000-000000000002-hatchery/state.json",
+    "workflow": "hatchery-dispatch"
+  },
+  "overlap_risk": "low",
+  "overlap_details": "No shared file scopes detected.",
+  "strains": [
+    {
+      "name": "abc; touch PWNED $(touch SUBPWN) `touch BTPWN` /etc/x",
+      "description": "Hostile strain name attempting shell injection through send-keys.",
+      "worktree_path": "/repo/.claude/worktrees/brood-feedface-0000-4000-8000-000000000002/hostile",
+      "branch": "strain/brood-feedface-0000-4000-8000-000000000002/hostile",
+      "tmux_session": "brood-feedface-0000-4000-8000-000000000002-hostile",
+      "status": "running",
+      "pr": null,
+      "merged": false,
+      "rebased_after": [],
+      "run": {
+        "suggested_id": "brood-feedface-0000-4000-8000-000000000002--hostile",
+        "workflow_hint": "standard-delivery"
+      }
+    }
+  ],
+  "merge_order": []
+}
