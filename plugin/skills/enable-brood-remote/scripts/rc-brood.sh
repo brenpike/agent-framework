@@ -36,8 +36,11 @@
 # EXIT CONTRACT:
 #   0  the fan-out COMPLETED — even with some strains skipped (dead/missing session, unsanitizable
 #      name) or failed (a per-strain tmux error). Zero strains / zero alive sessions also exit 0.
-#   1  ONLY a pre-flight blocker: bad brood-id, missing/unreadable/invalid manifest, missing
-#      dependency. No keystroke is delivered on a pre-flight blocker.
+#   1  ONLY a pre-flight blocker: bad brood-id, missing/unreadable/invalid manifest, a manifest
+#      that FAILS THE SHAPE PREFLIGHT (`.strains` missing/null/object/non-array, or a strain
+#      element that is not an object / carries a non-string name or tmux_session), or a missing
+#      dependency. No keystroke is delivered on a pre-flight blocker. A wrong-shaped/corrupt
+#      manifest is ALWAYS blocked here — never a silent `0 applied` no-op and never object-iterated.
 #
 # SAFETY (injection invariant — the test asserts this):
 #   The ONLY bytes ever sent into any session are the FIXED literal `/rc <short>`, where <short> is
@@ -127,6 +130,41 @@ manifest_brood_id="$(jq -r 'if (.brood_id | type) == "string" then .brood_id els
 [ "$manifest_brood_id" = "$brood_id" ] \
   || blocker "manifest brood_id does not match requested brood-id (stale/tampered manifest): $manifest"
 
+# ── Holistic manifest-shape PREFLIGHT (fail-closed schema gate, before any fan-out) ─
+# CLOSED-BY-CONSTRUCTION: rather than validate each untrusted manifest field piecemeal as a new
+# finding arrives, assert the WHOLE manifest shape up front, ONE fail-closed gate, BEFORE projecting
+# any entry or probing any session. This makes the entire "wrong-shaped manifest reaches fan-out"
+# class unrepresentable past this point — a corrupt/wrong-shaped manifest is ALWAYS a pre-flight
+# blocker (exit 1, zero send-keys), never a silent no-op and never an object-iterated mis-run.
+#
+# What the gate requires (all checked in a SINGLE jq -e pass, so the first violation fails closed):
+#   1. the manifest root is a JSON object                       (already guarded above; re-asserted)
+#   2. `.strains` is a NON-NULL ARRAY — NOT missing, NOT null, NOT an object, NOT any other type.
+#      This is the P1 fix: the former `.strains // []` projected absent/null into an EMPTY brood
+#      (silent `0 applied`) and iterated an OBJECT's VALUES (wrong-shaped manifest processed). A
+#      non-array `.strains` is now a hard blocker here, so the projection below never sees a shape
+#      it cannot handle.
+#   3. EVERY strain element is an OBJECT carrying a STRING `name` AND a STRING `tmux_session`.
+#      This consolidates the per-field type-strictness that the projection's `reqstr` previously
+#      enforced finding-by-finding into the SAME up-front gate. (The projection keeps its own
+#      type-strict `reqstr` as defense-in-depth; this gate is now the primary fail-closed boundary.)
+# A missing/null `name` or `tmux_session` is NOT rejected here — those remain RUNTIME per-strain
+# SKIPS (empty short / no recorded session) below, preserving existing fail-soft behavior. Only
+# present-but-NON-STRING fields (and the container-shape violations) are pre-flight blockers.
+jq -e '
+  (type == "object")
+  and ((.strains | type) == "array")
+  and (
+    .strains
+    | all(
+        (type == "object")
+        and ((.name         | type) | (. == "string" or . == "null"))
+        and ((.tmux_session | type) | (. == "string" or . == "null"))
+      )
+  )
+' "$manifest" >/dev/null 2>&1 \
+  || blocker "brood manifest failed shape preflight (\`.strains\` must be a non-null array of objects, each with string-or-null name + tmux_session): $manifest"
+
 # ── Enumerate strains (DATA reads — never command source) ─────────────────────────
 # Read the name + tmux_session of each strain as TAB-separated DATA via a single jq pass. jq
 # emits each value as a string; we strip C0 control bytes defensively at the read boundary (a
@@ -145,7 +183,10 @@ TAB="$(printf '\t')"
 projection="$(
   jq -r '
     def reqstr($f): if . == null then "" elif (type == "string") then . else error("strain field \($f) is not a string") end;
-    (.strains // [])[]
+    # `.strains` is GUARANTEED a non-null array by the shape preflight above (no `// []` fallback
+    # needed — a non-array `.strains` is already a pre-flight blocker, never reached here). The
+    # per-field `reqstr` type-strictness is retained as defense-in-depth behind that gate.
+    (.strains)[]
     | [ (.name         | reqstr("name")         | gsub("[[:cntrl:]]"; "")),
         (.tmux_session | reqstr("tmux_session") | gsub("[[:cntrl:]]"; "")) ]
     | @tsv

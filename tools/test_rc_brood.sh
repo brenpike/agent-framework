@@ -23,6 +23,11 @@
 #   5. Summary correctness: applied/skipped/failed counts match the scenario.
 #   6. RC-name collision guard: two strains whose names collide under the OLD delete-slug but are
 #      DISTINCT under `short` receive DISTINCT `/rc <short>` names (the de-dup-inheritance fix).
+#   7. Manifest-shape preflight (fail-closed): a wrong-shaped/corrupt manifest is a PRE-FLIGHT
+#      blocker (exit 1, ZERO send-keys), never a silent no-op and never object-value-iterated —
+#      `.strains` MISSING / NULL / OBJECT / non-array → blocker; a non-object strain element →
+#      blocker; a non-string name/tmux_session → blocker (caught up front by the shape gate). The
+#      valid EMPTY-ARRAY `.strains` boundary is NOT regressed (zero-strain run still exits 0).
 #
 # Usage:
 #   ./tools/test_rc_brood.sh
@@ -451,8 +456,130 @@ ALIVE8="$WORKDIR/alive8"; : > "$ALIVE8"
 LOG8="$WORKDIR/log8"; : > "$LOG8"
 run_engine "$ROOT8" "$BID8" "$ALIVE8" "$LOG8"
 assert_eq "malformed:exit" "1" "$RUN_RC" "non-string strain field is a pre-flight blocker"
-assert_contains "malformed:blocker" "failed to project strains from manifest" "$(cat "${LOG8}.stderr")" "projection-failure blocker line"
+assert_contains "malformed:blocker" "shape preflight" "$(cat "${LOG8}.stderr")" "shape-preflight blocker line (caught up front)"
 assert_eq "malformed:zero-sendkeys" "0" "$(count_records "$LOG8")" "no keystroke on malformed projection"
+
+# ── Case 10: manifest-shape preflight — `.strains` MISSING → blocker, zero send-keys ─
+# THE P1 FIX'S REGRESSION GUARD (container-shape gate). A coherent manifest (brood_id matches) that
+# OMITS `.strains` entirely. The OLD `.strains // []` silently turned this into an EMPTY brood and
+# reported a "successful" `0 applied` run. The shape preflight now BLOCKS it: blocker on stderr,
+# exit 1, ZERO send-keys (no silent no-op). Built inline so the test owns the missing-container shape.
+echo '=== Case 10: .strains MISSING — shape-preflight blocker, exit 1, zero send-keys ==='
+BID10="brood-feedface-0000-4000-8000-000000000010"
+ROOT10="$WORKDIR/strains-missing"
+mkdir -p "$ROOT10/.hivemind/broods/$BID10"
+git -C "$ROOT10" init -q
+jq -n --arg bid "$BID10" '{
+  manifest_version: 4, brood_id: $bid, created_at: "2026-06-21T00:00:00Z",
+  hatchery_session: "", base: "main",
+  hatchery: { run_id: ($bid + "-hatchery"), ledger: (".hivemind/runs/" + $bid + "-hatchery/state.json"), workflow: "hatchery-dispatch" },
+  overlap_risk: "low", overlap_details: "No shared file scopes detected.", merge_order: []
+}' > "$ROOT10/.hivemind/broods/$BID10/manifest.json"
+ALIVE10="$WORKDIR/alive10"; : > "$ALIVE10"
+LOG10="$WORKDIR/log10"; : > "$LOG10"
+run_engine "$ROOT10" "$BID10" "$ALIVE10" "$LOG10"
+assert_eq "strains-missing:exit" "1" "$RUN_RC" "missing .strains is a pre-flight blocker (no silent empty brood)"
+assert_contains "strains-missing:blocker" "shape preflight" "$(cat "${LOG10}.stderr")" "shape-preflight blocker line"
+assert_eq "strains-missing:zero-sendkeys" "0" "$(count_records "$LOG10")" "no keystroke when .strains missing"
+
+# ── Case 11: manifest-shape preflight — `.strains` NULL → blocker, zero send-keys ───
+# Coherent manifest whose `.strains` is explicitly null. The OLD `.strains // []` turned null into an
+# EMPTY brood (silent `0 applied`). The shape preflight BLOCKS: blocker, exit 1, zero send-keys.
+echo '=== Case 11: .strains NULL — shape-preflight blocker, exit 1, zero send-keys ==='
+BID11="brood-feedface-0000-4000-8000-000000000011"
+ROOT11="$WORKDIR/strains-null"
+mkdir -p "$ROOT11/.hivemind/broods/$BID11"
+git -C "$ROOT11" init -q
+jq -n --arg bid "$BID11" '{
+  manifest_version: 4, brood_id: $bid, created_at: "2026-06-21T00:00:00Z",
+  hatchery_session: "", base: "main",
+  hatchery: { run_id: ($bid + "-hatchery"), ledger: (".hivemind/runs/" + $bid + "-hatchery/state.json"), workflow: "hatchery-dispatch" },
+  overlap_risk: "low", overlap_details: "No shared file scopes detected.",
+  strains: null, merge_order: []
+}' > "$ROOT11/.hivemind/broods/$BID11/manifest.json"
+ALIVE11="$WORKDIR/alive11"; : > "$ALIVE11"
+LOG11="$WORKDIR/log11"; : > "$LOG11"
+run_engine "$ROOT11" "$BID11" "$ALIVE11" "$LOG11"
+assert_eq "strains-null:exit" "1" "$RUN_RC" "null .strains is a pre-flight blocker (no silent empty brood)"
+assert_contains "strains-null:blocker" "shape preflight" "$(cat "${LOG11}.stderr")" "shape-preflight blocker line"
+assert_eq "strains-null:zero-sendkeys" "0" "$(count_records "$LOG11")" "no keystroke when .strains null"
+
+# ── Case 12: manifest-shape preflight — `.strains` OBJECT → blocker, zero send-keys ─
+# Coherent manifest whose `.strains` is an OBJECT, not an array. The OLD `(.strains // [])[]` iterated
+# the object's VALUES — processing a wrong-shaped manifest and potentially delivering `/rc` from a
+# bogus shape. The shape preflight requires `.strains` to be an ARRAY: blocker, exit 1, zero send-keys.
+echo '=== Case 12: .strains OBJECT — shape-preflight blocker, exit 1, zero send-keys ==='
+BID12="brood-feedface-0000-4000-8000-000000000012"
+ROOT12="$WORKDIR/strains-object"
+mkdir -p "$ROOT12/.hivemind/broods/$BID12"
+git -C "$ROOT12" init -q
+# `.strains` is an OBJECT whose VALUES look like strain entries — exactly the shape the old jq would
+# have iterated. The alive-set even contains the derived sessions, so ONLY the shape gate (not
+# liveness) can be what blocks delivery.
+jq -n --arg bid "$BID12" '{
+  manifest_version: 4, brood_id: $bid, created_at: "2026-06-21T00:00:00Z",
+  hatchery_session: "", base: "main",
+  hatchery: { run_id: ($bid + "-hatchery"), ledger: (".hivemind/runs/" + $bid + "-hatchery/state.json"), workflow: "hatchery-dispatch" },
+  overlap_risk: "low", overlap_details: "No shared file scopes detected.",
+  strains: {
+    api: { name: "api", tmux_session: ($bid + "-api"), status: "running", pr: null, merged: false, rebased_after: [] }
+  },
+  merge_order: []
+}' > "$ROOT12/.hivemind/broods/$BID12/manifest.json"
+ALIVE12="$WORKDIR/alive12"; : > "$ALIVE12"
+printf '%s\n' "$BID12-api" > "$ALIVE12"
+LOG12="$WORKDIR/log12"; : > "$LOG12"
+run_engine "$ROOT12" "$BID12" "$ALIVE12" "$LOG12"
+assert_eq "strains-object:exit" "1" "$RUN_RC" "object .strains is a pre-flight blocker (no value-iteration)"
+assert_contains "strains-object:blocker" "shape preflight" "$(cat "${LOG12}.stderr")" "shape-preflight blocker line"
+assert_eq "strains-object:zero-sendkeys" "0" "$(count_records "$LOG12")" "no keystroke when .strains is an object (values never iterated)"
+
+# ── Case 13: manifest-shape preflight — non-object strain element → blocker, zero ──
+# Coherent manifest whose `.strains` IS an array, but one element is a STRING (not an object). The
+# shape preflight requires EVERY element to be an object: blocker, exit 1, zero send-keys.
+echo '=== Case 13: non-object strain element — shape-preflight blocker, exit 1, zero send-keys ==='
+BID13="brood-feedface-0000-4000-8000-000000000013"
+ROOT13="$WORKDIR/strain-nonobject"
+mkdir -p "$ROOT13/.hivemind/broods/$BID13"
+git -C "$ROOT13" init -q
+jq -n --arg bid "$BID13" '{
+  manifest_version: 4, brood_id: $bid, created_at: "2026-06-21T00:00:00Z",
+  hatchery_session: "", base: "main",
+  hatchery: { run_id: ($bid + "-hatchery"), ledger: (".hivemind/runs/" + $bid + "-hatchery/state.json"), workflow: "hatchery-dispatch" },
+  overlap_risk: "low", overlap_details: "No shared file scopes detected.",
+  strains: [ "not-an-object" ],
+  merge_order: []
+}' > "$ROOT13/.hivemind/broods/$BID13/manifest.json"
+ALIVE13="$WORKDIR/alive13"; : > "$ALIVE13"
+LOG13="$WORKDIR/log13"; : > "$LOG13"
+run_engine "$ROOT13" "$BID13" "$ALIVE13" "$LOG13"
+assert_eq "strain-nonobject:exit" "1" "$RUN_RC" "non-object strain element is a pre-flight blocker"
+assert_contains "strain-nonobject:blocker" "shape preflight" "$(cat "${LOG13}.stderr")" "shape-preflight blocker line"
+assert_eq "strain-nonobject:zero-sendkeys" "0" "$(count_records "$LOG13")" "no keystroke on non-object strain element"
+
+# ── Case 14: shape preflight does NOT regress the empty-array case ─────────────────
+# `.strains` is an EMPTY ARRAY — a VALID shape (a brood with zero strains). This must NOT blocker:
+# it is the legitimate zero-strain run that exits 0 with a `0 strains` summary and zero send-keys.
+# Guards against the preflight over-rejecting the valid empty-array boundary.
+echo '=== Case 14: .strains EMPTY ARRAY — valid, exit 0, zero send-keys, 0-strain summary ==='
+BID14="brood-feedface-0000-4000-8000-000000000014"
+ROOT14="$WORKDIR/strains-empty"
+mkdir -p "$ROOT14/.hivemind/broods/$BID14"
+git -C "$ROOT14" init -q
+jq -n --arg bid "$BID14" '{
+  manifest_version: 4, brood_id: $bid, created_at: "2026-06-21T00:00:00Z",
+  hatchery_session: "", base: "main",
+  hatchery: { run_id: ($bid + "-hatchery"), ledger: (".hivemind/runs/" + $bid + "-hatchery/state.json"), workflow: "hatchery-dispatch" },
+  overlap_risk: "low", overlap_details: "No shared file scopes detected.",
+  strains: [], merge_order: []
+}' > "$ROOT14/.hivemind/broods/$BID14/manifest.json"
+ALIVE14="$WORKDIR/alive14"; : > "$ALIVE14"
+LOG14="$WORKDIR/log14"; : > "$LOG14"
+run_engine "$ROOT14" "$BID14" "$ALIVE14" "$LOG14"
+OUT14="$(cat "${LOG14}.stdout")"
+assert_eq "strains-empty:exit" "0" "$RUN_RC" "empty .strains array is valid (zero-strain run, not a blocker)"
+assert_eq "strains-empty:zero-sendkeys" "0" "$(count_records "$LOG14")" "no keystroke on zero-strain run"
+assert_contains "strains-empty:summary" "0 applied, 0 skipped, 0 failed (of 0 strains)" "$OUT14" "zero-strain summary preserved"
 
 # ── Case 9: RC-name collision guard — distinct `short`, distinct /rc names ─────────
 # THE FIX'S REGRESSION GUARD. Two strains whose names COLLIDE under the OLD delete-based slug
