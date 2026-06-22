@@ -57,6 +57,7 @@ SUITE_TEST_LEDGER_RECONSTRUCT='test_ledger_reconstruct.sh'
 SUITE_TEST_TRIAGE_OPS='test_triage_ops.sh'
 SUITE_TEST_SUBISSUE_OPS='test_subissue_ops.sh'
 SUITE_TEST_SEED_HIVE='test_seed_hive.sh'
+SUITE_TEST_RC_BROOD='test_rc_brood.sh'
 SUITE_TEST_VALIDATE_SUITES='test_validate_suites.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
@@ -79,6 +80,7 @@ ALL_SUITES=(
   "$SUITE_TEST_TRIAGE_OPS"
   "$SUITE_TEST_SUBISSUE_OPS"
   "$SUITE_TEST_SEED_HIVE"
+  "$SUITE_TEST_RC_BROOD"
   "$SUITE_TEST_VALIDATE_SUITES"
 )
 
@@ -102,6 +104,7 @@ KNOWN_SUITES=(
   test_triage_ops.sh
   test_subissue_ops.sh
   test_seed_hive.sh
+  test_rc_brood.sh
   test_validate_suites.sh
 )
 
@@ -328,6 +331,16 @@ map_path() {
     matched=1
   fi
 
+  # test_rc_brood: the enable-brood-remote RC oracle. Like the other tools/test_*.sh legs, this
+  # self-routes a probe of the harness's OWN path to its own suite so --self-test check #1 finds it
+  # reachable. It runs BEFORE (and does NOT return early from) the tools/** escalation below: a real
+  # edit to this file still fail-closes to the full suite via that leg, so the bootstrap guarantee
+  # is preserved.
+  if [[ "$p" == tools/test_rc_brood.sh ]]; then
+    add_selected "$SUITE_TEST_RC_BROOD" "$p (rc-brood harness)"
+    matched=1
+  fi
+
   # tools/** -> validator bootstrap: re-run everything (including this script's --self-test).
   if [[ "$p" == tools/* ]]; then
     force_full_bootstrap "tools change ($p) — validator bootstrap, full suite + self-test"
@@ -411,6 +424,21 @@ map_path() {
   # test_shared_libs: shared libs + brood fixtures.
   if [[ "$p" == plugin/skills/_shared/*.sh || "$p" == tests/brood/* ]]; then
     add_selected "$SUITE_TEST_SHARED" "$p (shared lib / brood fixture)"
+    matched=1
+  fi
+
+  # test_rc_brood: the enable-brood-remote skill + its TWO new RC manifest fixtures. The skill body
+  # is ALSO a plugin/* file (policy_check prose-lints it via the wholesale rule below), but
+  # policy_check NEVER EXERCISES the RC behavior — so without this rule a skill edit would only be
+  # prose-linted, never behaviorally exercised. Route the skill dir and ONLY the two new RC fixtures
+  # to the behavioral suite; the other tests/brood/* fixtures stay owned by test_brood_compat /
+  # test_shared_libs above. (tools/test_rc_brood.sh itself self-routes via the leg near the top.)
+  if [[ "$p" == plugin/skills/enable-brood-remote/* \
+     || "$p" == tests/brood/rc-manifest-all-alive.json \
+     || "$p" == tests/brood/rc-manifest-hostile-name.json \
+     || "$p" == tests/brood/rc-manifest-foreign-session.json \
+     || "$p" == tests/brood/rc-manifest-malformed-name.json ]]; then
+    add_selected "$SUITE_TEST_RC_BROOD" "$p (rc-brood skill/fixture)"
     matched=1
   fi
 
@@ -737,6 +765,7 @@ self_test() {
     ["test_triage_ops.sh"]="tests/triage-backlog/case-x.json"
     ["test_subissue_ops.sh"]="tests/prd-to-issues/case-x.json"
     ["test_seed_hive.sh"]="plugin/skills/seed-hive/scripts/seed-hive.sh"
+    ["test_rc_brood.sh"]="plugin/skills/enable-brood-remote/SKILL.md"
     ["test_validate_suites.sh"]="tools/test_validate_suites.sh"
   )
   local script_name expected_suite suite_path probe_path hit

@@ -1,0 +1,47 @@
+{
+  "manifest_version": 4,
+  "brood_id": "brood-feedface-0000-4000-8000-000000000004",
+  "created_at": "2026-06-21T00:00:00Z",
+  "hatchery_session": "",
+  "base": "main",
+  "hatchery": {
+    "run_id": "brood-feedface-0000-4000-8000-000000000004-hatchery",
+    "ledger": ".hivemind/runs/brood-feedface-0000-4000-8000-000000000004-hatchery/state.json",
+    "workflow": "hatchery-dispatch"
+  },
+  "overlap_risk": "low",
+  "overlap_details": "No shared file scopes detected.",
+  "strains": [
+    {
+      "name": "api",
+      "description": "Legitimate strain whose session lives in this brood's namespace.",
+      "worktree_path": "/repo/.claude/worktrees/brood-feedface-0000-4000-8000-000000000004/api",
+      "branch": "strain/brood-feedface-0000-4000-8000-000000000004/api",
+      "tmux_session": "brood-feedface-0000-4000-8000-000000000004-api",
+      "status": "running",
+      "pr": null,
+      "merged": false,
+      "rebased_after": [],
+      "run": {
+        "suggested_id": "brood-feedface-0000-4000-8000-000000000004--api",
+        "workflow_hint": "standard-delivery"
+      }
+    },
+    {
+      "name": "evil",
+      "description": "Tampered strain pointing tmux_session at an alive UNRELATED session outside this brood's namespace. Must be skipped, never addressed.",
+      "worktree_path": "/repo/.claude/worktrees/brood-feedface-0000-4000-8000-000000000004/evil",
+      "branch": "strain/brood-feedface-0000-4000-8000-000000000004/evil",
+      "tmux_session": "victim-unrelated-session",
+      "status": "running",
+      "pr": null,
+      "merged": false,
+      "rebased_after": [],
+      "run": {
+        "suggested_id": "brood-feedface-0000-4000-8000-000000000004--evil",
+        "workflow_hint": "standard-delivery"
+      }
+    }
+  ],
+  "merge_order": []
+}
