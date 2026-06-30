@@ -39,6 +39,11 @@
 #      failed, ZERO `/rc` mis-delivered to a same-prefix sibling, no bare-name target ever emitted
 #      (Case 16b). The fake models real tmux exact-first-then-PREFIX session-name fallback, so a
 #      hypothetical revert to bare-name addressing WOULD mis-deliver to the sibling and trip 16/16b.
+#  10. Exactly-one-active-pane resolver (STEP-001 fail-closed): the send-time resolver consumes ALL
+#      `list-panes -s -t "=<session>"` rows and counts the ACTIVE (`11`) rows, requiring EXACTLY ONE.
+#      A session reporting >1 active pane (or zero) fails CLOSED — `failed:` disposition, strain counted
+#      failed, ZERO `/rc` sent (it never selects one of multiple active panes), fan-out still exits 0
+#      (Case 17). A revert to break-on-first would silently pick one pane and deliver, tripping Case 17.
 #
 # Usage:
 #   ./tools/test_rc_brood.sh
@@ -106,6 +111,9 @@ trap cleanup EXIT
 #                           `<session>\t11\t<pane_id>` (field2 `11` == active win + active pane;
 #                           field3 the stable pane-id derived from the session name). Not alive →
 #                           empty output, exit 1. The `=` prefix IS honored here (target-SESSION).
+#                           If <s> is in the space-separated $TMUX_MULTI_ACTIVE list, a SECOND active
+#                           (`11`) row with a DISTINCT pane id is emitted too (models a >1-active-pane
+#                           anomaly the STEP-001 resolver must reject; empty default → one row).
 #   send-keys -t <target> ...
 #                         : models tmux target-PANE resolution. A pane-id target (`%…`) has NO prefix
 #                           fallback — it delivers ONLY when its session is alive AND the pane is not
@@ -195,6 +203,15 @@ case "$sub" in
     # $TMUX_PANE_GONE_AT_SEND, so list-panes here ignores that override (the race the engine closes).
     if session_alive "$target"; then
       printf '%s\t11\t%s\n' "$target" "$(pane_id_for "$target")"
+      # $TMUX_MULTI_ACTIVE: a session in this space-separated list gets a SECOND active (`11`) row with
+      # a DISTINCT pane id, so list-panes returns 2 active rows — the >1-active-pane anomaly the
+      # STEP-001 resolver must fail CLOSED on. Sessions NOT listed keep exactly one active row.
+      for m in ${TMUX_MULTI_ACTIVE:-}; do
+        if [ "$m" = "$target" ]; then
+          printf '%s\t11\t%s\n' "$target" "$(pane_id_for "$target-multi-active-2")"
+          break
+        fi
+      done
       exit 0
     fi
     exit 1
@@ -312,6 +329,7 @@ run_engine() {
          TMUX_SENDKEYS_LOG="$sendkeys_log" \
          TMUX_SENDKEYS_FAIL_TARGET="${TMUX_SENDKEYS_FAIL_TARGET:-}" \
          TMUX_PANE_GONE_AT_SEND="${TMUX_PANE_GONE_AT_SEND:-}" \
+         TMUX_MULTI_ACTIVE="${TMUX_MULTI_ACTIVE:-}" \
          bash "$ENGINE" "$brood_id"
   ) >"${sendkeys_log}.stdout" 2>"${sendkeys_log}.stderr"
   RUN_RC=$?
@@ -956,6 +974,51 @@ assert_not_contains "pane-gone:no-pane-sibling" "ARG:$PANE_SIBLING16B" "$LOGTEXT
 # No bare session-name target is ever emitted (neither exact nor sibling).
 assert_not_contains "pane-gone:no-bare-exact" "ARG:$BID16B-api" "$LOGTEXT16B" "exact session bare name never targeted"
 assert_not_contains "pane-gone:no-bare-sibling" "ARG:$BID16B-api-x" "$LOGTEXT16B" "sibling bare name never targeted"
+
+# ── Case 17: multi-active-row fail-closed — >1 active pane resolves to NO send ─────
+# THE STEP-001 RESOLVER REGRESSION GUARD. The send-time resolver consumes ALL list-panes rows and
+# counts the active (`11`) rows, requiring EXACTLY ONE. A coherent single-strain manifest (name=api,
+# derived identity <bid>-api) whose EXACT session is placed in TMUX_MULTI_ACTIVE so list-panes returns
+# TWO active rows (active_count=2). The resolver fails CLOSED: `failed:` disposition carrying the
+# `expected exactly one active pane` substring, ZERO send-keys (it never selects one of the two), the
+# strain counted failed, and the fan-out still exits 0 (a per-strain resolution failure is not fatal).
+# A revert to break-on-first (select the first `11` row) would silently pick one pane and DELIVER `/rc`
+# — tripping the zero-send assertion below.
+echo '=== Case 17: multi-active-row fail-closed — >1 active pane, zero send ==='
+BID17="brood-feedface-0000-4000-8000-000000000017"
+ROOT17="$WORKDIR/multi-active"
+mkdir -p "$ROOT17/.hivemind/broods/$BID17"
+git -C "$ROOT17" init -q
+jq -n --arg bid "$BID17" '{
+  manifest_version: 4, brood_id: $bid, created_at: "2026-06-21T00:00:00Z",
+  hatchery_session: "", base: "main",
+  hatchery: { run_id: ($bid + "-hatchery"), ledger: (".hivemind/runs/" + $bid + "-hatchery/state.json"), workflow: "hatchery-dispatch" },
+  overlap_risk: "low", overlap_details: "No shared file scopes detected.",
+  strains: [ {
+    name: "api",
+    description: "Coherent strain whose exact session reports >1 active pane (resolver must fail closed).",
+    worktree_path: ("/repo/.claude/worktrees/" + $bid + "/api"),
+    branch: ("strain/" + $bid + "/api"),
+    tmux_session: ($bid + "-api"),
+    status: "running", pr: null, merged: false, rebased_after: [],
+    run: { suggested_id: ($bid + "--api"), workflow_hint: "standard-delivery" }
+  } ],
+  merge_order: []
+}' > "$ROOT17/.hivemind/broods/$BID17/manifest.json"
+ALIVE17="$WORKDIR/alive17"
+LOG17="$WORKDIR/log17"
+: > "$LOG17"
+printf '%s\n' "$BID17-api" > "$ALIVE17"
+# The exact session reports TWO active (`11`) panes — the anomaly the resolver must reject.
+TMUX_MULTI_ACTIVE="$BID17-api"
+run_engine "$ROOT17" "$BID17" "$ALIVE17" "$LOG17"
+TMUX_MULTI_ACTIVE=""
+OUT17="$(cat "${LOG17}.stdout")"
+assert_eq "multi-active:exit" "0" "$RUN_RC" "per-strain resolution failure does not abort fan-out"
+assert_contains "multi-active:failed-line" "failed: api" "$OUT17" "strain recorded failed"
+assert_contains "multi-active:expected-one" "expected exactly one active pane" "$OUT17" "multi-active fails closed with the exactly-one-active-pane error"
+assert_contains "multi-active:summary" "0 applied, 0 skipped, 1 failed (of 1 strains)" "$OUT17" "strain counted failed, none applied"
+assert_eq "multi-active:zero-sendkeys" "0" "$(count_records "$LOG17")" "no keystroke delivered when >1 active pane (never selects one)"
 
 # ── Tally ─────────────────────────────────────────────────────────────────────────
 echo
