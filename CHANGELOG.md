@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+### Fixed
+
+- enable-brood-remote: `/rc` fan-out now delivers on tmux 3.0a. The `=` exact-match prefix is target-session-only, so it is kept on the `has-session` liveness gate but dropped from the `send-keys` calls (which address the bare proven-exact identity); tmux stderr is now surfaced on the failed path. Closes #311.
+
 ## [2.38.0] - 2026-06-21
 
 ### Added
