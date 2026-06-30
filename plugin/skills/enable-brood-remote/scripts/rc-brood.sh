@@ -288,9 +288,18 @@ while [ "$idx" -lt "$strain_count" ]; do
   #
   # FIELD ORDER (tab-separated, for the test to mirror): 1=session_name  2=window_active+pane_active
   # (concatenated two-digit flag field, `11` == active window AND active pane)  3=pane_id (`%N`).
-  # Select the single `11` row; capture its session_name (resolved_session_name) and pane_id
-  # (target_pane). If resolution errors (raced session death between the liveness gate and here) or
-  # yields no `11` row, record `failed:` and do NOT send.
+  #
+  # EXACTLY-ONE-CARDINALITY CONTRACT (ADR-0021: ground-truth ambiguous → fail closed, never silently
+  # resolved): CONSUME EVERY row — do NOT enumerate-and-select-first (a break-on-first, even a
+  # counter-with-early-break, is select-first in disguise and is REJECTED). Count the rows whose
+  # active-flags field == `11` into `active_count`, capturing each one's session_name and pane_id.
+  # tmux GUARANTEES exactly ONE active pane per session, so the count is asserted on the ACTIVE(`11`)
+  # rows — NOT on total row count (a legit multi-window session has many panes but exactly one
+  # active). After the loop, require `active_count == 1`: anything else fails CLOSED (this single
+  # check covers BOTH zero `11` rows AND >1 `11` rows uniformly). A count != 1 means tmux's exact
+  # invariant was violated for the `=`-scoped session — the `=`-exact scoping was defeated, an
+  # anomaly — so we record `failed:` and do NOT send. If the `list-panes` itself errors (raced
+  # session death between the liveness gate and here) that is the separate rc!=0 fail-closed branch.
   pane_rows="$(tmux list-panes -s -t "=$expected_session" -F '#{session_name}'"$TAB"'#{window_active}#{pane_active}'"$TAB"'#{pane_id}' 2>&1)" || {
     printf 'failed: %s (could not resolve pane id for session %s: %s)\n' "$short" "$expected_session" "$pane_rows"
     failed=$((failed + 1))
@@ -298,15 +307,16 @@ while [ "$idx" -lt "$strain_count" ]; do
   }
   resolved_session_name=""
   target_pane=""
+  active_count=0
   while IFS="$TAB" read -r r_session r_flags r_pane; do
     if [ "$r_flags" = "11" ]; then
+      active_count=$((active_count + 1))
       resolved_session_name="$r_session"
       target_pane="$r_pane"
-      break
     fi
   done <<< "$pane_rows"
-  if [ -z "$target_pane" ]; then
-    printf 'failed: %s (no active pane resolved for session %s: %s)\n' "$short" "$expected_session" "$pane_rows"
+  if [ "$active_count" -ne 1 ]; then
+    printf 'failed: %s (expected exactly one active pane for session %s, found %d: %s)\n' "$short" "$expected_session" "$active_count" "$pane_rows"
     failed=$((failed + 1))
     continue
   fi
