@@ -119,6 +119,16 @@ case "$sub" in
     exit 1
     ;;
   send-keys)
+    # Parse `-t <target>` so we can model tmux's target-PANE resolution rules below.
+    sk_target=""
+    sk_args=("$@")
+    i=0
+    while [ "$i" -lt "${#sk_args[@]}" ]; do
+      case "${sk_args[$i]}" in
+        -t) i=$((i + 1)); sk_target="${sk_args[$i]:-}" ;;
+      esac
+      i=$((i + 1))
+    done
     # Capture the full send-keys invocation verbatim. One record per call, args on their own lines,
     # framed by a SEND-KEYS marker so the test can split records unambiguously.
     {
@@ -126,6 +136,20 @@ case "$sub" in
       for a in "$@"; do printf 'ARG:%s\n' "$a"; done
       printf 'END-RECORD\n'
     } >> "${TMUX_SENDKEYS_LOG:?TMUX_SENDKEYS_LOG unset}"
+    # Model tmux 3.0a: the exact-match `=` prefix is a target-SESSION-only modifier and is NOT honored
+    # in target-PANE resolution. A `=`-prefixed target to `send-keys` therefore FAILS with `can't find
+    # pane` (rc=1). This locks the regression: the engine must NEVER hand a `=`-prefixed target to
+    # send-keys — it must address the bare proven-exact identity.
+    case "$sk_target" in
+      =*) printf "can't find pane: %s\n" "$sk_target" >&2; exit 1 ;;
+    esac
+    # Test-controlled forced failure: when the send-keys target equals $TMUX_SENDKEYS_FAIL_TARGET,
+    # emit a recognizable line on STDERR and exit non-zero so a case can assert the engine surfaces
+    # the tmux stderr text on its `failed:` disposition line.
+    if [ -n "${TMUX_SENDKEYS_FAIL_TARGET:-}" ] && [ "$sk_target" = "$TMUX_SENDKEYS_FAIL_TARGET" ]; then
+      printf "can't find pane: %s\n" "$sk_target" >&2
+      exit 1
+    fi
     exit 0
     ;;
   *)
@@ -163,6 +187,7 @@ run_engine() {
          HOME="$root/fakehome" \
          TMUX_ALIVE_FILE="$alive_file" \
          TMUX_SENDKEYS_LOG="$sendkeys_log" \
+         TMUX_SENDKEYS_FAIL_TARGET="${TMUX_SENDKEYS_FAIL_TARGET:-}" \
          bash "$ENGINE" "$brood_id"
   ) >"${sendkeys_log}.stdout" 2>"${sendkeys_log}.stderr"
   RUN_RC=$?
@@ -227,14 +252,15 @@ assert_contains "all-alive:short-db"    "/rc db-migrations" "$PAYLOADS1" "db.mig
 assert_eq "all-alive:literal-payload-count" "3" "$(printf '%s\n' "$PAYLOADS1" | grep -c '^/rc ')" "exactly 3 /rc literals"
 assert_contains "all-alive:summary" "3 applied, 0 skipped, 0 failed (of 3 strains)" "$OUT1" "summary counts"
 assert_contains "all-alive:applied-api" "applied: api" "$OUT1"
-# Exact-match targeting: every delivered send-keys addresses the GROUND-TRUTH identity with tmux's
-# `=` exact-match prefix (`-t "=<brood_id>-<short>"`). The fake tmux logs full argv, so assert the
-# `=`-prefixed target ARG appears for each delivered strain (and that the derived db-migrations
-# identity — not the manifest's old `-db` value — is the address).
+# Exact-identity targeting: every delivered send-keys addresses the GROUND-TRUTH identity at its BARE
+# name (`-t "<brood_id>-<short>"`, NOT `=`-prefixed — `=` is a target-session-only modifier tmux 3.0a
+# does not honor for send-keys' pane resolution; exactness is proven by the `=`-gated has-session). The
+# fake tmux logs full argv, so assert the bare target ARG appears for each delivered strain (and that
+# the derived db-migrations identity — not the manifest's old `-db` value — is the address).
 LOGTEXT1="$(cat "$LOG1")"
-assert_contains "all-alive:exact-target-api"    "ARG:=$BID1-api"           "$LOGTEXT1" "api addressed with = exact-match prefix"
-assert_contains "all-alive:exact-target-webui"  "ARG:=$BID1-web-ui"        "$LOGTEXT1" "web-ui addressed with = exact-match prefix"
-assert_contains "all-alive:exact-target-db"     "ARG:=$BID1-db-migrations" "$LOGTEXT1" "db.migrations addressed at derived identity with = prefix"
+assert_contains "all-alive:exact-target-api"    "ARG:$BID1-api"           "$LOGTEXT1" "api addressed at bare exact identity"
+assert_contains "all-alive:exact-target-webui"  "ARG:$BID1-web-ui"        "$LOGTEXT1" "web-ui addressed at bare exact identity"
+assert_contains "all-alive:exact-target-db"     "ARG:$BID1-db-migrations" "$LOGTEXT1" "db.migrations addressed at derived bare identity"
 
 # ── Case 2: fail-soft on dead session ─────────────────────────────────────────────
 # Same 3-strain manifest, but the web-ui session is NOT alive → web-ui skipped, api + db.migrations
@@ -338,11 +364,11 @@ done
 # No side-effect file the hostile name attempted to create exists — search the whole workdir + cwd.
 INJECT_HITS="$(find "$WORKDIR" \( -name 'PWNED' -o -name 'SUBPWN' -o -name 'BTPWN' \) 2>/dev/null | head -n 1)"
 assert_eq "hostile:no-side-effect" "" "$INJECT_HITS" "no injected file (PWNED/SUBPWN/BTPWN) created"
-# The delivery addresses the GROUND-TRUTH-derived identity with tmux's `=` exact-match prefix — proving
+# The delivery addresses the GROUND-TRUTH-derived identity at its BARE name (not `=`-prefixed) — proving
 # the coherence gate passed and the sanitized payload was actually delivered (not skipped). The slug
 # (command-arg charset) and the session identity (lowercased `-` charset) legitimately differ.
 LOGTEXT4="$(cat "$LOG4")"
-assert_contains "hostile:exact-target" "ARG:=$HOSTILE_SESSION4" "$LOGTEXT4" "hostile strain addressed at derived identity with = prefix"
+assert_contains "hostile:exact-target" "ARG:$HOSTILE_SESSION4" "$LOGTEXT4" "hostile strain addressed at derived bare identity"
 
 # ── Case 6: manifest brood_id mismatch → pre-flight blocker, zero send-keys ───────
 # A well-formed REQUESTED brood-id, a manifest staged under that id, but the manifest's OWN top-level
@@ -443,6 +469,7 @@ assert_eq "sibling:exit" "0" "$RUN_RC" "sibling mismatch skip does not abort fan
 assert_eq "sibling:zero-sendkeys" "0" "$(count_records "$LOG7S")" "ZERO /rc delivered to the sibling (prefix bypass gone)"
 assert_contains "sibling:skip-line" "skipped: api (manifest session $BID7S-api-sibling does not match derived identity $BID7S-api)" "$OUT7S" "exact-identity-mismatch skip disposition"
 assert_not_contains "sibling:never-addressed" "ARG:=$BID7S-api-sibling" "$LOGTEXT7S" "sibling session never targeted"
+assert_not_contains "sibling:bare-never-addressed" "ARG:$BID7S-api-sibling" "$LOGTEXT7S" "sibling session never targeted (bare)"
 assert_contains "sibling:summary" "0 applied, 1 skipped, 0 failed (of 1 strains)" "$OUT7S" "summary shows the skip"
 
 # ── Case 8: malformed strain field → pre-flight blocker, zero send-keys ───────────
@@ -641,10 +668,37 @@ PAYLOADS9="$(literal_payloads "$LOG9")"
 assert_contains "collision:rc-api-v1" "/rc api-v1" "$PAYLOADS9" "api/v1 -> distinct /rc api-v1"
 assert_contains "collision:rc-apiv1"  "/rc apiv1"  "$PAYLOADS9" "apiv1 -> distinct /rc apiv1"
 assert_eq "collision:literal-count" "2" "$(printf '%s\n' "$PAYLOADS9" | grep -c '^/rc ')" "two distinct /rc literals"
-# Each into its OWN exact `=`-session.
-assert_contains "collision:target-api-v1" "ARG:=$BID9-api-v1" "$LOGTEXT9" "api-v1 addressed at own = session"
-assert_contains "collision:target-apiv1"  "ARG:=$BID9-apiv1"  "$LOGTEXT9" "apiv1 addressed at own = session"
+# Each into its OWN bare exact-identity session.
+assert_contains "collision:target-api-v1" "ARG:$BID9-api-v1" "$LOGTEXT9" "api-v1 addressed at own bare exact session"
+assert_contains "collision:target-apiv1"  "ARG:$BID9-apiv1"  "$LOGTEXT9" "apiv1 addressed at own bare exact session"
 assert_contains "collision:summary" "2 applied, 0 skipped, 0 failed (of 2 strains)" "$OUT9" "both applied, no collision"
+
+# ── Case 15: failed-path stderr surfacing — tmux send-keys error reaches the report ─
+# A coherent all-alive manifest, but one strain's send-keys is forced to FAIL (fake tmux exits
+# non-zero and prints `can't find pane: <target>` on STDERR for the chosen target). The engine must
+# capture that stderr (not swallow it with `2>/dev/null`) and surface it on the `failed:` disposition
+# line, count the strain as failed, and STILL complete the fan-out (exit 0) delivering the other two.
+echo '=== Case 15: failed-path stderr surfacing — tmux error text on the failed: line ==='
+ROOT15="$(new_brood_root sendkeys-fail "$BID1" "$FIXTURES/rc-manifest-all-alive.json")"
+ALIVE15="$WORKDIR/alive15"
+LOG15="$WORKDIR/log15"
+: > "$LOG15"
+printf '%s\n' \
+  "$BID1-api" \
+  "$BID1-web-ui" \
+  "$BID1-db-migrations" > "$ALIVE15"
+# Force the api strain's bare-identity send-keys to fail; the engine addresses the bare exact identity.
+TMUX_SENDKEYS_FAIL_TARGET="$BID1-api"
+run_engine "$ROOT15" "$BID1" "$ALIVE15" "$LOG15"
+TMUX_SENDKEYS_FAIL_TARGET=""
+OUT15="$(cat "${LOG15}.stdout")"
+assert_eq "sendkeys-fail:exit" "0" "$RUN_RC" "per-strain send-keys failure does not abort fan-out"
+# The engine surfaces the captured tmux stderr text on the api strain's `failed:` line.
+assert_contains "sendkeys-fail:failed-line" "failed: api" "$OUT15" "api strain recorded failed"
+assert_contains "sendkeys-fail:stderr-surfaced" "can't find pane: $BID1-api" "$OUT15" "tmux stderr text surfaced on failed: line"
+# The other two strains still deliver; summary counts the single failure.
+assert_contains "sendkeys-fail:db-applied" "applied: db-migrations" "$OUT15" "db strain still delivered"
+assert_contains "sendkeys-fail:summary" "2 applied, 0 skipped, 1 failed (of 3 strains)" "$OUT15" "summary counts the failure"
 
 # ── Case 5: summary correctness already asserted per case above ───────────────────
 # Cases 1, 2 assert the exact applied/skipped/failed triple; Case 4 asserts the hostile slug path

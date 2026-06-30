@@ -62,11 +62,17 @@
 #   piped `tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-'` (replicated verbatim from
 #   spawn-brood.sh). The manifest `tmux_session` is then a VALIDATED COHERENCE SIGNAL only: it MUST
 #   equal the derived identity by EXACT EQUALITY, and any mismatch (sibling, prefix, glob, foreign,
-#   or stale) SKIPS the strain — it never becomes the targeting key. Both tmux calls address the
-#   derived identity with tmux's exact-match `=` prefix (`-t "=$expected_session"`), which forces
-#   tmux to accept ONLY an exact session-name match and kills tmux's default prefix/fnmatch
-#   fallback. A stale/tampered manifest therefore cannot steer `/rc` into a sibling or wrong live
-#   pane: the address is ground-truth, and the manifest value is merely cross-checked.
+#   or stale) SKIPS the strain — it never becomes the targeting key. The liveness guard uses tmux's
+#   exact-match `=` prefix (`has-session -t "=$expected_session"`), a target-SESSION modifier that
+#   forces an EXACT session-name match (no prefix/fnmatch fallback) on EVERY tmux version. The
+#   send-keys delivery then addresses the BARE proven-exact identity (`-t "$expected_session"`):
+#   `=` is a target-session-ONLY modifier and is NOT honored in target-PANE resolution (on tmux
+#   3.0a `send-keys -t "=<s>"` fails with `can't find pane`), so send-keys must address the bare
+#   name. Exactness is already guaranteed by the `=`-gated has-session above PLUS tmux's
+#   exact-match-first pane resolution — a bare name only prefix-matches a sibling when the EXACT
+#   session is ABSENT, which the liveness gate has just excluded. A stale/tampered manifest
+#   therefore cannot steer `/rc` into a sibling or wrong live pane: the address is ground-truth,
+#   and the manifest value is merely cross-checked.
 #
 # CONVENTIONS (mirrors brood-status-collect.sh / spawn-brood.sh): `set -euo pipefail`, an EXIT
 # trap ending in a guaranteed-zero `:`, self-location via `cd && pwd -P` (NO realpath/readlink, NO
@@ -270,16 +276,22 @@ while [ "$idx" -lt "$strain_count" ]; do
   #      literal send-keys is sufficient — no bracketed-paste needed (per the delivery decision).
   #   2. a SEPARATE Enter key event submits the slash command.
   # `short` is a [a-z0-9-] token (the canonical de-duped strain identity), so the literal payload
-  # cannot carry framing or control bytes. Address the GROUND-TRUTH identity with tmux's exact-match
-  # `=` prefix on BOTH sends. Any tmux failure for THIS strain is recorded `failed` and the loop
-  # continues — a per-strain error never aborts the fan-out.
-  if ! tmux send-keys -t "=$expected_session" -l -- "/rc $short" 2>/dev/null; then
-    printf 'failed: %s (send-keys literal failed for session %s)\n' "$short" "$expected_session"
+  # cannot carry framing or control bytes. Address the BARE proven-exact identity (NOT a `=`-prefixed
+  # target): `=` is a target-SESSION-only modifier and is NOT honored in target-PANE resolution (on
+  # tmux 3.0a `send-keys -t "=<s>"` fails with `can't find pane`), so send-keys addresses the bare
+  # `$expected_session`. Exactness is already proven by the `=`-gated has-session above plus tmux's
+  # exact-match-first pane resolution. Capture each send-keys' stderr and surface it on the `failed:`
+  # disposition line — the bare `2>/dev/null` that hid `can't find pane` is gone. On SUCCESS send-keys
+  # emits nothing, so the captured value is empty and the `applied:` path stays byte-identical. Any
+  # tmux failure for THIS strain is recorded `failed` and the loop continues — a per-strain error
+  # never aborts the fan-out.
+  if ! err="$(tmux send-keys -t "$expected_session" -l -- "/rc $short" 2>&1)"; then
+    printf 'failed: %s (send-keys literal failed for session %s: %s)\n' "$short" "$expected_session" "$err"
     failed=$((failed + 1))
     continue
   fi
-  if ! tmux send-keys -t "=$expected_session" Enter 2>/dev/null; then
-    printf 'failed: %s (send-keys Enter failed for session %s)\n' "$short" "$expected_session"
+  if ! err="$(tmux send-keys -t "$expected_session" Enter 2>&1)"; then
+    printf 'failed: %s (send-keys Enter failed for session %s: %s)\n' "$short" "$expected_session" "$err"
     failed=$((failed + 1))
     continue
   fi
