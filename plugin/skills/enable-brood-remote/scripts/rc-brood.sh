@@ -55,24 +55,33 @@
 #   charset), so the literal payload cannot carry framing or control bytes. A strain name that
 #   derives an empty `short` is SKIPPED — no malformed `/rc` is ever sent.
 #
-# TARGET-TRUST (identity invariant — ground-truth-derived exact addressing):
+# TARGET-TRUST (identity invariant — ground-truth-derived pane-id addressing):
 #   The tmux session a strain's `/rc` is delivered to is NOT taken from the untrusted manifest
 #   `tmux_session` field. Each strain's EXPECTED session is DERIVED FROM GROUND TRUTH exactly as
 #   spawn-brood derives it at spawn time — `<brood_id>-<short>`, where `short` is the strain name
 #   piped `tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-'` (replicated verbatim from
 #   spawn-brood.sh). The manifest `tmux_session` is then a VALIDATED COHERENCE SIGNAL only: it MUST
 #   equal the derived identity by EXACT EQUALITY, and any mismatch (sibling, prefix, glob, foreign,
-#   or stale) SKIPS the strain — it never becomes the targeting key. The liveness guard uses tmux's
-#   exact-match `=` prefix (`has-session -t "=$expected_session"`), a target-SESSION modifier that
-#   forces an EXACT session-name match (no prefix/fnmatch fallback) on EVERY tmux version. The
-#   send-keys delivery then addresses the BARE proven-exact identity (`-t "$expected_session"`):
-#   `=` is a target-session-ONLY modifier and is NOT honored in target-PANE resolution (on tmux
-#   3.0a `send-keys -t "=<s>"` fails with `can't find pane`), so send-keys must address the bare
-#   name. Exactness is already guaranteed by the `=`-gated has-session above PLUS tmux's
-#   exact-match-first pane resolution — a bare name only prefix-matches a sibling when the EXACT
-#   session is ABSENT, which the liveness gate has just excluded. A stale/tampered manifest
-#   therefore cannot steer `/rc` into a sibling or wrong live pane: the address is ground-truth,
-#   and the manifest value is merely cross-checked.
+#   or stale) SKIPS the strain — it never becomes the targeting key.
+#
+#   DELIVERY IS PANE-ID-ADDRESSED (not session-name-addressed) to close a TOCTOU prefix-match hole.
+#   tmux resolves a target-PANE name exact-first-then-PREFIX-fallback, so a bare
+#   `send-keys -t "$expected_session"` could, if the exact session died/renamed between the liveness
+#   gate and the send, prefix-match a same-brood SIBLING (e.g. brood-<uuid>-api vs
+#   brood-<uuid>-api-migrations) and mis-deliver the `/rc` payload or its Enter. To eliminate that:
+#     - The liveness guard uses tmux's exact-match `=` prefix (`has-session -t "=$expected_session"`),
+#       a target-SESSION modifier that forces an EXACT session-name match (no prefix/fnmatch fallback)
+#       on EVERY tmux version, to SKIP a dead session.
+#     - Immediately before delivery we resolve the active pane id (`%N`) of the EXACT session in
+#       target-SESSION context via `list-panes -s -t "=$expected_session"` (the `=` prefix IS honored
+#       in target-SESSION contexts on 3.0a), selecting the row whose window+pane active flags == `11`.
+#     - BOTH sends address that resolved `%N` pane-id handle. A pane id has NO prefix fallback and
+#       ERRORS (`can't find pane: %N`, rc=1) if the pane disappears — so a raced death between resolve
+#       and send fails CLOSED into a `failed:` disposition, never silently mis-delivering to a sibling.
+#   `=` is therefore used ONLY in target-SESSION contexts (has-session, list-panes -s) that 3.0a
+#   honors, and is NEVER used as a target-PANE spec (on 3.0a `send-keys -t "=<s>"` fails with
+#   `can't find pane`). A stale/tampered manifest cannot steer `/rc` into a sibling or wrong live
+#   pane: the address is a ground-truth-derived pane id, and the manifest value is merely cross-checked.
 #
 # CONVENTIONS (mirrors brood-status-collect.sh / spawn-brood.sh): `set -euo pipefail`, an EXIT
 # trap ending in a guaranteed-zero `:`, self-location via `cd && pwd -P` (NO realpath/readlink, NO
@@ -270,27 +279,67 @@ while [ "$idx" -lt "$strain_count" ]; do
     continue
   fi
 
-  # Deliver the FIXED form. Two separate send-keys events:
+  # Resolve the EXACT session's active pane id (`%N`) immediately before delivery — the targeting
+  # PRIMITIVE is a pane-id handle, NOT a session name, so there is no prefix-match fallback into a
+  # sibling. We list panes in target-SESSION context with the exact-match `=` prefix (HONORED on
+  # 3.0a for `list-panes -s`), one row per pane:
+  #
+  #   list-panes -s -t "=$expected_session" -F '#{session_name}\t#{window_active}#{pane_active}\t#{pane_id}'
+  #
+  # FIELD ORDER (tab-separated, for the test to mirror): 1=session_name  2=window_active+pane_active
+  # (concatenated two-digit flag field, `11` == active window AND active pane)  3=pane_id (`%N`).
+  # Select the single `11` row; capture its session_name (resolved_session_name) and pane_id
+  # (target_pane). If resolution errors (raced session death between the liveness gate and here) or
+  # yields no `11` row, record `failed:` and do NOT send.
+  pane_rows="$(tmux list-panes -s -t "=$expected_session" -F '#{session_name}'"$TAB"'#{window_active}#{pane_active}'"$TAB"'#{pane_id}' 2>&1)" || {
+    printf 'failed: %s (could not resolve pane id for session %s: %s)\n' "$short" "$expected_session" "$pane_rows"
+    failed=$((failed + 1))
+    continue
+  }
+  resolved_session_name=""
+  target_pane=""
+  while IFS="$TAB" read -r r_session r_flags r_pane; do
+    if [ "$r_flags" = "11" ]; then
+      resolved_session_name="$r_session"
+      target_pane="$r_pane"
+      break
+    fi
+  done <<< "$pane_rows"
+  if [ -z "$target_pane" ]; then
+    printf 'failed: %s (no active pane resolved for session %s: %s)\n' "$short" "$expected_session" "$pane_rows"
+    failed=$((failed + 1))
+    continue
+  fi
+
+  # Ownership assert (explicit belt; impossible-by-construction given the `=`-scoped list-panes): the
+  # resolved pane's session name MUST be byte-equal to the ground-truth identity. A mismatch means
+  # the `=` scoping was somehow defeated — record `failed:`, do NOT send.
+  if [ "$resolved_session_name" != "$expected_session" ]; then
+    printf 'failed: %s (resolved session %s does not match derived identity %s)\n' "$short" "$resolved_session_name" "$expected_session"
+    failed=$((failed + 1))
+    continue
+  fi
+
+  # Deliver the FIXED form to the resolved pane id (`%N`). Two separate send-keys events:
   #   1. `-l --` types the literal text `/rc <short>` verbatim (no key-name interpretation; the
   #      leading `/` and the short are sent as characters). For a SHORT fixed one-line command,
   #      literal send-keys is sufficient — no bracketed-paste needed (per the delivery decision).
   #   2. a SEPARATE Enter key event submits the slash command.
   # `short` is a [a-z0-9-] token (the canonical de-duped strain identity), so the literal payload
-  # cannot carry framing or control bytes. Address the BARE proven-exact identity (NOT a `=`-prefixed
-  # target): `=` is a target-SESSION-only modifier and is NOT honored in target-PANE resolution (on
-  # tmux 3.0a `send-keys -t "=<s>"` fails with `can't find pane`), so send-keys addresses the bare
-  # `$expected_session`. Exactness is already proven by the `=`-gated has-session above plus tmux's
-  # exact-match-first pane resolution. Capture each send-keys' stderr and surface it on the `failed:`
-  # disposition line — the bare `2>/dev/null` that hid `can't find pane` is gone. On SUCCESS send-keys
-  # emits nothing, so the captured value is empty and the `applied:` path stays byte-identical. Any
-  # tmux failure for THIS strain is recorded `failed` and the loop continues — a per-strain error
-  # never aborts the fan-out.
-  if ! err="$(tmux send-keys -t "$expected_session" -l -- "/rc $short" 2>&1)"; then
+  # cannot carry framing or control bytes. BOTH sends address `$target_pane` (a `%N` pane-id handle):
+  # a pane id has NO prefix-match fallback, so it cannot mis-deliver into a sibling, and it ERRORS
+  # (`can't find pane: %N`, rc=1) if the pane disappeared between resolve and send — failing CLOSED.
+  # Capture each send-keys' stderr and surface it on the `failed:` disposition line. On SUCCESS
+  # send-keys emits nothing, so the captured value is empty and is never printed. Any tmux failure
+  # for THIS strain is recorded `failed` and the loop continues — a per-strain error never aborts the
+  # fan-out. The `applied:` line keeps printing the user-facing `$expected_session` identity (the
+  # pane id is an internal handle and is NOT leaked into output).
+  if ! err="$(tmux send-keys -t "$target_pane" -l -- "/rc $short" 2>&1)"; then
     printf 'failed: %s (send-keys literal failed for session %s: %s)\n' "$short" "$expected_session" "$err"
     failed=$((failed + 1))
     continue
   fi
-  if ! err="$(tmux send-keys -t "$expected_session" Enter 2>&1)"; then
+  if ! err="$(tmux send-keys -t "$target_pane" Enter 2>&1)"; then
     printf 'failed: %s (send-keys Enter failed for session %s: %s)\n' "$short" "$expected_session" "$err"
     failed=$((failed + 1))
     continue
