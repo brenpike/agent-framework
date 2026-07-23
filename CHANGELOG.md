@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [2.39.0] - 2026-07-23
+
+### Added
+
+- Intra-run parallel plan-step (wave) execution: the overlord's implement loop now fans out independent plan steps — dependencies satisfied and file scopes disjoint — as concurrent agent delegations within a single run/PR, checkpointing per wave instead of per step. New read-only `hivemind:next-wave` engine reads the run ledger and computes the ready wave (the maximal, plan-order, file-disjoint subset of dependency-satisfied steps); a single ready step still yields a wave of one, so serial plans degrade to today's behavior unchanged. Workflow, schema, and agent docs updated to describe wave semantics; new test suite and policy fixture cover the engine and its wiring.
+
 ### Fixed
 
 - enable-brood-remote: `/rc` fan-out now delivers correctly on tmux 3.0a. The `=` exact-match prefix is target-session-only, so it is kept on the `has-session` liveness gate and on `list-panes -s` pane resolution but is never used as a `send-keys` target. Both the `/rc` payload and the Enter keystroke are now delivered to a stable pane id (`%N`) resolved from the exact `=`-session immediately before delivery, so a session that dies or renames in the gate-to-send window fails closed (errors) instead of prefix-matching a same-brood sibling; tmux stderr is surfaced on the failed path; the pane resolver now requires exactly one active pane and fails closed (rather than silently selecting one) if the exact session resolves to zero or more than one active pane. Closes #311.

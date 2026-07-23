@@ -12,7 +12,7 @@ shell: bash
 Compute the next dispatchable WAVE of independent plan steps for the intra-run
 parallel-wave implement loop. The wave is the maximal, plan-order, file-disjoint subset of
 the READY steps — the steps whose dependencies are already done and whose file scopes do
-not collide — so the overlord can fan them out concurrently while degrading to today's
+not collide — so the overlord session can fan them out concurrently while degrading to today's
 serial behavior when the plan graph forces it. The deterministic engine is the committed,
 READ-ONLY script `${CLAUDE_PLUGIN_ROOT}/skills/next-wave/scripts/next-wave.sh`; this body is
 a thin navigator that runs the script once and interprets its routing. The engine mutates
