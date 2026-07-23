@@ -32,6 +32,14 @@
         "blocked": "blocked"
       }
     },
+    "checkpoint": {
+      "type": "skill",
+      "description": "Engine-test SKILL-type state (producer-authorization type-gate proof). A skill state is NOT an agent producer, so an outputs.completed_steps rider recorded here MUST be rejected — proving the guard needs type==agent, not merely a non-cerebrate agent value.",
+      "transitions": {
+        "done": "complete",
+        "blocked": "blocked"
+      }
+    },
     "complete": { "type": "terminal" },
     "blocked": { "type": "terminal" },
     "cancelled": { "type": "terminal" },
