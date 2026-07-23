@@ -2722,7 +2722,7 @@ assert_completed_steps_cerebrate_state_rejected() {
 
 assert_completed_steps_producer_state_authorized() {
     local name="PB:completed-steps-producer-authorized"
-    # Ledger at state.current=build, a NON-cerebrate agent (step-producer) state. A legal
+    # Ledger at state.current=build, a wave-producing (allowed_agents) state. A legal
     # transition (done) carrying an outputs.completed_steps rider must be ACCEPTED and the rider
     # must round-trip VERBATIM into the appended event's outputs.completed_steps.
     local gitroot run_id ledger inputs rc=0
@@ -2827,6 +2827,83 @@ assert_completed_steps_nonarray_rejected() {
     fi
 }
 
+# ── PE. producer-authorization NARROWING: outputs.completed_steps at a singular-agent ──
+# ── non-cerebrate state (no allowed_agents) rejected ─────────────────────────────────
+
+assert_completed_steps_singular_agent_state_rejected() {
+    local name="PE:completed-steps-singular-agent-rejected"
+    # Ledger re-pointed to state.current=version_bump, a SINGULAR-agent (`agent`, not
+    # `allowed_agents`) non-cerebrate agent state (mirrors the PC re-point pattern). A legal
+    # transition (done) carrying an outputs.completed_steps rider must be REJECTED under the
+    # NARROWED guard (type==agent AND has(allowed_agents) AND allowed_agents lacks cerebrate):
+    # the prior BROAD predicate (type==agent && agent!=cerebrate) would have ACCEPTED this rider,
+    # so this case proves the narrowing actually rejects what it used to accept. Ledger
+    # byte-unchanged.
+    local gitroot run_id ledger inputs tmp before after rc=0
+    gitroot="$(new_gitroot pe-git)"
+    run_id="engine-case-pe"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    tmp="$ledger.seed"
+    jq '.state.current = "version_bump" | .state.previous = "build"' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/pe-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state version_bump \
+        --arg result done \
+        --arg summary "engine test completed_steps at singular-agent non-cerebrate state" \
+        --argjson outputs '{"completed_steps":["STEP-001"]}' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "singular-agent non-cerebrate completed_steps rider rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── PF. producer-authorization exclusion belt: outputs.completed_steps at an ──────────
+# ── allowed_agents state whose roster is cerebrate-only rejected ─────────────────────
+
+assert_completed_steps_cerebrate_only_allowed_agents_rejected() {
+    local name="PF:completed-steps-cerebrate-only-allowed-agents-rejected"
+    # Ledger re-pointed to state.current=cerebrate_wave, an allowed_agents state whose roster is
+    # EXCLUSIVELY hivemind:cerebrate. A legal transition (done) carrying an outputs.completed_steps
+    # rider must be REJECTED: has(allowed_agents) alone is not sufficient authorization when every
+    # entry in the roster is cerebrate. Ledger byte-unchanged.
+    local gitroot run_id ledger inputs tmp before after rc=0
+    gitroot="$(new_gitroot pf-git)"
+    run_id="engine-case-pf"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    tmp="$ledger.seed"
+    jq '.state.current = "cerebrate_wave" | .state.previous = "build"' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/pf-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state cerebrate_wave \
+        --arg result done \
+        --arg summary "engine test completed_steps at cerebrate-only allowed_agents state" \
+        --argjson outputs '{"completed_steps":["STEP-001"]}' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "cerebrate-only allowed_agents completed_steps rider rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
 # ── PP. intent-fallback: outputs.completed_steps is STRIPPED, sibling keys pass verbatim ──
 
 assert_intent_fallback_strips_completed_steps() {
@@ -2924,6 +3001,8 @@ assert_completed_steps_cerebrate_state_rejected
 assert_completed_steps_producer_state_authorized
 assert_completed_steps_skill_state_rejected
 assert_completed_steps_nonarray_rejected
+assert_completed_steps_singular_agent_state_rejected
+assert_completed_steps_cerebrate_only_allowed_agents_rejected
 assert_intent_fallback_strips_completed_steps
 
 echo ''
