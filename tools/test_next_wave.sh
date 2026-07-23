@@ -45,6 +45,11 @@
 #              though a disjoint ready step is available (under-declared scope can't fan out).
 #   cycle    — a dependency cycle is a blocker: exit 1, stderr blocker, ledger byte-unchanged.
 #   empty    — empty plan.steps is a blocker: exit 1, stderr blocker, ledger byte-unchanged.
+#   epoch    — cross-generation collision closed: after a replan into epoch 2, a prior-epoch
+#              (plan_epoch=1) completed_steps credit for the REUSED positional id STEP-001 is
+#              IGNORED (1 != current 2), so STEP-001 is re-dispatched this generation; and a
+#              SAME-epoch (plan_epoch=2) credit for STEP-001 DOES count, excluding it from the wave.
+#              Proves next-wave's done-set is scoped to the current plan.epoch.
 #
 # Every success case ALSO asserts the staged ledger is BYTE-UNCHANGED after the engine runs
 # (sha256 before == after) — the engine is read-only.
@@ -71,6 +76,7 @@ LEDGER_ALIAS="$FIXTURES_DIR/ledger-alias-scope.json"
 LEDGER_MISSING="$FIXTURES_DIR/ledger-missing-scope.json"
 LEDGER_CYCLE="$FIXTURES_DIR/ledger-cycle.json"
 LEDGER_EMPTY="$FIXTURES_DIR/ledger-empty-steps.json"
+LEDGER_REPLAN_EPOCH="$FIXTURES_DIR/ledger-replan-epoch.json"
 
 # ── Dependency / fixture preflight ──────────────────────────────────────────
 
@@ -82,7 +88,7 @@ done
 for required in "$ENGINE" \
     "$LEDGER_LINEAR" "$LEDGER_DIAMOND" "$LEDGER_OVERLAP" "$LEDGER_GLOB" \
     "$LEDGER_ALIAS" "$LEDGER_MISSING" \
-    "$LEDGER_CYCLE" "$LEDGER_EMPTY"; do
+    "$LEDGER_CYCLE" "$LEDGER_EMPTY" "$LEDGER_REPLAN_EPOCH"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required input missing: $required" >&2; exit 2; }
 done
@@ -320,6 +326,32 @@ test_empty() {
     assert_blocker "empty:blocker-exit1" "$gitroot" "$run_id" "$ledger"
 }
 
+# ── epoch: cross-generation done-set scoping (replan collision closed) ───────
+
+test_replan_epoch() {
+    local gitroot run_id ledger
+    gitroot="$(new_gitroot replan-epoch)"
+    run_id="nw-replan-epoch"
+
+    # Cross-epoch: the fixture carries .plan.epoch=2, two current-generation steps REUSING
+    # positional ids STEP-001/STEP-002 (disjoint files, no deps, pending), and one EPOCH-1 event
+    # (plan_epoch=1) crediting STEP-001 (plus a stale STEP-009 not in the current plan). Staged
+    # with the fixture's OWN events (no override), the prior-generation credit is SCOPED OUT
+    # (1 != 2), so STEP-001 is NOT done: both steps fan out. Proves the reused id from a prior
+    # epoch does not collide with the current generation.
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_REPLAN_EPOCH")"
+    assert_wave "epoch:prior-credit-ignored" "$gitroot" "$run_id" "$ledger" \
+        "false" "[STEP-001, STEP-002]" "2"
+
+    # Same-epoch: override .events with a CURRENT-epoch (plan_epoch=2) credit for STEP-001. Now
+    # 2 == 2, so STEP-001 IS done and excluded; only STEP-002 remains ready. Proves same-epoch
+    # credits still count — the scoping ignores stale epochs, not the current one.
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_REPLAN_EPOCH" \
+        '[{"state":"implement_step","plan_epoch":2,"outputs":{"completed_steps":["STEP-001"]}}]')"
+    assert_wave "epoch:same-credit-counts" "$gitroot" "$run_id" "$ledger" \
+        "false" "[STEP-002]" "1"
+}
+
 # ── Run all cases ────────────────────────────────────────────────────────────
 
 test_linear
@@ -330,6 +362,7 @@ test_alias_scope
 test_missing_scope
 test_cycle
 test_empty
+test_replan_epoch
 
 echo
 echo "next-wave engine tests: $PASS_COUNT passed, $FAIL_COUNT failed"

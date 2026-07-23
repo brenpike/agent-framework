@@ -2521,6 +2521,169 @@ assert_canon_ledger_round_trips_to_routed_path() {
     fi
 }
 
+# ── EA. plan-steps record on a fresh ledger bumps .plan.epoch absent -> 1 ────
+
+assert_epoch_bumped_on_first_plan_record() {
+    local name="EA:epoch-bumped-first-plan-record"
+    # Fresh ledger-at-plan carries NO .plan.epoch (reads as 0). Recording the cerebrate `plan`
+    # state WITH plan_steps replaces plan.steps => the engine bumps .plan.epoch 0 -> 1 and stamps
+    # the appended event's top-level plan_epoch with the resolved epoch (1).
+    local gitroot run_id ledger inputs
+    gitroot="$(new_gitroot ea-git)"
+    run_id="engine-case-ea"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    inputs="$gitroot/ea-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test epoch bump first plan record" \
+        --argjson plan_steps '[{"id":"STEP-001","status":"pending"}]' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a plan-state with plan_steps (expected 0)"
+        return
+    fi
+
+    local plan_epoch event_epoch
+    plan_epoch="$(jq -r '.plan.epoch' "$ledger")"
+    event_epoch="$(jq -r '.events[-1].plan_epoch' "$ledger")"
+    if [[ "$plan_epoch" == "1" && "$event_epoch" == "1" ]]; then
+        pass "$name" ".plan.epoch bumped absent->1 and appended event stamped plan_epoch=1"
+    else
+        failed "$name" "expected .plan.epoch=1 and event plan_epoch=1, got plan.epoch=$plan_epoch event.plan_epoch=$event_epoch"
+    fi
+}
+
+# ── EB. a subsequent plan-steps record bumps .plan.epoch 1 -> 2 ──────────────
+
+assert_epoch_bumped_on_subsequent_plan_record() {
+    local name="EB:epoch-bumped-subsequent-plan-record"
+    # Ledger at the SECOND cerebrate state (review_remediation_plan) whose .plan.epoch is PRE-SET
+    # to 1 (an earlier generation already ran). Recording it WITH plan_steps replaces plan.steps
+    # again => the engine bumps .plan.epoch 1 -> 2 and stamps the appended event plan_epoch=2.
+    local gitroot run_id ledger inputs tmp
+    gitroot="$(new_gitroot eb-git)"
+    run_id="engine-case-eb"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_REMEDIATION_PLAN")"
+    # Seed a prior epoch on the staged ledger (simulating an earlier plan-steps generation).
+    tmp="$ledger.seed"
+    jq '.plan.epoch = 1' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/eb-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state review_remediation_plan \
+        --arg result ready \
+        --arg summary "engine test epoch bump subsequent plan record" \
+        --argjson plan_steps '[{"id":"STEP-001","status":"pending"}]' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a cerebrate plan-state with plan_steps (expected 0)"
+        return
+    fi
+
+    local plan_epoch event_epoch
+    plan_epoch="$(jq -r '.plan.epoch' "$ledger")"
+    event_epoch="$(jq -r '.events[-1].plan_epoch' "$ledger")"
+    if [[ "$plan_epoch" == "2" && "$event_epoch" == "2" ]]; then
+        pass "$name" ".plan.epoch bumped 1->2 and appended event stamped plan_epoch=2"
+    else
+        failed "$name" "expected .plan.epoch=2 and event plan_epoch=2, got plan.epoch=$plan_epoch event.plan_epoch=$event_epoch"
+    fi
+}
+
+# ── EC. a non-plan record leaves .plan.epoch UNCHANGED, stamps current epoch ─
+
+assert_epoch_unchanged_on_nonplan_record() {
+    local name="EC:epoch-unchanged-nonplan-record"
+    # Ledger at build (a NON-cerebrate work state) whose .plan.epoch is PRE-SET to 1. Recording it
+    # WITHOUT plan_steps must NOT bump .plan.epoch (stays 1) but MUST stamp the appended event with
+    # the CURRENT resolved epoch (1) — done-ness lives in events, so every event carries its epoch.
+    local gitroot run_id ledger inputs tmp
+    gitroot="$(new_gitroot ec-git)"
+    run_id="engine-case-ec"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    tmp="$ledger.seed"
+    jq '.plan.epoch = 1' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/ec-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state build \
+        --arg result done \
+        --arg summary "engine test epoch unchanged non-plan record" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a non-plan state (expected 0)"
+        return
+    fi
+
+    local plan_epoch event_epoch
+    plan_epoch="$(jq -r '.plan.epoch' "$ledger")"
+    event_epoch="$(jq -r '.events[-1].plan_epoch' "$ledger")"
+    if [[ "$plan_epoch" == "1" && "$event_epoch" == "1" ]]; then
+        pass "$name" ".plan.epoch left unchanged at 1 and appended event stamped current epoch (1)"
+    else
+        failed "$name" "expected .plan.epoch=1 (unchanged) and event plan_epoch=1, got plan.epoch=$plan_epoch event.plan_epoch=$event_epoch"
+    fi
+}
+
+# ── ED. a fresh ledger's first non-plan record stamps plan_epoch=0, epoch absent ─
+
+assert_epoch_absent_on_fresh_nonplan_record() {
+    local name="ED:epoch-absent-fresh-nonplan-record"
+    # Fresh ledger-at-build carries NO .plan.epoch (reads as 0). A first NON-plan record stamps the
+    # appended event plan_epoch=0 and leaves .plan.epoch ABSENT — byte-identical to pre-epoch
+    # behavior (the //0 read means no epoch key is materialized until a plan-steps replace).
+    local gitroot run_id ledger inputs
+    gitroot="$(new_gitroot ed-git)"
+    run_id="engine-case-ed"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    inputs="$gitroot/ed-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state build \
+        --arg result done \
+        --arg summary "engine test epoch absent fresh non-plan record" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a fresh non-plan state (expected 0)"
+        return
+    fi
+
+    local has_epoch event_epoch
+    has_epoch="$(jq -r '.plan | has("epoch")' "$ledger")"
+    event_epoch="$(jq -r '.events[-1].plan_epoch' "$ledger")"
+    if [[ "$has_epoch" == "false" && "$event_epoch" == "0" ]]; then
+        pass "$name" ".plan.epoch left ABSENT and appended event stamped plan_epoch=0 (pre-epoch identical)"
+    else
+        failed "$name" "expected .plan.epoch absent and event plan_epoch=0, got has_epoch=$has_epoch event.plan_epoch=$event_epoch"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -2565,6 +2728,10 @@ assert_record_ledger_symlink_leaf_rejected
 assert_intent_fallback_ledger_symlink_leaf_rejected
 assert_missing_ledger_engine_io_fails_closed
 assert_canon_ledger_round_trips_to_routed_path
+assert_epoch_bumped_on_first_plan_record
+assert_epoch_bumped_on_subsequent_plan_record
+assert_epoch_unchanged_on_nonplan_record
+assert_epoch_absent_on_fresh_nonplan_record
 
 echo ''
 echo '=== Summary ==='
