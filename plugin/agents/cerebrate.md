@@ -205,6 +205,13 @@ plan:
 
 The `plan:` block mirrors the prose blocks above (it does not replace them). Keep the two consistent: every prose step has a matching `steps[]` entry, and `delivery.mode` matches the prose `delivery:` value.
 
+### Accuracy Note: `depends_on` and `files` Are Concurrency-Load-Bearing
+
+The overlord's implement loop fans out independent steps as parallel waves, so `depends_on` and `files` are read as scheduling inputs, not just documentation — get either wrong and delivery is either unsafe or needlessly slow.
+
+- `depends_on` must reflect TRUE ordering constraints only. A spurious/defensive dependency needlessly serializes steps that could otherwise run concurrently, slowing delivery. Declare a dependency only when the step genuinely cannot begin until the other completes.
+- `files` must be complete and exact — the full set of paths the step will touch, as concrete paths. The overlord computes wave membership by pairwise file-disjointness across ready steps; an under-declared `files` list risks two steps that actually share a file being dispatched concurrently. A vague or glob scope (wildcards `* ? [`, trailing-slash directory scopes, or a path that is a directory-prefix of another step's file) is treated conservatively as conflicting-with-everything and forces that step to run alone (serialized) — so precise, complete file lists maximize safe parallelism.
+
 ### Plan Result Mapping
 
 Cerebrate's emitted vocabulary depends on whether it was asked to PLAN (produce a

@@ -71,7 +71,7 @@
     },
     "implement_next_step": {
       "type": "decision",
-      "description": "Explicit loop head: branch back to implement_step while steps remain, forward to validate when all steps complete.",
+      "description": "Loop head: computes the ready set (a wave) of independent remediation steps — depends_on satisfied and file scopes mutually disjoint — via the next-wave engine. Branches to implement_step (has_next_step) while any step remains, forward to validate (all_steps_complete) when the done-set covers every step. One iteration is one wave, not one step.",
       "owner": "overlord",
       "transitions": {
         "has_next_step": "implement_step",
@@ -81,7 +81,7 @@
     },
     "implement_step": {
       "type": "agent",
-      "description": "Overlord delegates the current remediation step to a static-allowed bioform, picked by intent.",
+      "description": "Overlord dispatches the whole ready wave of remediation steps as parallel agents (mixed drone/changeling from the static allowed set) in one batch, awaits all, then aggregates results with blocked > needs_replan > complete precedence. A wave of one step degrades to today's serial behavior.",
       "allowed_agents": ["hivemind:drone", "hivemind:changeling"],
       "transitions": {
         "complete": "checkpoint",
@@ -91,7 +91,7 @@
     },
     "checkpoint": {
       "type": "skill",
-      "description": "Molt a checkpoint commit after the completed remediation step.",
+      "description": "Molt one checkpoint commit for the whole completed wave of remediation steps, not per step.",
       "skill": "hivemind:molt",
       "transitions": {
         "complete": "implement_next_step",
