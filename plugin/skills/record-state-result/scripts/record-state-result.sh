@@ -52,6 +52,21 @@
 #      next-wave scopes its done-set by epoch because positional STEP-NNN ids are reused
 #      across plan generations (needs_replan re-plans into the same append-only ledger).
 #
+#  13. PRODUCER AUTHORIZATION (completed_steps): next-wave's done-set unions
+#      outputs.completed_steps from every current-epoch event with NO producer check on the
+#      reader side. Because item 12 stamps the freshly-bumped epoch on the very plan event
+#      that creates a new generation, an outputs.completed_steps rider on a cerebrate
+#      plan/replan record would pre-credit the NEW generation and silently skip replan work.
+#      The engine closes this at the WRITE boundary (it is the SOLE event appender): a
+#      completed_steps rider is honored ONLY when the recording state is a non-cerebrate AGENT
+#      state (definition.states[<state>].type == "agent" AND .agent != "hivemind:cerebrate").
+#      This is SYMMETRIC to the plan-write authorization guard (item 12 / inline guard (6)):
+#      that guard restricts plan.* MUTATION to cerebrate planning states; this one restricts
+#      completed_steps CREDITING to non-cerebrate producer states. Both are ground-truth-
+#      derived from the packaged definition (NO hardcoded state list) and reject BEFORE any
+#      temp-write, so an unauthorized credit is UNREPRESENTABLE and the ledger stays
+#      byte-unchanged. next-wave therefore remains a pure reader, unchanged.
+#
 # CRITICAL ATOMICITY: every write is temp-write + atomic rename. On ANY validation
 # failure the on-disk ledger is byte-unchanged — no partial write ever occurs (all
 # validation runs BEFORE the temp file is created).
@@ -401,6 +416,33 @@ if [ "$have_plan_steps" = true ] || [ "$have_plan_path" = true ]; then
   state_agent="$(jq -r --arg s "$state" '.states[$s].agent // ""' "$workflow")"
   [ "$state_agent" = "hivemind:cerebrate" ] \
     || blocker "plan steps may only be written from a cerebrate planning state; state '$state' (agent '$state_agent') is not authorized; ledger unchanged"
+fi
+
+# (7) PRODUCER AUTHORIZATION for outputs.completed_steps: a completed_steps rider inside
+# --outputs may ONLY be honored when the recording state is a non-cerebrate AGENT state — an
+# actual step-executing producer (implement_step / implement_step_postpr and any other agent
+# state whose agent is NOT hivemind:cerebrate). This is SYMMETRIC to the plan-write auth
+# guard (6): where (6) restricts plan.* MUTATION to cerebrate planning states, (7) restricts
+# completed_steps CREDITING to non-cerebrate producer states. Rationale: next-wave unions
+# outputs.completed_steps from every current-epoch event with NO producer check, and this
+# engine stamps the freshly-bumped epoch on the very plan event that creates the epoch — so a
+# completed_steps rider on a cerebrate plan/replan record would pre-credit the NEW generation
+# and silently skip replan work. Closing it here (the SOLE event appender) makes an
+# unauthorized credit UNREPRESENTABLE in the ledger; next-wave stays a pure reader. The
+# predicate is GROUND-TRUTH-derived from the packaged definition (type + agent) — NO hardcoded
+# state-name list. KEY-PRESENCE: a missing OR null completed_steps is ABSENT (guard inert).
+# This guard runs BEFORE mktemp/temp-write, so a rejection leaves the ledger byte-unchanged;
+# only the engine-validated $state (and its definition-derived type/agent) is interpolated
+# into the message — never raw untrusted text.
+if printf '%s' "$outputs" | jq -e 'has("completed_steps") and .completed_steps != null' >/dev/null 2>&1; then
+  producer_type="$(jq -r --arg s "$state" '.states[$s].type // ""' "$workflow")"
+  producer_agent="$(jq -r --arg s "$state" '.states[$s].agent // ""' "$workflow")"
+  { [ "$producer_type" = "agent" ] && [ "$producer_agent" != "hivemind:cerebrate" ]; } \
+    || blocker "outputs.completed_steps may only be recorded from a non-cerebrate agent (step-producer) state; state '$state' (type '$producer_type', agent '$producer_agent') is not authorized; ledger unchanged"
+  # Authorized producer: completed_steps must be a JSON array (mirror the plan_steps up-front
+  # array validation — a clear blocker rather than a downstream reader mis-parse).
+  printf '%s' "$outputs" | jq -e '.completed_steps | type == "array"' >/dev/null 2>&1 \
+    || blocker "outputs.completed_steps must be a JSON array"
 fi
 
 # (10 pre-compute) determine whether next_state is a declared terminal and map its
