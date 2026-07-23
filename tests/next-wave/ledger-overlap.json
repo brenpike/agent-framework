@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "run": {
+    "id": "next-wave-fixture-overlap",
+    "workflow": "standard-delivery",
+    "workflow_version": 1,
+    "status": "running",
+    "mode": "deterministic",
+    "created_at": "2026-07-23T00:00:00Z",
+    "updated_at": "2026-07-23T00:00:00Z"
+  },
+  "parent": {
+    "kind": "none",
+    "run_id": null,
+    "brood_id": null,
+    "strain_id": null,
+    "manifest": null
+  },
+  "request": {
+    "raw": "next-wave shared-file serialization fixture",
+    "normalized": "next-wave shared-file serialization fixture"
+  },
+  "state": {
+    "current": "implement_step",
+    "previous": "plan",
+    "status": "running"
+  },
+  "facts": {
+    "branch": null,
+    "base": null,
+    "pr": null
+  },
+  "plan": {
+    "path": null,
+    "current_step": null,
+    "steps": [
+      { "id": "STEP-001", "owner": "drone", "files": ["src/shared.txt", "src/p.txt"], "depends_on": [], "status": "pending" },
+      { "id": "STEP-002", "owner": "drone", "files": ["src/shared.txt", "src/q.txt"], "depends_on": [], "status": "pending" }
+    ]
+  },
+  "artifacts": {},
+  "events": [],
+  "blockers": []
+}
