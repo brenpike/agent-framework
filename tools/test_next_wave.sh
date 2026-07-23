@@ -38,6 +38,11 @@
 #   overlap  — two steps with satisfied deps SHARING a file serialize to a wave of 1.
 #   glob     — a ready step whose files[] carries a glob metachar is conflicts-with-all: runs ALONE
 #              even though a disjoint ready step is available.
+#   alias    — a ready step whose files[] carries a `.`/`..` path component (the previously
+#              fail-open alias forms) is conflicts-with-all: runs ALONE even though its own alias
+#              form and a disjoint ready step are both available.
+#   missing  — a ready step with an absent or empty files[] is conflicts-with-all: runs ALONE even
+#              though a disjoint ready step is available (under-declared scope can't fan out).
 #   cycle    — a dependency cycle is a blocker: exit 1, stderr blocker, ledger byte-unchanged.
 #   empty    — empty plan.steps is a blocker: exit 1, stderr blocker, ledger byte-unchanged.
 #
@@ -62,6 +67,8 @@ LEDGER_LINEAR="$FIXTURES_DIR/ledger-linear.json"
 LEDGER_DIAMOND="$FIXTURES_DIR/ledger-diamond.json"
 LEDGER_OVERLAP="$FIXTURES_DIR/ledger-overlap.json"
 LEDGER_GLOB="$FIXTURES_DIR/ledger-glob-scope.json"
+LEDGER_ALIAS="$FIXTURES_DIR/ledger-alias-scope.json"
+LEDGER_MISSING="$FIXTURES_DIR/ledger-missing-scope.json"
 LEDGER_CYCLE="$FIXTURES_DIR/ledger-cycle.json"
 LEDGER_EMPTY="$FIXTURES_DIR/ledger-empty-steps.json"
 
@@ -74,6 +81,7 @@ done
 
 for required in "$ENGINE" \
     "$LEDGER_LINEAR" "$LEDGER_DIAMOND" "$LEDGER_OVERLAP" "$LEDGER_GLOB" \
+    "$LEDGER_ALIAS" "$LEDGER_MISSING" \
     "$LEDGER_CYCLE" "$LEDGER_EMPTY"; do
     [[ -f "$required" ]] \
         || { echo "FAIL: required input missing: $required" >&2; exit 2; }
@@ -264,6 +272,34 @@ test_glob() {
         "false" "[STEP-001]" "2"
 }
 
+# ── alias: conflicts-with-all step with a `.`/`..` path component runs ALONE ─
+
+test_alias_scope() {
+    local gitroot run_id ledger
+    gitroot="$(new_gitroot alias)"
+    run_id="nw-alias"
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_ALIAS")"
+    # STEP-001 declares a `.` path component (src/./foo.ts) => conflicts-with-all => it locks the
+    # wave to itself even though its alias STEP-002 (src/../src/foo.ts) and the disjoint STEP-003
+    # (docs/readme.md) are both ready. Proves alias forms can't co-schedule.
+    assert_wave "alias:runs-alone" "$gitroot" "$run_id" "$ledger" \
+        "false" "[STEP-001]" "3"
+}
+
+# ── missing: conflicts-with-all step with absent/empty files[] runs ALONE ────
+
+test_missing_scope() {
+    local gitroot run_id ledger
+    gitroot="$(new_gitroot missing)"
+    run_id="nw-missing"
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_MISSING")"
+    # STEP-001 has no files key at all => conflicts-with-all => it locks the wave to itself even
+    # though STEP-002 (empty files[]) and STEP-003 (docs/readme.md) are both ready. Proves
+    # under-declared scope cannot fan out unprotected.
+    assert_wave "missing:runs-alone" "$gitroot" "$run_id" "$ledger" \
+        "false" "[STEP-001]" "3"
+}
+
 # ── cycle: dependency cycle is a blocker ─────────────────────────────────────
 
 test_cycle() {
@@ -290,6 +326,8 @@ test_linear
 test_diamond
 test_overlap
 test_glob
+test_alias_scope
+test_missing_scope
 test_cycle
 test_empty
 
