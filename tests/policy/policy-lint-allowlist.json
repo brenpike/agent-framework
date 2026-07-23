@@ -71,13 +71,13 @@
   {
     "rule": "CHECK13",
     "path": "plugin/skills/mark-intent-fallback/scripts/mark-intent-fallback.sh",
-    "line": 80,
+    "line": 91,
     "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — `jq -e has(...)` key-presence probes return non-zero in the normal absent-key flow; grep -Eq gates and `[ ]` tests gate blocker() with explicit exit codes."
   },
   {
     "rule": "CHECK13",
     "path": "plugin/skills/record-state-result/scripts/record-state-result.sh",
-    "line": 146,
+    "line": 148,
     "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — `jq -e has(...)` key-presence probes return non-zero in the normal absent-key flow; transition/binding validation routes through blocker() with explicit exit codes (ledger left byte-unchanged)."
   },
   {

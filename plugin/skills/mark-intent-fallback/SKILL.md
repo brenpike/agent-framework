@@ -39,7 +39,9 @@ The caller resolves and passes these; the skill does not invent them.
 - `state`: the state string recorded VERBATIM in the appended fallback event. It is NOT
   validated against any workflow definition (this is the whole point — the run is skewed).
 - `summary`: human-readable summary of the outcome — UNTRUSTED, serialized only.
-- `outputs` (optional): a JSON object of named outputs — UNTRUSTED, serialized only.
+- `outputs` (optional): a JSON object of named outputs — UNTRUSTED, serialized only. Recorded
+  verbatim EXCEPT `completed_steps`, which is STRIPPED at write time: a fallback event is an
+  observability log and never credits wave steps.
 - `close_status` (optional): exactly `cancelled` or `complete`. Closes out a stale run by
   setting `run.status` (and `state.status`). When ABSENT, `run.status` is left `running` and
   the run stays an append-only observability log. `abandoned` is NOT legal — it is not in the
@@ -70,7 +72,10 @@ Field rules:
   serialized only via `--arg`.
 - `outputs` is optional. KEY-PRESENCE semantics: a MISSING key OR a present-but-null value
   is ABSENT (the event's `outputs` defaults to `{}`); a present non-null value MUST be a JSON
-  object and is recorded verbatim. UNTRUSTED — serialized only via `--argjson`.
+  object and is recorded verbatim EXCEPT `completed_steps`, which is STRIPPED from the event's
+  outputs at write time (a fallback event is an observability log and never credits wave
+  steps; closed-by-construction — the written event cannot carry the key regardless of the
+  caller). All other keys pass through verbatim. UNTRUSTED — serialized only via `--argjson`.
 - `close_status` is optional. KEY-PRESENCE semantics: a MISSING key OR a present-but-null
   value is ABSENT -> `run.status` left untouched (run stays `running`); a present non-null
   value MUST be exactly `cancelled` or `complete` (anything else, notably `abandoned`, is
@@ -112,7 +117,9 @@ The script DELIBERATELY SKIPS (this is the whole point of this sanctioned bypass
 - NO transition/result validation, NO `next_state` resolution, NO terminal mapping.
 
 Then it mutates: sets `run.mode = "intent_fallback"`; appends an event
-`{ at, state, result: "intent_fallback", next_state: null, summary, outputs }`; updates
+`{ at, state, result: "intent_fallback", next_state: null, summary, outputs }` where the
+event's `outputs` has `completed_steps` STRIPPED (a fallback event never credits wave steps);
+updates
 `run.updated_at`; and — when `close_status` is present — sets `run.status` and `state.status`
 to the validated value. When `close_status` is absent, `run.status` / `state.status` are left
 untouched. Every write is temp-write + atomic rename; on ANY validation failure the on-disk

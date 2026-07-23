@@ -57,15 +57,17 @@
 #      reader side. Because item 12 stamps the freshly-bumped epoch on the very plan event
 #      that creates a new generation, an outputs.completed_steps rider on a cerebrate
 #      plan/replan record would pre-credit the NEW generation and silently skip replan work.
-#      The engine closes this at the WRITE boundary (it is the SOLE event appender): a
-#      completed_steps rider is honored ONLY when the recording state is a non-cerebrate AGENT
-#      state (definition.states[<state>].type == "agent" AND .agent != "hivemind:cerebrate").
-#      This is SYMMETRIC to the plan-write authorization guard (item 12 / inline guard (6)):
-#      that guard restricts plan.* MUTATION to cerebrate planning states; this one restricts
-#      completed_steps CREDITING to non-cerebrate producer states. Both are ground-truth-
-#      derived from the packaged definition (NO hardcoded state list) and reject BEFORE any
-#      temp-write, so an unauthorized credit is UNREPRESENTABLE and the ledger stays
-#      byte-unchanged. next-wave therefore remains a pure reader, unchanged.
+#      The engine closes this at the WRITE boundary: exactly TWO engines append events to the
+#      ledger -- this one, which honors a completed_steps rider ONLY when the recording state
+#      is a non-cerebrate AGENT state (definition.states[<state>].type == "agent" AND .agent
+#      != "hivemind:cerebrate"), and mark-intent-fallback, which strips completed_steps from
+#      its fallback event outputs unconditionally; init-run-ledger only creates the ledger and
+#      appends nothing. This is SYMMETRIC to the plan-write authorization guard (item 12 /
+#      inline guard (6)): that guard restricts plan.* MUTATION to cerebrate planning states;
+#      this one restricts completed_steps CREDITING to non-cerebrate producer states. Both
+#      appenders enforce this discipline, ground-truth-derived from the packaged definition
+#      (NO hardcoded state list), so an unauthorized credit is UNREPRESENTABLE and the ledger
+#      stays byte-unchanged. next-wave therefore remains a pure reader, unchanged.
 #
 # CRITICAL ATOMICITY: every write is temp-write + atomic rename. On ANY validation
 # failure the on-disk ledger is byte-unchanged — no partial write ever occurs (all
@@ -427,10 +429,13 @@ fi
 # outputs.completed_steps from every current-epoch event with NO producer check, and this
 # engine stamps the freshly-bumped epoch on the very plan event that creates the epoch — so a
 # completed_steps rider on a cerebrate plan/replan record would pre-credit the NEW generation
-# and silently skip replan work. Closing it here (the SOLE event appender) makes an
-# unauthorized credit UNREPRESENTABLE in the ledger; next-wave stays a pure reader. The
-# predicate is GROUND-TRUTH-derived from the packaged definition (type + agent) — NO hardcoded
-# state-name list. KEY-PRESENCE: a missing OR null completed_steps is ABSENT (guard inert).
+# and silently skip replan work. This guard, together with mark-intent-fallback stripping
+# completed_steps from its fallback event outputs unconditionally (init-run-ledger only
+# creates the ledger and appends nothing), closes this at the WRITE boundary: because BOTH
+# event appenders enforce this discipline, an unauthorized credit is UNREPRESENTABLE in the
+# ledger; next-wave stays a pure reader. The predicate is GROUND-TRUTH-derived from the
+# packaged definition (type + agent) — NO hardcoded state-name list. KEY-PRESENCE: a missing
+# OR null completed_steps is ABSENT (guard inert).
 # This guard runs BEFORE mktemp/temp-write, so a rejection leaves the ledger byte-unchanged;
 # only the engine-validated $state (and its definition-derived type/agent) is interpolated
 # into the message — never raw untrusted text.
