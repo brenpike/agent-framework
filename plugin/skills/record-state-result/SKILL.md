@@ -95,10 +95,11 @@ Field rules:
   is ABSENT (the event's `outputs` defaults to `{}`); a present non-null value MUST be a JSON
   object and is recorded verbatim. UNTRUSTED — serialized only via `--argjson`. When `outputs`
   carries a `completed_steps` key (present and non-null), it is honored ONLY when the recording
-  state is a non-cerebrate agent-type state (`states.<state>.type == "agent"` AND
-  `states.<state>.agent != "hivemind:cerebrate"`, derived from the packaged workflow definition)
-  — symmetric to the plan-write authorization below (§11); at any other recording state the
-  record is REJECTED (blocker, ledger byte-unchanged).
+  state is a WAVE-PRODUCING agent state (`states.<state>.type == "agent"` AND
+  `states.<state>` declares `allowed_agents` AND `"hivemind:cerebrate"` is not in that
+  `allowed_agents` set, derived from the packaged workflow definition) — symmetric to the
+  plan-write authorization below (§11); at any other recording state the record is REJECTED
+  (blocker, ledger byte-unchanged).
 - `plan_steps` is optional (cerebrate plan steps as a JSON array; sets `.plan.steps`).
   KEY-PRESENCE semantics: a MISSING key OR a present-but-null value is ABSENT -> `.plan.*`
   left UNTOUCHED (never clobbered to `[]`); a present non-null value MUST be a JSON array.
@@ -143,11 +144,12 @@ The script validates, in order, ALL before any write:
    ledger byte-unchanged). Key presence alone does NOT authorize a plan write — only a cerebrate
    agent state may persist `plan.steps` / `plan.path`.
 12. PRODUCER AUTHORIZATION — if `outputs` carries a `completed_steps` key (present and
-   non-null), the recording state MUST be a non-cerebrate agent-type state
-   (`states.<state>.type == "agent"` AND `states.<state>.agent != "hivemind:cerebrate"`, derived
-   from the packaged workflow definition); otherwise the engine rejects (exit 1, ledger
-   byte-unchanged). This is symmetric to §11: key presence alone does NOT authorize a
-   `completed_steps` credit — only a non-cerebrate agent state may persist it.
+   non-null), the recording state MUST be a WAVE-PRODUCING agent state
+   (`states.<state>.type == "agent"` AND `states.<state>` has `allowed_agents` AND
+   `"hivemind:cerebrate"` is not in that `allowed_agents` set, derived from the packaged
+   workflow definition — ground-truth, no hardcoded state names); otherwise the engine rejects
+   (exit 1, ledger byte-unchanged). This is symmetric to §11: key presence alone does NOT
+   authorize a `completed_steps` credit — only a wave-producing agent state may persist it.
 
 Then it appends the event; updates `state.previous`/`state.current`/`state.status`,
 `run.updated_at`, (if `next_state` is terminal) `run.status`, and — when `plan_steps` /
