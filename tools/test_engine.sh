@@ -2827,6 +2827,51 @@ assert_completed_steps_nonarray_rejected() {
     fi
 }
 
+# ── PP. intent-fallback: outputs.completed_steps is STRIPPED, sibling keys pass verbatim ──
+
+assert_intent_fallback_strips_completed_steps() {
+    local name="PP:intent-fallback-strips-completed-steps"
+    # mark-intent-fallback.sh is the SECOND ledger event-appender (record-state-result.sh is the
+    # first). A fallback event is an observability log and must NEVER credit wave steps, so the
+    # engine STRIPS outputs.completed_steps at write time (del(.completed_steps) on the
+    # engine-controlled --argjson $outputs binding) rather than rejecting the caller. Skew ledger
+    # (run.workflow_version=2 vs the fakeplugin def.version=1) mirrors case BB — the vulnerable
+    # shape a fallback event is written against. Assert: exit 0 (STRIP not REJECT — the
+    # universal-fallback doctrine forbids a new hard-fail mode here); exactly one event appended;
+    # the appended event's outputs has NO completed_steps key; the sibling "note" key passes
+    # through verbatim.
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot pp-git)"
+    run_id="engine-case-pp"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    inputs="$gitroot/pp-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback completed_steps strip" \
+        --argjson outputs '{"completed_steps":["STEP-001"],"note":"x"}' \
+        '{run_id: $run_id, state: $state, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "intent-fallback engine exited $rc on a completed_steps+note outputs rider (expected 0 — STRIP not REJECT)"
+        return
+    fi
+
+    local events_len has_completed_steps note
+    events_len="$(jq -r '.events | length' "$ledger")"
+    has_completed_steps="$(jq -r '.events[-1].outputs | has("completed_steps")' "$ledger")"
+    note="$(jq -r '.events[-1].outputs.note' "$ledger")"
+    if [[ "$events_len" -eq 1 && "$has_completed_steps" == "false" && "$note" == "x" ]]; then
+        pass "$name" "completed_steps stripped from the appended event's outputs, sibling note key preserved verbatim (events=$events_len)"
+    else
+        failed "$name" "expected events=1/has(completed_steps)=false/note=x, got events=$events_len/has(completed_steps)=$has_completed_steps/note=$note"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -2879,6 +2924,7 @@ assert_completed_steps_cerebrate_state_rejected
 assert_completed_steps_producer_state_authorized
 assert_completed_steps_skill_state_rejected
 assert_completed_steps_nonarray_rejected
+assert_intent_fallback_strips_completed_steps
 
 echo ''
 echo '=== Summary ==='
