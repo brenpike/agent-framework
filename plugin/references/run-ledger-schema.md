@@ -97,6 +97,7 @@ Reconciliation anchors derived from git observables: `branch`, `base`, `pr`.
 - `steps` — array reformatted from the cerebrate YAML plan block at the §A boundary (no maintained converter). Two writers, each carrying the steps in the `plan_steps` field of its inputs JSON object, validated as a JSON array and bound via `--argjson` in each:
   - **PRIMARY (live):** the `plan_steps` field of the RECORD inputs object (`record-state-result`), passed by the overlord when recording the `plan` (cerebrate) state result. The overlord inits the ledger BEFORE the `plan` state runs, so this record-time write is what populates `plan.steps` for the implement loop on a fresh root run. When the field is absent (missing key or `null`) the engine leaves `plan.steps` UNTOUCHED (never clobbered to `[]`). The engine honors the `plan_steps` / `plan_path` fields ONLY when the recording state is a cerebrate planning state (`states.<state>.agent == "hivemind:cerebrate"` — `plan` / `review_remediation_plan` / `brood_plan`); recording any other state with these fields present is rejected (ledger byte-unchanged), so `plan.steps` is record-time-writable only at cerebrate planning states.
   - **SEED (child/resume):** the `plan_steps` field of the INIT inputs object (`init-run-ledger`), which seeds `plan.steps` at init time for a child/resume run that already has the steps in hand; absent the field it defaults to `[]`.
+- `epoch` — integer, ENGINE-OWNED. Written ONLY by `record-state-result`, never by a caller-supplied input field. Bumped by 1 on every `plan.steps` replace — i.e. every cerebrate planning-state record (see the PRIMARY writer above). Absent means `0` (pre-epoch ledgers, before this field existed). Consumed by the `completed_steps` wave-marker convention below to scope done-ness to the current plan generation.
 
 ### `artifacts` (object)
 
@@ -119,11 +120,14 @@ Append-only blocker log.
   "result": "single",
   "next_state": "git_preflight",
   "summary": "Cerebrate returned a single-delivery plan.",
+  "plan_epoch": 0,
   "outputs": {
     "plan_path": ".hivemind/runs/2026-05-30T22-10-00Z-standard-delivery/plan.json"
   }
 }
 ```
+
+`plan_epoch` is a TOP-LEVEL, ENGINE-WRITTEN event field — distinct from the free-form, caller-supplied `outputs` object below. `record-state-result` stamps it on EVERY event it appends, recording the `.plan.epoch` value the ledger held at append time. Because it is engine-written rather than caller-supplied, it cannot be forged or omitted by a caller the way anything under `outputs` can.
 
 `event.outputs` is free-form and recorded verbatim. NO schema change and NO new REQUIRED field is implied by the convention that follows — `event.outputs` stays free-form/optional.
 
@@ -137,7 +141,7 @@ Append-only blocker log.
 
 **Convention (completed_steps wave marker):** `event.outputs` MAY carry an OPTIONAL, free-form `completed_steps` array, recorded verbatim like `recurrence_origin` — this is the SAME sanctioned free-form `event.outputs` write-path already used by `decisions[]` and `recurrence_origin`, NOT a new ledger schema field and NOT a `facts.*` mutation. `completed_steps` is a JSON array of plan-step id strings (e.g. `["STEP-001","STEP-004"]`), recorded when the overlord records an `implement_step` state result for a completed WAVE. A single-step wave records a `completed_steps` array of length 1 — a strict subset of the multi-step case, not a distinct shape.
 
-Done-ness of a plan step is DERIVED from the union of `events[].outputs.completed_steps` across the run's event log — NOT from `plan.steps[].status`, which stays planner-emitted `pending` and is inert for execution purposes. This split exists because the `record-state-result` engine forbids non-cerebrate plan writes (see [workflow-state-machine.md](${CLAUDE_PLUGIN_ROOT}/references/workflow-state-machine.md) `(### agent)`): only a cerebrate-agent state may persist `plan.steps`, so step done-ness cannot live there without violating that authorization guard. Recording done-ness in events instead leaves the plan-write authorization guard untouched. `completed_steps`, `decisions[]`, `recurrence_origin`, the `pr` / `head_ref_oid` open_pr keys, and the `plan.steps` plan-steps writers are DISTINCT keys/paths on or around `event.outputs` and do not collide.
+Done-ness of a plan step is DERIVED from the union of `events[].outputs.completed_steps`, SCOPED TO THE CURRENT PLAN EPOCH ONLY — i.e. events whose top-level `plan_epoch` equals the ledger's current `.plan.epoch` (`//0` for pre-epoch ledgers, preserving identical behavior to the prior unscoped-union reading) — NOT from `plan.steps[].status`, which stays planner-emitted `pending` and is inert for execution purposes, and NOT from an unscoped union across the entire event log. The epoch scope exists because positional `STEP-NNN` ids are reused across plan generations: a `needs_replan` transition replaces `plan.steps` in the same append-only ledger, and an unscoped union would let a prior generation's `completed_steps` credit satisfy a new generation's same-id step, silently skipping it. Keying done-ness by `plan_epoch` makes that cross-generation collision unrepresentable. This split exists because the `record-state-result` engine forbids non-cerebrate plan writes (see [workflow-state-machine.md](${CLAUDE_PLUGIN_ROOT}/references/workflow-state-machine.md) `(### agent)`): only a cerebrate-agent state may persist `plan.steps`, so step done-ness cannot live there without violating that authorization guard. Recording done-ness in events instead leaves the plan-write authorization guard untouched. `completed_steps`, `decisions[]`, `recurrence_origin`, the `pr` / `head_ref_oid` open_pr keys, and the `plan.steps` plan-steps writers are DISTINCT keys/paths on or around `event.outputs` and do not collide. `plan_epoch` is a separate, TOP-LEVEL, engine-written event field — not a free-form `outputs` key, and not part of this distinct-keys-under-`outputs` set.
 
 **Non-change clarifications (so a future reader does not "fix" a non-bug):**
 

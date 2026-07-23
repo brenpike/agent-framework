@@ -63,6 +63,11 @@ never clobbered to `[]`.
 The `outputs` field here is the event's free-form `outputs` object — it is NOT a plan-steps
 writer; use `plan_steps` for that.
 
+Recording ANY cerebrate planning-state result also ADVANCES an engine-owned monotonic plan
+epoch (`.plan.epoch`), and every appended event — for this and every other state — is
+stamped with the current `plan_epoch`. The caller supplies NOTHING for this: it is entirely
+engine-maintained, with no inputs-file field to set it.
+
 ## Inputs JSON
 
 The script owns deterministic read -> validate -> mutate -> atomic-write; the navigator

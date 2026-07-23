@@ -31,10 +31,18 @@
 #
 # COMPUTATION (all derived from ledger content; NEVER from plan.steps[].status):
 #   1. steps       = .plan.steps[]  (each: id, owner, files[], depends_on[], status).
-#   2. DONE SET    = union of every .events[].outputs.completed_steps[] (a flat list of
-#                    step-id strings), de-duplicated. Done-ness lives in EVENTS, never in
-#                    plan.steps[].status (which stays planner-emitted `pending`); the engine
-#                    must not depend on that status field.
+#   2. DONE SET    = union of .events[].outputs.completed_steps[] (a flat list of step-id
+#                    strings), de-duplicated, SCOPED TO THE CURRENT PLAN EPOCH: a
+#                    completed_steps credit counts ONLY from events whose `plan_epoch` equals
+#                    the ledger's `.plan.epoch` (default 0); a credit stamped with a DIFFERENT
+#                    epoch is ignored. This closes the FAIL-OPEN class `cross-generation
+#                    positional-id collision` — where a prior plan generation's credit for a
+#                    reused STEP-NNN id satisfied the new generation's same-id step, skipping it
+#                    and silently losing work. Both `.plan_epoch` and `.plan.epoch` default to 0
+#                    via `//0`, so a pre-epoch ledger (no `plan_epoch` on events, no
+#                    `.plan.epoch`) behaves BYTE-IDENTICALLY to before: every event matches epoch
+#                    0. Done-ness lives in EVENTS, never in plan.steps[].status (which stays
+#                    planner-emitted `pending`); the engine must not depend on that status field.
 #   3. READY       = steps NOT in done whose depends_on is a SUBSET of done.
 #   4. WAVE        = greedy, PLAN-ORDER, maximal subset of READY that is pairwise FILE-DISJOINT.
 #                    Disjointness = EXACT raw-string match over GRAMMAR-VALIDATED CANONICAL
@@ -221,7 +229,9 @@ cycle_residue="$(jq '
 #   NO normalization: disjointness is EXACT RAW-STRING match over GRAMMAR-VALIDATED canonical
 #                   declared paths. The canonical-scope grammar admits one spelling per path, so
 #                   raw compare is sound — see the header (item 4/5) for the closed alias class.
-#   $done           union of events[].outputs.completed_steps[] (done-ness lives in events).
+#   $done           union of events[].outputs.completed_steps[] SCOPED to the current plan epoch
+#                   ($cur = .plan.epoch // 0): only credits from events whose plan_epoch // 0 == $cur
+#                   count (done-ness lives in events; //0 keeps pre-epoch ledgers byte-identical).
 #   $allfiles       every {id, f} over grammar-CLEAN string entries only, built defensively so a
 #                   non-array / non-string `files` cannot error the directory-prefix scan.
 #   .ca             conflicts-with-all (run ALONE) when the RAW scope fails the canonical grammar:
@@ -235,7 +245,8 @@ cycle_residue="$(jq '
 #                   joins iff exact-file-disjoint from the already-claimed set.
 main="$(jq -r '
   .plan.steps as $steps
-  | ([.events[]?.outputs?.completed_steps[]?] | unique) as $done
+  | (.plan.epoch // 0) as $cur
+  | ([ .events[]? | select((.plan_epoch // 0) == $cur) | .outputs?.completed_steps[]? ] | unique) as $done
   | ([$steps[] | .id as $id | (.files // []) | select(type == "array") | .[] | select(type == "string") | {id: $id, f: .}]) as $allfiles
   | ($steps | map(
       .id as $id

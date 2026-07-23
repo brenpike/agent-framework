@@ -23,7 +23,9 @@
 #   5. The allowed-result set is read DIRECTLY from definition.states[<state>].transitions
 #      (keys). --result MUST be one of those keys, else blocker + exit 1, UNCHANGED.
 #   6. next_state = transitions[result].
-#   7. Append an event {at,state,result,next_state,summary,outputs}.
+#   7. Append an event {at,state,result,next_state,summary,outputs,plan_epoch}. plan_epoch
+#      is an ENGINE-WRITTEN top-level int (NOT a free-form outputs rider): every appended
+#      event carries it, so a caller can neither forge nor omit it. See item 12.
 #   8. Update state.previous=state, state.current=next_state, state.status.
 #   9. Update run.updated_at.
 #  10. If next_state is a declared terminal, set run.status + state.status to the
@@ -36,6 +38,19 @@
 #      running|complete|blocked|cancelled.
 #  11. Write via temp file + atomic mv so a concurrent hatchery reader never sees a
 #      torn file.
+#
+#  12. PLAN EPOCH OWNERSHIP: the engine is the SOLE owner of a monotonic .plan.epoch (int).
+#      It is bumped by exactly 1 ONLY when this call replaces plan.steps (have_plan_steps
+#      true — which the plan-write authorization guard already restricts to a cerebrate
+#      planning state), alongside the .plan.steps / .plan.path clause; otherwise .plan.epoch
+#      is left untouched (absent stays absent until the first bump). Every appended event is
+#      stamped with the RESOLVED epoch as a top-level plan_epoch (plan-state or not). A
+#      pre-existing ledger with no .plan.epoch reads as 0, so a non-plan record stamps
+#      plan_epoch 0 and leaves .plan.epoch absent — identical to prior behavior; the first
+#      plan.steps replace bumps to 1. have_plan_steps reaches jq ONLY as an ENGINE-DERIVED
+#      inert --argjson bool, never as interpolated or caller-supplied text. Rationale:
+#      next-wave scopes its done-set by epoch because positional STEP-NNN ids are reused
+#      across plan generations (needs_replan re-plans into the same append-only ledger).
 #
 # CRITICAL ATOMICITY: every write is temp-write + atomic rename. On ANY validation
 # failure the on-disk ledger is byte-unchanged — no partial write ever occurs (all
@@ -425,12 +440,16 @@ tmp_ledger="$(mktemp "$ledger_dir/.state.json.XXXXXX")" \
 # appended to the program ONLY when their flags are present — flag PRESENCE (an inert
 # bool), never the untrusted VALUE, decides which clauses run; the values themselves still
 # arrive solely through --argjson/--arg. When a flag is absent the corresponding plan.*
-# field is left untouched (NOT clobbered). INVARIANT: the input ledger is the file itself;
-# on a jq failure the temp file is removed and the on-disk ledger is untouched.
+# field is left untouched (NOT clobbered). The engine-owned .plan.epoch is bumped (and
+# .plan.epoch set) ONLY inside the have_plan_steps clause; every appended event is stamped
+# with the resolved $epoch regardless. have_plan_steps is passed as an ENGINE-DERIVED inert
+# --argjson bool (never caller text). INVARIANT: the input ledger is the file itself; on a
+# jq failure the temp file is removed and the on-disk ledger is untouched.
 plan_program=""
 if [ "$have_plan_steps" = true ]; then
   plan_program="$plan_program
-  | .plan.steps = \$plan_steps"
+  | .plan.steps = \$plan_steps
+  | .plan.epoch = \$epoch"
 fi
 if [ "$have_plan_path" = true ]; then
   plan_program="$plan_program
@@ -448,14 +467,18 @@ jq \
   --arg state_status "$state_status" \
   --argjson plan_steps "${plan_steps:-[]}" \
   --arg plan_path "$plan_path" \
+  --argjson have_plan_steps "$have_plan_steps" \
   '
-  .events += [{
+  (.plan.epoch // 0) as $cur_epoch
+  | (if $have_plan_steps then $cur_epoch + 1 else $cur_epoch end) as $epoch
+  | .events += [{
     at: $at,
     state: $state,
     result: $result,
     next_state: $next_state,
     summary: $summary,
-    outputs: $outputs
+    outputs: $outputs,
+    plan_epoch: $epoch
   }]
   | .state.previous = $state
   | .state.current = $next_state

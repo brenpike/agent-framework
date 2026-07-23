@@ -34,7 +34,10 @@ and computes:
 
 - **DONE SET** — the union of every `events[].outputs.completed_steps[]` (a flat list of
   step-id strings). Done-ness lives in the EVENT log, never in `plan.steps[].status` (which
-  stays planner-emitted `pending`) — the engine does not read that status field.
+  stays planner-emitted `pending`) — the engine does not read that status field. Done-ness is
+  scoped to the CURRENT plan epoch (`.plan.epoch`): a `completed_steps` credit recorded under
+  a PRIOR plan generation never satisfies the current plan, so positional STEP-NNN ids may be
+  safely reused across replans without a prior generation's credit skipping the new step.
 - **READY** — steps NOT in done whose `depends_on` is a subset of done.
 - **WAVE** — the greedy, plan-order, maximal subset of READY that is pairwise disjoint under
   EXACT string match over each step's CANONICAL declared file-scope paths. A path is
