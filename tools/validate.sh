@@ -58,6 +58,7 @@ SUITE_TEST_TRIAGE_OPS='test_triage_ops.sh'
 SUITE_TEST_SUBISSUE_OPS='test_subissue_ops.sh'
 SUITE_TEST_SEED_HIVE='test_seed_hive.sh'
 SUITE_TEST_RC_BROOD='test_rc_brood.sh'
+SUITE_TEST_NEXT_WAVE='test_next_wave.sh'
 SUITE_TEST_VALIDATE_SUITES='test_validate_suites.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
@@ -81,6 +82,7 @@ ALL_SUITES=(
   "$SUITE_TEST_SUBISSUE_OPS"
   "$SUITE_TEST_SEED_HIVE"
   "$SUITE_TEST_RC_BROOD"
+  "$SUITE_TEST_NEXT_WAVE"
   "$SUITE_TEST_VALIDATE_SUITES"
 )
 
@@ -105,6 +107,7 @@ KNOWN_SUITES=(
   test_subissue_ops.sh
   test_seed_hive.sh
   test_rc_brood.sh
+  test_next_wave.sh
   test_validate_suites.sh
 )
 
@@ -442,6 +445,18 @@ map_path() {
     matched=1
   fi
 
+  # test_next_wave: the READ-ONLY ready-wave engine (next-wave.sh) + its ledger fixtures. The
+  # script is ALSO a plugin/* file (policy_check prose-lints it via the wholesale rule below),
+  # but policy_check NEVER EXECUTES bash — so without this rule a next-wave edit would only be
+  # prose-linted, never behaviorally exercised. Route both the skill dir and its fixture dir to
+  # the behavioral suite. (tools/test_next_wave.sh itself is covered by the tools/** full-suite
+  # leg.)
+  if [[ "$p" == plugin/skills/next-wave/* \
+     || "$p" == tests/next-wave/* ]]; then
+    add_selected "$SUITE_TEST_NEXT_WAVE" "$p (next-wave engine script/fixture)"
+    matched=1
+  fi
+
   # validate_reports: report fixtures.
   if [[ "$p" == tests/reports/* ]]; then
     add_selected "$SUITE_VALIDATE_REPORTS" "$p (report fixture)"
@@ -766,6 +781,7 @@ self_test() {
     ["test_subissue_ops.sh"]="tests/prd-to-issues/case-x.json"
     ["test_seed_hive.sh"]="plugin/skills/seed-hive/scripts/seed-hive.sh"
     ["test_rc_brood.sh"]="plugin/skills/enable-brood-remote/SKILL.md"
+    ["test_next_wave.sh"]="tests/next-wave/ledger-x.json"
     ["test_validate_suites.sh"]="tools/test_validate_suites.sh"
   )
   local script_name expected_suite suite_path probe_path hit
