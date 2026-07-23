@@ -36,10 +36,16 @@ and computes:
   step-id strings). Done-ness lives in the EVENT log, never in `plan.steps[].status` (which
   stays planner-emitted `pending`) — the engine does not read that status field.
 - **READY** — steps NOT in done whose `depends_on` is a subset of done.
-- **WAVE** — the greedy, plan-order, maximal subset of READY that is pairwise file-disjoint
-  (exact normalized-path match; a step whose files declare a glob metacharacter, a trailing
-  `/`, or a directory-prefix of another step's file is treated as conflicting-with-all and may
-  run only ALONE).
+- **WAVE** — the greedy, plan-order, maximal subset of READY that is pairwise disjoint under
+  EXACT string match over each step's CANONICAL declared file-scope paths. A path is
+  comparable only if it is relative, `/`-splits into non-empty components, no component is
+  `.` or `..`, no component carries a glob metacharacter (`*`, `?`, `[`), and the path has no
+  leading/trailing slash and no `//`. A step whose scope is missing, empty, non-array, or
+  contains any path that fails this grammar is classified CONFLICTS-WITH-ALL and runs ALONE
+  (serial), never fanned out — this is FAIL-CLOSED and conservative-safe: run-alone is always
+  correct and never strands a step. Filesystem-level aliasing (symlinks, case-insensitive
+  filesystems) is a documented residual outside this grammar, deferred to a tracked issue
+  rather than guarded against here.
 
 A single ready step yields a wave of one (serial behavior); `all_done` is true only when the
 done set covers every step.

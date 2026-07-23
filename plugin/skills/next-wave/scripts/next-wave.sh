@@ -37,16 +37,37 @@
 #                    must not depend on that status field.
 #   3. READY       = steps NOT in done whose depends_on is a SUBSET of done.
 #   4. WAVE        = greedy, PLAN-ORDER, maximal subset of READY that is pairwise FILE-DISJOINT.
-#                    Disjointness = exact normalized-path textual match (normalize: collapse
-#                    repeated slashes, strip leading `./`). Walk READY in plan order; add a step
-#                    iff its normalized file set shares NO path with any file already claimed by
-#                    an earlier wave member.
-#   5. CONFLICTS-WITH-ALL guard (conservative): any step whose files[] contains a glob
-#                    metacharacter (`*`, `?`, `[`), a trailing `/`, OR a path that is a
-#                    directory-prefix of ANOTHER step's file entry is treated as conflicting
-#                    with everything — it may ONLY run ALONE (a wave of exactly itself). This
-#                    protects against planner-underdeclared/vague scopes forcing unsafe
-#                    concurrency.
+#                    Disjointness = EXACT raw-string match over GRAMMAR-VALIDATED CANONICAL
+#                    declared paths. There is NO normalization step: a positive canonical-scope
+#                    grammar (item 5) admits exactly ONE spelling per path, so exact raw compare
+#                    over grammar-passing paths is sound BY CONSTRUCTION. This closes the former
+#                    FAIL-OPEN class `textual-alias-judged-disjoint` — where a normalize-then-
+#                    compare primitive judged `src/./foo` vs `src/foo`, or `src/../pkg` vs `pkg`,
+#                    DISJOINT while they hit the same real file. Any non-canonical spelling, or an
+#                    under-declared (missing / null / non-array / empty) scope, is now conflicts-
+#                    with-all (item 5) and runs ALONE. Walk READY in plan order; add a grammar-
+#                    passing step iff its raw file set shares NO exact path with any file already
+#                    claimed by an earlier wave member.
+#                    RESIDUAL (documented, deferred): FILESYSTEM aliases — symlinked paths and
+#                    case-insensitive-FS collisions (`src/Foo` vs `src/foo`) — can still alias to
+#                    one real file yet compare distinct. Resolving them needs realpath of
+#                    possibly-NONEXISTENT declared paths, which conflicts with this engine's
+#                    declared-path (not filesystem-existence) comparison design; tracked as a
+#                    separate issue rather than closed here.
+#   5. CONFLICTS-WITH-ALL guard (conservative; the ONLY scope-classification primitive): a step
+#                    runs ALONE (a wave of exactly itself) when ANY of the following hold on its
+#                    RAW declared scope — the grammar is checked FAIL-CLOSED, non-array/null/
+#                    missing short-circuiting FIRST so no `map`/iteration ever touches a non-array:
+#                      - `.files` is missing / null / not an array / an empty array
+#                      - any entry is a non-string or an empty string
+#                      - any path has an EMPTY component when split on `/` (bans leading `/`,
+#                        trailing `/`, and `//`)
+#                      - any path component equals `.` or `..`
+#                      - any path carries a glob metacharacter (`*`, `?`, `[`)
+#                      - any of its files is a directory-prefix (`f + "/"`) of ANOTHER step's file
+#                    This protects against planner-underdeclared/vague/non-canonical scopes forcing
+#                    unsafe concurrency. Run-alone = serial = always correct; it never strands a
+#                    drainable plan (same conservative lane the glob case already used).
 #
 # VALIDATION (all fail-closed -> `blocker: <reason>` on stderr, exit 1, nothing on stdout):
 #   - empty / absent plan.steps
@@ -197,27 +218,34 @@ cycle_residue="$(jq '
 
 # ── Wave computation (single jq program; emits tab-separated routing facts) ────
 # Emits: <remaining>\t<all_done>\t<wave_count>\t<wave_display>
-#   norm_path       collapse repeated slashes, then strip leading `./` (exact-path
-#                   normalization for disjointness — compares DECLARED paths, not filesystem
-#                   existence, so two steps declaring the same NOT-YET-EXISTING path still clash).
+#   NO normalization: disjointness is EXACT RAW-STRING match over GRAMMAR-VALIDATED canonical
+#                   declared paths. The canonical-scope grammar admits one spelling per path, so
+#                   raw compare is sound — see the header (item 4/5) for the closed alias class.
 #   $done           union of events[].outputs.completed_steps[] (done-ness lives in events).
-#   .ca             conflicts-with-all: glob metachar, trailing slash, or a file that is a
-#                   directory-prefix (f + "/") of ANOTHER step's file. Such a step runs ALONE.
+#   $allfiles       every {id, f} over grammar-CLEAN string entries only, built defensively so a
+#                   non-array / non-string `files` cannot error the directory-prefix scan.
+#   .ca             conflicts-with-all (run ALONE) when the RAW scope fails the canonical grammar:
+#                   missing/null/non-array/empty files, a non-string or empty entry, an empty path
+#                   component (leading/trailing/`//`), a `.`/`..` component, a glob metachar, OR a
+#                   file that is a directory-prefix (f + "/") of ANOTHER step's file. The checks
+#                   are ORDERED so the non-array/null/missing case short-circuits FIRST — `or` is
+#                   lazy in jq, so no map/iteration ever runs against a non-array `files`.
 #   greedy reduce   walk READY in plan order; the first step always joins (locking the wave to
 #                   itself when it is conflicts-with-all); each subsequent non-conflicting step
-#                   joins iff file-disjoint from the already-claimed set.
+#                   joins iff exact-file-disjoint from the already-claimed set.
 main="$(jq -r '
-  def norm_path: gsub("/+"; "/") | gsub("^(\\./)+"; "");
   .plan.steps as $steps
   | ([.events[]?.outputs?.completed_steps[]?] | unique) as $done
-  | ($steps | map(. + {nf: ((.files // []) | map(norm_path))})) as $S
-  | ([$S[] | .id as $id | .nf[] | {id: $id, f: .}]) as $allfiles
-  | ($S | map(
-      .id as $id | .nf as $nf
+  | ([$steps[] | .id as $id | (.files // []) | select(type == "array") | .[] | select(type == "string") | {id: $id, f: .}]) as $allfiles
+  | ($steps | map(
+      .id as $id
       | . + {ca: (
-          ($nf | any(test("[*?\\[]")))
-          or ($nf | any(endswith("/")))
-          or ($nf | any(. as $f | $allfiles | any((.id != $id) and (.f | startswith($f + "/")))))
+          ((.files | type) != "array")
+          or ((.files | length) == 0)
+          or (.files | any((type != "string") or (. == "")))
+          or (.files | any(split("/") | any(. == "" or . == "." or . == "..")))
+          or (.files | any(test("[*?\\[]")))
+          or (.files | any(. as $f | $allfiles | any((.id != $id) and (.f | startswith($f + "/")))))
         )}
     )) as $S2
   | ($S2 | map(select(.id as $id | ($done | index($id)) == null))) as $notdone
@@ -228,9 +256,9 @@ main="$(jq -r '
         . as $acc
         | if $acc.locked then $acc
           elif $st.ca then
-            (if ($acc.wave | length) == 0 then {wave: [$st.id], claimed: $st.nf, locked: true} else $acc end)
-          elif ($st.nf | any(. as $f | ($acc.claimed | index($f)) != null)) then $acc
-          else {wave: ($acc.wave + [$st.id]), claimed: ($acc.claimed + $st.nf), locked: false}
+            (if ($acc.wave | length) == 0 then {wave: [$st.id], claimed: [], locked: true} else $acc end)
+          elif ($st.files | any(. as $f | ($acc.claimed | index($f)) != null)) then $acc
+          else {wave: ($acc.wave + [$st.id]), claimed: ($acc.claimed + $st.files), locked: false}
           end
       ) | .wave) as $wave
   | [
