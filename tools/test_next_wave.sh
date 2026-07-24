@@ -54,6 +54,13 @@
 #              blocker: exit 1, stderr blocker, ledger byte-unchanged. Proves the READER-SIDE
 #              charset belt (a pre-existing seeded/resume ledger predating the write-boundary
 #              guards) stops a malformed id BEFORE it can reach the `wave: [...]` routing emit.
+#   shape    — the POSITIVE SHAPE-VALIDATION GATE that runs before checks (a)-(f): a non-object
+#              plan.steps entry, a non-array depends_on, a non-array plan.steps, and a
+#              missing/non-string .id are each a clean blocker (exit 1, stderr blocker, empty
+#              stdout, ledger byte-unchanged) rather than an uncaught raw-jq crash. A further
+#              assert_wave case proves the DONE-SET read is type-projected: a malformed
+#              (non-object) .events[] element is SKIPPED, not crashed, while a valid
+#              completed_steps event alongside it still credits normally.
 #
 # Every success case ALSO asserts the staged ledger is BYTE-UNCHANGED after the engine runs
 # (sha256 before == after) — the engine is read-only.
@@ -375,6 +382,78 @@ test_bad_step_id() {
     assert_blocker "$name" "$gitroot" "$run_id" "$ledger"
 }
 
+# ── shape: the positive shape-validation gate rejects malformed plan shapes ──
+
+test_shape_non_object_step() {
+    local name="shape:non-object-step"
+    local gitroot run_id ledger tmp
+    gitroot="$(new_gitroot shape-non-object-step)"
+    run_id="nw-shape-non-object-step"
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_LINEAR")"
+    # Corrupt STEP-001 itself into a non-object (an array) — formerly crashed raw jq at the
+    # `.id` index; the shape gate now catches it as a clean blocker BEFORE (a)-(f) ever runs.
+    tmp="$ledger.seed"
+    jq '.plan.steps[0] = ["x"]' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    assert_blocker "$name" "$gitroot" "$run_id" "$ledger"
+}
+
+test_shape_non_array_depends_on() {
+    local name="shape:non-array-depends_on"
+    local gitroot run_id ledger tmp
+    gitroot="$(new_gitroot shape-non-array-depends-on)"
+    run_id="nw-shape-non-array-depends-on"
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_LINEAR")"
+    # Corrupt STEP-002's depends_on into a non-array string — formerly crashed raw jq on
+    # iterate; the shape gate now catches it as a clean blocker.
+    tmp="$ledger.seed"
+    jq '.plan.steps[1].depends_on = "BAD]"' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    assert_blocker "$name" "$gitroot" "$run_id" "$ledger"
+}
+
+test_shape_non_array_steps() {
+    local name="shape:non-array-plan-steps"
+    local gitroot run_id ledger tmp
+    gitroot="$(new_gitroot shape-non-array-steps)"
+    run_id="nw-shape-non-array-steps"
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_LINEAR")"
+    # Corrupt .plan.steps into a non-array string — formerly PASSED the old (a) non-empty check
+    # via `"BAD" // [] | length` (== 3) then crashed at the `.id` index; the shape gate now
+    # catches it FIRST, before any later map/iteration ever touches it.
+    tmp="$ledger.seed"
+    jq '.plan.steps = "BAD"' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    assert_blocker "$name" "$gitroot" "$run_id" "$ledger"
+}
+
+test_shape_non_string_id() {
+    local name="shape:non-string-id"
+    local gitroot run_id ledger tmp
+    gitroot="$(new_gitroot shape-non-string-id)"
+    run_id="nw-shape-non-string-id"
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_LINEAR")"
+    # Corrupt STEP-001's id into a number — the shape gate rejects a missing-or-non-string id
+    # before it ever reaches the SAFE_ID_RE charset check.
+    tmp="$ledger.seed"
+    jq '.plan.steps[0].id = 123' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    assert_blocker "$name" "$gitroot" "$run_id" "$ledger"
+}
+
+# ── shape: done-set read is type-projected — a malformed event element is skipped, not crashed ──
+
+test_shape_tolerant_malformed_event() {
+    local gitroot run_id ledger
+    gitroot="$(new_gitroot shape-tolerant-event)"
+    run_id="nw-shape-tolerant-event"
+    # .events carries a NON-OBJECT element ("junk") alongside a valid completed_steps event
+    # crediting STEP-001. Mirrors linear:wave2-advance's staging exactly (LEDGER_LINEAR has no
+    # .plan.epoch, so cur=0; the event carries no plan_epoch, so it also defaults to 0 and the
+    # credit applies at the ledger's current epoch). The engine must skip "junk" via the
+    # `objects` type-projection rather than crash, while the valid event still counts.
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_LINEAR" \
+        '["junk", {"state":"implement_step","outputs":{"completed_steps":["STEP-001"]}}]')"
+    assert_wave "shape:tolerant-malformed-event" "$gitroot" "$run_id" "$ledger" \
+        "false" "[STEP-002]" "2"
+}
+
 # ── Run all cases ────────────────────────────────────────────────────────────
 
 test_linear
@@ -387,6 +466,11 @@ test_cycle
 test_empty
 test_replan_epoch
 test_bad_step_id
+test_shape_non_object_step
+test_shape_non_array_depends_on
+test_shape_non_array_steps
+test_shape_non_string_id
+test_shape_tolerant_malformed_event
 
 echo
 echo "next-wave engine tests: $PASS_COUNT passed, $FAIL_COUNT failed"
