@@ -1,6 +1,6 @@
 {
   "id": "standard-delivery",
-  "version": 1,
+  "version": 2,
   "start": "plan",
   "terminal": ["complete", "blocked", "cancelled", "hatchery_monitor", "user_input_required", "review_rejected", "review_exhausted", "merge_advised"],
   "states": {

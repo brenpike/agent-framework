@@ -1,6 +1,6 @@
 {
   "id": "pr-feedback-remediation",
-  "version": 1,
+  "version": 2,
   "start": "intake",
   "terminal": ["complete", "blocked", "cancelled", "user_input_required", "review_rejected", "review_exhausted", "merge_advised"],
   "states": {
