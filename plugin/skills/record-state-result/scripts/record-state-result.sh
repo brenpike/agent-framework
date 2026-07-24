@@ -358,6 +358,29 @@ fi
 if [ "$have_plan_steps" = true ]; then
   printf '%s' "$plan_steps" | jq -e 'type == "array"' >/dev/null 2>&1 \
     || blocker "--plan-steps must be a JSON array"
+  # STEP-ID CHARSET GUARD (write-boundary): plan step ids flow through to next-wave's routing
+  # YAML (`wave: [...]`) — a YAML delimiter / bracket / comma / newline in an id from an
+  # untrusted seeded/resume ledger could forge routing the overlord parses. Guard here so an
+  # unsafe id never persists. UNTRUSTED plan_steps enters jq ONLY as stdin INPUT; the engine
+  # constant SAFE_ID_RE enters via --arg — the untrusted text never touches the jq program
+  # SOURCE. Charset-only + non-empty is the guard (ids never become path components, so `.`/
+  # `..` are NOT rejected). Type-check precedes every field access (fail-closed, mirroring the
+  # ordered-`or`/`and` short-circuit posture used elsewhere); messages carry no untrusted text.
+  #   (a) every entry is an OBJECT (before any .id / .depends_on access).
+  printf '%s' "$plan_steps" | jq -e 'all(.[]; type == "object")' >/dev/null 2>&1 \
+    || blocker "each plan step must be a JSON object"
+  #   (b) every .id is a NON-EMPTY STRING matching SAFE_ID_RE.
+  printf '%s' "$plan_steps" | jq -e --arg re "$SAFE_ID_RE" \
+    'all(.[]; (.id | type == "string") and (.id != "") and (.id | test($re)))' >/dev/null 2>&1 \
+    || blocker "plan step id must match SAFE_ID_RE"
+  #   (c) every .depends_on (when present and non-null) is an ARRAY (before entry iteration).
+  printf '%s' "$plan_steps" | jq -e \
+    'all(.[]; ((has("depends_on") and .depends_on != null) | not) or (.depends_on | type == "array"))' >/dev/null 2>&1 \
+    || blocker "plan step depends_on must be a JSON array"
+  #   (d) every depends_on entry is a NON-EMPTY STRING matching SAFE_ID_RE.
+  printf '%s' "$plan_steps" | jq -e --arg re "$SAFE_ID_RE" \
+    'all(.[]; (.depends_on // []) | all(.[]; (type == "string") and (. != "") and test($re)))' >/dev/null 2>&1 \
+    || blocker "depends_on entry must match SAFE_ID_RE"
 fi
 
 # ── Deterministic validation (ALL before any write) ───────────────────────────

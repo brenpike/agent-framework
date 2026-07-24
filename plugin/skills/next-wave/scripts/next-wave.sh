@@ -82,6 +82,11 @@
 #   - a step missing an id
 #   - duplicate step ids
 #   - a depends_on referencing an unknown step id
+#   - a step `id` or any `depends_on` entry that fails SAFE_ID_RE (reader-side charset belt,
+#     symmetric to the `files` grammar projection and to the write-boundary guards in
+#     record-state-result / init-run-ledger; a PRE-EXISTING seeded/resume ledger predating those
+#     write guards could still carry a malformed id). Fail-closed on a non-object step or a
+#     non-array depends_on. Guarantees a malformed id can NEVER reach the wave: [...] join emit.
 #   - a dependency cycle
 #   - remaining > 0 but wave empty with no cycle (defensive; a cycle-free acyclic notdone
 #     subgraph always has a ready minimal element, so this cannot occur without a cycle)
@@ -109,7 +114,10 @@ set -euo pipefail
 blocker() { printf 'blocker: %s\n' "$1" >&2; exit 1; }
 
 # SAFE_ID charset for the run_id identity component (mirrors the sibling engines). The reserved
-# components "." and ".." pass this class but are rejected explicitly (path traversal).
+# components "." and ".." pass this class but are rejected explicitly (path traversal). The SAME
+# constant is REUSED reader-side (validation (f)) to charset-validate every plan step `id` and
+# every `depends_on` entry before the wave emit — a belt symmetric to the `files` grammar
+# projection and to the write-boundary guards in record-state-result / init-run-ledger.
 SAFE_ID_RE='^[A-Za-z0-9._-]+$'
 
 # ── Script self-location (portable; independent of ${CLAUDE_PLUGIN_ROOT} and the caller) ──
@@ -223,6 +231,29 @@ cycle_residue="$(jq '
     )
   | length' "$ledger")"
 [ "$cycle_residue" = "0" ] || blocker "dependency cycle detected among plan steps"
+
+# (f) every step `id` and every `depends_on` entry is a safe id (SAFE_ID_RE charset). READER-SIDE
+# belt: the write-boundary guards in record-state-result / init-run-ledger stop NEW bad ids, but a
+# PRE-EXISTING seeded/resume ledger predating those guards could still carry a malformed id — and a
+# malformed id must NEVER reach the `wave: [...]` join emit. Symmetric to the `files` grammar
+# projection in the wave jq below. FAIL-CLOSED: a non-object step or a non-array depends_on is a
+# blocker; the charset check gates on `type == "string"` FIRST (jq `or` is lazy) so `test` never
+# runs against a non-string. Offenders are emitted via `@json` so an empty-string offender stays a
+# non-empty ("") token and cannot be misread as "no offense".
+bad_id="$(jq -r --arg re "$SAFE_ID_RE" '
+  [ .plan.steps[]
+    | if (type != "object") then "non-object step"
+      else
+        ( if ((.id | type) != "string") or ((.id | test($re)) | not)
+          then (.id | @json) else empty end ),
+        ( if (.depends_on != null) and ((.depends_on | type) != "array")
+          then "non-array depends_on"
+          else ( (.depends_on // [])[]
+                 | if (type != "string") or ((test($re)) | not) then @json else empty end )
+          end )
+      end
+  ] | .[0] // empty' "$ledger")"
+[ -z "$bad_id" ] || blocker "plan step id or depends_on entry fails the safe-id charset: $bad_id"
 
 # ── Wave computation (single jq program; emits tab-separated routing facts) ────
 # Emits: <remaining>\t<all_done>\t<wave_count>\t<wave_display>

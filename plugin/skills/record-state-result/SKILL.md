@@ -126,6 +126,13 @@ The script validates, in order, ALL before any write:
    path, so a forged definition can never be injected.
 5. `outputs` (if present and non-null) must be a JSON object; `plan_steps` (if present and
    non-null) must be a JSON array — both validated up front for a clear blocker before any temp-write.
+   When `plan_steps` is present, every entry must additionally be a JSON OBJECT whose `id` is a
+   NON-EMPTY STRING matching `SAFE_ID_RE` (`^[A-Za-z0-9._-]+$`), and every `depends_on` (when
+   present and non-null) must be an ARRAY of NON-EMPTY STRINGS each matching `SAFE_ID_RE` — a
+   write-boundary charset guard so an unsafe id (YAML delimiter/bracket/comma/newline) can never
+   persist and forge next-wave's routing YAML. `.`/`..` are NOT rejected (ids never become path
+   components; charset-only + non-empty is the guard). UNTRUSTED `plan_steps` enters `jq` as stdin
+   INPUT only; the violation blocker carries no untrusted text and the ledger is byte-unchanged.
 6. `definition.id == ledger.run.workflow` — BINDING GUARD (engine hard-reject; ledger
    unchanged). Now compares the trusted ledger against the self-derived PACKAGED definition,
    not a caller-supplied path.

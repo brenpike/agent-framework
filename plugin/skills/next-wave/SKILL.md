@@ -70,8 +70,9 @@ done set covers every step.
    ```
    Dispatch exactly the step ids in `wave` this iteration; when `all_done: true` the wave is
    `[]` and every step is done. Exit 1: the script printed `blocker: <reason>` on stderr and
-   read-only-failed (empty/cyclic/invalid plan, missing/invalid ledger, or a containment
-   rejection) — surface it and stop.
+   read-only-failed (empty/cyclic/invalid plan, a step `id` or `depends_on` entry that fails the
+   safe-id charset — a reader-side belt over pre-existing seeded/resume ledgers — missing/invalid
+   ledger, or a containment rejection) — surface it and stop.
 
 ## Pointers
 
