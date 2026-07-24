@@ -77,7 +77,20 @@
 #                    unsafe concurrency. Run-alone = serial = always correct; it never strands a
 #                    drainable plan (same conservative lane the glob case already used).
 #
-# VALIDATION (all fail-closed -> `blocker: <reason>` on stderr, exit 1, nothing on stdout):
+# VALIDATION (all fail-closed -> `blocker: <reason>` on stderr, exit 1, nothing on stdout).
+# ORDER: a POSITIVE SHAPE GATE runs FIRST (before (a)-(f)), so no later check ever indexes or
+# iterates an untrusted plan field of the WRONG TYPE and crashes raw jq (exit 5) under
+# `set -euo pipefail` BEFORE the intended clean blocker is reached. Full ordering is:
+# shape gate -> (a) non-empty -> (b)-(f).
+#   - SHAPE GATE (closes the whole raw-jq crash class):
+#       * `.plan.steps` is not an array — a non-array string like "BAD" formerly PASSED (a) via
+#         `"BAD" // [] | length` (== 3) then crashed (b) at the `.id` index.
+#       * a plan step is not an object — formerly crashed (b) at the `.id` index.
+#       * a step `id` is missing or not a string.
+#       * a `depends_on` is present/non-null but not an array — formerly crashed (d) on iterate.
+#       * a `depends_on` entry is not a string.
+#     Every (a)-(f) check below then runs on SHAPE-VALID data and reaches its advertised clean
+#     blocker for these shapes.
 #   - empty / absent plan.steps
 #   - a step missing an id
 #   - duplicate step ids
@@ -85,8 +98,9 @@
 #   - a step `id` or any `depends_on` entry that fails SAFE_ID_RE (reader-side charset belt,
 #     symmetric to the `files` grammar projection and to the write-boundary guards in
 #     record-state-result / init-run-ledger; a PRE-EXISTING seeded/resume ledger predating those
-#     write guards could still carry a malformed id). Fail-closed on a non-object step or a
-#     non-array depends_on. Guarantees a malformed id can NEVER reach the wave: [...] join emit.
+#     write guards could still carry a malformed id). The earlier shape gate now guarantees this
+#     check runs on known-strings; its non-object/non-array arms are kept as defense-in-depth.
+#     Guarantees a malformed id can NEVER reach the wave: [...] join emit.
 #   - a dependency cycle
 #   - remaining > 0 but wave empty with no cycle (defensive; a cycle-free acyclic notdone
 #     subgraph always has a ready minimal element, so this cannot occur without a cycle)
@@ -198,6 +212,38 @@ case $ledger_open_rc in
 esac
 
 # ── Validation (all before the wave computation) ──────────────────────────────
+# SHAPE-VALIDATION GATE — runs FIRST, before checks (a)-(f). The (a)-(f) checks index/iterate
+# untrusted plan.steps fields; several malformed SHAPES (non-array steps, non-object step,
+# non-array depends_on) otherwise crash raw jq (exit 5) under `set -euo pipefail` BEFORE the
+# intended clean blocker is reached. This POSITIVE shape grammar, validated FIRST, closes the whole
+# raw-crash class so every check below runs on SHAPE-VALID data and its clean-blocker contract is
+# reachable. Ledger untouched (read-only) on any violation, matching the rest of validation.
+
+# `.plan.steps` MUST be an array. A non-array (e.g. the string "BAD") formerly passed the (a)
+# non-empty check via `"BAD" // [] | length` (== 3) and then crashed (b) at the `.id` index.
+# Checked FIRST so no later map/iteration ever touches a non-array `.plan.steps`.
+steps_is_array="$(jq '(.plan.steps | type) == "array"' "$ledger")"
+[ "$steps_is_array" = "true" ] || blocker "plan.steps is not an array"
+
+# Per-step shape pass (single jq, type-first lazy-`or` via an `if/elif` chain, FIRST offender only):
+# every step IS an object; `.id` is present and a string; `.depends_on` (if present/non-null) IS an
+# array; every `.depends_on` entry IS a string. The `if/elif` chain short-circuits on the failing
+# type gate so no field of the offending step is indexed/iterated raw. Offenders are emitted via
+# `@json` (as guard (f) does) so an empty / whitespace / null offender stays a visible token.
+bad_shape="$(jq -r '
+  [ .plan.steps[]
+    | if (type != "object") then "a plan step is not an object: " + (. | @json)
+      elif (has("id") | not) then "a plan step is missing an id"
+      elif ((.id | type) != "string") then "a plan step id is not a string: " + (.id | @json)
+      elif (.depends_on != null) and ((.depends_on | type) != "array")
+        then "a plan step depends_on is not an array: " + (.depends_on | @json)
+      elif (.depends_on != null) and (.depends_on | any((type) != "string"))
+        then "a plan step depends_on entry is not a string: "
+             + (.depends_on | map(select((type) != "string")) | .[0] | @json)
+      else empty end
+  ] | .[0] // empty' "$ledger")"
+[ -z "$bad_shape" ] || blocker "$bad_shape"
+
 # (a) plan.steps present and non-empty.
 steps_len="$(jq '(.plan.steps // []) | length' "$ledger")"
 [ "$steps_len" -gt 0 ] || blocker "plan.steps is empty or absent; nothing to schedule"
@@ -236,10 +282,13 @@ cycle_residue="$(jq '
 # belt: the write-boundary guards in record-state-result / init-run-ledger stop NEW bad ids, but a
 # PRE-EXISTING seeded/resume ledger predating those guards could still carry a malformed id — and a
 # malformed id must NEVER reach the `wave: [...]` join emit. Symmetric to the `files` grammar
-# projection in the wave jq below. FAIL-CLOSED: a non-object step or a non-array depends_on is a
-# blocker; the charset check gates on `type == "string"` FIRST (jq `or` is lazy) so `test` never
-# runs against a non-string. Offenders are emitted via `@json` so an empty-string offender stays a
-# non-empty ("") token and cannot be misread as "no offense".
+# projection in the wave jq below. The earlier SHAPE-VALIDATION GATE now guarantees this check runs
+# on KNOWN-STRINGS (every step is an object, every id/dep is a string) and delivers the advertised
+# clean-blocker contract for those shapes; its non-object-step and non-array-depends_on arms below
+# are RETAINED as defense-in-depth belt. FAIL-CLOSED: the charset check still gates on
+# `type == "string"` FIRST (jq `or` is lazy) so `test` never runs against a non-string. Offenders
+# are emitted via `@json` so an empty-string offender stays a non-empty ("") token and cannot be
+# misread as "no offense".
 bad_id="$(jq -r --arg re "$SAFE_ID_RE" '
   [ .plan.steps[]
     | if (type != "object") then "non-object step"
@@ -263,6 +312,10 @@ bad_id="$(jq -r --arg re "$SAFE_ID_RE" '
 #   $done           union of events[].outputs.completed_steps[] SCOPED to the current plan epoch
 #                   ($cur = .plan.epoch // 0): only credits from events whose plan_epoch // 0 == $cur
 #                   count (done-ness lives in events; //0 keeps pre-epoch ledgers byte-identical).
+#                   TYPE-PROJECTED so a malformed event is SKIPPED, not crashed: events flow through
+#                   `objects` before any field access, `.outputs` through `objects`, and each credit
+#                   through `strings` — a non-object event element or non-string credit is projected
+#                   OUT, never indexed/iterated raw. Well-formed events keep byte-identical semantics.
 #   $allfiles       every {id, f} over grammar-CLEAN string entries only, built defensively so a
 #                   non-array / non-string `files` cannot error the directory-prefix scan.
 #   .ca             conflicts-with-all (run ALONE) when the RAW scope fails the canonical grammar:
@@ -277,7 +330,11 @@ bad_id="$(jq -r --arg re "$SAFE_ID_RE" '
 main="$(jq -r '
   .plan.steps as $steps
   | (.plan.epoch // 0) as $cur
-  | ([ .events[]? | select((.plan_epoch // 0) == $cur) | .outputs?.completed_steps[]? ] | unique) as $done
+  | ([ .events[]?
+       | objects
+       | select((.plan_epoch // 0) == $cur)
+       | (.outputs? | objects | .completed_steps[]? | strings)
+     ] | unique) as $done
   | ([$steps[] | .id as $id | (.files // []) | select(type == "array") | .[] | select(type == "string") | {id: $id, f: .}]) as $allfiles
   | ($steps | map(
       .id as $id
