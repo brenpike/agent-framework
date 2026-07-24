@@ -50,6 +50,10 @@
 #              IGNORED (1 != current 2), so STEP-001 is re-dispatched this generation; and a
 #              SAME-epoch (plan_epoch=2) credit for STEP-001 DOES count, excluding it from the wave.
 #              Proves next-wave's done-set is scoped to the current plan.epoch.
+#   bad-id   — a plan.steps entry whose .id fails the SAFE_ID_RE charset (a stray `]`) is a
+#              blocker: exit 1, stderr blocker, ledger byte-unchanged. Proves the READER-SIDE
+#              charset belt (a pre-existing seeded/resume ledger predating the write-boundary
+#              guards) stops a malformed id BEFORE it can reach the `wave: [...]` routing emit.
 #
 # Every success case ALSO asserts the staged ledger is BYTE-UNCHANGED after the engine runs
 # (sha256 before == after) — the engine is read-only.
@@ -352,6 +356,25 @@ test_replan_epoch() {
         "false" "[STEP-002]" "1"
 }
 
+# ── bad-id: a plan.steps entry with a SAFE_ID_RE-violating .id is a blocker ──
+
+test_bad_step_id() {
+    local name="bad-id:blocker-exit1"
+    local gitroot run_id ledger tmp
+    gitroot="$(new_gitroot bad-step-id)"
+    run_id="nw-bad-step-id"
+    ledger="$(stage_ledger "$gitroot" "$run_id" "$LEDGER_LINEAR")"
+    # Corrupt STEP-001's id to carry a `]` byte outside [A-Za-z0-9._-] — simulates a pre-existing
+    # seeded/resume ledger predating the write-boundary guards (record-state-result /
+    # init-run-ledger reject this at write time, so this shape can only arise from a ledger
+    # written before those guards existed). In-place jq mutation of the staged copy: mirrors
+    # tools/test_engine.sh's tmp/seed re-point pattern rather than adding a new fixture file for a
+    # one-field corruption.
+    tmp="$ledger.seed"
+    jq '.plan.steps[0].id = "STEP-001]"' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    assert_blocker "$name" "$gitroot" "$run_id" "$ledger"
+}
+
 # ── Run all cases ────────────────────────────────────────────────────────────
 
 test_linear
@@ -363,6 +386,7 @@ test_missing_scope
 test_cycle
 test_empty
 test_replan_epoch
+test_bad_step_id
 
 echo
 echo "next-wave engine tests: $PASS_COUNT passed, $FAIL_COUNT failed"

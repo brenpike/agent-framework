@@ -2949,6 +2949,141 @@ assert_intent_fallback_strips_completed_steps() {
     fi
 }
 
+# ── QQ. record: plan_steps entry with a SAFE_ID_RE-violating .id rejected ────
+
+assert_record_plan_steps_bad_id_rejected() {
+    local name="QQ:record-plan-steps-bad-id-rejected"
+    # A plan_steps .id carrying a byte outside [A-Za-z0-9._-] (here a trailing `]`, a YAML
+    # flow-sequence delimiter) must be rejected at the write boundary BEFORE it can ever persist
+    # into .plan.steps and later flow into next-wave's `wave: [...]` routing YAML. Ledger at
+    # `plan` (cerebrate-authorized) so the ONLY failing gate is the id-charset guard, not
+    # plan-write authorization. Ledger byte-unchanged.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot qq-git)"
+    run_id="engine-case-qq"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    inputs="$gitroot/qq-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test plan step id charset guard" \
+        --argjson plan_steps '[{"id":"STEP-001]","status":"pending"}]' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "unsafe plan step id rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── RR. record: plan_steps depends_on entry violating SAFE_ID_RE rejected ────
+
+assert_record_plan_steps_bad_depends_on_rejected() {
+    local name="RR:record-plan-steps-bad-depends-on-rejected"
+    # The step's own .id is safe, but a depends_on ENTRY carries a comma + space (a YAML
+    # flow-sequence separator) — outside [A-Za-z0-9._-]. Same guard, different field: proves the
+    # depends_on-entry charset check rejects independently of the id check. Ledger byte-unchanged.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot rr-git)"
+    run_id="engine-case-rr"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    inputs="$gitroot/rr-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test plan step depends_on charset guard" \
+        --argjson plan_steps '[{"id":"STEP-002","depends_on":["X, Y"],"status":"pending"}]' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "unsafe depends_on entry rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── SS. init: plan_steps entry with a SAFE_ID_RE-violating .id rejected ──────
+
+assert_init_plan_steps_bad_id_rejected() {
+    local name="SS:init-plan-steps-bad-id-rejected"
+    # Mirrors QQ at the OTHER write boundary (init-run-ledger's seed path). The guard sits before
+    # any run-dir/ledger creation, so a violation must leave NO orphan dir or ledger anywhere
+    # under the checkout's .hivemind/runs tree.
+    local gitroot inputs rc=0
+    gitroot="$(new_gitroot ss-git)"
+    inputs="$gitroot/ss-inputs.json"
+
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init step-id charset guard" \
+        --arg normalized "engine test init step-id charset guard" \
+        --argjson plan_steps '[{"id":"STEP-001]","status":"pending"}]' \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    local wrote_any=no
+    if [[ -d "$gitroot/.hivemind/runs" ]] && find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then
+        wrote_any=yes
+    fi
+    if [[ "$rc" -ne 0 && "$wrote_any" == "no" ]]; then
+        pass "$name" "unsafe plan step id rejected (exit $rc); no run dir/ledger created"
+    else
+        failed "$name" "expected non-zero exit + no ledger written; rc=$rc, wrote_any=$wrote_any"
+    fi
+}
+
+# ── TT. init: plan_steps depends_on entry violating SAFE_ID_RE rejected ──────
+
+assert_init_plan_steps_bad_depends_on_rejected() {
+    local name="TT:init-plan-steps-bad-depends-on-rejected"
+    # Mirrors RR at the init write boundary: the step's own .id is safe, but a depends_on entry
+    # carries a comma + space. No orphan dir or ledger may be created.
+    local gitroot inputs rc=0
+    gitroot="$(new_gitroot tt-git)"
+    inputs="$gitroot/tt-inputs.json"
+
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init depends_on charset guard" \
+        --arg normalized "engine test init depends_on charset guard" \
+        --argjson plan_steps '[{"id":"STEP-002","depends_on":["X, Y"],"status":"pending"}]' \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    local wrote_any=no
+    if [[ -d "$gitroot/.hivemind/runs" ]] && find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then
+        wrote_any=yes
+    fi
+    if [[ "$rc" -ne 0 && "$wrote_any" == "no" ]]; then
+        pass "$name" "unsafe depends_on entry rejected (exit $rc); no run dir/ledger created"
+    else
+        failed "$name" "expected non-zero exit + no ledger written; rc=$rc, wrote_any=$wrote_any"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -3004,6 +3139,10 @@ assert_completed_steps_nonarray_rejected
 assert_completed_steps_singular_agent_state_rejected
 assert_completed_steps_cerebrate_only_allowed_agents_rejected
 assert_intent_fallback_strips_completed_steps
+assert_record_plan_steps_bad_id_rejected
+assert_record_plan_steps_bad_depends_on_rejected
+assert_init_plan_steps_bad_id_rejected
+assert_init_plan_steps_bad_depends_on_rejected
 
 echo ''
 echo '=== Summary ==='
