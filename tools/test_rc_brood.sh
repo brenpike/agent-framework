@@ -78,7 +78,7 @@ assert_eq() {
 # assert_contains <case> <needle> <haystack> [msg]
 assert_contains() {
   local case_name="$1" needle="$2" haystack="$3" msg="${4:-}"
-  if printf '%s' "$haystack" | grep -qF -- "$needle"; then
+  if grep -qF -- "$needle" <<<"$haystack"; then
     pass "$case_name" "${msg:+$msg }(contains '$needle')"
   else
     failed "$case_name" "${msg:+$msg }missing '$needle'"
@@ -88,7 +88,7 @@ assert_contains() {
 # assert_not_contains <case> <needle> <haystack> [msg]
 assert_not_contains() {
   local case_name="$1" needle="$2" haystack="$3" msg="${4:-}"
-  if printf '%s' "$haystack" | grep -qF -- "$needle"; then
+  if grep -qF -- "$needle" <<<"$haystack"; then
     failed "$case_name" "${msg:+$msg }unexpectedly contains '$needle'"
   else
     pass "$case_name" "${msg:+$msg }(free of '$needle')"
@@ -504,7 +504,7 @@ assert_eq "hostile:exact-payload" "/rc $EXPECT_SHORT" "$PAYLOADS4" "sent payload
 # and assert the remaining short bytes carry none of the hostile metacharacters.
 SHORT4="${PAYLOADS4#/rc }"
 for meta in ';' '$(' '`' ' ' '/'; do
-  if printf '%s' "$SHORT4" | grep -qF -- "$meta"; then
+  if grep -qF -- "$meta" <<<"$SHORT4"; then
     failed "hostile:no-meta" "metacharacter '$meta' reached the send-keys short"
   else
     pass "hostile:no-meta" "(short free of metacharacter '$meta')"
