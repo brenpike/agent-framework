@@ -63,6 +63,11 @@ never clobbered to `[]`.
 The `outputs` field here is the event's free-form `outputs` object — it is NOT a plan-steps
 writer; use `plan_steps` for that.
 
+Recording ANY cerebrate planning-state result also ADVANCES an engine-owned monotonic plan
+epoch (`.plan.epoch`), and every appended event — for this and every other state — is
+stamped with the current `plan_epoch`. The caller supplies NOTHING for this: it is entirely
+engine-maintained, with no inputs-file field to set it.
+
 ## Inputs JSON
 
 The script owns deterministic read -> validate -> mutate -> atomic-write; the navigator
@@ -88,7 +93,13 @@ Field rules:
   identity the caller supplies, and every path the engine touches is DERIVED from it.
 - `outputs` is optional. KEY-PRESENCE semantics: a MISSING key OR a present-but-null value
   is ABSENT (the event's `outputs` defaults to `{}`); a present non-null value MUST be a JSON
-  object and is recorded verbatim. UNTRUSTED — serialized only via `--argjson`.
+  object and is recorded verbatim. UNTRUSTED — serialized only via `--argjson`. When `outputs`
+  carries a `completed_steps` key (present and non-null), it is honored ONLY when the recording
+  state is a WAVE-PRODUCING agent state (`states.<state>.type == "agent"` AND
+  `states.<state>` declares `allowed_agents` AND `"hivemind:cerebrate"` is not in that
+  `allowed_agents` set, derived from the packaged workflow definition) — symmetric to the
+  plan-write authorization below (§11); at any other recording state the record is REJECTED
+  (blocker, ledger byte-unchanged).
 - `plan_steps` is optional (cerebrate plan steps as a JSON array; sets `.plan.steps`).
   KEY-PRESENCE semantics: a MISSING key OR a present-but-null value is ABSENT -> `.plan.*`
   left UNTOUCHED (never clobbered to `[]`); a present non-null value MUST be a JSON array.
@@ -115,6 +126,13 @@ The script validates, in order, ALL before any write:
    path, so a forged definition can never be injected.
 5. `outputs` (if present and non-null) must be a JSON object; `plan_steps` (if present and
    non-null) must be a JSON array — both validated up front for a clear blocker before any temp-write.
+   When `plan_steps` is present, every entry must additionally be a JSON OBJECT whose `id` is a
+   NON-EMPTY STRING matching `SAFE_ID_RE` (`^[A-Za-z0-9._-]+$`), and every `depends_on` (when
+   present and non-null) must be an ARRAY of NON-EMPTY STRINGS each matching `SAFE_ID_RE` — a
+   write-boundary charset guard so an unsafe id (YAML delimiter/bracket/comma/newline) can never
+   persist and forge next-wave's routing YAML. `.`/`..` are NOT rejected (ids never become path
+   components; charset-only + non-empty is the guard). UNTRUSTED `plan_steps` enters `jq` as stdin
+   INPUT only; the violation blocker carries no untrusted text and the ledger is byte-unchanged.
 6. `definition.id == ledger.run.workflow` — BINDING GUARD (engine hard-reject; ledger
    unchanged). Now compares the trusted ledger against the self-derived PACKAGED definition,
    not a caller-supplied path.
@@ -132,6 +150,13 @@ The script validates, in order, ALL before any write:
    `review_remediation_plan_postpr` / `brood_plan`); otherwise the engine rejects (exit 1,
    ledger byte-unchanged). Key presence alone does NOT authorize a plan write — only a cerebrate
    agent state may persist `plan.steps` / `plan.path`.
+12. PRODUCER AUTHORIZATION — if `outputs` carries a `completed_steps` key (present and
+   non-null), the recording state MUST be a WAVE-PRODUCING agent state
+   (`states.<state>.type == "agent"` AND `states.<state>` has `allowed_agents` AND
+   `"hivemind:cerebrate"` is not in that `allowed_agents` set, derived from the packaged
+   workflow definition — ground-truth, no hardcoded state names); otherwise the engine rejects
+   (exit 1, ledger byte-unchanged). This is symmetric to §11: key presence alone does NOT
+   authorize a `completed_steps` credit — only a wave-producing agent state may persist it.
 
 Then it appends the event; updates `state.previous`/`state.current`/`state.status`,
 `run.updated_at`, (if `next_state` is terminal) `run.status`, and — when `plan_steps` /

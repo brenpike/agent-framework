@@ -246,6 +246,29 @@ esac
 printf '%s' "$plan_steps" | jq -e 'type=="array"' >/dev/null 2>&1 \
   || blocker "plan_steps must be a JSON array"
 
+# Step-id charset guard. A seeded step id / depends_on id flows into .plan.steps, which
+# next-wave routes into a `wave: [...]` YAML program the overlord parses; a step id bearing
+# a YAML delimiter/bracket/comma/newline could forge routing. Require every step entry to be
+# an OBJECT whose .id is a NON-EMPTY STRING matching SAFE_ID_RE, and every .depends_on entry
+# (when present; depends_on must be an ARRAY) likewise. Fail-closed on non-object step /
+# non-array depends_on (type-check gates every field access; jq's short-circuiting `and`
+# never touches .id / has / .depends_on on the wrong type). Do NOT reject ./.. (charset +
+# non-empty only, symmetric to the record-state-result seed guard). UNTRUSTED plan_steps
+# enters jq ONLY as stdin INPUT and SAFE_ID_RE ONLY as the --arg binding — never program
+# SOURCE. This sits with the plan_steps validation, BEFORE any run-dir/ledger creation, so a
+# violation leaves NO orphan dir or ledger.
+printf '%s' "$plan_steps" | jq -e --arg re "$SAFE_ID_RE" '
+  all(.[];
+    type == "object"
+    and (.id | type == "string" and length > 0 and test($re))
+    and (if has("depends_on")
+         then (.depends_on
+               | type == "array"
+               and all(.[]; type == "string" and length > 0 and test($re)))
+         else true end))
+' >/dev/null 2>&1 \
+  || blocker "plan_steps: every entry must be an object whose .id is a non-empty string matching ${SAFE_ID_RE}, and every .depends_on (when present) must be an array of such strings"
+
 # ── Run-id derivation ─────────────────────────────────────────────────────────
 run_id=""
 if [ "$parent_kind" = "brood" ]; then

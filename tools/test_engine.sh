@@ -2521,6 +2521,569 @@ assert_canon_ledger_round_trips_to_routed_path() {
     fi
 }
 
+# ── EA. plan-steps record on a fresh ledger bumps .plan.epoch absent -> 1 ────
+
+assert_epoch_bumped_on_first_plan_record() {
+    local name="EA:epoch-bumped-first-plan-record"
+    # Fresh ledger-at-plan carries NO .plan.epoch (reads as 0). Recording the cerebrate `plan`
+    # state WITH plan_steps replaces plan.steps => the engine bumps .plan.epoch 0 -> 1 and stamps
+    # the appended event's top-level plan_epoch with the resolved epoch (1).
+    local gitroot run_id ledger inputs
+    gitroot="$(new_gitroot ea-git)"
+    run_id="engine-case-ea"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    inputs="$gitroot/ea-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test epoch bump first plan record" \
+        --argjson plan_steps '[{"id":"STEP-001","status":"pending"}]' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a plan-state with plan_steps (expected 0)"
+        return
+    fi
+
+    local plan_epoch event_epoch
+    plan_epoch="$(jq -r '.plan.epoch' "$ledger")"
+    event_epoch="$(jq -r '.events[-1].plan_epoch' "$ledger")"
+    if [[ "$plan_epoch" == "1" && "$event_epoch" == "1" ]]; then
+        pass "$name" ".plan.epoch bumped absent->1 and appended event stamped plan_epoch=1"
+    else
+        failed "$name" "expected .plan.epoch=1 and event plan_epoch=1, got plan.epoch=$plan_epoch event.plan_epoch=$event_epoch"
+    fi
+}
+
+# ── EB. a subsequent plan-steps record bumps .plan.epoch 1 -> 2 ──────────────
+
+assert_epoch_bumped_on_subsequent_plan_record() {
+    local name="EB:epoch-bumped-subsequent-plan-record"
+    # Ledger at the SECOND cerebrate state (review_remediation_plan) whose .plan.epoch is PRE-SET
+    # to 1 (an earlier generation already ran). Recording it WITH plan_steps replaces plan.steps
+    # again => the engine bumps .plan.epoch 1 -> 2 and stamps the appended event plan_epoch=2.
+    local gitroot run_id ledger inputs tmp
+    gitroot="$(new_gitroot eb-git)"
+    run_id="engine-case-eb"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_REMEDIATION_PLAN")"
+    # Seed a prior epoch on the staged ledger (simulating an earlier plan-steps generation).
+    tmp="$ledger.seed"
+    jq '.plan.epoch = 1' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/eb-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state review_remediation_plan \
+        --arg result ready \
+        --arg summary "engine test epoch bump subsequent plan record" \
+        --argjson plan_steps '[{"id":"STEP-001","status":"pending"}]' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a cerebrate plan-state with plan_steps (expected 0)"
+        return
+    fi
+
+    local plan_epoch event_epoch
+    plan_epoch="$(jq -r '.plan.epoch' "$ledger")"
+    event_epoch="$(jq -r '.events[-1].plan_epoch' "$ledger")"
+    if [[ "$plan_epoch" == "2" && "$event_epoch" == "2" ]]; then
+        pass "$name" ".plan.epoch bumped 1->2 and appended event stamped plan_epoch=2"
+    else
+        failed "$name" "expected .plan.epoch=2 and event plan_epoch=2, got plan.epoch=$plan_epoch event.plan_epoch=$event_epoch"
+    fi
+}
+
+# ── EC. a non-plan record leaves .plan.epoch UNCHANGED, stamps current epoch ─
+
+assert_epoch_unchanged_on_nonplan_record() {
+    local name="EC:epoch-unchanged-nonplan-record"
+    # Ledger at build (a NON-cerebrate work state) whose .plan.epoch is PRE-SET to 1. Recording it
+    # WITHOUT plan_steps must NOT bump .plan.epoch (stays 1) but MUST stamp the appended event with
+    # the CURRENT resolved epoch (1) — done-ness lives in events, so every event carries its epoch.
+    local gitroot run_id ledger inputs tmp
+    gitroot="$(new_gitroot ec-git)"
+    run_id="engine-case-ec"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    tmp="$ledger.seed"
+    jq '.plan.epoch = 1' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/ec-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state build \
+        --arg result done \
+        --arg summary "engine test epoch unchanged non-plan record" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a non-plan state (expected 0)"
+        return
+    fi
+
+    local plan_epoch event_epoch
+    plan_epoch="$(jq -r '.plan.epoch' "$ledger")"
+    event_epoch="$(jq -r '.events[-1].plan_epoch' "$ledger")"
+    if [[ "$plan_epoch" == "1" && "$event_epoch" == "1" ]]; then
+        pass "$name" ".plan.epoch left unchanged at 1 and appended event stamped current epoch (1)"
+    else
+        failed "$name" "expected .plan.epoch=1 (unchanged) and event plan_epoch=1, got plan.epoch=$plan_epoch event.plan_epoch=$event_epoch"
+    fi
+}
+
+# ── ED. a fresh ledger's first non-plan record stamps plan_epoch=0, epoch absent ─
+
+assert_epoch_absent_on_fresh_nonplan_record() {
+    local name="ED:epoch-absent-fresh-nonplan-record"
+    # Fresh ledger-at-build carries NO .plan.epoch (reads as 0). A first NON-plan record stamps the
+    # appended event plan_epoch=0 and leaves .plan.epoch ABSENT — byte-identical to pre-epoch
+    # behavior (the //0 read means no epoch key is materialized until a plan-steps replace).
+    local gitroot run_id ledger inputs
+    gitroot="$(new_gitroot ed-git)"
+    run_id="engine-case-ed"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    inputs="$gitroot/ed-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state build \
+        --arg result done \
+        --arg summary "engine test epoch absent fresh non-plan record" \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary}' \
+        > "$inputs"
+
+    local rc=0
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a fresh non-plan state (expected 0)"
+        return
+    fi
+
+    local has_epoch event_epoch
+    has_epoch="$(jq -r '.plan | has("epoch")' "$ledger")"
+    event_epoch="$(jq -r '.events[-1].plan_epoch' "$ledger")"
+    if [[ "$has_epoch" == "false" && "$event_epoch" == "0" ]]; then
+        pass "$name" ".plan.epoch left ABSENT and appended event stamped plan_epoch=0 (pre-epoch identical)"
+    else
+        failed "$name" "expected .plan.epoch absent and event plan_epoch=0, got has_epoch=$has_epoch event.plan_epoch=$event_epoch"
+    fi
+}
+
+# ── PA. producer-authorization: outputs.completed_steps at cerebrate plan state rejected ─
+
+assert_completed_steps_cerebrate_state_rejected() {
+    local name="PA:completed-steps-cerebrate-rejected"
+    # Ledger at state.current=plan, a cerebrate planning state (type agent, agent cerebrate).
+    # A legal transition (ready) carrying an outputs.completed_steps rider must be REJECTED by
+    # the producer-authorization guard (crediting a done-set from a cerebrate state would pre-
+    # credit the NEW generation): non-zero exit, ledger byte-unchanged.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot pa-git)"
+    run_id="engine-case-pa"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    inputs="$gitroot/pa-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test completed_steps at cerebrate state" \
+        --argjson outputs '{"completed_steps":["STEP-001"]}' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "cerebrate-state completed_steps rider rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── PB. producer-authorization: outputs.completed_steps at agent producer state accepted ─
+
+assert_completed_steps_producer_state_authorized() {
+    local name="PB:completed-steps-producer-authorized"
+    # Ledger at state.current=build, a wave-producing (allowed_agents) state. A legal
+    # transition (done) carrying an outputs.completed_steps rider must be ACCEPTED and the rider
+    # must round-trip VERBATIM into the appended event's outputs.completed_steps.
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot pb-git)"
+    run_id="engine-case-pb"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    inputs="$gitroot/pb-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state build \
+        --arg result done \
+        --arg summary "engine test completed_steps at producer state" \
+        --argjson outputs '{"completed_steps":["STEP-001"]}' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "engine exited $rc recording a producer-state completed_steps rider (expected 0)"
+        return
+    fi
+
+    local steps_json
+    steps_json="$(jq -c '.events[-1].outputs.completed_steps' "$ledger")"
+    if [[ "$steps_json" == '["STEP-001"]' ]]; then
+        pass "$name" "producer-state completed_steps rider accepted and round-tripped verbatim (event.outputs.completed_steps=$steps_json)"
+    else
+        failed "$name" "expected event.outputs.completed_steps=[\"STEP-001\"], got $steps_json"
+    fi
+}
+
+# ── PC. producer-authorization: outputs.completed_steps at SKILL-type state rejected ─
+
+assert_completed_steps_skill_state_rejected() {
+    local name="PC:completed-steps-skill-rejected"
+    # Ledger re-pointed to state.current=checkpoint, a SKILL-type state (not an agent producer).
+    # A legal transition (done) carrying an outputs.completed_steps rider must be REJECTED: the
+    # guard requires type==agent, so a non-cerebrate SKILL state does not authorize crediting.
+    # Proves the predicate is a TYPE gate, not merely a "non-cerebrate" gate. Ledger byte-unchanged.
+    local gitroot run_id ledger inputs tmp before after rc=0
+    gitroot="$(new_gitroot pc-git)"
+    run_id="engine-case-pc"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    # Re-point the staged ledger at the skill state (mirrors the epoch seed-modify pattern) so no
+    # new on-disk ledger fixture is required. checkpoint.done->complete is a legal transition.
+    tmp="$ledger.seed"
+    jq '.state.current = "checkpoint" | .state.previous = "build"' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/pc-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state checkpoint \
+        --arg result done \
+        --arg summary "engine test completed_steps at skill state" \
+        --argjson outputs '{"completed_steps":["STEP-001"]}' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "skill-state completed_steps rider rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── PD. producer-authorization: authorized state + NON-ARRAY completed_steps rejected ─
+
+assert_completed_steps_nonarray_rejected() {
+    local name="PD:completed-steps-nonarray-rejected"
+    # Ledger at build (an authorized producer state). A completed_steps rider that is NOT a JSON
+    # array (a bare string) must be REJECTED even though the state itself authorizes crediting:
+    # the guard enforces array-shape after authorization. Ledger byte-unchanged.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot pd-git)"
+    run_id="engine-case-pd"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    inputs="$gitroot/pd-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state build \
+        --arg result done \
+        --arg summary "engine test non-array completed_steps at producer state" \
+        --argjson outputs '{"completed_steps":"STEP-001"}' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "non-array completed_steps rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── PE. producer-authorization NARROWING: outputs.completed_steps at a singular-agent ──
+# ── non-cerebrate state (no allowed_agents) rejected ─────────────────────────────────
+
+assert_completed_steps_singular_agent_state_rejected() {
+    local name="PE:completed-steps-singular-agent-rejected"
+    # Ledger re-pointed to state.current=version_bump, a SINGULAR-agent (`agent`, not
+    # `allowed_agents`) non-cerebrate agent state (mirrors the PC re-point pattern). A legal
+    # transition (done) carrying an outputs.completed_steps rider must be REJECTED under the
+    # NARROWED guard (type==agent AND has(allowed_agents) AND allowed_agents lacks cerebrate):
+    # the prior BROAD predicate (type==agent && agent!=cerebrate) would have ACCEPTED this rider,
+    # so this case proves the narrowing actually rejects what it used to accept. Ledger
+    # byte-unchanged.
+    local gitroot run_id ledger inputs tmp before after rc=0
+    gitroot="$(new_gitroot pe-git)"
+    run_id="engine-case-pe"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    tmp="$ledger.seed"
+    jq '.state.current = "version_bump" | .state.previous = "build"' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/pe-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state version_bump \
+        --arg result done \
+        --arg summary "engine test completed_steps at singular-agent non-cerebrate state" \
+        --argjson outputs '{"completed_steps":["STEP-001"]}' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "singular-agent non-cerebrate completed_steps rider rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── PF. producer-authorization exclusion belt: outputs.completed_steps at an ──────────
+# ── allowed_agents state whose roster is cerebrate-only rejected ─────────────────────
+
+assert_completed_steps_cerebrate_only_allowed_agents_rejected() {
+    local name="PF:completed-steps-cerebrate-only-allowed-agents-rejected"
+    # Ledger re-pointed to state.current=cerebrate_wave, an allowed_agents state whose roster is
+    # EXCLUSIVELY hivemind:cerebrate. A legal transition (done) carrying an outputs.completed_steps
+    # rider must be REJECTED: has(allowed_agents) alone is not sufficient authorization when every
+    # entry in the roster is cerebrate. Ledger byte-unchanged.
+    local gitroot run_id ledger inputs tmp before after rc=0
+    gitroot="$(new_gitroot pf-git)"
+    run_id="engine-case-pf"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_BUILD")"
+    tmp="$ledger.seed"
+    jq '.state.current = "cerebrate_wave" | .state.previous = "build"' "$ledger" > "$tmp" && mv "$tmp" "$ledger"
+    inputs="$gitroot/pf-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state cerebrate_wave \
+        --arg result done \
+        --arg summary "engine test completed_steps at cerebrate-only allowed_agents state" \
+        --argjson outputs '{"completed_steps":["STEP-001"]}' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "cerebrate-only allowed_agents completed_steps rider rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── PP. intent-fallback: outputs.completed_steps is STRIPPED, sibling keys pass verbatim ──
+
+assert_intent_fallback_strips_completed_steps() {
+    local name="PP:intent-fallback-strips-completed-steps"
+    # mark-intent-fallback.sh is the SECOND ledger event-appender (record-state-result.sh is the
+    # first). A fallback event is an observability log and must NEVER credit wave steps, so the
+    # engine STRIPS outputs.completed_steps at write time (del(.completed_steps) on the
+    # engine-controlled --argjson $outputs binding) rather than rejecting the caller. Skew ledger
+    # (run.workflow_version=2 vs the fakeplugin def.version=1) mirrors case BB — the vulnerable
+    # shape a fallback event is written against. Assert: exit 0 (STRIP not REJECT — the
+    # universal-fallback doctrine forbids a new hard-fail mode here); exactly one event appended;
+    # the appended event's outputs has NO completed_steps key; the sibling "note" key passes
+    # through verbatim.
+    local gitroot run_id ledger inputs rc=0
+    gitroot="$(new_gitroot pp-git)"
+    run_id="engine-case-pp"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_WRONG_VERSION")"
+    inputs="$gitroot/pp-inputs.json"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg summary "engine test intent fallback completed_steps strip" \
+        --argjson outputs '{"completed_steps":["STEP-001"],"note":"x"}' \
+        '{run_id: $run_id, state: $state, summary: $summary, outputs: $outputs}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INTENT_FALLBACK_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        failed "$name" "intent-fallback engine exited $rc on a completed_steps+note outputs rider (expected 0 — STRIP not REJECT)"
+        return
+    fi
+
+    local events_len has_completed_steps note
+    events_len="$(jq -r '.events | length' "$ledger")"
+    has_completed_steps="$(jq -r '.events[-1].outputs | has("completed_steps")' "$ledger")"
+    note="$(jq -r '.events[-1].outputs.note' "$ledger")"
+    if [[ "$events_len" -eq 1 && "$has_completed_steps" == "false" && "$note" == "x" ]]; then
+        pass "$name" "completed_steps stripped from the appended event's outputs, sibling note key preserved verbatim (events=$events_len)"
+    else
+        failed "$name" "expected events=1/has(completed_steps)=false/note=x, got events=$events_len/has(completed_steps)=$has_completed_steps/note=$note"
+    fi
+}
+
+# ── QQ. record: plan_steps entry with a SAFE_ID_RE-violating .id rejected ────
+
+assert_record_plan_steps_bad_id_rejected() {
+    local name="QQ:record-plan-steps-bad-id-rejected"
+    # A plan_steps .id carrying a byte outside [A-Za-z0-9._-] (here a trailing `]`, a YAML
+    # flow-sequence delimiter) must be rejected at the write boundary BEFORE it can ever persist
+    # into .plan.steps and later flow into next-wave's `wave: [...]` routing YAML. Ledger at
+    # `plan` (cerebrate-authorized) so the ONLY failing gate is the id-charset guard, not
+    # plan-write authorization. Ledger byte-unchanged.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot qq-git)"
+    run_id="engine-case-qq"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    inputs="$gitroot/qq-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test plan step id charset guard" \
+        --argjson plan_steps '[{"id":"STEP-001]","status":"pending"}]' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "unsafe plan step id rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── RR. record: plan_steps depends_on entry violating SAFE_ID_RE rejected ────
+
+assert_record_plan_steps_bad_depends_on_rejected() {
+    local name="RR:record-plan-steps-bad-depends-on-rejected"
+    # The step's own .id is safe, but a depends_on ENTRY carries a comma + space (a YAML
+    # flow-sequence separator) — outside [A-Za-z0-9._-]. Same guard, different field: proves the
+    # depends_on-entry charset check rejects independently of the id check. Ledger byte-unchanged.
+    local gitroot run_id ledger inputs before after rc=0
+    gitroot="$(new_gitroot rr-git)"
+    run_id="engine-case-rr"
+    ledger="$(stage_record_ledger "$gitroot" "$run_id" "$LEDGER_AT_PLAN")"
+    inputs="$gitroot/rr-inputs.json"
+    before="$(sha256sum "$ledger" | awk '{print $1}')"
+
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg state plan \
+        --arg result ready \
+        --arg summary "engine test plan step depends_on charset guard" \
+        --argjson plan_steps '[{"id":"STEP-002","depends_on":["X, Y"],"status":"pending"}]' \
+        '{run_id: $run_id, state: $state, result: $result, summary: $summary, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    after="$(sha256sum "$ledger" | awk '{print $1}')"
+    if [[ "$rc" -ne 0 && "$before" == "$after" ]]; then
+        pass "$name" "unsafe depends_on entry rejected (exit $rc) and ledger byte-unchanged"
+    else
+        failed "$name" "expected non-zero exit + unchanged ledger; rc=$rc, changed=$([[ "$before" != "$after" ]] && echo yes || echo no)"
+    fi
+}
+
+# ── SS. init: plan_steps entry with a SAFE_ID_RE-violating .id rejected ──────
+
+assert_init_plan_steps_bad_id_rejected() {
+    local name="SS:init-plan-steps-bad-id-rejected"
+    # Mirrors QQ at the OTHER write boundary (init-run-ledger's seed path). The guard sits before
+    # any run-dir/ledger creation, so a violation must leave NO orphan dir or ledger anywhere
+    # under the checkout's .hivemind/runs tree.
+    local gitroot inputs rc=0
+    gitroot="$(new_gitroot ss-git)"
+    inputs="$gitroot/ss-inputs.json"
+
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init step-id charset guard" \
+        --arg normalized "engine test init step-id charset guard" \
+        --argjson plan_steps '[{"id":"STEP-001]","status":"pending"}]' \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    local wrote_any=no
+    if [[ -d "$gitroot/.hivemind/runs" ]] && find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then
+        wrote_any=yes
+    fi
+    if [[ "$rc" -ne 0 && "$wrote_any" == "no" ]]; then
+        pass "$name" "unsafe plan step id rejected (exit $rc); no run dir/ledger created"
+    else
+        failed "$name" "expected non-zero exit + no ledger written; rc=$rc, wrote_any=$wrote_any"
+    fi
+}
+
+# ── TT. init: plan_steps depends_on entry violating SAFE_ID_RE rejected ──────
+
+assert_init_plan_steps_bad_depends_on_rejected() {
+    local name="TT:init-plan-steps-bad-depends-on-rejected"
+    # Mirrors RR at the init write boundary: the step's own .id is safe, but a depends_on entry
+    # carries a comma + space. No orphan dir or ledger may be created.
+    local gitroot inputs rc=0
+    gitroot="$(new_gitroot tt-git)"
+    inputs="$gitroot/tt-inputs.json"
+
+    jq -n \
+        --arg workflow engine-fixture \
+        --argjson workflow_version 1 \
+        --arg start_state plan \
+        --arg user_request "engine test init depends_on charset guard" \
+        --arg normalized "engine test init depends_on charset guard" \
+        --argjson plan_steps '[{"id":"STEP-002","depends_on":["X, Y"],"status":"pending"}]' \
+        '{workflow: $workflow, workflow_version: $workflow_version, start_state: $start_state, user_request: $user_request, normalized: $normalized, plan_steps: $plan_steps}' \
+        > "$inputs"
+
+    ( cd "$gitroot" && bash "$FAKE_INIT_ENGINE" "$inputs" ) >/dev/null 2>&1 || rc=$?
+
+    local wrote_any=no
+    if [[ -d "$gitroot/.hivemind/runs" ]] && find "$gitroot/.hivemind/runs" -name state.json -print 2>/dev/null | grep -q .; then
+        wrote_any=yes
+    fi
+    if [[ "$rc" -ne 0 && "$wrote_any" == "no" ]]; then
+        pass "$name" "unsafe depends_on entry rejected (exit $rc); no run dir/ledger created"
+    else
+        failed "$name" "expected non-zero exit + no ledger written; rc=$rc, wrote_any=$wrote_any"
+    fi
+}
+
 # ── Drive all assertions ────────────────────────────────────────────────────
 
 echo '=== Engine behavior tests: derive-only engines against tests/engine/ fixtures (dual-root) ==='
@@ -2565,6 +3128,21 @@ assert_record_ledger_symlink_leaf_rejected
 assert_intent_fallback_ledger_symlink_leaf_rejected
 assert_missing_ledger_engine_io_fails_closed
 assert_canon_ledger_round_trips_to_routed_path
+assert_epoch_bumped_on_first_plan_record
+assert_epoch_bumped_on_subsequent_plan_record
+assert_epoch_unchanged_on_nonplan_record
+assert_epoch_absent_on_fresh_nonplan_record
+assert_completed_steps_cerebrate_state_rejected
+assert_completed_steps_producer_state_authorized
+assert_completed_steps_skill_state_rejected
+assert_completed_steps_nonarray_rejected
+assert_completed_steps_singular_agent_state_rejected
+assert_completed_steps_cerebrate_only_allowed_agents_rejected
+assert_intent_fallback_strips_completed_steps
+assert_record_plan_steps_bad_id_rejected
+assert_record_plan_steps_bad_depends_on_rejected
+assert_init_plan_steps_bad_id_rejected
+assert_init_plan_steps_bad_depends_on_rejected
 
 echo ''
 echo '=== Summary ==='

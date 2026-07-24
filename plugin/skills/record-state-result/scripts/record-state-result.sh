@@ -23,7 +23,9 @@
 #   5. The allowed-result set is read DIRECTLY from definition.states[<state>].transitions
 #      (keys). --result MUST be one of those keys, else blocker + exit 1, UNCHANGED.
 #   6. next_state = transitions[result].
-#   7. Append an event {at,state,result,next_state,summary,outputs}.
+#   7. Append an event {at,state,result,next_state,summary,outputs,plan_epoch}. plan_epoch
+#      is an ENGINE-WRITTEN top-level int (NOT a free-form outputs rider): every appended
+#      event carries it, so a caller can neither forge nor omit it. See item 12.
 #   8. Update state.previous=state, state.current=next_state, state.status.
 #   9. Update run.updated_at.
 #  10. If next_state is a declared terminal, set run.status + state.status to the
@@ -36,6 +38,36 @@
 #      running|complete|blocked|cancelled.
 #  11. Write via temp file + atomic mv so a concurrent hatchery reader never sees a
 #      torn file.
+#
+#  12. PLAN EPOCH OWNERSHIP: the engine is the SOLE owner of a monotonic .plan.epoch (int).
+#      It is bumped by exactly 1 ONLY when this call replaces plan.steps (have_plan_steps
+#      true — which the plan-write authorization guard already restricts to a cerebrate
+#      planning state), alongside the .plan.steps / .plan.path clause; otherwise .plan.epoch
+#      is left untouched (absent stays absent until the first bump). Every appended event is
+#      stamped with the RESOLVED epoch as a top-level plan_epoch (plan-state or not). A
+#      pre-existing ledger with no .plan.epoch reads as 0, so a non-plan record stamps
+#      plan_epoch 0 and leaves .plan.epoch absent — identical to prior behavior; the first
+#      plan.steps replace bumps to 1. have_plan_steps reaches jq ONLY as an ENGINE-DERIVED
+#      inert --argjson bool, never as interpolated or caller-supplied text. Rationale:
+#      next-wave scopes its done-set by epoch because positional STEP-NNN ids are reused
+#      across plan generations (needs_replan re-plans into the same append-only ledger).
+#
+#  13. PRODUCER AUTHORIZATION (completed_steps): next-wave's done-set unions
+#      outputs.completed_steps from every current-epoch event with NO producer check on the
+#      reader side. Because item 12 stamps the freshly-bumped epoch on the very plan event
+#      that creates a new generation, an outputs.completed_steps rider on a cerebrate
+#      plan/replan record would pre-credit the NEW generation and silently skip replan work.
+#      The engine closes this at the WRITE boundary: exactly TWO engines append events to the
+#      ledger -- this one, which honors a completed_steps rider ONLY when the recording state
+#      is a WAVE-PRODUCING agent state (type == "agent" AND declaring an allowed_agents set
+#      excluding "hivemind:cerebrate"), and mark-intent-fallback, which strips completed_steps from
+#      its fallback event outputs unconditionally; init-run-ledger only creates the ledger and
+#      appends nothing. This is SYMMETRIC to the plan-write authorization guard (item 12 /
+#      inline guard (6)): that guard restricts plan.* MUTATION to cerebrate planning states;
+#      this one restricts completed_steps CREDITING to wave-producing agent states. Both
+#      appenders enforce this discipline, ground-truth-derived from the packaged definition
+#      (NO hardcoded state list), so an unauthorized credit is UNREPRESENTABLE and the ledger
+#      stays byte-unchanged. next-wave therefore remains a pure reader, unchanged.
 #
 # CRITICAL ATOMICITY: every write is temp-write + atomic rename. On ANY validation
 # failure the on-disk ledger is byte-unchanged — no partial write ever occurs (all
@@ -326,6 +358,29 @@ fi
 if [ "$have_plan_steps" = true ]; then
   printf '%s' "$plan_steps" | jq -e 'type == "array"' >/dev/null 2>&1 \
     || blocker "--plan-steps must be a JSON array"
+  # STEP-ID CHARSET GUARD (write-boundary): plan step ids flow through to next-wave's routing
+  # YAML (`wave: [...]`) — a YAML delimiter / bracket / comma / newline in an id from an
+  # untrusted seeded/resume ledger could forge routing the overlord parses. Guard here so an
+  # unsafe id never persists. UNTRUSTED plan_steps enters jq ONLY as stdin INPUT; the engine
+  # constant SAFE_ID_RE enters via --arg — the untrusted text never touches the jq program
+  # SOURCE. Charset-only + non-empty is the guard (ids never become path components, so `.`/
+  # `..` are NOT rejected). Type-check precedes every field access (fail-closed, mirroring the
+  # ordered-`or`/`and` short-circuit posture used elsewhere); messages carry no untrusted text.
+  #   (a) every entry is an OBJECT (before any .id / .depends_on access).
+  printf '%s' "$plan_steps" | jq -e 'all(.[]; type == "object")' >/dev/null 2>&1 \
+    || blocker "each plan step must be a JSON object"
+  #   (b) every .id is a NON-EMPTY STRING matching SAFE_ID_RE.
+  printf '%s' "$plan_steps" | jq -e --arg re "$SAFE_ID_RE" \
+    'all(.[]; (.id | type == "string") and (.id != "") and (.id | test($re)))' >/dev/null 2>&1 \
+    || blocker "plan step id must match SAFE_ID_RE"
+  #   (c) every .depends_on (when present and non-null) is an ARRAY (before entry iteration).
+  printf '%s' "$plan_steps" | jq -e \
+    'all(.[]; ((has("depends_on") and .depends_on != null) | not) or (.depends_on | type == "array"))' >/dev/null 2>&1 \
+    || blocker "plan step depends_on must be a JSON array"
+  #   (d) every depends_on entry is a NON-EMPTY STRING matching SAFE_ID_RE.
+  printf '%s' "$plan_steps" | jq -e --arg re "$SAFE_ID_RE" \
+    'all(.[]; (.depends_on // []) | all(.[]; (type == "string") and (. != "") and test($re)))' >/dev/null 2>&1 \
+    || blocker "depends_on entry must match SAFE_ID_RE"
 fi
 
 # ── Deterministic validation (ALL before any write) ───────────────────────────
@@ -388,6 +443,43 @@ if [ "$have_plan_steps" = true ] || [ "$have_plan_path" = true ]; then
     || blocker "plan steps may only be written from a cerebrate planning state; state '$state' (agent '$state_agent') is not authorized; ledger unchanged"
 fi
 
+# (7) PRODUCER AUTHORIZATION for outputs.completed_steps: a completed_steps rider inside
+# --outputs may ONLY be honored when the recording state is a WAVE-PRODUCING agent state — an
+# actual step-executing producer that DECLARES an allowed_agents set. allowed_agents is the
+# ground-truth discriminator: it is present ONLY at the wave implement states (implement_step
+# / implement_step_postpr / the remediation wave state), always ["hivemind:drone",
+# "hivemind:changeling"], and NEVER at cerebrate or singular-agent states (version_bump,
+# reviewer states use a SINGULAR agent key), so has("allowed_agents") cleanly selects the
+# wave-producer set. The belt clause (allowed_agents excludes "hivemind:cerebrate") preserves
+# cerebrate-exclusion even if a future def were to add cerebrate to an allowed set. This is
+# SYMMETRIC to the plan-write auth guard (6): where (6) restricts plan.* MUTATION to cerebrate
+# planning states, (7) restricts completed_steps CREDITING to wave-producing states.
+# Rationale: next-wave unions outputs.completed_steps from every current-epoch event with NO
+# producer check, and this engine stamps the freshly-bumped epoch on the very plan event that
+# creates the epoch — so a completed_steps rider on a cerebrate plan/replan record would
+# pre-credit the NEW generation and silently skip replan work. This guard, together with
+# mark-intent-fallback stripping completed_steps from its fallback event outputs
+# unconditionally (init-run-ledger only creates the ledger and appends nothing), closes this
+# at the WRITE boundary: because BOTH event appenders enforce this discipline, an unauthorized
+# credit is UNREPRESENTABLE in the ledger; next-wave stays a pure reader. The predicate is
+# GROUND-TRUTH-derived from the packaged definition (type + allowed_agents) — NO hardcoded
+# state-name list. KEY-PRESENCE: a missing OR null completed_steps is ABSENT (guard inert).
+# This guard runs BEFORE mktemp/temp-write, so a rejection leaves the ledger byte-unchanged;
+# only the engine-validated $state (an existing definition key) is interpolated into the
+# message — never raw untrusted text.
+if printf '%s' "$outputs" | jq -e 'has("completed_steps") and .completed_steps != null' >/dev/null 2>&1; then
+  producer_authorized="$(jq -r --arg s "$state" '
+    (.states[$s].type == "agent")
+    and (.states[$s] | has("allowed_agents"))
+    and (.states[$s].allowed_agents | index("hivemind:cerebrate") | not)' "$workflow")"
+  [ "$producer_authorized" = "true" ] \
+    || blocker "outputs.completed_steps may only be recorded from a wave-producing agent state (one declaring allowed_agents without hivemind:cerebrate); state '$state' is not authorized; ledger unchanged"
+  # Authorized producer: completed_steps must be a JSON array (mirror the plan_steps up-front
+  # array validation — a clear blocker rather than a downstream reader mis-parse).
+  printf '%s' "$outputs" | jq -e '.completed_steps | type == "array"' >/dev/null 2>&1 \
+    || blocker "outputs.completed_steps must be a JSON array"
+fi
+
 # (10 pre-compute) determine whether next_state is a declared terminal and map its
 # run/state status. The schema constrains run.status to running|complete|blocked|
 # cancelled. The human-intervention terminals (user_input_required, review_rejected,
@@ -425,12 +517,16 @@ tmp_ledger="$(mktemp "$ledger_dir/.state.json.XXXXXX")" \
 # appended to the program ONLY when their flags are present — flag PRESENCE (an inert
 # bool), never the untrusted VALUE, decides which clauses run; the values themselves still
 # arrive solely through --argjson/--arg. When a flag is absent the corresponding plan.*
-# field is left untouched (NOT clobbered). INVARIANT: the input ledger is the file itself;
-# on a jq failure the temp file is removed and the on-disk ledger is untouched.
+# field is left untouched (NOT clobbered). The engine-owned .plan.epoch is bumped (and
+# .plan.epoch set) ONLY inside the have_plan_steps clause; every appended event is stamped
+# with the resolved $epoch regardless. have_plan_steps is passed as an ENGINE-DERIVED inert
+# --argjson bool (never caller text). INVARIANT: the input ledger is the file itself; on a
+# jq failure the temp file is removed and the on-disk ledger is untouched.
 plan_program=""
 if [ "$have_plan_steps" = true ]; then
   plan_program="$plan_program
-  | .plan.steps = \$plan_steps"
+  | .plan.steps = \$plan_steps
+  | .plan.epoch = \$epoch"
 fi
 if [ "$have_plan_path" = true ]; then
   plan_program="$plan_program
@@ -448,14 +544,18 @@ jq \
   --arg state_status "$state_status" \
   --argjson plan_steps "${plan_steps:-[]}" \
   --arg plan_path "$plan_path" \
+  --argjson have_plan_steps "$have_plan_steps" \
   '
-  .events += [{
+  (.plan.epoch // 0) as $cur_epoch
+  | (if $have_plan_steps then $cur_epoch + 1 else $cur_epoch end) as $epoch
+  | .events += [{
     at: $at,
     state: $state,
     result: $result,
     next_state: $next_state,
     summary: $summary,
-    outputs: $outputs
+    outputs: $outputs,
+    plan_epoch: $epoch
   }]
   | .state.previous = $state
   | .state.current = $next_state

@@ -43,6 +43,10 @@ Optional (brood child / id control):
   `[A-Za-z0-9._-]`, else a derived id is used.
 - `plan_steps`: cerebrate's plan `steps` reformatted to a JSON array — child/resume SEED for
   `ledger.plan.steps` (NOT the primary live writer; see §A). UNTRUSTED, serialized only. Default `[]`.
+  Every entry MUST be an object whose `.id` is a non-empty string matching `[A-Za-z0-9._-]`
+  (SAFE_ID_RE), and every `.depends_on` entry (when present; `.depends_on` must be an array)
+  likewise — the seeded ids flow into `next-wave`'s routing YAML, so an unsafe id fails closed
+  with a blocker and no run dir is created.
 - `plan_path`: path to the cerebrate directive — child/resume seed for `ledger.plan.path`. Default `null`.
 
 ### The §A Plan-Steps Seam
@@ -90,7 +94,10 @@ Field rules:
   When `parent.kind` is `brood`, `parent.run_id`, `parent.brood_id`, `parent.strain_id`,
   and `parent.manifest` are all required.
 - `plan_steps` is an optional JSON array (the child/resume SEED for `plan.steps`; see §A);
-  defaults to `[]` when omitted.
+  defaults to `[]` when omitted. Every entry must be an object whose `.id` is a non-empty
+  string matching `[A-Za-z0-9._-]` (SAFE_ID_RE); every `.depends_on` entry (when present;
+  `.depends_on` must be an array) must likewise be a non-empty SAFE_ID_RE string. Any unsafe
+  id is a blocker and no run dir is created.
 - `plan_path` is optional; defaults to `null` when omitted.
 - Every value is data. None is interpolated into generated shell command source.
 

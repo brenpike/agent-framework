@@ -81,6 +81,8 @@ INVARIANT: `agent_from` is NOT a recognized field. Dynamic agent resolution from
 
 Only a cerebrate-agent state (`agent: "hivemind:cerebrate"`) may persist plan steps: the deterministic engine honors `record-state-result --plan-steps` / `--plan-path` ONLY when the recording state's `agent` is `hivemind:cerebrate`, and rejects (ledger byte-unchanged) every other state. This authorizes exactly the cerebrate planning states and derives entirely from the existing `agent` key — no schema field is added.
 
+Executing an `agent` state MAY dispatch N CONCURRENT delegations to bioforms from the static `allowed_agents` set within ONE state execution — a WAVE. This does NOT introduce a new state type and does NOT violate execute-current-state-only (one state execution = one wave; see the looping paragraph under "Deferred state types — NOT in v1" below). The overlord still picks each dispatched step's bioform by intent from the static `allowed_agents` set, per the WHO/WHAT-not-WHY invariant above. Wave membership — which plan steps are dispatched together — is deterministic data derived from the ledger (`plan.steps` plus each step's `depends_on` and file-disjointness against its wave-mates), not a definition field; see [run-ledger-schema.md](${CLAUDE_PLUGIN_ROOT}/references/run-ledger-schema.md) for how completed steps are recorded per wave.
+
 ```json
 {
   "type": "agent",
@@ -143,7 +145,9 @@ These types are explicitly NOT implemented in v1 and MUST NOT appear in any v1 d
 - `timer`
 - `condition`
 
-Looping is expressed with an explicit `decision` state (e.g. `implement_next_step`) that branches `has_next_step` back to the work state and `all_steps_complete` forward. No expression language, no embedded conditionals, no workflow composition engine. These can be revisited after the first deterministic loop is stable.
+`parallel`, `join`, and `foreach` explicitly REMAIN deferred and NOT in v1 — this stands even with intra-`agent`-state wave dispatch (see [Agent states](#agent) above). Waves are EXECUTION SEMANTICS layered on the existing `decision` + `agent` + `skill` states — one `agent` state execution fanning out to N concurrent bioform delegations — not new state types added to the five in [V1 state types](#v1-state-types). The v1 deferral of `parallel`/`join`/`foreach` as declared state types STANDS.
+
+Looping is expressed with an explicit `decision` state (e.g. `implement_next_step`) that branches `has_next_step` back to the work state and `all_steps_complete` forward. Each loop iteration drains one WAVE — the ready set of plan steps whose `depends_on` are satisfied and whose file scopes are mutually disjoint — not a single step; a linear plan with no cross-step parallelism opportunity degrades to waves of one, which is indistinguishable from the prior single-step-per-iteration loop. No expression language, no embedded conditionals, no workflow composition engine. These can be revisited after the first deterministic loop is stable.
 
 ## Run ownership
 

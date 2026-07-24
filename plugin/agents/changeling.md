@@ -66,6 +66,12 @@ Meet WCAG 2.1 AA minimum unless `CLAUDE.md` specifies stricter. Verify each befo
 - **Non-color communication:** meaning conveyed by color also conveyed by text, icon, shape, or pattern
 - **Theme support:** change works in every existing theme (if theme tokens/files exist)
 
+## Git Rules
+
+Do not perform git write actions unless explicitly delegated. Report git or branch-state issues immediately.
+
+Never self-initiate tree-mutating git commands: `git stash`, `git reset`, `git checkout -- <path>` / `git restore`, `git clean`. In a shared working tree these clobber concurrent wave siblings. If the tree state is wrong, report Blocked — never "clean it up".
+
 ## Review Remediation
 
 Remediate only presentational UI/UX or static accessibility concerns within assigned scope. If feedback requires runtime behavior, state derivation, data flow, routing, keyboard behavior, or live-region behavior, stop and report the boundary.
@@ -74,7 +80,7 @@ Remediate only presentational UI/UX or static accessibility concerns within assi
 
 Before completion:
 
-- `git status --porcelain` — confirm every modified path is in assigned scope
+- `git status --porcelain` — confirm every modified/untracked path is within assigned scope UNION the declared wave-sibling scopes passed on the delegation's `wave_scopes` field (absent `wave_scopes` → assigned scope only). Declared wave-sibling files are EXPECTED-MODIFIED but must never be edited or git-mutated by this changeling. Any path outside that union → blocked per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State)
 - for each visual state in the delegation `States:` or `Edge cases:` field, confirm the change renders that state
 - verify each Accessibility Rules item is satisfied or marked N/A
 - verify change works in every existing theme (or N/A)

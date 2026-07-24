@@ -1,0 +1,22 @@
+{
+  "rule": "Wave-scope self-check consumer coupling",
+  "description": "P3 consumer-assertion: plugin/governance/definitions.md (Unsafe Git State) defines the safe surface for a wave delegation as the assigned scope UNION the declared wave-sibling scopes passed on the delegation's wave_scopes field. plugin/agents/drone.md and plugin/agents/changeling.md are the named consumers whose git status --porcelain verification bullet applies that union. plugin/agents/overlord.md is the named consumer that emits the wave_scopes field in ## Delegation Format. Renaming or removing the convention in the definition or either consumer without updating the others is an unprotected coupling.",
+  "source": {
+    "file": "plugin/governance/definitions.md",
+    "pattern": "declared wave-sibling scopes"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/drone.md",
+      "pattern": "declared wave-sibling scopes passed on the delegation's `wave_scopes` field"
+    },
+    {
+      "file": "plugin/agents/changeling.md",
+      "pattern": "declared wave-sibling scopes passed on the delegation's `wave_scopes` field"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "**`wave_scopes` field.**"
+    }
+  ]
+}

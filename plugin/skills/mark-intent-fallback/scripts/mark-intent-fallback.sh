@@ -34,6 +34,17 @@
 #     ANY validation failure the on-disk ledger is byte-unchanged (all validation runs
 #     BEFORE the temp file is created).
 #
+# PRODUCER-AUTHORIZATION DISCIPLINE (completed_steps STRIP): this is the SECOND of two ledger
+# event appenders (record-state-result.sh is the first). A fallback event is an OBSERVABILITY
+# LOG — it must NEVER credit wave steps. So the mutation STRIPS completed_steps from the
+# event's outputs at write time (`del(.completed_steps)` on the engine-controlled --argjson
+# $outputs binding): the written event structurally CANNOT carry the key, regardless of what
+# the caller supplied. Closed-by-construction, not a caller-trust check. STRIP not REJECT —
+# intent-fallback is the last-resort skew-resume door and must never gain a new hard-fail mode
+# (universal-fallback doctrine). Both appenders enforce producer-authorization discipline:
+# record-state-result.sh GUARDS (rejects unauthorized step credits), this one STRIPS. All
+# other outputs keys (summary/note/decisions[]/recurrence_origin/pr/etc.) pass through verbatim.
+#
 # INJECTION POSTURE: the untrusted fields state, summary, and outputs are read from the
 # inputs file with jq into inert shell variables and serialized via jq --arg / --argjson
 # ONLY; they never enter the jq program or any shell command source. The ONLY value passed on
@@ -318,7 +329,7 @@ jq \
     result: "intent_fallback",
     next_state: null,
     summary: $summary,
-    outputs: $outputs
+    outputs: ($outputs | del(.completed_steps))
   }]
   | .run.updated_at = $at'"$close_program"'
   ' "$ledger" > "$tmp_ledger" \

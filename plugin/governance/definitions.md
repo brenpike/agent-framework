@@ -14,7 +14,7 @@ Git state is unsafe if any of the following is true:
 - HEAD is detached
 - Index has unmerged paths (`git ls-files -u` returns output, or `git status --porcelain=v1` reports `U` in XY)
 - A rebase, merge, cherry-pick, or bisect is in progress (`.git/MERGE_HEAD`, `.git/REBASE_HEAD`, `.git/CHERRY_PICK_HEAD`, `.git/BISECT_LOG` exists)
-- Working tree has uncommitted changes to files outside the agent's assigned scope
+- Working tree has uncommitted changes to files outside the agent's assigned scope. The safe surface is the union of the agent's assigned scope and the **declared wave-sibling scopes** — the literal repo-relative paths passed on the delegation's `wave_scopes` field, when present. Uncommitted or untracked changes confined to that union are EXPECTED (a parallel wave edits disjoint files concurrently in one shared working tree) and are NOT unsafe. Any modified or untracked path outside that union is still Unsafe Git State — blocked; the safety net holds for a stray or injected file. When the delegation carries no `wave_scopes` field (wave-of-one or a non-wave delegation), the safe surface is the assigned scope only — exact current strict behavior, unchanged. Declared wave-sibling files are EXPECTED-MODIFIED but remain OUTSIDE the worker's own editing scope: the worker must NEVER edit them and NEVER git-mutate them (no stash/reset/checkout/clean touching them)
 - Trunk branch cannot be identified
 
 ## Smallest Correct Fix
