@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - enable-brood-remote: `/rc` fan-out now delivers correctly on tmux 3.0a. The `=` exact-match prefix is target-session-only, so it is kept on the `has-session` liveness gate and on `list-panes -s` pane resolution but is never used as a `send-keys` target. Both the `/rc` payload and the Enter keystroke are now delivered to a stable pane id (`%N`) resolved from the exact `=`-session immediately before delivery, so a session that dies or renames in the gate-to-send window fails closed (errors) instead of prefix-matching a same-brood sibling; tmux stderr is surfaced on the failed path; the pane resolver now requires exactly one active pane and fails closed (rather than silently selecting one) if the exact session resolves to zero or more than one active pane. Closes #311.
+- wave delegations now carry a `wave_scopes` field (the union of concurrent wave-sibling file scopes), fixing an incompatibility between parallel wave execution and the worker Unsafe Git State self-check: a worker's self-check now treats declared disjoint sibling edits within `wave_scopes` as expected concurrent modification rather than flagging them as unsafe git state, while still blocking on any path outside the declared wave surface. Workers are explicitly barred from self-initiating git tree mutations (stash/reset/checkout/clean) in the shared working tree.
 
 ## [2.38.0] - 2026-06-21
 
