@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.0] - 2026-07-26
+
+### Changed
+
+- Agent definitions: the five Opus agents (overlord, cerebrate, drone, local-reviewer, github-reviewer) now run on `claude-opus-5` (was `claude-opus-4-8`). changeling remains on claude-sonnet-4-6.
+
 ## [2.39.0] - 2026-07-23
 
 ### Added
