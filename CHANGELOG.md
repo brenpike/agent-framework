@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.1] - 2026-07-27
+
+### Fixed
+
+- cerebrate: step ownership now defaults to drone, with changeling requiring an affirmative presentational UI/UX finding rather than falling back to artifact shape — cerebrate previously had no drone-vs-changeling discriminator beyond the legal owner enumeration and repeatedly assigned changeling to non-presentational work (config, infrastructure, schema/privilege, test steps). The changeling assignment path now references the changeling ownership contract instead of restating it. The overlord now states explicitly that a plan step's `owner` is advisory input and that the overlord makes the final bioform call at dispatch. Closes #317.
+
 ## [2.40.0] - 2026-07-26
 
 ### Changed

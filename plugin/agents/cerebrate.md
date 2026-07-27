@@ -53,7 +53,7 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 
 - codebase and context research
 - implementation plan structure with exact file scopes
-- step ownership (`drone` or `changeling` only)
+- step ownership: `drone` by default; `changeling` only on an affirmative finding that the step's work is presentational UI/UX per `${CLAUDE_PLUGIN_ROOT}/agents/changeling.md` — the discriminator is the domain of the change, not the shape of the artifact
 - dependencies, sequencing, edge cases, shared-file risks
 - delivery shape recommendation
 - versioning/release implications
@@ -119,7 +119,7 @@ Plan
 Summary: [1-2 sentences]
 
 Steps:
-1. Owner: [drone|changeling]
+1. Owner: [drone (default)|changeling]
    Files: [exact file list]
    Outcome: [what must be true]
 
@@ -139,7 +139,7 @@ Plan
 Summary: [short paragraph]
 
 Steps:
-1. STEP-001 Owner: [drone|changeling]
+1. STEP-001 Owner: [drone (default)|changeling]
    Files: [exact file list]
    Outcome: [what must be true]
    Depends on: [step numbers | none]
@@ -195,7 +195,7 @@ plan:
     artifacts: []
   steps:
     - id: STEP-001
-      owner: hivemind:drone   # hivemind:drone | hivemind:changeling
+      owner: hivemind:drone   # hivemind:drone (default) | hivemind:changeling (presentational only)
       files:
         - path/to/file
       outcome: ""
