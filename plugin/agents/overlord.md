@@ -169,6 +169,8 @@ RUN-OWNERSHIP-01: a run ledger is owned and mutated only by the overlord instanc
 | Brood dispatch | overlord (self) | — (coordinator invokes skills, not agents) |
 | GitHub review-loop watch | overlord (self) | — (overlord invokes the skill; self-hosts Monitor) |
 
+A plan step's `owner` is advisory input, never a binding assignment: the overlord makes the final bioform call at dispatch — `hivemind:changeling` only for presentational UI/UX per this table, everything else `hivemind:drone`.
+
 ## Delegation Format
 
 Pass structured YAML to agents. Include: state/step identifier (when applicable), file scope, session facts (task-type, claude-mem, local-review, trunk, validation), git context (branch, base, trunk, commit policy), edge cases, and any prior-state evidence needed. Delegate `with exact file scope`.
