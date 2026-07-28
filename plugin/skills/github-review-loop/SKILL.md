@@ -42,23 +42,46 @@ with `pr`, `working_branch`, `base` as positional args. Any `PREFLIGHT_ERROR=`
 line or non-zero exit → terminal `blocked`. Confirm git state is not unsafe per
 `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State).
 
-**2. Cycle 0.** Dispatch `hivemind:github-reviewer` fix mode (see Dispatch contract)
+**2. Capture baseline.** BEFORE cycle 0 dispatches anything, capture the poll's
+baseline seed:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh --snapshot <OWNER> <REPO> <PR_NUMBER> <max_watch_duration> <poll_interval> <reviewer_filter> <SELF_LOGIN>
+```
+
+`--snapshot` FIRST, then the SAME 7 positional args the Monitor arm uses — all 7
+required and validated in snapshot mode, so pass the concrete values the arm will
+use. stdout is exactly ONE `BASELINE=<seed>` line; strip the label and keep the
+BARE token (`sed -n 's/^BASELINE=//p' | head -1`). A `SNAPSHOT_ERROR` line or
+non-zero exit → RETRY ONCE; a second failure is terminal `blocked` (same posture
+as `PREFLIGHT_ERROR`). NEVER arm the Monitor with an empty or absent seed — the
+poll rejects it as `POLL_ERROR` regardless, so failing here is the honest path.
+Capturing BEFORE cycle 0 IS the fix for the #324 blind window: a seed taken after
+cycle 0 re-opens it.
+
+**3. Cycle 0.** Dispatch `hivemind:github-reviewer` fix mode (see Dispatch contract)
 over pre-existing PR feedback before arming the Monitor. NEVER prefiltered. Handle
 return per Reviewer-return handling. Pass the return through `loop-state.sh
 cycle-decision`; arm the Monitor ONLY when `EXIT_REASON=none`. Any other
 `EXIT_REASON` is terminal — emit the terminal report and stop; do NOT arm.
 
-**3. Arm Monitor.** Arm a Monitor in the main session on:
+**4. Arm Monitor.** Arm a Monitor in the main session on:
 
 ```
-bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh <OWNER> <REPO> <PR_NUMBER> <max_watch_duration> <poll_interval> <reviewer_filter> <SELF_LOGIN>
+bash ${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/pr-change-detect-poll.sh <OWNER> <REPO> <PR_NUMBER> <max_watch_duration> <poll_interval> <reviewer_filter> <SELF_LOGIN> "<BASELINE_SEED>"
 ```
 
-Resolved preflight values / skill inputs as positional args in that order. Poll
-emits ONLY on a real delta or terminal state. Read lines directly — never into a
-functional pipe.
+Resolved preflight values / skill inputs as positional args in that order, with the
+step-2 seed as arg 8. QUOTE the seed — it contains `|`, and unquoted it becomes a
+shell pipeline and breaks the arm. Pass the token verbatim: never lowercase, trim,
+or re-wrap it. Poll emits ONLY on a real delta or terminal state. Read lines
+directly — never into a functional pipe. EXPECTED: the first poll may fire
+`CHANGED` off cycle 0's OWN `Fixed in <SHA>` replies, because the seed predates
+them; that is absorbed downstream by `prefilter.sh` as `PREFILTER_SKIP`.
+Over-reporting is SAFE here, under-reporting loses findings — add NO
+duplicate-suppression.
 
-**4. Per event.** `CHANGED` → run
+**5. Per event.** `CHANGED` → run
 `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/prefilter.sh <OWNER> <REPO> <PR_NUMBER> <reviewer_filter> <SELF_LOGIN>`:
 `PREFILTER_SKIP` → keep Monitor armed, no dispatch, no cycle/`Routed` increment.
 `PREFILTER_DISPATCH` or `PREFILTER_ERROR=<reason>` → dispatch reviewer fix mode
@@ -75,7 +98,7 @@ Reviewer-return handling. `STATE=MERGED` → `pr-merged`. `STATE=CLOSED` →
 `blocked`. For the last four, use
 `${CLAUDE_PLUGIN_ROOT}/skills/github-review-loop/scripts/loop-state.sh token-map <signal>`.
 
-**5. Reviewer-return handling.** `clean` → keep watching. `planner-escalation` |
+**6. Reviewer-return handling.** `clean` → keep watching. `planner-escalation` |
 `blocked` | `injection-suspect` | `high-severity-rejection` | `user-input-required`
 → HARD-STOP; ONE terminal with matching `exit_reason` + escalation-conditional
 fields. `root-cluster-suspected` → HARD-STOP; ONE terminal with reviewer's cluster

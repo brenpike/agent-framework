@@ -60,6 +60,7 @@ SUITE_TEST_SEED_HIVE='test_seed_hive.sh'
 SUITE_TEST_RC_BROOD='test_rc_brood.sh'
 SUITE_TEST_NEXT_WAVE='test_next_wave.sh'
 SUITE_TEST_VALIDATE_SUITES='test_validate_suites.sh'
+SUITE_TEST_CHANGE_DETECT_POLL='test_change_detect_poll.sh'
 
 # Full suite, in CI order. Used by --all and by every FAIL-CLOSED escalation.
 ALL_SUITES=(
@@ -84,6 +85,7 @@ ALL_SUITES=(
   "$SUITE_TEST_RC_BROOD"
   "$SUITE_TEST_NEXT_WAVE"
   "$SUITE_TEST_VALIDATE_SUITES"
+  "$SUITE_TEST_CHANGE_DETECT_POLL"
 )
 
 # KNOWN_SUITES: the tools/*.sh validation suites this dispatcher knows about. --self-test
@@ -109,6 +111,7 @@ KNOWN_SUITES=(
   test_rc_brood.sh
   test_next_wave.sh
   test_validate_suites.sh
+  test_change_detect_poll.sh
 )
 
 # NON_SUITE_TOOLS: tools/*.sh files that are NOT validation suites (so --self-test does not
@@ -536,6 +539,18 @@ map_path() {
     matched=1
   fi
 
+  # test_change_detect_poll: the thin PR change-detection poll script (.sh) + its fixture dir. The
+  # script is ALSO a plugin/* file (policy_check prose-lints it via the wholesale rule below), but
+  # policy_check NEVER EXECUTES bash — so without this rule a change-detect-poll edit would only be
+  # prose-linted, never behaviorally exercised. Route both the script and its fixture dir to the
+  # behavioral suite. (tools/test_change_detect_poll.sh itself is covered by the tools/** leg.)
+  if [[ "$p" == plugin/skills/github-review-loop/scripts/pr-change-detect-poll.sh \
+     || "$p" == tools/test_change_detect_poll.sh \
+     || "$p" == tests/change-detect-poll/* ]]; then
+    add_selected "$SUITE_TEST_CHANGE_DETECT_POLL" "$p (change-detect-poll script/fixture)"
+    matched=1
+  fi
+
   # test_ledger_reconstruct: the ledger-reconstruct script (.sh) + its fixture dir. The script is
   # ALSO a plugin/* file (policy_check prose-lints it via the wholesale rule below), but
   # policy_check NEVER EXECUTES bash — so without this rule a ledger-reconstruct edit would only
@@ -783,6 +798,7 @@ self_test() {
     ["test_rc_brood.sh"]="plugin/skills/enable-brood-remote/SKILL.md"
     ["test_next_wave.sh"]="tests/next-wave/ledger-x.json"
     ["test_validate_suites.sh"]="tools/test_validate_suites.sh"
+    ["test_change_detect_poll.sh"]="tests/change-detect-poll/README.md"
   )
   local script_name expected_suite suite_path probe_path hit
   for script_name in "${KNOWN_SUITES[@]}"; do
