@@ -1119,38 +1119,136 @@ fi
 # reviewer dispatches (issue #321). Skill prose must be SKILL-SCOPED ("this
 # skill's procedure produces zero chat text of its own"), never caller-scoped.
 #
-# The sub-step set is DERIVED FROM CALLERS, never declared: every
-# `hivemind:<skill>` invoked via the Skill tool from a NON-overlord agent body IS
-# a sub-step skill. Caller-derivation cannot drift and cannot be forgotten when a
-# skill is added, unlike a frontmatter marker. Both observed invocation phrasings
-# are tolerated. FAIL-CLOSED: an EMPTY derived set is itself a finding — members
-# are known to exist, so an empty set means the discovery regex broke.
-# Workflow-state skills are never in the derived set, so their (correct) terminal
-# framing is never scanned.
+# The sub-step set is DERIVED FROM CALLERS, never declared. Discovery reads two
+# INDEPENDENT, position-free signals off each non-overlord agent BODY line — the
+# `Skill tool` marker literal, and every resolvable `hivemind:<name>` token — and
+# then applies a parity test between those tokens and the raw `hivemind:`
+# mentions on the line. No verb, article, ordering, or connective is asserted, so
+# a rephrased invocation cannot quietly fall out of the derived set. The property
+# this buys is LOUD FAILURE, not omniscience: wherever the two signals DISAGREE
+# the check emits a FINDING rather than a silent omission — a marked line with no
+# resolvable token fails, and a `hivemind:` mention discovery cannot resolve
+# fails.
 #
-# Structural exclusions reuse CHECK 11's awk state machine (YAML frontmatter,
-# fenced code blocks, table rows). `stop-and-merge` is stripped before matching:
-# it is a domain term in detect-remediation-signals, not terminal language.
+# Two residuals stated honestly, because this predicate does NOT cover everything:
+#   - A line that invokes a skill with NO `Skill tool` marker stays UNDERIVED. It
+#     is still resolvable, so parity holds and nothing fires. The marker is the
+#     inline-invocation signal; prose lacking it is out of the derived set.
+#   - A foreign-namespace inline invocation (a marked line whose skill is not in
+#     the `hivemind:` namespace) trips the marked-but-unresolvable finding BY
+#     DESIGN, forcing an explicit decision about that caller instead of a silent
+#     gap.
+#
+# FAIL-CLOSED: an EMPTY derived set is itself a finding — members are known to
+# exist, so an empty set means discovery broke. Workflow-state skills are never
+# in the derived set, so their (correct) terminal framing is never scanned.
+#
+# Structural exclusions (YAML frontmatter, fenced code blocks, table rows) come
+# from the shared body-line emitter below and apply to BOTH the agent discovery
+# pass and the skill-body scan. `stop-and-merge` is stripped before matching: it
+# is a domain term in detect-remediation-signals, not terminal language.
+
+# Emits a Markdown file's surviving BODY lines as "line_num<TAB>line", excluding
+# YAML frontmatter, fenced code blocks, and markdown table rows. Defined once and
+# consumed by both CHECK 14 passes; one pass per file, no per-line subshell.
+emit_body_lines() {
+    local markdown_file="$1"
+    awk '
+        BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
+        {
+            # YAML frontmatter: first line "---" opens, next "---" closes.
+            if (!fm_done && NR == 1 && $0 == "---") { in_fm = 1; next }
+            if (in_fm) { if ($0 == "---") { in_fm = 0; fm_done = 1 } next }
+            # Fenced code blocks toggle on lines starting with ```.
+            if ($0 ~ /^```/) { in_fence = !in_fence; next }
+            if (in_fence) next
+            # Markdown table rows.
+            if ($0 ~ /^[ \t]*\|/) next
+            print NR "\t" $0
+        }
+    ' "$markdown_file"
+}
 
 echo ''
 echo '=== CHECK 14: No turn-terminating language in sub-step skill body prose ==='
 
-# Skill-tool invocation phrasings in agent bodies — the caller-derived ground truth.
-CHECK14_INVOKE_REGEX='[Ii]nvoke (the )?`hivemind:[a-z0-9-]+`( skill)? \(Skill tool\)'
+# Signal 1: the inline Skill-tool marker literal. Position-free.
+CHECK14_SKILLTOOL_MARKER='Skill tool'
+# Signal 2: a resolvable sub-step token — a backtick IMMEDIATELY followed by the
+# namespace and a name, the name terminated by any character outside the name
+# charset. The CLOSING backtick is deliberately NOT required, so a token carrying
+# trailing arguments (`hivemind:record-state-result --plan-steps`) still resolves.
+CHECK14_TOKEN_REGEX='`hivemind:[a-z0-9-]+'
 # Turn-terminating prose patterns that make a caller end its own turn.
 CHECK14_TERMINAL_REGEX='Your final action|final action is a|[Pp]roduce zero (text|chat)|^Emit exactly|and stop'
 # KEEP-phrase regex: domain terms that must NOT be flagged.
 CHECK14_KEEP_REGEX='stop-and-merge'
 
 check14_found=false
+declare -a CHECK14_DERIVED_NAMES=()
+while IFS= read -r -d '' agent_file; do
+    # Each awk record is "kind<TAB>line<TAB>mentions<TAB>tokens<TAB>name"; `name`
+    # is populated on `skill` records only.
+    while IFS=$'\t' read -r record_kind record_line record_mentions record_tokens record_name; do
+        case "$record_kind" in
+            skill)
+                CHECK14_DERIVED_NAMES+=("$record_name")
+                ;;
+            unresolvable)
+                check14_found=true
+                add_finding 'CHECK14' "$agent_file" "$record_line" \
+                    "Skill-tool invocation line carries NO resolvable \`hivemind:<name>\` token -- sub-step discovery cannot derive which skill this line invokes; write the invoked skill as a backticked \`hivemind:<name>\` token or drop the Skill-tool marker (fail-closed, never silently pass)"
+                ;;
+            parity)
+                check14_found=true
+                add_finding 'CHECK14' "$agent_file" "$record_line" \
+                    "line carries $record_mentions 'hivemind:' reference(s) but only $record_tokens resolvable token(s) -- a hivemind: reference sub-step discovery cannot resolve; write every reference as a backticked \`hivemind:<name>\` token (fail-closed, never silently pass)"
+                ;;
+        esac
+    done < <(emit_body_lines "$agent_file" \
+        | awk -F'\t' -v marker="$CHECK14_SKILLTOOL_MARKER" -v token_re="$CHECK14_TOKEN_REGEX" '
+            {
+                line_num = $1
+                text = substr($0, index($0, "\t") + 1)
+                # Signal 1 — position-free marker presence.
+                has_marker = (index(text, marker) > 0)
+                # Raw namespace mentions; "&" re-inserts the match, so gsub only counts.
+                mention_count = gsub(/hivemind:/, "&", text)
+                # Signal 2 — every resolvable token, in order of appearance.
+                token_count = 0
+                rest = text
+                while (match(rest, token_re)) {
+                    name = substr(rest, RSTART, RLENGTH)
+                    sub(/^[^:]*:/, "", name)
+                    token_count++
+                    found[token_count] = name
+                    rest = substr(rest, RSTART + RLENGTH)
+                }
+                # R1 DERIVE: marker + tokens enrolls EVERY token on the line.
+                if (has_marker && token_count > 0) {
+                    for (i = 1; i <= token_count; i++) {
+                        print "skill\t" line_num "\t" mention_count "\t" token_count "\t" found[i]
+                    }
+                }
+                # R2 FAIL-CLOSED: marked line discovery cannot resolve at all.
+                if (has_marker && token_count == 0) {
+                    print "unresolvable\t" line_num "\t" mention_count "\t" token_count "\t"
+                }
+                # R3 FAIL-CLOSED: a namespace mention that is not a resolvable token.
+                if (mention_count != token_count) {
+                    print "parity\t" line_num "\t" mention_count "\t" token_count "\t"
+                }
+            }
+        ')
+done < <(find "$PLUGIN_ROOT/agents" -maxdepth 1 -name '*.md' -type f ! -name 'overlord.md' -print0)
+
 declare -a CHECK14_SUBSTEP_SKILLS=()
-while IFS= read -r substep_skill; do
-    [[ -z "$substep_skill" ]] && continue
-    CHECK14_SUBSTEP_SKILLS+=("$substep_skill")
-done < <(find "$PLUGIN_ROOT/agents" -maxdepth 1 -name '*.md' -type f ! -name 'overlord.md' -print0 \
-    | xargs -0 grep -hoE "$CHECK14_INVOKE_REGEX" \
-    | sed -E 's/.*`hivemind:([a-z0-9-]+)`.*/\1/' \
-    | sort -u)
+if [[ ${#CHECK14_DERIVED_NAMES[@]} -gt 0 ]]; then
+    while IFS= read -r substep_skill; do
+        [[ -z "$substep_skill" ]] && continue
+        CHECK14_SUBSTEP_SKILLS+=("$substep_skill")
+    done < <(printf '%s\n' "${CHECK14_DERIVED_NAMES[@]}" | sort -u)
+fi
 
 if [[ ${#CHECK14_SUBSTEP_SKILLS[@]} -eq 0 ]]; then
     check14_found=true
@@ -1165,8 +1263,7 @@ else
                 "sub-step skill 'hivemind:$substep_skill' is invoked (Skill tool) by a non-overlord agent but its SKILL.md does not exist"
             continue
         fi
-        # One-pass awk state machine emits surviving BODY lines as "line_num<TAB>line",
-        # excluding YAML frontmatter, fenced code blocks, and markdown table rows.
+        # Shared body-line emitter supplies "line_num<TAB>line" for BODY lines only.
         while IFS=$'\t' read -r line_num textline; do
             [[ -z "$line_num" ]] && continue
             # Strip KEEP-phrase spans first (mirrors CHECK 11's KEEP strip), so a
@@ -1178,20 +1275,7 @@ else
                 add_finding 'CHECK14' "$substep_file" "$line_num" \
                     "turn-terminating language '$terminal_phrase' in sub-step skill body prose -- this skill is invoked inline (Skill tool) by a non-overlord agent, so the caller obeys it as its own terminal directive and ends its turn early (false PASS, issue #321); rephrase SKILL-SCOPED, not caller-scoped"
             fi
-        done < <(awk '
-            BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
-            {
-                # YAML frontmatter: first line "---" opens, next "---" closes.
-                if (!fm_done && NR == 1 && $0 == "---") { in_fm = 1; next }
-                if (in_fm) { if ($0 == "---") { in_fm = 0; fm_done = 1 } next }
-                # Fenced code blocks toggle on lines starting with ```.
-                if ($0 ~ /^```/) { in_fence = !in_fence; next }
-                if (in_fence) next
-                # Markdown table rows.
-                if ($0 ~ /^[ \t]*\|/) next
-                print NR "\t" $0
-            }
-        ' "$substep_file")
+        done < <(emit_body_lines "$substep_file")
     done
 fi
 
