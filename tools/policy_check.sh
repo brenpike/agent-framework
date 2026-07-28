@@ -1179,8 +1179,13 @@ CHECK14_SKILLTOOL_MARKER='Skill tool'
 # charset. The CLOSING backtick is deliberately NOT required, so a token carrying
 # trailing arguments (`hivemind:record-state-result --plan-steps`) still resolves.
 CHECK14_TOKEN_REGEX='`hivemind:[a-z0-9-]+'
-# Turn-terminating prose patterns that make a caller end its own turn.
-CHECK14_TERMINAL_REGEX='Your final action|final action is a|[Pp]roduce zero (text|chat)|^Emit exactly|and stop'
+# Turn-terminating prose patterns that make a caller end its own turn. Matched
+# CASE-INSENSITIVELY (`grep -i`, below) so capitalization is not part of the
+# detection key at all: `Final action is a Bash tool call`, `final action is a
+# ...`, and `FINAL ACTION IS A ...` are one class, not three alternatives to
+# enumerate. Do NOT re-add per-alternative `[Xx]` character classes — they are
+# what let a capitalized variant of an already-banned sentence evade the check.
+CHECK14_TERMINAL_REGEX='Your final action|final action is a|produce zero (text|chat)|^Emit exactly|and stop'
 # KEEP-phrase regex: domain terms that must NOT be flagged.
 CHECK14_KEEP_REGEX='stop-and-merge'
 
@@ -1269,8 +1274,13 @@ else
             # Strip KEEP-phrase spans first (mirrors CHECK 11's KEEP strip), so a
             # real terminal phrase sharing a line with a domain term is still caught.
             residual="$(echo "$textline" | sed -E "s/(${CHECK14_KEEP_REGEX})//Ig")"
-            if echo "$residual" | grep -qE "$CHECK14_TERMINAL_REGEX"; then
-                terminal_phrase="$(echo "$residual" | grep -oE "$CHECK14_TERMINAL_REGEX" | head -n1)"
+            # `-i` is LOAD-BEARING on BOTH greps: it is what makes capitalization
+            # variants of a banned phrase a single detected class (see the
+            # CHECK14_TERMINAL_REGEX comment). Dropping it silently reopens the
+            # `Final action is a ...` evasion. The extraction grep must carry the
+            # same flag or the reported phrase comes back empty on a capitalized hit.
+            if echo "$residual" | grep -qiE "$CHECK14_TERMINAL_REGEX"; then
+                terminal_phrase="$(echo "$residual" | grep -oiE "$CHECK14_TERMINAL_REGEX" | head -n1)"
                 check14_found=true
                 add_finding 'CHECK14' "$substep_file" "$line_num" \
                     "turn-terminating language '$terminal_phrase' in sub-step skill body prose -- this skill is invoked inline (Skill tool) by a non-overlord agent, so the caller obeys it as its own terminal directive and ends its turn early (false PASS, issue #321); rephrase SKILL-SCOPED, not caller-scoped"
