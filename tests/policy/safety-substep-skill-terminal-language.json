@@ -1,14 +1,15 @@
 {
   "rule": "check14-substep-skill-terminal-language",
-  "description": "P3 consumer-assertion + live-constant pin for CHECK 14 (no turn-terminating language in sub-step skill body prose, issue #321). A skill body loads into its CALLING AGENT's context, so caller-scoped terminal prose makes an agent that invokes the skill inline end its turn early and return the skill's output as its own — a silent false PASS. The set_check pins the DETECTION CONSTANTS AS THEY LIVE IN tools/policy_check.sh: it captures the single-quoted RHS body of CHECK14_TERMINAL_REGEX and CHECK14_KEEP_REGEX from the check itself and requires each verbatim (superset), so deleting a terminal alternative, dropping the `^Emit exactly` anchor, or weakening the `stop-and-merge` KEEP phrase fails this fixture. It pins those two live constants only — it does not assert the check's runtime behaviour on any sample body. The consumers pin the load-bearing literals proving the check exists and keeps its contract: the `=== CHECK 14:` section header, `add_finding 'CHECK14'` (it emits CHECK14 findings), the caller-derived discovery that excludes overlord.md, the two position-free discovery constants (Skill-tool marker, token regex assignment), and the three fail-closed findings — empty derived set, marked-but-unresolvable line, and mention/token parity failure.",
+  "description": "P3 consumer-assertion + live-constant pin for CHECK 14 (no turn-terminating language in sub-step skill body prose, issue #321). A skill body loads into its CALLING AGENT's context, so caller-scoped terminal prose makes an agent that invokes the skill inline end its turn early and return the skill's output as its own — a silent false PASS. The set_check pins the DETECTION CONSTANTS AS THEY LIVE IN tools/policy_check.sh: it captures the single-quoted RHS body of every line-anchored CHECK14_(TERMINAL|KEEP|TOKEN)_REGEX assignment in the check itself and asserts set EQUALITY, not membership. Equality is what closes the class: a MISSING member fails (deleting a terminal alternative, dropping the `^Emit exactly` anchor, weakening the `stop-and-merge` KEEP phrase, or loosening the token regex's namespace/charset), and an EXTRA member fails too (a shadowing later reassignment that leaves the pinned assignment as dead text can no longer smuggle a weakened live value past the pin). It pins the three live regex constants only — it does not assert the check's runtime behaviour on any sample body, and the non-regex CHECK14_SKILLTOOL_MARKER is pinned by full-literal consumer instead. The consumers pin the load-bearing literals proving the check exists and keeps its contract: the `=== CHECK 14:` section header, `add_finding 'CHECK14'` (it emits CHECK14 findings), the caller-derived discovery that excludes overlord.md, the two position-free discovery constants (Skill-tool marker literal, token regex assignment name), and the three fail-closed findings — empty derived set, marked-but-unresolvable line, and mention/token parity failure.",
   "set_check": {
-    "extract_regex": "^CHECK14_(?:TERMINAL|KEEP)_REGEX='([^']+)'",
+    "extract_regex": "^CHECK14_(?:TERMINAL|KEEP|TOKEN)_REGEX='([^']+)'",
     "expected_set": [
       "Your final action|final action is a|[Pp]roduce zero (text|chat)|^Emit exactly|and stop",
-      "stop-and-merge"
+      "stop-and-merge",
+      "`hivemind:[a-z0-9-]+"
     ],
     "files": [
-      { "path": "tools/policy_check.sh", "mode": "superset" }
+      { "path": "tools/policy_check.sh", "mode": "equal" }
     ]
   },
   "consumers": [
