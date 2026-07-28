@@ -1143,14 +1143,21 @@ fi
 # exist, so an empty set means discovery broke. Workflow-state skills are never
 # in the derived set, so their (correct) terminal framing is never scanned.
 #
-# Structural exclusions (YAML frontmatter, fenced code blocks, table rows) come
-# from the shared body-line emitter below and apply to BOTH the agent discovery
-# pass and the skill-body scan. `stop-and-merge` is stripped before matching: it
-# is a domain term in detect-remediation-signals, not terminal language.
+# The two passes have DIFFERENT invariants, so they read the file DIFFERENTLY.
+# Structural exclusions (YAML frontmatter, fenced code blocks, table rows) serve
+# CALLER DISCOVERY ONLY: that pass hunts genuine invocation lines in agent prose,
+# where a frontmatter field or a fenced example is not a real invocation. The
+# SKILL-BODY SCAN takes NO exclusions at all — a Skill-tool invocation loads the
+# WHOLE SKILL.md into the caller's context, frontmatter, fenced blocks and table
+# rows included, so terminal language in any of those regions is read and obeyed
+# exactly like body prose. Excluding a region there would only enumerate places a
+# banned sentence may hide. `stop-and-merge` is stripped before matching: it is a
+# domain term in detect-remediation-signals, not terminal language.
 
 # Emits a Markdown file's surviving BODY lines as "line_num<TAB>line", excluding
-# YAML frontmatter, fenced code blocks, and markdown table rows. Defined once and
-# consumed by both CHECK 14 passes; one pass per file, no per-line subshell.
+# YAML frontmatter, fenced code blocks, and markdown table rows. CALLER DISCOVERY
+# ONLY — the skill-body scan uses `emit_all_lines`. One pass per file, no
+# per-line subshell.
 emit_body_lines() {
     local markdown_file="$1"
     awk '
@@ -1167,6 +1174,16 @@ emit_body_lines() {
             print NR "\t" $0
         }
     ' "$markdown_file"
+}
+
+# Emits a Markdown file's WHOLE contents as "line_num<TAB>line" — same output
+# contract as `emit_body_lines`, ZERO structural exclusions. Used by the CHECK 14
+# skill-body scan, whose invariant is "text that loads into the calling agent's
+# context": a Skill-tool invocation loads every region of the file, so every
+# region is in scope.
+emit_all_lines() {
+    local markdown_file="$1"
+    awk '{ print NR "\t" $0 }' "$markdown_file"
 }
 
 echo ''
@@ -1268,7 +1285,8 @@ else
                 "sub-step skill 'hivemind:$substep_skill' is invoked (Skill tool) by a non-overlord agent but its SKILL.md does not exist"
             continue
         fi
-        # Shared body-line emitter supplies "line_num<TAB>line" for BODY lines only.
+        # Exclusion-free emitter supplies "line_num<TAB>line" for EVERY line: the
+        # whole SKILL.md loads into the caller's context, so all of it is in scope.
         while IFS=$'\t' read -r line_num textline; do
             [[ -z "$line_num" ]] && continue
             # Strip KEEP-phrase spans first (mirrors CHECK 11's KEEP strip), so a
@@ -1285,7 +1303,7 @@ else
                 add_finding 'CHECK14' "$substep_file" "$line_num" \
                     "turn-terminating language '$terminal_phrase' in sub-step skill body prose -- this skill is invoked inline (Skill tool) by a non-overlord agent, so the caller obeys it as its own terminal directive and ends its turn early (false PASS, issue #321); rephrase SKILL-SCOPED, not caller-scoped"
             fi
-        done < <(emit_body_lines "$substep_file")
+        done < <(emit_all_lines "$substep_file")
     done
 fi
 
