@@ -1,30 +1,20 @@
 {
   "rule": "check14-substep-skill-terminal-language",
-  "description": "P3 consumer-assertion + core-detection pin for CHECK 14 (no turn-terminating language in sub-step skill body prose, issue #321). A skill body loads into its CALLING AGENT's context, so caller-scoped terminal prose makes an agent that invokes the skill inline end its turn early and return the skill's output as its own — a silent false PASS. The set_check pins the detection semantics against a sample body: every terminal phrase is captured, and the `stop-and-merge` domain term is NOT captured (the check strips it as a KEEP phrase; the fixture regex mirrors that with a negative lookahead). The consumers pin the load-bearing literals proving the check exists and keeps its contract: the `=== CHECK 14:` section header, `add_finding 'CHECK14'` (it emits CHECK14 findings), the caller-derived discovery that excludes overlord.md, and the fail-closed empty-derived-set finding (an empty set must never silently pass).",
+  "description": "P3 consumer-assertion + live-constant pin for CHECK 14 (no turn-terminating language in sub-step skill body prose, issue #321). A skill body loads into its CALLING AGENT's context, so caller-scoped terminal prose makes an agent that invokes the skill inline end its turn early and return the skill's output as its own — a silent false PASS. The set_check pins the DETECTION CONSTANTS AS THEY LIVE IN tools/policy_check.sh: it captures the single-quoted RHS body of CHECK14_TERMINAL_REGEX and CHECK14_KEEP_REGEX from the check itself and requires each verbatim (superset), so deleting a terminal alternative, dropping the `^Emit exactly` anchor, or weakening the `stop-and-merge` KEEP phrase fails this fixture. It pins those two live constants only — it does not assert the check's runtime behaviour on any sample body. The consumers pin the load-bearing literals proving the check exists and keeps its contract: the `=== CHECK 14:` section header, `add_finding 'CHECK14'` (it emits CHECK14 findings), the caller-derived discovery that excludes overlord.md, the two position-free discovery constants (Skill-tool marker, token regex assignment), and the three fail-closed findings — empty derived set, marked-but-unresolvable line, and mention/token parity failure.",
   "set_check": {
-    "extract_regex": "(Your final action|final action is a|[Pp]roduce zero (?:text|chat)|^Emit exactly|and stop(?!-and-merge))",
+    "extract_regex": "^CHECK14_(?:TERMINAL|KEEP)_REGEX='([^']+)'",
     "expected_set": [
-      "Your final action",
-      "final action is a",
-      "Produce zero chat",
-      "Emit exactly",
-      "and stop"
+      "Your final action|final action is a|[Pp]roduce zero (text|chat)|^Emit exactly|and stop",
+      "stop-and-merge"
     ],
-    "expected_counts": {
-      "Your final action": 1,
-      "final action is a": 1,
-      "Produce zero chat": 1,
-      "Emit exactly": 1,
-      "and stop": 1
-    },
     "files": [
-      { "path": "tests/policy/fixtures/check14-substep-sample.md", "mode": "equal" }
+      { "path": "tools/policy_check.sh", "mode": "superset" }
     ]
   },
   "consumers": [
     {
       "file": "tools/policy_check.sh",
-      "pattern": "=== CHECK 14:"
+      "pattern": "=== CHECK 14: No turn-terminating language in sub-step skill body prose ==="
     },
     {
       "file": "tools/policy_check.sh",
@@ -36,7 +26,23 @@
     },
     {
       "file": "tools/policy_check.sh",
+      "pattern": "CHECK14_SKILLTOOL_MARKER='Skill tool'"
+    },
+    {
+      "file": "tools/policy_check.sh",
+      "pattern": "CHECK14_TOKEN_REGEX='"
+    },
+    {
+      "file": "tools/policy_check.sh",
       "pattern": "derived an EMPTY set from non-overlord agent bodies"
+    },
+    {
+      "file": "tools/policy_check.sh",
+      "pattern": "Skill-tool invocation line carries NO resolvable"
+    },
+    {
+      "file": "tools/policy_check.sh",
+      "pattern": "resolvable token(s) -- a hivemind: reference sub-step discovery cannot resolve"
     }
   ]
 }
