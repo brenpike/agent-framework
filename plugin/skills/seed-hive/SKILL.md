@@ -5,7 +5,7 @@ allowed-tools:
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh *)
   - Bash(git rev-parse *)   # navigator resolves the project root (git rev-parse --show-toplevel) before calling detect/apply — Procedure step 1
   - Read
-  - Write   # inert inputs-file only: authors the resolved-values inputs JSON the apply phase reads; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0020
+  - Write   # inert inputs-file only: authors per-invocation-unique path .hivemind/seed-inputs-<token>.json; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0020
   - Skill   # hivemind:creep-spread orchestration step — a skill cannot be invoked from bash (P5)
 shell: bash
 ---
@@ -158,8 +158,9 @@ authorizes an agent overwrite, never clobbering a malformed file.
 
 ## Inputs JSON (apply)
 
-Once every tri-state is resolved, author ONE inputs file (via the Write tool) carrying the
-RESOLVED values and the detection facts, and pass its path to the `apply` phase. Every value
+Once every tri-state is resolved, author ONE inputs file (via the Write tool) at the
+PER-INVOCATION-UNIQUE gitignored path `.hivemind/seed-inputs-<token>.json` carrying the
+RESOLVED values and the detection facts, and pass that path to the `apply` phase. Every value
 is inert data — the engine reads each field with `jq` into a shell variable and never
 interpolates it into shell or jq program source. Shape (authoritative: the entrypoint header):
 
@@ -199,12 +200,19 @@ detection) is reported `not-checked`.
 3. **Resolve confirmation (judgment).** Apply Interactive Confirmation to resolve `caveman`,
    `claude_mem`, and `codex` to final `yes`/`no` (interactive prompt, headless fallback, or
    explicit-input verbatim).
-4. **Author the inputs file** via the Write tool, with the resolved values and detection facts
-   matching the Inputs JSON shape above. Write performs no shell parsing, so the values are
-   inert.
+4. **Author the inputs file** via the Write tool at `.hivemind/seed-inputs-<token>.json`, with
+   the resolved values and detection facts matching the Inputs JSON shape above. GENERATE an
+   invocation-unique `<token>` for the filename (a UTC timestamp plus a random component, such
+   as `20260601T014132Z-a1b2c3`) so two concurrent same-checkout sessions author DISTINCT inputs
+   files and cannot clobber each other's payload between the Write and the script exec.
+   `.hivemind/` is gitignored. Write performs no shell parsing, so the values are inert. A
+   FIRST-EVER install still prompts once for this write, because the permission allow rule
+   covering `.hivemind/seed-inputs-*.json` is itself seeded by this very skill; that is an
+   accepted bootstrap ordering, not a defect — the rule lands for repair re-runs and every
+   later seeded project.
 5. **Apply.** Run the `apply` phase once:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh apply <inputs.json>
+   bash ${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh apply .hivemind/seed-inputs-<token>.json
    ```
    EXECUTE (do not Read) the script. It composes the four libs to merge settings, guard the
    `.gitignore`/`.envrc`/hook/`## Validation` files, provision claude-mem's `CLAUDE_CODE_PATH`,
@@ -212,7 +220,7 @@ detection) is reported `not-checked`.
    it reports `status: blocked` — the conflict is a REPORTED outcome, not a script error.
 6. **Conflict gate (judgment).** If apply reported `status: blocked` on an `agent` conflict,
    follow Conflict Resolution: surface it, obtain explicit user approval, then re-author the
-   inputs file with `"agent_conflict_approved": "yes"` and re-run apply. On `malformed`
+   inputs file at a fresh `<token>` path with `"agent_conflict_approved": "yes"` and re-run apply. On `malformed`
    settings (unparseable existing file) the engine fails closed — surface and stop; do not
    overwrite regardless of `agent_conflict_approved`.
 7. **Invoke `hivemind:creep-spread`** to analyze the project and generate a populated

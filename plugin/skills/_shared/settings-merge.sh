@@ -24,10 +24,10 @@
 #
 # SINGLE-SOURCE FROZEN TEMPLATE (P1): the recommended least-privilege `permissions.allow`
 # template lives in EXACTLY ONE place — `hivemind_settings_permissions_template` below — as
-# DATA, copied byte-for-byte from seed-hive/SKILL.md step 6. No other site re-states the rule
-# list; a caller that needs the template calls the function. The rule ORDER is load-bearing
-# (the create-from-absent path emits the array in template order); do not reorder, add, drop,
-# or reword an entry without changing both this DATA and SKILL.md in lockstep.
+# DATA. seed-hive/SKILL.md holds NO mirror of the rule list — it points here as the single
+# source. No other site re-states the rule list; a caller that needs the template calls the
+# function. The rule ORDER is load-bearing (the create-from-absent path emits the array in
+# template order); do not reorder, drop, or reword an entry. New rules APPEND at the END.
 #
 # DATA-BOUNDARY: every dynamic value (the existing settings JSON, the agent target, each
 # template rule) enters jq as an inert `--arg` / `--argjson` binding, NEVER interpolated into
@@ -177,9 +177,10 @@ unset __settings_merge_shared_dir
 # merge function reads it through this function, and any caller that needs to display or test
 # the template uses it too. Pure: no side effects, no exit, reads no input.
 #
-# INVARIANT: this list is byte-for-byte the frozen template in seed-hive/SKILL.md step 6. The
-# order is canonical and load-bearing (absent-array creation emits in this order). Do not
-# reorder, add, drop, or reword an entry without updating SKILL.md in the same change.
+# INVARIANT: this list is the SINGLE source of the frozen template — no mirror exists in
+# seed-hive/SKILL.md. The order is canonical and load-bearing (absent-array creation emits in
+# this order). Do not reorder, drop, or reword an entry; add new rules at the END only, since
+# the merge is union append-if-absent and never reorders an existing consumer's array.
 hivemind_settings_permissions_template() {
   cat <<'TEMPLATE'
 Bash(echo *)
@@ -202,6 +203,12 @@ Bash(git tag --list*)
 Bash(git stash list)
 Bash(git stash show *)
 Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
+Edit(.hivemind/review-loop/*)
+Edit(.hivemind/runs/.init-inputs-*.json)
+Edit(.hivemind/runs/.record-inputs-*.json)
+Edit(.hivemind/runs/.markfb-inputs-*.json)
+Edit(.hivemind/spawn-inputs.*.json)
+Edit(.hivemind/seed-inputs-*.json)
 TEMPLATE
 }
 

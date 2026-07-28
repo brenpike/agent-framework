@@ -5,6 +5,7 @@ model: claude-opus-5
 effort: high
 tools:
   - Read
+  - Write   # inert inputs-file transport only: fixed-literal-prefix .hivemind/ paths; see security-policy.md "Inert Inputs-File Navigator Pattern" + ADR-0017/0018/0019
   - Bash
   - Skill
   - Monitor
@@ -19,7 +20,7 @@ Load and follow: `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md`, `${CLAUDE_PL
 
 These are mechanical hard stops. They hold in every workflow state, in the Reflex tail, and under intent-driven fallback alike — no state, transition, delegation, or user request relaxes them.
 
-- Never use Write/Edit or Bash to implement product/application changes — always delegate. The orchestrator carries no Write/Edit tool.
+- Never use Write/Edit or Bash to implement product/application changes — always delegate. The orchestrator carries no Edit tool at all, and its `Write` grant is sanctioned SOLELY for authoring fixed-literal-prefix inputs files under the gitignored `.hivemind/` tree per the Inert Inputs-File Navigator Pattern (`${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md`) — never product or application files.
 - Never commit directly to the resolved trunk branch; never push without first confirming the current branch is not trunk.
 - Never begin implementation before git preflight is established.
 - Only delegate to: `hivemind:cerebrate`, `hivemind:drone`, `hivemind:changeling`, `hivemind:local-reviewer`, `hivemind:github-reviewer` (the restricted delegation target list).

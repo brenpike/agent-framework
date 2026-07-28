@@ -7,13 +7,12 @@
   "consumers": [
     {
       "file": "plugin/agents/overlord.md",
-      "pattern": "Write",
+      "pattern": "Edit",
       "absent": true
     },
     {
       "file": "plugin/agents/overlord.md",
-      "pattern": "Edit",
-      "absent": true
+      "pattern": "grant is sanctioned SOLELY for authoring fixed-literal-prefix inputs files under the gitignored"
     }
   ]
 }
