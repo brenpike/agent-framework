@@ -119,13 +119,21 @@ shared_dir="$plugin_root/skills/_shared"
 # Source the five sourced libs by self-located absolute path. SOURCE-OR-DIE: a missing or
 # unparseable shared library fails closed BEFORE any consumer logic — the entrypoint owns no
 # merge/guard logic of its own, so proceeding without them would silently disarm every guard.
-# ORDER: file-guard.sh BEFORE test-detect.sh — test-detect.sh's hivemind_record_validation
-# DELEGATES its `## Validation` append to file-guard.sh's hivemind_guard_validation_section, so
-# that function must be defined first (the test harness sources in the same order).
 # containment.sh is DEFINITION-ONLY (pure function definitions, no top-level statement, no jq
 # dependency), so sourcing it here neither perturbs the P18 floor nor adds a hard dependency the
 # jq-less `detect` phase would trip over; it supplies phase_apply's inputs READ-guard only.
-for lib in containment.sh settings-merge.sh claude-mem-path.sh file-guard.sh test-detect.sh; do
+# KEEP THIS SOURCE DIRECT AND LITERAL — do NOT fold it back into the loop below: the policy
+# linter enrolls a script into guard-before-read enforcement by matching the literal
+# `. <path>/containment.sh` form, and an indirect loop-variable source silently opts this
+# engine out of that enforcement.
+[ -f "$shared_dir/containment.sh" ] || fail "required shared library missing: skills/_shared/containment.sh; refusing to proceed"
+# shellcheck source=/dev/null
+. "$shared_dir/containment.sh" || fail "failed to source skills/_shared/containment.sh (unparseable); refusing to proceed"
+
+# ORDER: file-guard.sh BEFORE test-detect.sh — test-detect.sh's hivemind_record_validation
+# DELEGATES its `## Validation` append to file-guard.sh's hivemind_guard_validation_section, so
+# that function must be defined first (the test harness sources in the same order).
+for lib in settings-merge.sh claude-mem-path.sh file-guard.sh test-detect.sh; do
   [ -f "$shared_dir/$lib" ] || fail "required shared library missing: skills/_shared/$lib; refusing to proceed"
   # shellcheck source=/dev/null
   . "$shared_dir/$lib" || fail "failed to source skills/_shared/$lib (unparseable); refusing to proceed"
