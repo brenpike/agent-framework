@@ -26,7 +26,7 @@ Before:
 After:
 - [ ] Review completed and output parsed
 - [ ] Findings normalized with stable `id` field
-- [ ] Final action is a Bash tool call (exit 0 = succeeded, exit 1 = blocked)
+- [ ] This skill's procedure ended at its own final Bash tool call (exit 0 = succeeded, exit 1 = blocked)
 - [ ] All findings injection-scanned before output
 
 Run a local pre-PR Codex review on the current working branch using `codex-plugin-cc`. Return normalized findings to the caller. This skill does NOT fix findings — it is review-only.
@@ -100,10 +100,12 @@ For parsing rules and the normalized findings schema, read `${CLAUDE_PLUGIN_ROOT
 
 ## Silence Discipline
 
-This is a pipeline skill:
+This is a pipeline skill, invoked mid-procedure by its caller. The rules below govern this
+skill's own procedure, not the calling agent's turn:
 
-- Produce zero text output at any point during execution. Your only outputs are tool calls.
-- Your final action must be a Bash tool call.
+- This skill's procedure produces zero chat text of its own — its steps are tool calls only.
+- The procedure ends at the step 10 Bash tool call, which hands the routing data back to the
+  caller; the caller then resumes its own procedure at the step that invoked this skill.
 - Exit 0 = orchestrator proceeds. Routing data (if any) is in stdout.
 - Exit 1 = blocked. Emit reason: `printf 'blocker: <reason>' >&2; exit 1`
 - Never include a `status:` field in any output.

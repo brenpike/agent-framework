@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.2] - 2026-07-27
+
+### Fixed
+
+- Reviewer agents could terminate mid-procedure at a skill invocation and return that skill's output as their own, with no error and no non-zero exit — the failure read as review-passed, so a run could advance to opening a pull request with findings unaddressed (observed on a live consumer run). Root cause: a skill body loads into its calling agent's context, and skills authored for standalone invocation carried turn-terminating language; seven skills invoked mid-procedure now scope their output contracts and silence rules to the skill's own procedure rather than the caller's turn. Both reviewer agents now state explicitly that a skill invoked mid-procedure returns data, and that only the agent's own output contract ends its turn. Closes #321.
+
 ## [2.40.1] - 2026-07-27
 
 ### Fixed

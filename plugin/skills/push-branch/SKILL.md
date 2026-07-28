@@ -22,7 +22,7 @@ Before:
 
 After:
 - [ ] Working branch is on its remote — push SUCCEEDED, or the skill returned `blocked` (exit 1)
-- [ ] Final action is a Bash tool call (exit 0 = pushed/routing emitted, exit 1 = blocked)
+- [ ] This skill's procedure ended at its own final Bash tool call (exit 0 = pushed/routing emitted, exit 1 = blocked)
 
 Push the current working branch to its remote. This skill does NOT create a pull request — its sole job is to place remediation commits on the remote so an in-flight review loop can resume against the updated branch.
 
@@ -74,10 +74,13 @@ The orchestrator resolves and passes these. The skill does not resolve them on i
 
 ## Silence Discipline
 
-This is a pipeline skill:
+This is a pipeline skill. The rules below govern this skill's own procedure, not the calling
+agent's turn — the skill returns control to whatever invoked it, whether that caller runs it
+as a workflow state or as one step inside a longer procedure:
 
-- Produce zero text output at any point during execution. Your only outputs are tool calls.
-- Your final action must be a Bash tool call.
+- This skill's procedure produces zero chat text of its own — its steps are tool calls only.
+- The procedure ends at the requirement 5 Bash tool call, which hands the routing data back
+  to the caller; the caller then continues from the point at which it invoked this skill.
 - Exit 0 = orchestrator proceeds. Routing data (`branch` + `commit`) is in stdout.
 - Exit 1 = blocked. Emit reason: `printf 'blocker: <reason>' >&2; exit 1`
 - Never include a `status:` field in any output.
