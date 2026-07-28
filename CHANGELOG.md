@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.3] - 2026-07-28
+
+### Security
+
+- The review-feedback fetch failed open on a partial response. A GraphQL reply that parsed and carried a pull request, but had lost its connection nodes, passed every check and normalized to an empty candidate set — indistinguishable downstream from a genuinely clean pull request. A real review finding was lost this way in a live run.
+- The live-response gate now asserts every requested connection is present and array-shaped, including the nested per-thread comments connection, and fails closed with a stable `graphql-missing-connection` reason otherwise. An empty connection (`nodes: []`) is still a valid no-candidates answer and passes. Closes #322.
+
 ## [2.40.2] - 2026-07-27
 
 ### Fixed
