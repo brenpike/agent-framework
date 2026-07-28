@@ -1108,6 +1108,100 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+# ── CHECK 14: No turn-terminating language in sub-step skill body prose ────
+#
+# A skill body loads into its CALLING AGENT's context. A skill invoked INLINE as
+# a mid-procedure sub-step of an agent therefore must carry NO turn-terminating
+# language: an agent that reads `Your final action must be ...` obeys it as its
+# own terminal directive, ends its turn early, and returns the skill's output as
+# its own result — a silent FALSE PASS (a bare `verdict: clean` list reads as
+# review-passed, with no error and no non-zero exit). Observed live on 4 of 5
+# reviewer dispatches (issue #321). Skill prose must be SKILL-SCOPED ("this
+# skill's procedure produces zero chat text of its own"), never caller-scoped.
+#
+# The sub-step set is DERIVED FROM CALLERS, never declared: every
+# `hivemind:<skill>` invoked via the Skill tool from a NON-overlord agent body IS
+# a sub-step skill. Caller-derivation cannot drift and cannot be forgotten when a
+# skill is added, unlike a frontmatter marker. Both observed invocation phrasings
+# are tolerated. FAIL-CLOSED: an EMPTY derived set is itself a finding — members
+# are known to exist, so an empty set means the discovery regex broke.
+# Workflow-state skills are never in the derived set, so their (correct) terminal
+# framing is never scanned.
+#
+# Structural exclusions reuse CHECK 11's awk state machine (YAML frontmatter,
+# fenced code blocks, table rows). `stop-and-merge` is stripped before matching:
+# it is a domain term in detect-remediation-signals, not terminal language.
+
+echo ''
+echo '=== CHECK 14: No turn-terminating language in sub-step skill body prose ==='
+
+# Skill-tool invocation phrasings in agent bodies — the caller-derived ground truth.
+CHECK14_INVOKE_REGEX='[Ii]nvoke (the )?`hivemind:[a-z0-9-]+`( skill)? \(Skill tool\)'
+# Turn-terminating prose patterns that make a caller end its own turn.
+CHECK14_TERMINAL_REGEX='Your final action|final action is a|[Pp]roduce zero (text|chat)|^Emit exactly|and stop'
+# KEEP-phrase regex: domain terms that must NOT be flagged.
+CHECK14_KEEP_REGEX='stop-and-merge'
+
+check14_found=false
+declare -a CHECK14_SUBSTEP_SKILLS=()
+while IFS= read -r substep_skill; do
+    [[ -z "$substep_skill" ]] && continue
+    CHECK14_SUBSTEP_SKILLS+=("$substep_skill")
+done < <(find "$PLUGIN_ROOT/agents" -maxdepth 1 -name '*.md' -type f ! -name 'overlord.md' -print0 \
+    | xargs -0 grep -hoE "$CHECK14_INVOKE_REGEX" \
+    | sed -E 's/.*`hivemind:([a-z0-9-]+)`.*/\1/' \
+    | sort -u)
+
+if [[ ${#CHECK14_SUBSTEP_SKILLS[@]} -eq 0 ]]; then
+    check14_found=true
+    add_finding 'CHECK14' "$PLUGIN_ROOT/agents" 0 \
+        "sub-step skill discovery derived an EMPTY set from non-overlord agent bodies -- Skill-tool sub-step invocations are known to exist, so the discovery regex is broken; repair it (fail-closed, never silently pass)"
+else
+    for substep_skill in "${CHECK14_SUBSTEP_SKILLS[@]}"; do
+        substep_file="$PLUGIN_ROOT/skills/$substep_skill/SKILL.md"
+        if [[ ! -f "$substep_file" ]]; then
+            check14_found=true
+            add_finding 'CHECK14' "$substep_file" 0 \
+                "sub-step skill 'hivemind:$substep_skill' is invoked (Skill tool) by a non-overlord agent but its SKILL.md does not exist"
+            continue
+        fi
+        # One-pass awk state machine emits surviving BODY lines as "line_num<TAB>line",
+        # excluding YAML frontmatter, fenced code blocks, and markdown table rows.
+        while IFS=$'\t' read -r line_num textline; do
+            [[ -z "$line_num" ]] && continue
+            # Strip KEEP-phrase spans first (mirrors CHECK 11's KEEP strip), so a
+            # real terminal phrase sharing a line with a domain term is still caught.
+            residual="$(echo "$textline" | sed -E "s/(${CHECK14_KEEP_REGEX})//Ig")"
+            if echo "$residual" | grep -qE "$CHECK14_TERMINAL_REGEX"; then
+                terminal_phrase="$(echo "$residual" | grep -oE "$CHECK14_TERMINAL_REGEX" | head -n1)"
+                check14_found=true
+                add_finding 'CHECK14' "$substep_file" "$line_num" \
+                    "turn-terminating language '$terminal_phrase' in sub-step skill body prose -- this skill is invoked inline (Skill tool) by a non-overlord agent, so the caller obeys it as its own terminal directive and ends its turn early (false PASS, issue #321); rephrase SKILL-SCOPED, not caller-scoped"
+            fi
+        done < <(awk '
+            BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
+            {
+                # YAML frontmatter: first line "---" opens, next "---" closes.
+                if (!fm_done && NR == 1 && $0 == "---") { in_fm = 1; next }
+                if (in_fm) { if ($0 == "---") { in_fm = 0; fm_done = 1 } next }
+                # Fenced code blocks toggle on lines starting with ```.
+                if ($0 ~ /^```/) { in_fence = !in_fence; next }
+                if (in_fence) next
+                # Markdown table rows.
+                if ($0 ~ /^[ \t]*\|/) next
+                print NR "\t" $0
+            }
+        ' "$substep_file")
+    done
+fi
+
+if [[ "$check14_found" == false ]]; then
+    echo "[PASS] Check 14: No turn-terminating language in ${#CHECK14_SUBSTEP_SKILLS[@]} caller-derived sub-step skill bodies (${CHECK14_SUBSTEP_SKILLS[*]})"
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''

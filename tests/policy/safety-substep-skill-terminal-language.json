@@ -1,0 +1,42 @@
+{
+  "rule": "check14-substep-skill-terminal-language",
+  "description": "P3 consumer-assertion + core-detection pin for CHECK 14 (no turn-terminating language in sub-step skill body prose, issue #321). A skill body loads into its CALLING AGENT's context, so caller-scoped terminal prose makes an agent that invokes the skill inline end its turn early and return the skill's output as its own — a silent false PASS. The set_check pins the detection semantics against a sample body: every terminal phrase is captured, and the `stop-and-merge` domain term is NOT captured (the check strips it as a KEEP phrase; the fixture regex mirrors that with a negative lookahead). The consumers pin the load-bearing literals proving the check exists and keeps its contract: the `=== CHECK 14:` section header, `add_finding 'CHECK14'` (it emits CHECK14 findings), the caller-derived discovery that excludes overlord.md, and the fail-closed empty-derived-set finding (an empty set must never silently pass).",
+  "set_check": {
+    "extract_regex": "(Your final action|final action is a|[Pp]roduce zero (?:text|chat)|^Emit exactly|and stop(?!-and-merge))",
+    "expected_set": [
+      "Your final action",
+      "final action is a",
+      "Produce zero chat",
+      "Emit exactly",
+      "and stop"
+    ],
+    "expected_counts": {
+      "Your final action": 1,
+      "final action is a": 1,
+      "Produce zero chat": 1,
+      "Emit exactly": 1,
+      "and stop": 1
+    },
+    "files": [
+      { "path": "tests/policy/fixtures/check14-substep-sample.md", "mode": "equal" }
+    ]
+  },
+  "consumers": [
+    {
+      "file": "tools/policy_check.sh",
+      "pattern": "=== CHECK 14:"
+    },
+    {
+      "file": "tools/policy_check.sh",
+      "pattern": "add_finding 'CHECK14'"
+    },
+    {
+      "file": "tools/policy_check.sh",
+      "pattern": "! -name 'overlord.md'"
+    },
+    {
+      "file": "tools/policy_check.sh",
+      "pattern": "derived an EMPTY set from non-overlord agent bodies"
+    }
+  ]
+}
