@@ -461,6 +461,28 @@ run_live_fail_case "live-closed:graphql-errors-override-presence" "graphql-error
   "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-errors-with-pr.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
   "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
   -- o r 5 all selfuser
+# Connection-shape gate (#322). Each fixture carries a NON-NULL pullRequest and NO .errors, so it
+# clears the three earlier checks and isolates the connection-shape assertion. Before this gate a
+# response that parsed but had LOST its connection nodes normalized to an empty candidate set —
+# indistinguishable from a genuinely clean PR, which lost a real finding in production.
+# 4b. a REQUESTED top-level connection key ABSENT entirely -> graphql-missing-connection.
+run_live_fail_case "live-closed:graphql-absent-connection" "graphql-missing-connection" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-absent-connection.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+# 4c. a present connection whose `nodes` is NULL -> graphql-missing-connection (has() would accept
+#     this shape; the `type == "array"` assertion is strictly stronger).
+run_live_fail_case "live-closed:graphql-null-nodes" "graphql-missing-connection" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-null-nodes.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+# 4d. FIELD-REPORT REPRODUCTION: top-level connections all intact, but an UNRESOLVED reviewThreads
+#     node's NESTED `comments` key is ABSENT -> graphql-missing-connection. This is the exact shape
+#     that lost a real finding; the nested per-thread clause is what catches it.
+run_live_fail_case "live-closed:graphql-absent-thread-comments" "graphql-missing-connection" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-absent-thread-comments.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
 
 # Fail-CLOSED via the CI live seam (FETCHNORM_LIVE_CI_FILE/STATUS). Each pairs a VALID empty GraphQL
 # seam (present pullRequest, zero connections @ status 0) so the GraphQL gate passes and the CI gate
@@ -515,6 +537,22 @@ run_live_failopen_case "live-open:ci-failing-status1" \
   "$EXPECTED_DIR/live-ci-failing.json" \
   "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
   "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-array.json" "FETCHNORM_LIVE_CI_STATUS=1" \
+  -- o r 5 all selfuser
+# Connection-shape gate must NOT over-reject (#322). Both shapes below are legitimate live responses.
+# 11b. every requested connection PRESENT but EMPTY (`nodes: []`, including `reviewThreads.nodes: []`,
+#      on which the nested per-thread clause is vacuously true) -> [] exit 0. A genuinely clean PR
+#      still passes.
+run_live_failopen_case "live-open:graphql-connections-present-empty" \
+  "$EXPECTED_DIR/live-graphql-valid-empty.json" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FN_DIR/live-graphql-valid-empty.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
+  -- o r 5 all selfuser
+# 11c. every requested connection PRESENT and POPULATED — incl. a reviewThreads node with a real
+#      nested `comments` connection -> the thread candidate survives the gate, exit 0.
+run_live_failopen_case "live-open:graphql-connections-populated" \
+  "$EXPECTED_DIR/review-thread-handled.json" \
+  "FETCHNORM_LIVE_GRAPHQL_FILE=$FIX_HISTORY_DIR/case01-handled-by-marker.json" "FETCHNORM_LIVE_GRAPHQL_STATUS=0" \
+  "FETCHNORM_LIVE_CI_FILE=$FN_DIR/live-ci-empty.json" "FETCHNORM_LIVE_CI_STATUS=0" \
   -- o r 5 all selfuser
 
 # ── Live-vs-injected divergence lock (the critical boundary assertion) ──────────────

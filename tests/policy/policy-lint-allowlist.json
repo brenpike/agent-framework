@@ -23,7 +23,7 @@
   {
     "rule": "CHECK13",
     "path": "plugin/skills/github-review-loop/scripts/fetch-normalize.sh",
-    "line": 250,
+    "line": 262,
     "reason": "P18 documented exception (ADR-0020): set -u only. set -e/pipefail deliberately omitted — fail-OPEN-on-CONTENT posture (jq pipelines swallow malformed payloads to []); live failures route through fetchnorm_fail()/validate_live_response with explicit exit codes."
   },
   {

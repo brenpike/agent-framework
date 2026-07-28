@@ -120,7 +120,11 @@
 #     behavior for trusted/already-gated payloads, not unguarded live boundaries.
 #   - FAIL-CLOSED on a LIVE-response operational failure (§5 validate_live_response):
 #     a live `gh` response that returns exit 0 with a non-empty `.errors` array, a
-#     null/absent `.data.repository.pullRequest`, or an empty body — OR a live
+#     null/absent `.data.repository.pullRequest`, an empty body, or a REQUESTED
+#     connection that is absent / null / has a null `nodes` (the connection-shape
+#     assertion — covering the three top-level connections AND the nested
+#     per-thread `reviewThreads.nodes[].comments`, so a parseable response that
+#     silently lost its nodes can no longer masquerade as a clean PR) — OR a live
 #     `gh pr checks` response at ANY allowlisted status (0, 1, 8) whose stdout is
 #     NOT a JSON array, or a non-allowlisted status — fails CLOSED (non-zero + a
 #     stable FETCHNORM_ERROR reason). All three allowlisted CI statuses share ONE
@@ -197,8 +201,15 @@
 #     present — `.errors` is the operational-failure signal)  -> graphql-errors
 #   - null/absent `.data.repository.pullRequest` (covers
 #     repo-not-found AND PR-not-found AND auth)               -> graphql-null-pullrequest
-#   - present pullRequest with empty/zero connections          -> PASSES (valid empty;
-#     downstream fail-open -> [] exit 0; do NOT over-reject valid-but-empty)
+#   - a REQUESTED connection that is ABSENT, null, or whose `nodes` is null —
+#     including the NESTED per-thread `reviewThreads.nodes[].comments` — fails
+#     CLOSED                                                   -> graphql-missing-connection
+#   - present pullRequest whose connections are all present but EMPTY
+#     (`nodes: []`)                                            -> PASSES (valid empty;
+#     downstream fail-open -> [] exit 0; do NOT over-reject valid-but-empty). The
+#     per-thread clause is vacuously true on `reviewThreads.nodes: []`.
+#   ORDER IS LOAD-BEARING: the connection-shape check runs LAST, so a null
+#   pullRequest and an `.errors` response keep their own stable reason strings.
 #
 # CI mode (validate_live_response ci <body> <status>):
 #   - status is an ALLOWLIST of the documented check-carrying exit states whose
@@ -221,6 +232,7 @@
 #
 # Reason tokens (STABLE — asserted by RS2-002, documented above):
 #   graphql-empty-body | graphql-errors | graphql-null-pullrequest
+#   graphql-missing-connection
 #   ci-not-array | ci-operational-failure
 #
 # 5b. LIVE-RESPONSE TEST SEAM (offline drive THROUGH the gate)
@@ -433,6 +445,26 @@ validate_live_response() {
       if ! printf '%s' "$body" \
         | jq -e '.data.repository.pullRequest | type == "object"' >/dev/null 2>&1; then
         echo "FETCHNORM_ERROR=graphql-null-pullrequest"
+        return 1
+      fi
+      # Every connection this script's QUERY requests MUST be present AND
+      # array-shaped, including the NESTED per-thread comments connection. A
+      # response that parses and carries a pullRequest but has LOST a connection
+      # normalizes to an empty candidate set — indistinguishable downstream from a
+      # genuinely clean PR. `type == "array"` is total and strictly stronger than
+      # has(): absent key, null connection, and null `nodes` all yield "null" and
+      # fail; `nodes: []` and populated `nodes` yield "array" and pass; a scalar
+      # connection fails via the `?`. The all/2 clause is VACUOUSLY TRUE on
+      # `reviewThreads.nodes: []`, so a genuinely clean PR still passes.
+      # INVARIANT: this check runs LAST — live-graphql-null-pr and
+      # live-graphql-errors also fail this predicate, and their stable reason
+      # strings are preserved only because the earlier checks catch them first.
+      if ! printf '%s' "$body" | jq -e '.data.repository.pullRequest
+        | ((.reviewThreads?.nodes? | type) == "array")
+          and ((.comments?.nodes?  | type) == "array")
+          and ((.reviews?.nodes?   | type) == "array")
+          and all(.reviewThreads.nodes[]?; (.comments?.nodes? | type) == "array")' >/dev/null 2>&1; then
+        echo "FETCHNORM_ERROR=graphql-missing-connection"
         return 1
       fi
       return 0 ;;
