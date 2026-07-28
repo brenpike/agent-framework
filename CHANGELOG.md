@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.4] - 2026-07-28
+
+### Fixed
+
+- github-review-loop: the change-detect poll baselined "already seen" state at Monitor arm time, which happens after cycle 0 finishes dispatching — any review feedback a reviewer posted during that unbounded blind window was never surfaced. The poll now takes a required 8th argument, a snapshot seed captured before cycle-0 dispatch, and diffs against that pre-cycle-0 baseline instead of the arm-time one. The seed argument is required, not optional, so a caller cannot silently regress to the old arm-time baseline. This is deliberately biased toward over-reporting; the existing downstream prefilter absorbs any duplicate signal, so no additional suppression was added here. Covered by a new bite-proof regression suite, `tools/test_change_detect_poll.sh`. Closes #324.
+
 ## [2.40.3] - 2026-07-28
 
 ### Security
