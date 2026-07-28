@@ -74,10 +74,13 @@ new_project() {
 
 # run_apply <root> <inputs_json_string> — run the apply phase with HOME pinned to <root>/fakehome.
 # Echoes combined stdout.
+# cwd is pinned to <root> because apply's inputs-containment guard resolves the checkout via
+# `git rev-parse --show-toplevel` from the CURRENT directory; without the cd the guard would compare
+# the tmp inputs path against the runner's own checkout and refuse to read it.
 run_apply() {
   local root="$1" inputs="$2"
   printf '%s' "$inputs" > "$root/inputs.json"
-  HOME="$root/fakehome" bash "$ENTRYPOINT" apply "$root/inputs.json"
+  ( cd "$root" && HOME="$root/fakehome" bash "$ENTRYPOINT" apply "$root/inputs.json" )
 }
 
 # run_detect <root> — run the detect phase with HOME pinned to <root>/fakehome.
@@ -474,7 +477,7 @@ ROOT7M="$(new_project apply-multidoc)"
 # TWO concatenated JSON objects (a stream). One names a different project_root than the other.
 printf '{"project_root":"/x"}{"project_root":"%s"}' "$ROOT7M" > "$ROOT7M/inputs.json"
 set +e
-OUT7M="$(HOME="$ROOT7M/fakehome" bash "$ENTRYPOINT" apply "$ROOT7M/inputs.json" 2>&1)"
+OUT7M="$( cd "$ROOT7M" && HOME="$ROOT7M/fakehome" bash "$ENTRYPOINT" apply "$ROOT7M/inputs.json" 2>&1 )"
 RC7M=$?
 set -u
 assert_eq "apply-multidoc:exit" "2" "$RC7M" "multi-doc inputs stream fails with exit 2"

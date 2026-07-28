@@ -116,13 +116,16 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 plugin_root="$(cd "$script_dir/../../.." && pwd -P)"
 shared_dir="$plugin_root/skills/_shared"
 
-# Source the four sourced libs by self-located absolute path. SOURCE-OR-DIE: a missing or
+# Source the five sourced libs by self-located absolute path. SOURCE-OR-DIE: a missing or
 # unparseable shared library fails closed BEFORE any consumer logic — the entrypoint owns no
 # merge/guard logic of its own, so proceeding without them would silently disarm every guard.
 # ORDER: file-guard.sh BEFORE test-detect.sh — test-detect.sh's hivemind_record_validation
 # DELEGATES its `## Validation` append to file-guard.sh's hivemind_guard_validation_section, so
 # that function must be defined first (the test harness sources in the same order).
-for lib in settings-merge.sh claude-mem-path.sh file-guard.sh test-detect.sh; do
+# containment.sh is DEFINITION-ONLY (pure function definitions, no top-level statement, no jq
+# dependency), so sourcing it here neither perturbs the P18 floor nor adds a hard dependency the
+# jq-less `detect` phase would trip over; it supplies phase_apply's inputs READ-guard only.
+for lib in containment.sh settings-merge.sh claude-mem-path.sh file-guard.sh test-detect.sh; do
   [ -f "$shared_dir/$lib" ] || fail "required shared library missing: skills/_shared/$lib; refusing to proceed"
   # shellcheck source=/dev/null
   . "$shared_dir/$lib" || fail "failed to source skills/_shared/$lib (unparseable); refusing to proceed"
@@ -223,24 +226,35 @@ phase_apply() {
   command -v jq >/dev/null 2>&1 \
     || fail "jq is required to merge settings and render the apply Output but is not installed"
 
-  local inputs_file="${1:-}"
-  [ -n "$inputs_file" ] || fail "apply requires an inputs JSON file argument"
-  [ -f "$inputs_file" ] || fail "apply inputs file does not exist: $inputs_file"
-  hivemind_jq_is_single_object_file "$inputs_file" \
-    || fail "apply inputs file is not a valid JSON object: $inputs_file"
+  local INPUTS_FILE="${1:-}"
+  [ -n "$INPUTS_FILE" ] || fail "apply requires an inputs JSON file argument"
+  [ -f "$INPUTS_FILE" ] || fail "apply inputs file does not exist: $INPUTS_FILE"
+
+  # ── Defense-in-depth inputs READ-guard (shared helper) ───────────────────────
+  # Refuse to READ the inputs file when its canonical path escapes the checkout (e.g. via a
+  # symlinked ancestor or a symlinked leaf) — converting a silent external read into a hard
+  # blocker. ORDERING IS LOAD-BEARING: this runs BEFORE hivemind_jq_is_single_object_file,
+  # because that helper performs the FIRST jq open of the file and a jq open of an
+  # attacker-supplied external path is itself a JSON-validity read oracle. The helper never
+  # exits; map its non-zero return onto this script's own fail() blocker idiom.
+  hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
+    || fail "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout"
+
+  hivemind_jq_is_single_object_file "$INPUTS_FILE" \
+    || fail "apply inputs file is not a valid JSON object: $INPUTS_FILE"
 
   # Parse every field into inert variables.
   local project_root agent_target caveman claude_mem codex seed_allowlist agent_conflict_approved
-  project_root="$(jq -r '.project_root // ""' "$inputs_file")"
-  agent_target="$(jq -r '.agent_target // "hivemind:overlord"' "$inputs_file")"
-  caveman="$(jq -r '.caveman // "no"' "$inputs_file")"
-  claude_mem="$(jq -r '.claude_mem // "no"' "$inputs_file")"
-  codex="$(jq -r '.codex // "no"' "$inputs_file")"
-  seed_allowlist="$(jq -r '.seed_allowlist // "yes"' "$inputs_file")"
+  project_root="$(jq -r '.project_root // ""' "$INPUTS_FILE")"
+  agent_target="$(jq -r '.agent_target // "hivemind:overlord"' "$INPUTS_FILE")"
+  caveman="$(jq -r '.caveman // "no"' "$INPUTS_FILE")"
+  claude_mem="$(jq -r '.claude_mem // "no"' "$INPUTS_FILE")"
+  codex="$(jq -r '.codex // "no"' "$INPUTS_FILE")"
+  seed_allowlist="$(jq -r '.seed_allowlist // "yes"' "$INPUTS_FILE")"
   # OPTIONAL inert input: when the navigator re-runs apply after the user approved an agent
   # overwrite, it sets this to "yes". Read inertly via jq (never spliced into program source);
   # default "no" preserves the never-overwrite-on-conflict behavior for every existing caller.
-  agent_conflict_approved="$(jq -r '.agent_conflict_approved // "no"' "$inputs_file")"
+  agent_conflict_approved="$(jq -r '.agent_conflict_approved // "no"' "$INPUTS_FILE")"
 
   [ -n "$project_root" ] || fail "apply inputs file is missing required project_root"
   [ -d "$project_root" ] || fail "apply project_root is not a directory: $project_root"
@@ -249,8 +263,8 @@ phase_apply() {
   # into the Output companions: block; absent detected/source → reported not-checked. Read once as
   # compact JSON.
   local companions_json
-  if jq -e 'has("companions") and (.companions | type == "object")' "$inputs_file" >/dev/null 2>&1; then
-    companions_json="$(jq -c '.companions' "$inputs_file")"
+  if jq -e 'has("companions") and (.companions | type == "object")' "$INPUTS_FILE" >/dev/null 2>&1; then
+    companions_json="$(jq -c '.companions' "$INPUTS_FILE")"
   else
     companions_json='{}'
   fi

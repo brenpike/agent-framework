@@ -3,8 +3,8 @@
 # containment.sh — shared symlink-write-escape containment idiom for the three
 # committed hivemind run-ledger / brood writers (init-run-ledger, record-state-result,
 # spawn-brood); it also provides the ledger-read leaf guard (hivemind_assert_ledger_contained)
-# for the two ledger-reading engines (mark-intent-fallback, record-state-result), completing
-# leaf-symmetry across inputs-file / write-target / ledger-read leaves.
+# for the ledger-reading engines (mark-intent-fallback, record-state-result, next-wave),
+# completing leaf-symmetry across inputs-file / write-target / ledger-read leaves.
 #
 # THIS FILE IS SOURCED, NOT EXECUTED. No shebang: each caller sources it by absolute
 # path derived from its OWN script_dir (`. "$plugin_root/skills/_shared/containment.sh"`).
@@ -230,13 +230,13 @@ hivemind_assert_file_contained() {
 
 # hivemind_assert_ledger_contained <raw_repo_root> <ledger_file_path>
 #
-# LEDGER-READ leaf guard for the two ledger-reading engines (mark-intent-fallback,
-# record-state-result). Those engines read the run-ledger state.json via [ -f "$ledger" ],
-# jq -e . "$ledger", and jq -r '.run.id' "$ledger" — all of which FOLLOW SYMLINKS. Their
-# existing hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id" guard validates
-# the chain only DOWN TO the <run_id> run-dir, NOT the state.json leaf below it. When the
-# run dir is real but state.json is itself a symlink, the ledger reads follow it to an
-# external target — a content/validity read oracle the ancestor guard never inspects.
+# LEDGER-READ leaf guard for the ledger-reading engines (mark-intent-fallback,
+# record-state-result, next-wave). Those engines read the run-ledger state.json via
+# [ -f "$ledger" ], jq -e . "$ledger", and jq -r '.run.id' "$ledger" — all of which FOLLOW
+# SYMLINKS. Their existing hivemind_assert_contained "$repo_root" ".hivemind/runs/$run_id"
+# guard validates the chain only DOWN TO the <run_id> run-dir, NOT the state.json leaf below
+# it. When the run dir is real but state.json is itself a symlink, the ledger reads follow it
+# to an external target — a content/validity read oracle the ancestor guard never inspects.
 #
 # This function REFUSES TO READ such a leaf, mirroring hivemind_assert_inputs_contained's
 # read-guard structure exactly. It completes leaf-symmetry across the three leaf classes:
@@ -305,11 +305,11 @@ hivemind_assert_ledger_contained() {
 
 # hivemind_assert_inputs_contained <raw_repo_root> <inputs_file_path>
 #
-# Defense-in-depth READ-guard for the three inputs-file navigators (init-run-ledger,
-# record-state-result, spawn-brood). The model authors an inputs JSON file via the Write
-# tool BEFORE the committed engine runs. This function lets each engine REFUSE TO READ an
-# inputs file whose canonical path escapes the checkout (e.g. via a symlinked ancestor),
-# converting a silent external-write-and-consume into a hard, loud blocker.
+# Defense-in-depth READ-guard for the inputs-file navigators. The model authors an inputs
+# JSON file via the Write tool BEFORE the committed engine runs. This function lets each
+# engine REFUSE TO READ an inputs file whose canonical path escapes the checkout (e.g. via a
+# symlinked ancestor), converting a silent external-write-and-consume into a hard, loud
+# blocker.
 #
 # HONEST SCOPE NOTE: this does NOT prevent the external Write itself — the model's Write tool
 # runs before any committed code executes, so a path escaped via symlink is already written
