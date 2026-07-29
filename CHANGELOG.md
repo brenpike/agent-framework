@@ -16,12 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- tests/policy: a fixture pinning the missing-Write-tool transport hard-stop rule to its consumers, closing the guard opt-out.
+- tests/policy: a fixture pinning the transport hard-stop rule to its consumers, closing the guard opt-out.
 
 ### Fixed
 
-- navigator: a missing Write-tool grant is now a hard stop. When a navigator skill mandates the Write-tool inputs-file transport and the session does not hold the Write tool, the navigator stops blocked and names the remedy, instead of silently improvising a shell heredoc transport. Previously a capable agent would route around the missing tool without signalling, reopening the delimiter-injection class ADR-0017 exists to close.
+- navigator: a non-success Write call to the transport path is now a hard stop. When a navigator skill mandates the Write-tool inputs-file transport and the Write call does not succeed — the tool absent from the session, the call blocked by a consumer `permissions.deny` rule or managed policy, or any other cause — the navigator stops blocked and names the remedy, instead of silently improvising a shell heredoc transport. The rule is keyed to the call's outcome rather than an enumerated list of causes, because enumerating causes kept leaving real non-success cases outside the rule. Previously a capable agent would route around a blocked transport without signalling, reopening the delimiter-injection class ADR-0017 exists to close.
 - seed-hive: the permission-template upgrade path is now documented. The plugin's recommended `permissions.allow` rules merge into a project's settings only when seed-hive runs, never automatically on plugin upgrade, so an already-seeded project silently missed new rules. seed-hive and the README now state that upgrading consumers must re-run the skill, and that the merge is idempotent and preserves existing entries. Closes #323.
+- CONTEXT.md: the permissions glossary now reconciles to the harness's three actual primitives — a grant confers a tool, an allow rule pre-approves a call, a deny rule blocks a call — replacing an earlier two-primitive model that had produced a false claim about what consumer settings can do.
 
 ## [2.40.5] - 2026-07-29
 

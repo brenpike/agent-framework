@@ -259,12 +259,16 @@ The security classification for review text containing direct agent instruction 
 _Avoid_: malicious input, attack
 
 **Tool Grant**:
-The capability gate: an entry in an agent's frontmatter `tools:` list inside the plugin, loaded at session start from the version-keyed plugin cache (`~/.claude/plugins/cache/<owner>/<plugin>/<version>/`). A grant added to the source cannot reach an already-running session, so delivery requires a version bump and a fresh session. Failure signature: the tool is absent from the session's tool set. Only a Tool Grant can give an agent a tool — no setting in the consumer project can add or remove one.
+The capability gate: an entry in an agent's frontmatter `tools:` list inside the plugin, loaded at session start from the version-keyed plugin cache (`~/.claude/plugins/cache/<owner>/<plugin>/<version>/`). A grant added to the source cannot reach an already-running session, so delivery requires a version bump and a fresh session. Failure signature: the tool is absent from the session's tool set. No consumer-project setting confers a tool; a consumer `permissions.deny` rule or managed policy can still block calls to a tool the agent holds (ADR-0010, ADR-0013), which leaves the grant intact and the tool in the session's tool set.
 _Avoid_: permission, allow rule, tool permission
 
 **Prompt Pre-Approval**:
-An allow rule in the consumer project's `.claude/settings.json`, merged only when `seed-hive` runs and never automatically on plugin upgrade. It pre-approves a named action so no interactive prompt appears for a tool the agent already holds; it never denies, and it never confers a tool. Under `--dangerously-skip-permissions` no file-permission rule applies at all. Failure signature: an interactive prompt appears — remedied by re-running `seed-hive`, which restores no capability.
+An allow rule in the consumer project's `.claude/settings.json`, merged only when `seed-hive` runs and never automatically on plugin upgrade. It pre-approves a named action so no interactive prompt appears for a tool the agent already holds; it never denies, and it never confers a tool. Under `--dangerously-skip-permissions` no file-permission rule applies at all. Failure signature: an interactive prompt appears — an operator-facing harness event that the agent does not observe, since the agent sees only whether a call succeeded or was refused; remedied by re-running `seed-hive`, which restores no capability.
 _Avoid_: tool permission, permission grant, capability
+
+**Deny Rule**:
+A `permissions.deny` entry in the consumer project's settings, or an equivalent managed policy, that blocks calls to a tool the agent holds. It leaves the tool in the session's tool set and confers nothing; a blocked call surfaces as a non-success outcome like any other. Failure signature: a call is refused while the tool remains held.
+_Avoid_: tool revocation, capability removal, ungrant
 
 ### Architecture
 
