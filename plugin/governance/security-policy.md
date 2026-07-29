@@ -149,6 +149,16 @@ Claude Code plugin frontmatter CANNOT path-scope a `Write` grant (a `Write` entr
 
 A parallel read-guard, `hivemind_assert_ledger_contained` (also in `containment.sh`), is called by every ledger-reading engine (`mark-intent-fallback.sh`, `record-state-result.sh`, and `next-wave.sh`, each of which opens the ledger via `hivemind_open_ledger`) BEFORE the first ledger read. It `[ -L ]`-rejects a symlinked `state.json` leaf on the raw passed path — before any `[ -f ]`/`jq` read that would follow the symlink — then canonicalizes the leaf's dirname and prefix-matches against the canonical checkout root (ancestor defense-in-depth). This closes the ledger-read leaf class and completes symmetry across every leaf class: inputs-file leaf (`hivemind_assert_inputs_contained`), write-target leaf (`hivemind_assert_file_contained`), and ledger-read leaf (`hivemind_assert_ledger_contained`). See ADR-0019 (2026-06-03 amendment).
 
+#### Transport Degradation Is a Hard Stop
+
+The Write tool, authoring the fixed-literal-prefix path, is the SOLE SANCTIONED TRANSPORT for every navigator's inputs file under this pattern; the sole-enforcement statement above states what that path constraint does and does not bound.
+
+When the calling agent's session does not HOLD the Write tool, the navigator MUST stop blocked, report the transport as UNREACHABLE, and name a two-part remedy: (1) update the plugin and start a FRESH session, because an agent's `tools:` block is read from the version-keyed plugin cache at session start, so a grant added to the source cannot reach a session already running; then (2) re-run `hivemind:seed-hive`, because a plugin upgrade never re-merges a consumer's `.claude/settings.json`, so the permission template reaches an already-seeded consumer ONLY when seed-hive runs — that merge is idempotent append-if-absent, so re-running is always safe.
+
+Authoring the inputs file by ANY shell transport — heredoc, shell redirection, `cat`/`echo`/`printf`, or an inline interpreter script such as `python3 <<'EOF'` — is FORBIDDEN. It reintroduces exactly the delimiter-injection class ADR-0017 exists to close. A missing Write tool is a hard stop, never a license to improvise a transport.
+
+An interactive permission PROMPT is NOT degradation. Per the pre-approval statement above, an allow rule only suppresses the prompt and never denies, so a prompt means the transport is FUNCTIONING and the operator is being asked to approve it. The trip condition for this hard stop is ABSENCE OF THE TOOL, nothing else. A broader reading would fire the hard stop on a first-ever `hivemind:seed-hive` bootstrap, which legitimately prompts because the allow rules it installs are not yet in place.
+
 ### Enforcement Order
 
 1. External Content Boundary applies at content ingestion time (before classification).

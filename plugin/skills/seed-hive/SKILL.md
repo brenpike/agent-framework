@@ -64,6 +64,11 @@ After:
 - new project adopting the plugin
 - existing project missing the `agent` default
 - repairing settings after manual edits broke routing
+- after a plugin upgrade that ships new `permissions.allow` template rules — the template
+  merges into `.claude/settings.json` ONLY when this skill RUNS, and a plugin upgrade never
+  re-merges a consumer's settings, so an already-seeded project receives nothing until this
+  skill is re-run. The merge is idempotent append-if-absent, so re-running is always safe and
+  preserves existing entries.
 
 Do not use this skill to change unrelated settings or to write keys not listed in the
 engine's merge contract.
@@ -210,6 +215,10 @@ detection) is reported `not-checked`.
    covering `.hivemind/seed-inputs-*.json` is itself seeded by this very skill; that is an
    accepted bootstrap ordering, not a defect — the rule lands for repair re-runs and every
    later seeded project.
+   If the Write tool is ABSENT from this session, STOP BLOCKED per
+   `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md` (Inert Inputs-File Navigator Pattern →
+   Transport Degradation Is a Hard Stop), reporting the remedy: update the plugin and start a
+   fresh session, then re-run `hivemind:seed-hive`.
 5. **Apply.** Run the `apply` phase once:
    ```bash
    bash ${CLAUDE_PLUGIN_ROOT}/skills/seed-hive/scripts/seed-hive.sh apply .hivemind/seed-inputs-<token>.json
@@ -273,6 +282,10 @@ detection) is reported `not-checked`.
   object in Conflict Resolution above.
 - overwrite a conflicting `agent` value without EXPLICIT user approval — the engine reports
   blocked, and the navigator may proceed only after the user approves.
+- author the inputs file via any transport other than the Write tool — no heredoc, no shell
+  redirection, no inline python/node script. A missing Write tool is a hard stop, not a
+  workaround; see `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md`
+  (Transport Degradation Is a Hard Stop).
 - proceed if the project root cannot be resolved.
 - commit, push, or otherwise touch git state.
 - Read or reconstruct the engine body — invoke it with the documented phase + argument.

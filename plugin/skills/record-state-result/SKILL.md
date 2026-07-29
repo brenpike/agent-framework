@@ -199,6 +199,10 @@ on-disk ledger is byte-unchanged.
    pattern exists to avoid (ADR-0017). Cleanup is not required: this is transient gitignored state and
    `.hivemind/` is ephemeral. Write performs no shell parsing of the values, so untrusted `summary` /
    `outputs` / `plan_steps` / `plan_path` text is inert.
+   If the Write tool is ABSENT from this session, STOP BLOCKED per
+   `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md` (Inert Inputs-File Navigator Pattern →
+   Transport Degradation Is a Hard Stop), reporting the remedy: update the plugin and start a
+   fresh session, then re-run `hivemind:seed-hive`.
 
 3. **Execute the script** with one Bash call, passing the inputs file path:
    ```bash
@@ -244,5 +248,9 @@ This is a pipeline skill:
   NOT hand-mutation.
 - use the Write tool for anything other than the `.hivemind/runs/.record-inputs-<token>.json`
   inputs file.
+- author the inputs file via any transport other than the Write tool — no heredoc, no shell
+  redirection, no inline python/node script. A missing Write tool is a hard stop, not a
+  workaround; see `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md`
+  (Transport Degradation Is a Hard Stop).
 - commit, push, or open a PR.
 - Read or reconstruct the script body — invoke it with the documented inputs file path.
