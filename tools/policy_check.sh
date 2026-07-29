@@ -1110,21 +1110,30 @@ fi
 
 # ── CHECK 14: Inert inputs-file navigator obligations ──────────────────────
 #
-# CLASS CLOSURE for the navigator-drift defect. CHECK 9 enforces
-# guard-before-read ONLY for engine scripts that ALREADY source
-# containment.sh, so NOT sourcing it is a silent opt-out: a skill promoted to
-# an inputs-file navigator without a containment-sourcing engine is invisible
-# to CHECK 9 forever. CHECK 14 removes that opt-out by making the source
-# itself mandatory for every navigator — enrolling the navigator into CHECK 9
-# is the obligation, so CHECK 9 stops being optional.
+# WHAT IT GUARANTEES. CHECK 9 enforces guard-before-read ONLY for engine
+# scripts that ALREADY source containment.sh, so NOT sourcing it is a silent
+# opt-out: a skill promoted to an inputs-file navigator without a
+# containment-sourcing engine is invisible to CHECK 9 forever. CHECK 14 makes
+# that source MANDATORY for every navigator that CARRIES the discovery marker
+# below — enrolling the navigator into CHECK 9 is the obligation, so across the
+# MARKED set CHECK 9 stops being optional. The check also fails CLOSED on the
+# discovery key itself: zero discovered navigators is an ERROR, not a pass, so
+# the marker disappearing repo-wide cannot silently disarm the check.
+#
+# WHAT IT DOES NOT. A Write-carrying skill that never adopts the marker stays
+# INVISIBLE to this check. The CHECK 9 opt-out is NARROWED to that one case and
+# made LOUD everywhere else — it is not eliminated. Marker adoption on a NEWLY
+# authored navigator is an AUTHORING CONVENTION, not a machine-verified
+# property; that residual gap is tracked at #319.
 #
 # DISCOVERY KEY (no hand-kept list): every navigator's `allowed-tools` Write
 # entry carries the literal marker `# inert inputs-file only:` (see
 # security-policy.md "Inert Inputs-File Navigator Pattern", which declares this
-# marker the validator's load-bearing discovery key). Executor skills carry a
-# BARE `- Write` with no marker and carry NEITHER obligation. Because discovery
-# is driven off a marker the navigator must carry anyway, adding a navigator
-# without its obligations turns this suite red automatically.
+# marker the validator's load-bearing discovery key BY CONVENTION). Executor
+# skills carry a BARE `- Write` with no marker and carry NEITHER obligation.
+# Because discovery is driven off that marker, adding a navigator without its
+# obligations turns this suite red automatically ONLY IF the new navigator
+# adopts the marker.
 #
 # Matching is FIXED-STRING on both the marker and the `- Write` entry token,
 # scoped to the file's YAML frontmatter. A frontmatter parser is deliberately

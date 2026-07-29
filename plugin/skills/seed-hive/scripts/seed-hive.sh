@@ -245,6 +245,14 @@ phase_apply() {
   # because that helper performs the FIRST jq open of the file and a jq open of an
   # attacker-supplied external path is itself a JSON-validity read oracle. The helper never
   # exits; map its non-zero return onto this script's own fail() blocker idiom.
+  #
+  # ANCHOR: the checkout root is resolved from the PROCESS CWD via
+  # `git rev-parse --show-toplevel` — NOT from the inputs file's `project_root`, which is not
+  # readable until AFTER this guard runs, by design (the guard exists to decide whether reading
+  # that file is safe at all). The not-in-a-repo PRECONDITION is the NAVIGATOR's gate, not this
+  # engine's: see the skill body's Procedure step 1 ("Stop blocked if not a git repository").
+  # On an EMPTY root the shared canonicalizer resolves to the process CWD rather than failing
+  # closed — a property of the shared helper, common to the sibling call sites, tracked at #295.
   hivemind_assert_inputs_contained "$(git rev-parse --show-toplevel 2>/dev/null)" "$INPUTS_FILE" >/dev/null \
     || fail "refusing to read the inputs file: $INPUTS_FILE resolves outside the checkout"
 
