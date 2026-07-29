@@ -16,7 +16,7 @@
     },
     {
       "file": "plugin/governance/security-policy.md",
-      "pattern": "the navigator MUST stop blocked, report the OBSERVED OUTCOME, and never author the inputs file by any other transport"
+      "pattern": "UNLESS the Write call to the fixed-literal transport path SUCCEEDS — including after an operator approves a permission prompt — the navigator MUST stop blocked, report the OBSERVED OUTCOME, and never author the inputs file by any other transport"
     },
     {
       "file": "plugin/skills/init-run-ledger/SKILL.md",
