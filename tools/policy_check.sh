@@ -1108,6 +1108,143 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+# ── CHECK 14: Inert inputs-file navigator obligations ──────────────────────
+#
+# WHAT IT GUARANTEES. CHECK 9 enforces guard-before-read ONLY for engine
+# scripts that ALREADY source containment.sh, so NOT sourcing it is a silent
+# opt-out: a skill promoted to an inputs-file navigator without a
+# containment-sourcing engine is invisible to CHECK 9 forever. CHECK 14 makes
+# that source MANDATORY for every navigator that CARRIES the discovery marker
+# below — enrolling the navigator into CHECK 9 is the obligation, so across the
+# MARKED set CHECK 9 stops being optional. The check also fails CLOSED on the
+# discovery key itself: zero discovered navigators is an ERROR, not a pass, so
+# the marker disappearing repo-wide cannot silently disarm the check.
+#
+# WHAT IT DOES NOT. A Write-carrying skill that never adopts the marker stays
+# INVISIBLE to this check. The CHECK 9 opt-out is NARROWED to that one case and
+# made LOUD everywhere else — it is not eliminated. Marker adoption on a NEWLY
+# authored navigator is an AUTHORING CONVENTION, not a machine-verified
+# property; that residual gap is tracked at #319.
+#
+# DISCOVERY KEY (no hand-kept list): every navigator's `allowed-tools` Write
+# entry carries the literal marker `# inert inputs-file only:` (see
+# security-policy.md "Inert Inputs-File Navigator Pattern", which declares this
+# marker the validator's load-bearing discovery key BY CONVENTION). Executor
+# skills carry a BARE `- Write` with no marker and carry NEITHER obligation.
+# Because discovery is driven off that marker, adding a navigator without its
+# obligations turns this suite red automatically ONLY IF the new navigator
+# adopts the marker.
+#
+# Matching is FIXED-STRING on both the marker and the `- Write` entry token,
+# scoped to the file's YAML frontmatter. A frontmatter parser is deliberately
+# NOT written: the frontmatter form is stable and a parser is a new failure
+# surface.
+#
+# Each discovered navigator must satisfy BOTH obligations:
+#   (a) at least one plugin/skills/<name>/scripts/*.sh sources containment.sh in
+#       the DIRECT `. <path>/containment.sh` form. The predicate is CHECK 9's own
+#       enrollment regex, byte for byte, so obligation (a) and CHECK 9 enrollment
+#       are the SAME condition and cannot diverge. A script that sources the
+#       library indirectly (e.g. through a `for lib in ...` loop variable) is NOT
+#       enrolled by CHECK 9 and therefore does NOT satisfy (a) — that is the point,
+#       not a false positive: an unenrolled navigator has no guard-ordering
+#       enforcement.
+#   (b) the literal `hivemind:<name>` appears inside the Inert Inputs-File
+#       Navigator Pattern section of plugin/governance/security-policy.md, i.e.
+#       the navigator is in the policy's enumerated covered set.
+echo ''
+echo '=== CHECK 14: Inert inputs-file navigator obligations ==='
+
+CHECK14_MARKER='# inert inputs-file only:'
+CHECK14_WRITE_ENTRY='- Write'
+CHECK14_POLICY_DOC="$PLUGIN_ROOT/governance/security-policy.md"
+CHECK14_SECTION_HEADING='### Inert Inputs-File Navigator Pattern'
+
+# Body of the covered-set section: the heading's lines up to (not including) the
+# next `### ` heading. Obligation (b) is asserted against this span alone, so a
+# `hivemind:<name>` mention elsewhere in the policy doc cannot satisfy it.
+# A trailing CR is stripped before the heading comparison: governance docs in this
+# repo are stored CRLF, and an exact match against a CR-terminated line would
+# silently yield an EMPTY section and fail every navigator.
+check14_section="$(awk -v heading="$CHECK14_SECTION_HEADING" '
+    { sub(/\r$/, "") }
+    $0 == heading { in_section = 1; next }
+    in_section && /^### / { exit }
+    in_section { print }
+' "$CHECK14_POLICY_DOC")"
+
+# skill_declares_navigator_marker FILE
+# Echoes "true" when the skill's frontmatter carries a `- Write` entry bearing
+# the inert-inputs-file marker, "false" otherwise.
+skill_declares_navigator_marker() {
+    local skill_file="$1"
+    local fm_line
+    while IFS= read -r fm_line; do
+        [[ "$fm_line" != *"$CHECK14_WRITE_ENTRY"* ]] && continue
+        [[ "$fm_line" != *"$CHECK14_MARKER"* ]] && continue
+        echo "true"
+        return
+    done <<< "$(get_frontmatter "$skill_file")"
+    echo "false"
+}
+
+# skill_sources_containment SKILL_DIR
+# Echoes "true" when any engine script under SKILL_DIR/scripts sources
+# containment.sh under CHECK 9's enrollment predicate (reused verbatim).
+skill_sources_containment() {
+    local skill_dir="$1"
+    local engine_script
+    while IFS= read -r -d '' engine_script; do
+        if grep -qE '(^|[[:space:]])(\.|source)[[:space:]][^#]*containment\.sh' "$engine_script"; then
+            echo "true"
+            return
+        fi
+    done < <(find "$skill_dir/scripts" -maxdepth 1 -name '*.sh' -type f -print0 2>/dev/null || true)
+    echo "false"
+}
+
+check14_found=false
+check14_navigator_count=0
+
+while IFS= read -r -d '' skill_file; do
+    if [[ "$(skill_declares_navigator_marker "$skill_file")" != "true" ]]; then
+        continue
+    fi
+    check14_navigator_count=$((check14_navigator_count + 1))
+
+    skill_dir="$(dirname "$skill_file")"
+    skill_name="$(basename "$skill_dir")"
+    marker_line="$(grep -nF "$CHECK14_MARKER" "$skill_file" 2>/dev/null | head -n1 | cut -d: -f1 || true)"
+    [[ -z "$marker_line" ]] && marker_line=0
+
+    if [[ "$(skill_sources_containment "$skill_dir")" != "true" ]]; then
+        check14_found=true
+        add_finding 'CHECK14' "$skill_file" "$marker_line" \
+            "Inert inputs-file navigator hivemind:${skill_name} fails obligation (a): no plugin/skills/${skill_name}/scripts/*.sh sources containment.sh in the direct '. <path>/containment.sh' form CHECK 9 enrolls on (an indirect loop-variable source does not enroll) -- until it does, CHECK 9's guard-before-read enforcement never applies to this navigator"
+    fi
+
+    if ! echo "$check14_section" | grep -qF "hivemind:${skill_name}"; then
+        check14_found=true
+        add_finding 'CHECK14' "$skill_file" "$marker_line" \
+            "Inert inputs-file navigator hivemind:${skill_name} fails obligation (b): literal 'hivemind:${skill_name}' is absent from the '${CHECK14_SECTION_HEADING}' section of plugin/governance/security-policy.md -- add it to the covered-set enumeration"
+    fi
+done < <(find "$PLUGIN_ROOT/skills" -maxdepth 2 -name 'SKILL.md' -type f -print0)
+
+# FAIL-CLOSED on the discovery key itself: zero navigators means the marker was
+# renamed or dropped, which would silently disarm this check rather than fail it.
+if [[ "$check14_navigator_count" -eq 0 ]]; then
+    check14_found=true
+    add_finding 'CHECK14' "$CHECK14_POLICY_DOC" 0 \
+        "Inert inputs-file navigator discovery found ZERO navigators -- the '${CHECK14_MARKER}' discovery key is missing from every skill frontmatter, which disarms this check; restore the marker or retire the pattern deliberately"
+fi
+
+if [[ "$check14_found" == false ]]; then
+    echo "[PASS] Check 14: All $check14_navigator_count inert inputs-file navigators source containment.sh and are enumerated in the security policy's covered set"
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''

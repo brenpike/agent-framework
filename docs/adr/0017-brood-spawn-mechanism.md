@@ -197,3 +197,7 @@ Rejection reasons:
 The folder-trust boot gate under `auto` is NOT itself the blocker: folder-trust inherits to subdirectories, and brood worktrees live inside the already-trusted checkout, so children inherit trust at launch. The blocker is reason 1 (classifier dependency), compounded by reasons 2 and 3.
 
 This amendment is APPEND-ONLY; prior text stands as history. Status remains accepted.
+
+## Amendment — 2026-07-27 (orchestrator `Write` grant)
+
+The backstop claim above ("`tools:` carry no `Write`/`Edit`") has weakened in its literal text: the child overlord now carries `Write`, bounded to fixed-literal inputs-file transport paths under the gitignored `.hivemind/` tree, with `Edit` still absent. This confers no new capability in a `--dangerously-skip-permissions` child — `Bash` already affords arbitrary file authoring there, as that same passage already concedes — and the compensating controls are unchanged. Status remains accepted.

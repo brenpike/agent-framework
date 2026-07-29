@@ -72,6 +72,14 @@ The `seed_allowlist` input default FLIPPED from `no` to `yes` (Decision #5 above
 - **Opt-out preserved.** Consumers retain full opt-out via `seed_allowlist=no`.
 - **Safety rationale unchanged.** The template is safe to default-on for the same engine reasons recorded in Findings: Claude Code re-prompts on any write/redirect to a path outside the working directory and splits compound commands, so each granted helper's only silent write is bounded to the working directory. The debunked "redirect-write tail" premise stays debunked.
 
+## Amendment — 2026-07-27
+
+Decision #3's exclusion of BROAD `Edit`/`Write` grants STANDS. One narrow exception is admitted, and one engine fact about rule spelling is corrected.
+
+- **Narrow exception.** The orchestrator's own agent definition (`plugin/agents/overlord.md`) now carries `Write`; `Edit` stays absent. It is bounded to the fixed-literal inputs-file transport paths under the gitignored `.hivemind/` tree (Inert Inputs-File Navigator Pattern, `plugin/governance/security-policy.md`). Reason: a skill's `allowed-tools` PRE-APPROVES a permission but never PROVISIONS a tool, and the calling agent's `tools:` is the ceiling — so the transport several skills documented was unreachable, and the ADR-0017-forbidden heredoc fallback was being used instead on every ledgered state transition.
+- **Rule spelling (verified).** From Claude Code 2.1.210 onward a `Write(<pattern>)` allow rule is ACCEPTED but NEVER MATCHED by file permission checks; only `Edit(<pattern>)`/`Read(<pattern>)` rules are, and `Edit` rules cover every file-editing tool including Write. Verified against the official permissions documentation and the installed 2.1.220 binary (warning string `is not matched by file permission checks — only ${a}(path) rules are`). The RULE namespace and the TOOL namespace are different things: an `Edit(...)` rule does NOT grant the `Edit` tool.
+- **Consequence.** This repo's pre-existing `Write(.hivemind/review-loop/*)` rule in `.claude/settings.json` is ineffective as written; it takes effect only spelled `Edit(.hivemind/review-loop/*)`.
+
 ---
 
 ## Naming update (2026-05-27)

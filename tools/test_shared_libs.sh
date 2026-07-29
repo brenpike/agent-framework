@@ -1784,12 +1784,12 @@ echo '=== settings-merge.sh: frozen template + required-key merge core ==='
 # seed-hive/SKILL.md step 6 + Merge Rules.
 
 # 12a. Frozen template is the SINGLE DATA source (P1): `hivemind_settings_permissions_template`
-# is the sole place the 20 rules live, so this case locks its literal content/order self-contained
+# is the sole place the 26 rules live, so this case locks its literal content/order self-contained
 # — no SKILL.md mirror. The lib emits LF; trailing whitespace is stripped for a clean compare.
 SM_LIB_TEMPLATE="$WORKDIR/lib-template.txt"
 hivemind_settings_permissions_template | sed 's/[[:space:]]*$//' > "$SM_LIB_TEMPLATE"
-assert_eq "settings:template-rule-count" "20" \
-  "$(wc -l < "$SM_LIB_TEMPLATE" | tr -d ' ')" "frozen template has 20 rules"
+assert_eq "settings:template-rule-count" "26" \
+  "$(wc -l < "$SM_LIB_TEMPLATE" | tr -d ' ')" "frozen template has 26 rules"
 read -r -d '' SM_EXPECTED_TEMPLATE <<'TEMPLATE'
 Bash(echo *)
 Bash(printf *)
@@ -1811,9 +1811,15 @@ Bash(git tag --list*)
 Bash(git stash list)
 Bash(git stash show *)
 Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
+Edit(.hivemind/review-loop/*)
+Edit(.hivemind/runs/.init-inputs-*.json)
+Edit(.hivemind/runs/.record-inputs-*.json)
+Edit(.hivemind/runs/.markfb-inputs-*.json)
+Edit(.hivemind/spawn-inputs.*.json)
+Edit(.hivemind/seed-inputs-*.json)
 TEMPLATE
 assert_eq "settings:template-content-order" "$SM_EXPECTED_TEMPLATE" \
-  "$(cat "$SM_LIB_TEMPLATE")" "frozen template emits the expected 20 rules in order"
+  "$(cat "$SM_LIB_TEMPLATE")" "frozen template emits the expected 26 rules in order"
 
 # Merge helper: run the merge and capture the JSON result for jq assertions.
 # Usage: sm_result="$(hivemind_settings_merge "$settings" "$agent" caveman mem codex allow)"
@@ -1832,13 +1838,13 @@ assert_eq "settings:empty-hive-class" "added" \
 assert_eq "settings:empty-hive-value" "true" \
   "$(printf '%s' "$sm_from_empty" | jq -r '.settings.enabledPlugins["hivemind@brenpike"]')" "hivemind enabledPlugin = true"
 # 12b: absent permissions.allow → created in template ORDER (first rule = Bash(echo *)).
-assert_eq "settings:empty-allow-count" "20" \
-  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow | length')" "absent allow → 20 template rules created"
+assert_eq "settings:empty-allow-count" "26" \
+  "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow | length')" "absent allow → 26 template rules created"
 assert_eq "settings:empty-allow-first" "Bash(echo *)" \
   "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow[0]')" "created allow is in template order (first rule)"
-assert_eq "settings:empty-allow-last" "Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)" \
+assert_eq "settings:empty-allow-last" "Edit(.hivemind/seed-inputs-*.json)" \
   "$(printf '%s' "$sm_from_empty" | jq -r '.settings.permissions.allow[-1]')" "created allow is in template order (last rule)"
-assert_eq "settings:empty-allow-report-count" "20" \
+assert_eq "settings:empty-allow-report-count" "26" \
   "$(printf '%s' "$sm_from_empty" | jq -r '.permissions_allow | length')" "permissions_allow reports one entry per template rule"
 assert_eq "settings:empty-allow-all-added" "added" \
   "$(printf '%s' "$sm_from_empty" | jq -r '[.permissions_allow[].result] | unique | .[0]')" "every template rule reported added from {}"
@@ -2068,14 +2074,14 @@ assert_eq "settings:malformed-approve-settings-null" "null" \
 
 # 12f. permissions.allow UNION preserves existing ORDER, appends only ABSENT rules.
 # Existing: a custom rule + one template rule (Bash(jq *)). Union must keep both in place, then
-# append the 19 absent template rules; Bash(jq *) reported already present, Bash(echo *) added.
+# append the 25 absent template rules; Bash(jq *) reported already present, Bash(echo *) added.
 sm_union="$(hivemind_settings_merge '{"permissions":{"allow":["Bash(custom *)","Bash(jq *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
 assert_eq "settings:union-first" "Bash(custom *)" \
   "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow[0]')" "union preserves existing first entry order"
 assert_eq "settings:union-second" "Bash(jq *)" \
   "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow[1]')" "union preserves existing second entry order"
-assert_eq "settings:union-total" "21" \
-  "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow | length')" "union = 2 existing + 19 absent template rules"
+assert_eq "settings:union-total" "27" \
+  "$(printf '%s' "$sm_union" | jq -r '.settings.permissions.allow | length')" "union = 2 existing + 25 absent template rules"
 assert_eq "settings:union-existing-present" "already present" \
   "$(printf '%s' "$sm_union" | jq -r '.permissions_allow[] | select(.rule=="Bash(jq *)") | .result')" "template rule already in array → already present"
 assert_eq "settings:union-absent-added" "added" \
@@ -2088,8 +2094,8 @@ assert_eq "settings:union-custom-kept" "1" \
 sm_sibling="$(hivemind_settings_merge '{"permissions":{"deny":["Bash(rm *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
 assert_eq "settings:sibling-deny-kept" "Bash(rm *)" \
   "$(printf '%s' "$sm_sibling" | jq -r '.settings.permissions.deny[0]')" "sibling permissions.deny preserved"
-assert_eq "settings:sibling-allow-created" "20" \
-  "$(printf '%s' "$sm_sibling" | jq -r '.settings.permissions.allow | length')" "permissions without allow → allow created with 20 rules"
+assert_eq "settings:sibling-allow-created" "26" \
+  "$(printf '%s' "$sm_sibling" | jq -r '.settings.permissions.allow | length')" "permissions without allow → allow created with 26 rules"
 
 # 12h. seed_allowlist=no → permissions.allow left UNTOUCHED, permissions_allow report empty.
 sm_no_allow="$(hivemind_settings_merge '{"permissions":{"allow":["Bash(x *)"]}}' 'hivemind:overlord' 'no' 'no' 'no' 'no')"
@@ -2252,16 +2258,16 @@ assert_eq "settings:wrongtype-hooks-cmd" ".claude/hooks/caveman-ultra-subagent.s
 sm_perm_array="$(hivemind_settings_merge '{"permissions":["x"]}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
 assert_eq "settings:wrongtype-perm-status" "ok" \
   "$(printf '%s' "$sm_perm_array" | jq -r '.status')" "permissions as array → canonical {} → status ok (no jq abort)"
-assert_eq "settings:wrongtype-perm-allow-count" "20" \
-  "$(printf '%s' "$sm_perm_array" | jq -r '.settings.permissions.allow | length')" "wrong-typed permissions → allow seeded with 20 template rules"
+assert_eq "settings:wrongtype-perm-allow-count" "26" \
+  "$(printf '%s' "$sm_perm_array" | jq -r '.settings.permissions.allow | length')" "wrong-typed permissions → allow seeded with 26 template rules"
 
 # permissions.allow WRONG-TYPED (string) with seed_allowlist=yes → canon_arr → [] → template appended.
 sm_allow_string="$(hivemind_settings_merge '{"permissions":{"allow":"oops"}}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
 assert_eq "settings:wrongtype-allow-status" "ok" \
   "$(printf '%s' "$sm_allow_string" | jq -r '.status')" "permissions.allow as string → canonical [] → status ok (no jq abort)"
-assert_eq "settings:wrongtype-allow-count" "20" \
-  "$(printf '%s' "$sm_allow_string" | jq -r '.settings.permissions.allow | length')" "wrong-typed permissions.allow → [] then 20 template rules appended"
-assert_eq "settings:wrongtype-allow-report-count" "20" \
+assert_eq "settings:wrongtype-allow-count" "26" \
+  "$(printf '%s' "$sm_allow_string" | jq -r '.settings.permissions.allow | length')" "wrong-typed permissions.allow → [] then 26 template rules appended"
+assert_eq "settings:wrongtype-allow-report-count" "26" \
   "$(printf '%s' "$sm_allow_string" | jq -r '.permissions_allow | length')" "every template rule reported over the canonical empty allow"
 
 # 12m. MULTI-DOCUMENT STREAM (JSON-stream sweep, STEP-005): a settings input that is a STREAM of TWO
