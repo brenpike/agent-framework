@@ -156,8 +156,7 @@ ledger is byte-unchanged.
    text is inert.
    If the Write tool is ABSENT from this session, STOP BLOCKED per
    `${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md` (Inert Inputs-File Navigator Pattern →
-   Transport Degradation Is a Hard Stop), reporting the remedy: update the plugin and start a
-   fresh session, then re-run `hivemind:seed-hive`.
+   Transport Degradation Is a Hard Stop).
 
 3. **Execute the script** with one Bash call, passing the inputs file path:
    ```bash
