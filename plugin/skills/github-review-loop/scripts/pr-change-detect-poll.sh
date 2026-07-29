@@ -68,18 +68,43 @@
 #     failures clear, the count drops back to zero and fires CHANGED once,
 #     surfacing the recovery via a reviewer wake that will return clean.
 #
+# Modes:
+#   --snapshot   ONE-SHOT baseline capture. Computes the SAME scalar snapshot
+#                through the SAME query path a poll iteration uses, emits one
+#                BASELINE= line, and exits. The skill captures this BEFORE
+#                cycle 0 starts dispatching.
+#   (no flag)    POLL. Watches the PR, diffing the first iteration against the
+#                seed token and every later iteration against its predecessor.
+#
+# Why the seed exists (issue #324): the skill arms the Monitor only AFTER cycle 0
+# finishes dispatching, so the whole cycle-0 duration is a BLIND WINDOW of
+# unbounded length. A poll that self-baselined on its own first successful
+# iteration counted everything posted inside that window as pre-existing and
+# never fired CHANGED, losing that feedback for the life of the watch. Seeding
+# the previous-snapshot scalars from a token captured BEFORE cycle 0 makes the
+# first poll a REAL diff against pre-cycle-0 state, so blind-window feedback
+# surfaces on the very first iteration.
+#
 # Markers emitted (one token-cheap line each):
 #   CHANGED          a non-terminal delta in the scalar snapshot (wake reviewer)
 #   STATE=MERGED     PR merged (terminal)
 #   STATE=CLOSED     PR closed unmerged (terminal)
-#   CODEX_APPROVED   Codex 👍 newly present, OR already present at the baseline
-#                    poll (skill confirms via reviewer; terminal clean only if
-#                    nothing actionable remains)
+#   CODEX_APPROVED   Codex 👍 newly present, including one already present when
+#                    the watch started: the seed carries NO Codex bool, so a
+#                    pre-existing 👍 surfaces through the ordinary false->true
+#                    diff on the first poll (skill confirms via reviewer;
+#                    terminal clean only if nothing actionable remains)
 #   WATCH_TIMEOUT    max_watch_duration elapsed (terminal)
-#   POLL_ERROR       repeated query failure (terminal; skill returns blocked)
+#   POLL_ERROR       repeated query failure, or a missing/malformed seed
+#                    (terminal; skill returns blocked)
+#   BASELINE=<seed>  --snapshot mode only: the seed token poll mode requires as
+#                    its 8th argument
+#   SNAPSHOT_ERROR   --snapshot mode only: the seed could not be captured
+#                    (terminal; skill returns blocked)
 #
 # Positional arguments supplied by the skill when arming Monitor (all required;
-# the skill/overlord layer resolves defaults and passes concrete values):
+# the skill/overlord layer resolves defaults and passes concrete values).
+# --snapshot mode takes the flag FIRST followed by the same $1-$7:
 #   $1  OWNER                   base-repo owner
 #   $2  REPO                    base-repo name
 #   $3  PR_NUMBER               integer PR number
@@ -89,6 +114,14 @@
 #                               (default "codex-only" when empty)
 #   $7  SELF_LOGIN              viewer login used to exclude self-authored
 #                               activity from delta tokens (required)
+#   $8  BASELINE_SEED           poll mode only: the BARE value of the BASELINE=
+#                               line emitted by --snapshot (label stripped) —
+#                               8 pipe-separated fields carrying the 8 scalars
+#                               the poll diffs. REQUIRED, never optional: an
+#                               optional seed would let a caller silently
+#                               regress to the self-baselining blind window, so
+#                               a missing or malformed value is POLL_ERROR
+#                               before the first poll.
 #
 # P18 FLOOR EXCEPTION (ADR-0020 / CHECK13 allowlisted): `set -u` only — `set -e`/`pipefail`
 # are DELIBERATELY omitted. The full floor would change behavior: compute_snapshot returns
@@ -98,6 +131,15 @@
 
 set -u
 
+# Mode dispatch. The sentinel cannot collide with a real OWNER: GitHub logins are
+# alphanumeric-with-hyphens and may not BEGIN with a hyphen, so no owner can ever
+# be the literal `--snapshot`.
+MODE="poll"
+if [ "${1:-}" = "--snapshot" ]; then
+  MODE="snapshot"
+  shift
+fi
+
 OWNER="${1:-}"
 REPO="${2:-}"
 PR_NUMBER="${3:-}"
@@ -105,12 +147,19 @@ MAX_WATCH_SECONDS="${4:-}"
 POLL_INTERVAL_SECONDS="${5:-}"
 REVIEWER_FILTER="${6:-}"
 SELF_LOGIN="${7:-}"
+BASELINE_SEED="${8:-}"
 
 # Validate inputs before any arithmetic or gh binding. Empty OWNER/REPO or a
 # non-integer numeric arg would otherwise abort under set -u or corrupt the
-# GraphQL Int binding / the $(( )) deadline math.
+# GraphQL Int binding / the $(( )) deadline math. Emits the terminal error
+# marker of the mode this run was invoked in, then exits non-zero; every
+# validation and capture failure routes through here.
 poll_fail() {
-  echo "POLL_ERROR"
+  if [ "$MODE" = "snapshot" ]; then
+    echo "SNAPSHOT_ERROR"
+  else
+    echo "POLL_ERROR"
+  fi
   exit 1
 }
 [ -n "$OWNER" ] || poll_fail
@@ -132,6 +181,15 @@ POLL_INTERVAL_SECONDS=$((10#$POLL_INTERVAL_SECONDS))
 # codex-only when empty; any non-empty string is accepted as a login form.
 [ -n "$SELF_LOGIN" ] || poll_fail
 [ -n "$REVIEWER_FILTER" ] || REVIEWER_FILTER="codex-only"
+# The baseline seed is REQUIRED in poll mode and is validated STRICTLY, before
+# the first poll or sleep: a partially-parsed seed would leave some prev_ scalar
+# empty and fire a spurious CHANGED, and an absent one would re-open the #324
+# blind window. Shape: exactly 8 non-empty fields over the charset --snapshot
+# emits — the PR state enum, NONE-or-digits id tokens, and digit counts.
+SEED_FORMAT_RE='^[A-Z0-9]+([|][A-Z0-9]+){7}$'
+if [ "$MODE" = "poll" ]; then
+  [[ "$BASELINE_SEED" =~ $SEED_FORMAT_RE ]] || poll_fail
+fi
 
 # Timeout wrapper for gh API calls.
 # Normal gh graphql/reactions completes in 1-5s; 45s is generous against
@@ -155,19 +213,6 @@ fi
 
 deadline=$(($(date +%s) + MAX_WATCH_SECONDS))
 fail_count=0
-
-# Previous-snapshot scalars. Empty until the first successful poll establishes
-# the baseline; the baseline poll itself emits no CHANGED marker.
-prev_state=""
-prev_nonself_comment_id=""
-prev_filtered_review_id=""
-prev_nonself_thread_id=""
-prev_comments_total=""
-prev_reviews_total=""
-prev_threads_total=""
-prev_failed_checks=""
-prev_codex=""
-have_baseline=0
 
 # compute_snapshot: fills the global scalar variables from ONE non-paginated
 # GraphQL query (PR state + last 50 issue-comment databaseIds + last 50 review
@@ -315,6 +360,40 @@ EOF
   return 0
 }
 
+# --snapshot: one-shot baseline capture, emitted as a single pipe-separated
+# token. It carries the 8 scalars the poll diffs and NOT the Codex 👍 bool —
+# leaving prev_codex empty in poll mode is what keeps a pre-existing approval
+# surfacing through the ordinary false->true diff. A seed that cannot be
+# captured is loud (SNAPSHOT_ERROR, exit 1) rather than an empty token the
+# caller would pass on as a valid baseline.
+if [ "$MODE" = "snapshot" ]; then
+  cur_state=""; cur_nonself_comment_id=""; cur_filtered_review_id=""
+  cur_nonself_thread_id=""; cur_codex=""
+  cur_comments_total=""; cur_reviews_total=""; cur_threads_total=""
+  cur_failed_checks=""
+
+  compute_snapshot || poll_fail
+
+  printf 'BASELINE=%s|%s|%s|%s|%s|%s|%s|%s\n' \
+    "$cur_state" "$cur_nonself_comment_id" "$cur_filtered_review_id" \
+    "$cur_nonself_thread_id" "$cur_comments_total" "$cur_reviews_total" \
+    "$cur_threads_total" "$cur_failed_checks"
+  exit 0
+fi
+
+# Previous-snapshot scalars, seeded from the --snapshot token captured BEFORE
+# cycle 0 so the FIRST poll is a real diff rather than a self-baselining no-op
+# (#324). The field order matches the printf above. prev_codex is deliberately
+# left EMPTY: the seed carries no Codex bool, so a 👍 already present when the
+# watch starts still fires CODEX_APPROVED via the normal false->true diff on the
+# first poll (D14) instead of needing a baseline special case.
+IFS='|' read -r prev_state prev_nonself_comment_id prev_filtered_review_id \
+  prev_nonself_thread_id prev_comments_total prev_reviews_total \
+  prev_threads_total prev_failed_checks <<EOF
+$BASELINE_SEED
+EOF
+prev_codex=""
+
 while true; do
   if [ "$(date +%s)" -ge "$deadline" ]; then
     echo "WATCH_TIMEOUT"
@@ -347,36 +426,23 @@ while true; do
     exit 0
   fi
 
-  if [ "$have_baseline" -eq 0 ]; then
-    # First successful poll establishes the baseline; emit nothing for the
-    # generic count/state scalars (they are the baseline, not a delta). EXCEPT a
-    # pre-existing Codex 👍: if the PR already carries approval when monitoring
-    # starts, the emit-on-change diff would never surface it (it is baseline
-    # state, not a delta), so the loop could idle to WATCH_TIMEOUT instead of
-    # terminating clean after a confirmation pass. Emit CODEX_APPROVED once at
-    # baseline so the skill runs the same confirmation pass it would for a
-    # newly-present 👍 (terminal clean ONLY if nothing actionable remains — D14).
-    if [ "$cur_codex" = "true" ]; then
-      echo "CODEX_APPROVED"
-    fi
-    have_baseline=1
-  else
-    # Codex 👍 newly present is its own marker (the skill runs a confirmation
-    # pass rather than treating it as a generic CHANGED delta).
-    if [ "$cur_codex" = "true" ] && [ "$prev_codex" != "true" ]; then
-      echo "CODEX_APPROVED"
-    elif [ "$cur_state" != "$prev_state" ] \
-      || [ "$cur_nonself_comment_id" != "$prev_nonself_comment_id" ] \
-      || [ "$cur_filtered_review_id" != "$prev_filtered_review_id" ] \
-      || [ "$cur_nonself_thread_id" != "$prev_nonself_thread_id" ] \
-      || [ "$cur_comments_total" != "$prev_comments_total" ] \
-      || [ "$cur_reviews_total" != "$prev_reviews_total" ] \
-      || [ "$cur_threads_total" != "$prev_threads_total" ] \
-      || [ "$cur_failed_checks" != "$prev_failed_checks" ]; then
-      echo "CHANGED"
-    fi
-    # No-change iteration: emit nothing.
+  # Codex 👍 newly present is its own marker (the skill runs a confirmation pass
+  # rather than treating it as a generic CHANGED delta). On the first iteration
+  # prev_codex is empty, so an approval already present when the watch started
+  # fires here too — terminal clean ONLY if nothing actionable remains (D14).
+  if [ "$cur_codex" = "true" ] && [ "$prev_codex" != "true" ]; then
+    echo "CODEX_APPROVED"
+  elif [ "$cur_state" != "$prev_state" ] \
+    || [ "$cur_nonself_comment_id" != "$prev_nonself_comment_id" ] \
+    || [ "$cur_filtered_review_id" != "$prev_filtered_review_id" ] \
+    || [ "$cur_nonself_thread_id" != "$prev_nonself_thread_id" ] \
+    || [ "$cur_comments_total" != "$prev_comments_total" ] \
+    || [ "$cur_reviews_total" != "$prev_reviews_total" ] \
+    || [ "$cur_threads_total" != "$prev_threads_total" ] \
+    || [ "$cur_failed_checks" != "$prev_failed_checks" ]; then
+    echo "CHANGED"
   fi
+  # No-change iteration: emit nothing.
 
   prev_state="$cur_state"
   prev_nonself_comment_id="$cur_nonself_comment_id"
