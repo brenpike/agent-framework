@@ -1,0 +1,54 @@
+{
+  "rule": "transport-degradation-hard-stop-contract",
+  "description": "P3 consumer-assertion: `#### Transport Degradation Is a Hard Stop` in plugin/governance/security-policy.md is the CANONICAL statement that a session lacking the Write tool must stop blocked rather than improvise a shell transport for a navigator's inputs file. Six files point at that subsection BY NAME — the five inert inputs-file navigators (init-run-ledger, record-state-result, mark-intent-fallback, spawn-brood, seed-hive) and the overlord's own transport prohibition. Renaming or deleting the subsection turns every one of those pointers into a dangling reference with nothing to fail on, so this fixture pins the heading and each reference. Each assertion is scoped to ONE file and each pattern is spelled so it can only match on the side it belongs to: the source pattern carries the `####` heading marker (never present in a consumer reference), and every consumer pattern carries its trailing prose (`), reporting the remedy:` / `).` / `→ ... )` in the overlord bullet), so a source-file hit can never satisfy a consumer assertion and vice versa. Each navigator is pinned TWICE because it carries two independent references: the procedural STOP BLOCKED step (which also names the two-part remedy) and the prohibition-list cross-ref; either can be orphaned without the other.",
+  "source": {
+    "file": "plugin/governance/security-policy.md",
+    "pattern": "#### Transport Degradation Is a Hard Stop"
+  },
+  "consumers": [
+    {
+      "file": "plugin/skills/init-run-ledger/SKILL.md",
+      "pattern": "Transport Degradation Is a Hard Stop), reporting the remedy: update the plugin and start a"
+    },
+    {
+      "file": "plugin/skills/init-run-ledger/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/skills/record-state-result/SKILL.md",
+      "pattern": "Transport Degradation Is a Hard Stop), reporting the remedy: update the plugin and start a"
+    },
+    {
+      "file": "plugin/skills/record-state-result/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/skills/mark-intent-fallback/SKILL.md",
+      "pattern": "Transport Degradation Is a Hard Stop), reporting the remedy: update the plugin and start a"
+    },
+    {
+      "file": "plugin/skills/mark-intent-fallback/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/skills/spawn-brood/SKILL.md",
+      "pattern": "Transport Degradation Is a Hard Stop), reporting the remedy: update the plugin and start a"
+    },
+    {
+      "file": "plugin/skills/spawn-brood/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/skills/seed-hive/SKILL.md",
+      "pattern": "Transport Degradation Is a Hard Stop), reporting the remedy: update the plugin and start a"
+    },
+    {
+      "file": "plugin/skills/seed-hive/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "(Inert Inputs-File Navigator Pattern → Transport Degradation Is a Hard Stop)"
+    }
+  ]
+}
