@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.5] - 2026-07-29
+
+### Fixed
+
+- seed-hive: the skill's inputs-file path is now a fixed literal, matching its sibling navigators and satisfying the transport-path invariant.
+
+### Security
+
+- overlord: the agent definition never carried the file-authoring tool its own navigator skills require, so a documented inputs-file transport was unreachable and a previously ruled-out fallback ran on every ledgered state transition; the grant is now present and bounded to navigator transport paths, with matching allow rules added to this repo's settings and the seed template consumer projects receive. A pre-existing allow rule was migrated from `Write(<pattern>)` to `Edit(<pattern>)`: from Claude Code 2.1.210 onward file permission checks accept but never match `Write` rules — only `Edit`/`Read` rules match, and `Edit` covers all file-editing tools.
+- overlord: the grant above is verified present in the plugin source and in this repository's settings, and is NOT yet verified at runtime. Claude Code does not load a marketplace `directory` source live from the checkout; it loads a version-keyed snapshot copied into its plugin cache, so an agent-definition tool grant reaches a session only once the plugin is updated to a release whose version key that session loads. A runtime check performed while preparing this release found the overlord holding no file-authoring tool — the cause was the session loading an older cached snapshot predating the grant, not a defect in the grant and not a failure of the `Edit(<pattern>)`-gates-the-write-tool rule. This release is therefore load-bearing for verification as well as for hygiene: proof requires installing 2.40.5, then confirming in a fresh session that the overlord holds the file-authoring tool and can author its inputs-file transport. The dependent fallback removal is tracked by #320.
+
 ## [2.40.4] - 2026-07-28
 
 ### Fixed
