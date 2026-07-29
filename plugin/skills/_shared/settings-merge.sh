@@ -181,6 +181,14 @@ unset __settings_merge_shared_dir
 # seed-hive/SKILL.md. The order is canonical and load-bearing (absent-array creation emits in
 # this order). Do not reorder, drop, or reword an entry; add new rules at the END only, since
 # the merge is union append-if-absent and never reorders an existing consumer's array.
+#
+# INVARIANT (REACH): a rule appended here reaches an ALREADY-SEEDED consumer ONLY when
+# `hivemind:seed-hive` is re-run against that project. This template is merged into a consumer's
+# `.claude/settings.json` at seed time and at NO other time — a plugin upgrade alone delivers
+# NOTHING, because upgrading never re-merges settings. Adding a rule here is therefore only half
+# a fix; the consumer-facing half is telling upgraders to re-seed (the upgrade-path bullet under
+# `## When to Use` in seed-hive/SKILL.md). The merge is idempotent append-if-absent, so the
+# re-seed is always safe and preserves existing entries. See issue #323.
 hivemind_settings_permissions_template() {
   cat <<'TEMPLATE'
 Bash(echo *)

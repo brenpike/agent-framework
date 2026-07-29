@@ -1,0 +1,66 @@
+{
+  "rule": "transport-degradation-hard-stop-contract",
+  "description": "P3 consumer-assertion: `#### Transport Degradation Is a Hard Stop` in plugin/governance/security-policy.md is the CANONICAL statement that a session lacking the Write tool must stop blocked rather than improvise a shell transport for a navigator's inputs file. Six files point at that subsection BY NAME — the five inert inputs-file navigators (init-run-ledger, record-state-result, mark-intent-fallback, spawn-brood, seed-hive) and the overlord's own transport prohibition. Renaming or deleting the subsection turns every one of those pointers into a dangling reference with nothing to fail on. This fixture pins the LINK at each consumer and NOT the canonical text those consumers used to restate: consumer patterns carry only the pointer itself, so remedy prose stays free to evolve at the canonical site without breaking a single remote assertion. THREE pieces of canonical CONTENT are pinned, all of them on security-policy.md itself, and each protects a DISTINCT claim rather than freezing prose at random. (1) The load-bearing NEGATIVE sentence stating that re-running `hivemind:seed-hive` cannot restore an absent tool: it is what separates the capability gate (TOOL ABSENT) from the prompt gate; its silent removal would reopen the defect class by letting a tool-absent session be told to re-seed instead of to stop. (2) The ADR-0017 class-elimination clause: it is the only sentence anywhere in the plugin that NAMES the class the shell-transport prohibition exists to keep closed, so it carries the entire WHY behind that prohibition; deleted, the prohibition survives as an unjustified style rule a later editor can relax without ever seeing what it was protecting. (3) The outcome-keyed trip condition: it is the normative rule the whole subsection exists to state, and it is keyed on OUTCOME rather than on any enumerated cause; deleted, only the DIAGNOSTIC cause list remains, which re-admits every unnamed cause as an implicit exception and reverts the subsection to the cause-enumerated form this feature replaced. Each assertion is scoped to ONE file and each pattern is spelled so it can only match on the side it belongs to: the source pattern carries the `####` heading marker (never present in a consumer reference), the navigator procedural pattern carries the parent-section pointer `(Inert Inputs-File Navigator Pattern →` (present only on the procedural line), and the navigator prohibition-list pattern carries the leading parenthesis `(Transport Degradation Is a Hard Stop).` (which the procedural line's unparenthesised continuation cannot satisfy). Patterns are single-line fragments by construction: plugin Markdown is CRLF and the navigator procedural pointer wraps across source lines, so any pattern spanning the wrap would be permanently inert. Each navigator is pinned TWICE because it carries two independent references: the procedural STOP BLOCKED step and the prohibition-list cross-ref; either can be orphaned without the other.",
+  "source": {
+    "file": "plugin/governance/security-policy.md",
+    "pattern": "#### Transport Degradation Is a Hard Stop"
+  },
+  "consumers": [
+    {
+      "file": "plugin/governance/security-policy.md",
+      "pattern": "Re-running `hivemind:seed-hive` cannot restore an absent tool"
+    },
+    {
+      "file": "plugin/governance/security-policy.md",
+      "pattern": "reintroduces exactly the delimiter-injection class ADR-0017 exists to close"
+    },
+    {
+      "file": "plugin/governance/security-policy.md",
+      "pattern": "UNLESS the Write call to the fixed-literal transport path SUCCEEDS — including after an operator approves a permission prompt — the navigator MUST stop blocked, report the OBSERVED OUTCOME, and never author the inputs file by any other transport"
+    },
+    {
+      "file": "plugin/skills/init-run-ledger/SKILL.md",
+      "pattern": "security-policy.md` (Inert Inputs-File Navigator Pattern →"
+    },
+    {
+      "file": "plugin/skills/init-run-ledger/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/skills/record-state-result/SKILL.md",
+      "pattern": "security-policy.md` (Inert Inputs-File Navigator Pattern →"
+    },
+    {
+      "file": "plugin/skills/record-state-result/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/skills/mark-intent-fallback/SKILL.md",
+      "pattern": "security-policy.md` (Inert Inputs-File Navigator Pattern →"
+    },
+    {
+      "file": "plugin/skills/mark-intent-fallback/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/skills/spawn-brood/SKILL.md",
+      "pattern": "security-policy.md` (Inert Inputs-File Navigator Pattern →"
+    },
+    {
+      "file": "plugin/skills/spawn-brood/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/skills/seed-hive/SKILL.md",
+      "pattern": "security-policy.md` (Inert Inputs-File Navigator Pattern →"
+    },
+    {
+      "file": "plugin/skills/seed-hive/SKILL.md",
+      "pattern": "(Transport Degradation Is a Hard Stop)."
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "(Inert Inputs-File Navigator Pattern → Transport Degradation Is a Hard Stop)"
+    }
+  ]
+}
