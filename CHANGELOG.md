@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.6] - 2026-07-29
+
+### Added
+
+- tests/policy: a fixture pinning the missing-Write-tool transport hard-stop rule to its consumers, closing the guard opt-out.
+
+### Fixed
+
+- navigator: a missing Write-tool grant is now a hard stop. When a navigator skill mandates the Write-tool inputs-file transport and the session does not hold the Write tool, the navigator stops blocked and names the remedy, instead of silently improvising a shell heredoc transport. Previously a capable agent would route around the missing tool without signalling, reopening the delimiter-injection class ADR-0017 exists to close.
+- seed-hive: the permission-template upgrade path is now documented. The plugin's recommended `permissions.allow` rules merge into a project's settings only when seed-hive runs, never automatically on plugin upgrade, so an already-seeded project silently missed new rules. seed-hive and the README now state that upgrading consumers must re-run the skill, and that the merge is idempotent and preserves existing entries. Closes #323.
+
 ## [2.40.5] - 2026-07-29
 
 ### Fixed
