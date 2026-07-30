@@ -595,7 +595,7 @@ first_match_line() {
         [[ -z "$matched" ]] && continue
         local lineno="${matched%%:*}"
         local body="${matched#*:}"
-        if [[ -n "$exclude" ]] && echo "$body" | grep -qE "$exclude"; then
+        if [[ -n "$exclude" ]] && grep -qE "$exclude" <<< "$body"; then
             continue
         fi
         echo "$lineno"
@@ -745,7 +745,7 @@ while IFS= read -r -d '' skill_file; do
         # line with a legit mention is still caught instead of the whole line
         # being exempted.
         residual="$(echo "$textline" | sed -E "s/(${CHECK11_KEEP_REGEX})//Ig")"
-        if echo "$residual" | grep -qiwE "($BIOFORM_DENYLIST)"; then
+        if grep -qiwE "($BIOFORM_DENYLIST)" <<< "$residual"; then
             bare_word="$(echo "$residual" | grep -oiwE "($BIOFORM_DENYLIST)" | head -n1)"
             check11_found=true
             add_finding 'CHECK11' "$skill_file" "$line_num" \
@@ -806,7 +806,7 @@ while IFS= read -r -d '' doc_file; do
         # strip at line ~730), so a token shown as inline code is exempt while a
         # real bare occurrence sharing a line with inline code is still caught.
         residual="$(echo "$textline" | sed -E 's/`[^`]*`//g')"
-        if echo "$residual" | grep -qE "($CHECK12_DENYLIST)"; then
+        if grep -qE "($CHECK12_DENYLIST)" <<< "$residual"; then
             bare_token="$(echo "$residual" | grep -oE "($CHECK12_DENYLIST)" | head -n1)"
             check12_found=true
             add_finding 'CHECK12' "$doc_file" "$line_num" \
@@ -1223,7 +1223,7 @@ while IFS= read -r -d '' skill_file; do
             "Inert inputs-file navigator hivemind:${skill_name} fails obligation (a): no plugin/skills/${skill_name}/scripts/*.sh sources containment.sh in the direct '. <path>/containment.sh' form CHECK 9 enrolls on (an indirect loop-variable source does not enroll) -- until it does, CHECK 9's guard-before-read enforcement never applies to this navigator"
     fi
 
-    if ! echo "$check14_section" | grep -qF "hivemind:${skill_name}"; then
+    if [[ "$check14_section" != *"hivemind:${skill_name}"* ]]; then
         check14_found=true
         add_finding 'CHECK14' "$skill_file" "$marker_line" \
             "Inert inputs-file navigator hivemind:${skill_name} fails obligation (b): literal 'hivemind:${skill_name}' is absent from the '${CHECK14_SECTION_HEADING}' section of plugin/governance/security-policy.md -- add it to the covered-set enumeration"
@@ -1340,7 +1340,7 @@ test_set_check() {
         while [[ $ei -lt $exp_count ]]; do
             local exp_val
             exp_val="$(echo "$expected_json" | jq -r ".[$ei]")"
-            if ! echo "$captured_set" | grep -qxF "$exp_val"; then
+            if ! grep -qxF "$exp_val" <<< "$captured_set"; then
                 if [[ -n "$missing" ]]; then missing="$missing, $exp_val"; else missing="$exp_val"; fi
             fi
             ei=$((ei + 1))
