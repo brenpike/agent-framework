@@ -153,7 +153,8 @@ get_frontmatter() {
     local result=""
     while IFS= read -r textline || [[ -n "$textline" ]]; do
         local trimmed
-        trimmed="$(echo "$textline" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        trimmed="${textline#"${textline%%[![:space:]]*}"}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
         if [[ "$trimmed" == "---" ]]; then
             if [[ "$frontmatter_started" == false ]]; then
                 frontmatter_started=true
@@ -172,6 +173,25 @@ get_frontmatter() {
         fi
     done < "$filepath"
     echo "$result"
+}
+
+# file_candidates MODE PATTERN FILE
+# Per-FILE candidate prefilter (#305): ONE grep spawn per file emits
+# "lineno:body" lines for the hot per-line loops, replacing a spawn per line.
+# MODE is the grep matcher flag (P, E, or F); the PATTERN is unchanged from
+# the per-line logic it feeds. grep exit 1 (zero candidates) is normal and
+# yields empty output; any other grep exit propagates so a genuine scan error
+# fails the run instead of reading as "clean".
+file_candidates() {
+    local mode="$1"
+    local pattern="$2"
+    local file="$3"
+    local out="" rc=0
+    out="$(grep "-n${mode}" -- "$pattern" "$file")" || rc=$?
+    if [[ "$rc" -gt 1 ]]; then
+        return "$rc"
+    fi
+    printf '%s' "$out"
 }
 
 # ── Timing instrumentation ──────────────────────────────────────────────────
@@ -236,39 +256,45 @@ echo '=== CHECK 1: Forbidden hedge ==='
 check1_found=false
 
 while IFS= read -r -d '' md_file; do
-    line_num=0
-    while IFS= read -r textline || [[ -n "$textline" ]]; do
-        line_num=$((line_num + 1))
+    # Candidate prefilter (#305): one grep per FILE on the BROADEST pattern.
+    # Every finding-producing line must pass the ladder's \bambiguous\b gate
+    # below, so non-matching lines can never add a finding; the
+    # rule-definition skip only ever DROPS lines and needs no wider net.
+    candidates="$(file_candidates P '\bambiguous\b' "$md_file")"
+    [[ -z "$candidates" ]] && continue
+    while IFS= read -r candidate; do
+        line_num="${candidate%%:*}"
+        textline="${candidate#*:}"
 
         # INVARIANT: The rule definition itself in governance docs is not a violation.
-        if echo "$textline" | grep -qP 'Do not use the word.*ambiguous.*as a hedge'; then
+        if grep -qP 'Do not use the word.*ambiguous.*as a hedge' <<< "$textline"; then
             continue
         fi
 
-        if ! echo "$textline" | grep -qP '\bambiguous\b'; then
+        if ! grep -qP '\bambiguous\b' <<< "$textline"; then
             continue
         fi
 
         is_hedge=false
 
         # Pattern: "unsafe or ambiguous"
-        if echo "$textline" | grep -qP '\bunsafe\s+or\s+ambiguous\b'; then
+        if grep -qP '\bunsafe\s+or\s+ambiguous\b' <<< "$textline"; then
             is_hedge=true
         fi
 
         # Pattern: "is ambiguous"
-        if echo "$textline" | grep -qP '\bis\s+ambiguous\b'; then
+        if grep -qP '\bis\s+ambiguous\b' <<< "$textline"; then
             is_hedge=true
         fi
 
         # Pattern: "or ambiguous" preceded by a stop/gate word
-        if echo "$textline" | grep -qP '\bor\s+ambiguous\b'; then
-            if ! echo "$textline" | grep -qP 'non-human\s+or\s+ambiguous'; then
-                if ! echo "$textline" | grep -qP '/ambiguous'; then
-                    if echo "$textline" | grep -qP '\b(continue|proceed|stop|when|if)\b.*\bor\s+ambiguous\b'; then
+        if grep -qP '\bor\s+ambiguous\b' <<< "$textline"; then
+            if ! grep -qP 'non-human\s+or\s+ambiguous' <<< "$textline"; then
+                if ! grep -qP '/ambiguous' <<< "$textline"; then
+                    if grep -qP '\b(continue|proceed|stop|when|if)\b.*\bor\s+ambiguous\b' <<< "$textline"; then
                         is_hedge=true
                     fi
-                    if echo "$textline" | grep -qP '\bor\s+ambiguous\b.*\b(continue|proceed|stop|when|if)\b'; then
+                    if grep -qP '\bor\s+ambiguous\b.*\b(continue|proceed|stop|when|if)\b' <<< "$textline"; then
                         is_hedge=true
                     fi
                 fi
@@ -276,9 +302,9 @@ while IFS= read -r -d '' md_file; do
         fi
 
         # Pattern: "proceed if ... ambiguous" or "continue ... ambiguous" as gate
-        if echo "$textline" | grep -qP '\b(proceed|continue|stop)\b.*\bambiguous\b'; then
-            if ! echo "$textline" | grep -qP '/ambiguous'; then
-                if ! echo "$textline" | grep -qP 'non-human'; then
+        if grep -qP '\b(proceed|continue|stop)\b.*\bambiguous\b' <<< "$textline"; then
+            if ! grep -qP '/ambiguous' <<< "$textline"; then
+                if ! grep -qP 'non-human' <<< "$textline"; then
                     is_hedge=true
                 fi
             fi
@@ -291,7 +317,7 @@ while IFS= read -r -d '' md_file; do
         check1_found=true
         add_finding 'CHECK1' "$md_file" "$line_num" \
             "Forbidden hedge: 'ambiguous' used as gate-level uncertainty"
-    done < "$md_file"
+    done <<< "$candidates"
 done < <(find "$PLUGIN_ROOT" -name '*.md' -type f -print0)
 
 if [[ "$check1_found" == false ]]; then
@@ -459,7 +485,8 @@ while IFS= read -r -d '' agent_file; do
     line_num=0
     while IFS= read -r textline || [[ -n "$textline" ]]; do
         line_num=$((line_num + 1))
-        trimmed="$(echo "$textline" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        trimmed="${textline#"${textline%%[![:space:]]*}"}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
         if [[ "$trimmed" == "---" ]]; then
             if [[ "$frontmatter_started" == false ]]; then
                 frontmatter_started=true
@@ -473,12 +500,12 @@ while IFS= read -r -d '' agent_file; do
             continue
         fi
 
-        if echo "$textline" | grep -qP '^\s*mcpServers\s*:'; then
+        if grep -qP '^\s*mcpServers\s*:' <<< "$textline"; then
             check5_found=true
             add_finding 'CHECK5' "$agent_file" "$line_num" \
                 'Unsupported frontmatter field: mcpServers'
         fi
-        if echo "$textline" | grep -qP '^\s*permissionMode\s*:'; then
+        if grep -qP '^\s*permissionMode\s*:' <<< "$textline"; then
             check5_found=true
             add_finding 'CHECK5' "$agent_file" "$line_num" \
                 'Unsupported frontmatter field: permissionMode'
@@ -501,18 +528,29 @@ echo ''
 echo '=== CHECK 6: Governance reference paths resolve ==='
 
 check6_found=false
+# PLUGIN_ROOT is invariant across the scan; resolve it once (#305).
+normalized_plugin_root="$(realpath -m "$PLUGIN_ROOT")"
 while IFS= read -r -d '' md_file; do
-    line_num=0
-    while IFS= read -r textline || [[ -n "$textline" ]]; do
-        line_num=$((line_num + 1))
+    # Candidate prefilter (#305): the extraction below requires the literal
+    # ${CLAUDE_PLUGIN_ROOT}/ prefix, so one fixed-string grep per FILE finds
+    # every line that can yield a reference.
+    candidates="$(file_candidates F '${CLAUDE_PLUGIN_ROOT}/' "$md_file")"
+    [[ -z "$candidates" ]] && continue
+    while IFS= read -r candidate; do
+        line_num="${candidate%%:*}"
+        textline="${candidate#*:}"
         # Extract all ${CLAUDE_PLUGIN_ROOT}/... references from this line
         while IFS= read -r ref_rel_path; do
             [[ -z "$ref_rel_path" ]] && continue
             # Strip trailing punctuation that is not part of file paths.
-            ref_rel_path="$(echo "$ref_rel_path" | sed 's/[.,;:)]*$//')"
+            while true; do
+                case "$ref_rel_path" in
+                    *.|*,|*';'|*':'|*')') ref_rel_path="${ref_rel_path%?}" ;;
+                    *) break ;;
+                esac
+            done
             resolved_path="$PLUGIN_ROOT/$ref_rel_path"
             normalized_resolved="$(realpath -m "$resolved_path" 2>/dev/null || echo "$resolved_path")"
-            normalized_plugin_root="$(realpath -m "$PLUGIN_ROOT")"
 
             if [[ "$normalized_resolved" != "$normalized_plugin_root" && "$normalized_resolved" != "$normalized_plugin_root/"* ]]; then
                 check6_found=true
@@ -526,7 +564,7 @@ while IFS= read -r -d '' md_file; do
                 fi
             fi
         done < <(echo "$textline" | grep -oP '\$\{CLAUDE_PLUGIN_ROOT\}/\K[^\s`\)]+' || true)
-    done < "$md_file"
+    done <<< "$candidates"
 done < <(find "$PLUGIN_ROOT" -name '*.md' -type f -print0)
 
 if [[ "$check6_found" == false ]]; then
@@ -552,7 +590,7 @@ while IFS= read -r -d '' skill_file; do
 
     fm_content="$(get_frontmatter "$skill_file")"
     for field_name in "${REQUIRED_FRONTMATTER_FIELDS[@]}"; do
-        if ! echo "$fm_content" | grep -qP "^\s*${field_name}\s*:"; then
+        if ! grep -qP "^\s*${field_name}\s*:" <<< "$fm_content"; then
             check7_found=true
             add_finding 'CHECK7' "$skill_file" 0 \
                 "Missing required frontmatter field: $field_name"
@@ -576,9 +614,17 @@ echo '=== CHECK 8: No bare governance/agents/skills path refs ==='
 
 check8_found=false
 while IFS= read -r -d '' md_file; do
-    line_num=0
-    while IFS= read -r textline || [[ -n "$textline" ]]; do
-        line_num=$((line_num + 1))
+    # Candidate prefilter (#305): one grep per FILE for the bare-ref shape
+    # WITHOUT the left-boundary group. Sound superset: every flagged ref is
+    # built solely of characters inside the strip-token class below, and the
+    # strip never leaves a class character at a deletion join point (its
+    # token regex is greedy over that class), so a post-strip match always
+    # exists verbatim in the raw line.
+    candidates="$(file_candidates E '(agents|skills|governance|references|workflows)/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.(md|sh|json)' "$md_file")"
+    [[ -z "$candidates" ]] && continue
+    while IFS= read -r candidate; do
+        line_num="${candidate%%:*}"
+        textline="${candidate#*:}"
         # Strip every correct ${CLAUDE_PLUGIN_ROOT}/<path> token first so its
         # inner governance|agents|skills segment cannot trigger a false match.
         stripped="$(echo "$textline" | sed -E 's#\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9_./{}-]+##g')"
@@ -590,7 +636,7 @@ while IFS= read -r -d '' md_file; do
             add_finding 'CHECK8' "$md_file" "$line_num" \
                 "Bare path ref (missing \${CLAUDE_PLUGIN_ROOT}/ prefix): $bare_ref"
         done < <(echo "$stripped" | grep -oP '(^|[^A-Za-z0-9_./-])\K(agents|skills|governance|references|workflows)/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.(md|sh|json)' || true)
-    done < "$md_file"
+    done <<< "$candidates"
 done < <(find "$PLUGIN_ROOT" -name '*.md' -type f -print0)
 
 if [[ "$check8_found" == false ]]; then
@@ -820,12 +866,34 @@ BIOFORM_DENYLIST='overlord|drone|changeling'
 # must NOT be flagged even though they contain a denylisted word.
 CHECK11_KEEP_REGEX='RUN-OWNERSHIP-01|overlord instance|overlord session|overlord-invocable|overlord resume|overlord step|hivemind:overlord|parallel overlord sessions'
 
+# Candidate prefilter words (#305): derived by splitting the two variables
+# above on '|'. INVARIANT: every alternative in BIOFORM_DENYLIST and
+# CHECK11_KEEP_REGEX must stay a LITERAL (no regex metacharacters) so the
+# lowercase substring gate below stays a SUPERSET of both the case-insensitive
+# denylist word-match and the KEEP-phrase strip — a non-candidate line has
+# residual == line and no denylist word, so it can never produce a finding.
+declare -a CHECK11_CANDIDATE_WORDS=()
+IFS='|' read -ra CHECK11_CANDIDATE_WORDS <<< "${BIOFORM_DENYLIST,,}|${CHECK11_KEEP_REGEX,,}"
+
 check11_found=false
 while IFS= read -r -d '' skill_file; do
     # One-pass awk state machine emits surviving BODY lines as "line_num<TAB>line",
     # excluding YAML frontmatter, fenced code blocks, and markdown table rows.
     while IFS=$'\t' read -r line_num textline; do
         [[ -z "$line_num" ]] && continue
+        # Pure-bash candidate gate (#305): skip the per-line sed+grep spawns
+        # for lines carrying no denylist word and no KEEP phrase.
+        lc_line="${textline,,}"
+        line_is_candidate=false
+        for candidate_word in "${CHECK11_CANDIDATE_WORDS[@]}"; do
+            if [[ "$lc_line" == *"$candidate_word"* ]]; then
+                line_is_candidate=true
+                break
+            fi
+        done
+        if [[ "$line_is_candidate" == false ]]; then
+            continue
+        fi
         # Strip legitimate KEEP-phrase spans first (mirrors CHECK 8's
         # ${CLAUDE_PLUGIN_ROOT} strip at line ~504), so a real leak sharing a
         # line with a legit mention is still caught instead of the whole line
@@ -890,10 +958,26 @@ while IFS= read -r -d '' doc_file; do
     # excluding YAML frontmatter, fenced code blocks, and >=4-space indented lines.
     while IFS=$'\t' read -r line_num textline; do
         [[ -z "$line_num" ]] && continue
+        # Pure-bash candidate gate (#305). INVARIANT: this gate must stay a
+        # SUPERSET of lines whose backtick-stripped residual can match
+        # CHECK12_DENYLIST — a backticked line may change under the strip
+        # (deleting a span can join fragments), so every backticked line is a
+        # candidate; a backtick-free line has residual == line, and every
+        # denylist alternative contains one of the literal fragments below.
+        # Extend the fragment list when CHECK12_DENYLIST gains an alternative.
+        case "$textline" in
+            *'`'*|*'tools/validate.sh'*|*'bash -n'*|*'python3 -m json.tool'*|*'test_'*|*'.json'*|*'.toml'*|*'go.mod'*|*'requirements.txt'*) ;;
+            *) continue ;;
+        esac
         # Strip backtick inline-code spans first (mirrors CHECK 11's KEEP-phrase
         # strip at line ~730), so a token shown as inline code is exempt while a
         # real bare occurrence sharing a line with inline code is still caught.
-        residual="$(echo "$textline" | sed -E 's/`[^`]*`//g')"
+        # A backtick-free candidate needs no strip: residual == line.
+        if [[ "$textline" == *'`'* ]]; then
+            residual="$(echo "$textline" | sed -E 's/`[^`]*`//g')"
+        else
+            residual="$textline"
+        fi
         if grep -qE "($CHECK12_DENYLIST)" <<< "$residual"; then
             bare_token="$(echo "$residual" | grep -oE "($CHECK12_DENYLIST)" | head -n1)"
             check12_found=true
@@ -999,14 +1083,22 @@ while IFS= read -r -d '' shell_script; do
         # normalized line must CONTAIN the normalized canonical token), NOT a
         # gappy subsequence, so unrelated comments cannot falsely match.
         if [[ "$exception_line" -eq 0 ]]; then
-            norm_line="$(printf '%s' "$trimmed" \
-                | sed -e 's/\r$//' \
-                      -e 's/^#//' \
-                      -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
-                      -e 's/[[:space:]–—-]\{1,\}/ /g' \
-                | tr '[:lower:]' '[:upper:]')"
-            if [[ "$norm_line" == *'P18 FLOOR EXCEPTION'* ]]; then
-                exception_line="$line_num"
+            # Candidate pretest (#305): the canonical token contains the
+            # contiguous run 'P18', and no normalization step below can
+            # CREATE that run (collapsing inserts a single space; the strips
+            # only remove edge characters), so a line without a
+            # case-insensitive 'p18' can never normalize to contain the
+            # token. Skip the sed|tr spawns for such lines.
+            if [[ "${trimmed^^}" == *'P18'* ]]; then
+                norm_line="$(printf '%s' "$trimmed" \
+                    | sed -e 's/\r$//' \
+                          -e 's/^#//' \
+                          -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+                          -e 's/[[:space:]–—-]\{1,\}/ /g' \
+                    | tr '[:lower:]' '[:upper:]')"
+                if [[ "$norm_line" == *'P18 FLOOR EXCEPTION'* ]]; then
+                    exception_line="$line_num"
+                fi
             fi
         fi
         if [[ -z "$trimmed" || "$trimmed" == '#'* ]]; then
@@ -1384,23 +1476,24 @@ test_set_check() {
     local expected_json
     expected_json="$(echo "$set_check_json" | jq -r '.expected_set // []')"
 
-    # Process each file entry
-    local file_count
-    file_count="$(echo "$set_check_json" | jq '.files | length')"
-    local fi_idx=0
-    while [[ $fi_idx -lt $file_count ]]; do
-        local rel_path
-        rel_path="$(echo "$set_check_json" | jq -r ".files[$fi_idx].path")"
-        local mode
-        mode="$(echo "$set_check_json" | jq -r ".files[$fi_idx].mode // \"equal\"")"
-        local abs_path
+    # Expected-set values preloaded once (#305): the per-value jq spawns in
+    # the extras/missing scans below become pure-bash array membership.
+    local -a expected_vals=()
+    local expected_val
+    while IFS= read -r -d $'\x1f' expected_val; do
+        expected_vals+=("$expected_val")
+    done < <(jq -j '.[] | tostring, "\u001f"' <<< "$expected_json")
+
+    # Process each file entry (path/mode streamed in one jq pass; #305)
+    local rel_path mode abs_path
+    while IFS= read -r -d $'\x1f' rel_path \
+       && IFS= read -r -d $'\x1f' mode; do
         abs_path="$(resolve_repo_path "$rel_path")"
 
         if [[ ! -f "$abs_path" ]]; then
             passed=false
             add_finding 'SAFETY' "$rel_path" 0 \
                 "[$rule_name] set_check file missing: $rel_path"
-            fi_idx=$((fi_idx + 1))
             continue
         fi
 
@@ -1421,23 +1514,27 @@ test_set_check() {
         # Compute extras (captured \ expected) and missing (expected \ captured)
         local extras=""
         local missing=""
+        local val_in_expected
         while IFS= read -r val; do
             [[ -z "$val" ]] && continue
-            if ! echo "$expected_json" | jq -e --arg v "$val" 'index($v) != null' > /dev/null 2>&1; then
+            # Pure-bash membership over the preloaded expected set (#305).
+            val_in_expected=false
+            for expected_val in "${expected_vals[@]}"; do
+                if [[ "$expected_val" == "$val" ]]; then
+                    val_in_expected=true
+                    break
+                fi
+            done
+            if [[ "$val_in_expected" == false ]]; then
                 if [[ -n "$extras" ]]; then extras="$extras, $val"; else extras="$val"; fi
             fi
         done <<< "$captured_set"
 
-        local exp_count
-        exp_count="$(echo "$expected_json" | jq 'length')"
-        local ei=0
-        while [[ $ei -lt $exp_count ]]; do
-            local exp_val
-            exp_val="$(echo "$expected_json" | jq -r ".[$ei]")"
+        local exp_val
+        for exp_val in "${expected_vals[@]}"; do
             if ! grep -qxF "$exp_val" <<< "$captured_set"; then
                 if [[ -n "$missing" ]]; then missing="$missing, $exp_val"; else missing="$exp_val"; fi
             fi
-            ei=$((ei + 1))
         done
 
         case "$mode" in
@@ -1475,40 +1572,39 @@ test_set_check() {
                 ;;
         esac
 
-        # Optional per-element occurrence-count assertion
-        local has_expected_counts
-        has_expected_counts="$(echo "$set_check_json" | jq 'has("expected_counts")')"
-        if [[ "$has_expected_counts" == "true" ]]; then
-            local expected_counts_json
-            expected_counts_json="$(echo "$set_check_json" | jq '.expected_counts')"
-            while IFS= read -r count_key; do
-                [[ -z "$count_key" ]] && continue
-                local want
-                want="$(echo "$expected_counts_json" | jq -r --arg k "$count_key" '.[$k]')"
-                local got
-                got="$(echo "$captured_json" | jq -r --arg k "$count_key" '.[$k] // 0')"
-                if [[ "$got" != "$want" ]]; then
-                    passed=false
-                    add_finding 'SAFETY' "$rel_path" 0 \
-                        "[$rule_name] set_check expected_counts mismatch in ${rel_path}: '$count_key' has $got occurrence(s), expected $want"
-                fi
-            done < <(echo "$expected_counts_json" | jq -r 'keys[]')
-        fi
-
-        fi_idx=$((fi_idx + 1))
-    done
+        # Optional per-element occurrence-count assertion (one jq pass per
+        # file entry; #305). sort_by(.key) preserves the former keys[]
+        # iteration order.
+        local count_key want got
+        while IFS= read -r -d $'\x1f' count_key \
+           && IFS= read -r -d $'\x1f' want \
+           && IFS= read -r -d $'\x1f' got; do
+            [[ -z "$count_key" ]] && continue
+            if [[ "$got" != "$want" ]]; then
+                passed=false
+                add_finding 'SAFETY' "$rel_path" 0 \
+                    "[$rule_name] set_check expected_counts mismatch in ${rel_path}: '$count_key' has $got occurrence(s), expected $want"
+            fi
+        done < <(jq -j --argjson captured "$captured_json" \
+            '(.expected_counts // {}) | to_entries | sort_by(.key) | .[]
+             | .key, "\u001f", (.value|tostring), "\u001f", (($captured[.key] // 0)|tostring), "\u001f"' \
+            <<< "$set_check_json")
+    done < <(jq -j '(.files // [])[] | .path, "\u001f", (.mode // "equal"), "\u001f"' <<< "$set_check_json")
 
     TEST_SET_CHECK_RESULT="$passed"
 }
 
 for fixture_file in "${SAFETY_FIXTURES[@]}"; do
     fixture_raw="$(<"$fixture_file")"
-    rule_name="$(echo "$fixture_raw" | jq -r '.rule')"
+    # One jq pass for the per-fixture header fields (#305).
+    fixture_header="$(jq -r '[(.rule|tostring), (has("source")|tostring), (has("consumers")|tostring), (has("set_check")|tostring)] | join("\u001f")' <<< "$fixture_raw")"
+    rule_name="${fixture_header%%$'\x1f'*}"
+    fixture_header="${fixture_header#*$'\x1f'}"
+    has_source="${fixture_header%%$'\x1f'*}"
+    fixture_header="${fixture_header#*$'\x1f'}"
+    has_consumers="${fixture_header%%$'\x1f'*}"
+    has_set_check="${fixture_header##*$'\x1f'}"
     fixture_passed=true
-
-    has_source="$(echo "$fixture_raw" | jq 'has("source")')"
-    has_consumers="$(echo "$fixture_raw" | jq 'has("consumers")')"
-    has_set_check="$(echo "$fixture_raw" | jq 'has("set_check")')"
 
     if [[ "$has_source" != "true" && "$has_consumers" != "true" && "$has_set_check" != "true" ]]; then
         fixture_passed=false
@@ -1546,24 +1642,21 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
         fi
     fi
 
-    # Legacy consumers presence check
+    # Legacy consumers presence check (fields streamed in one jq pass; #305).
+    # Unit-separator-delimited so a pattern may carry any byte except the
+    # separator itself (an embedded newline still parses).
     if [[ "$has_consumers" == "true" ]]; then
-        consumer_count="$(echo "$fixture_raw" | jq '.consumers | length')"
-        ci=0
-        while [[ $ci -lt $consumer_count ]]; do
-            consumer_file_rel="$(echo "$fixture_raw" | jq -r ".consumers[$ci].file")"
-            consumer_pattern="$(echo "$fixture_raw" | jq -r ".consumers[$ci].pattern")"
+        while IFS= read -r -d $'\x1f' consumer_file_rel \
+           && IFS= read -r -d $'\x1f' consumer_pattern \
+           && IFS= read -r -d $'\x1f' is_absent; do
             consumer_abs_path="$(resolve_repo_path "$consumer_file_rel")"
 
             if [[ ! -f "$consumer_abs_path" ]]; then
                 fixture_passed=false
                 add_finding 'SAFETY' "$consumer_file_rel" 0 \
                     "[$rule_name] Consumer file missing: $consumer_file_rel"
-                ci=$((ci + 1))
                 continue
             fi
-
-            is_absent="$(echo "$fixture_raw" | jq -r ".consumers[$ci].absent // false")"
 
             if [[ "$is_absent" == "true" ]]; then
                 # INVARIANT: absent checks scope to YAML frontmatter only.
@@ -1581,8 +1674,7 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
                         "[$rule_name] Consumer pattern not found: $consumer_pattern"
                 fi
             fi
-            ci=$((ci + 1))
-        done
+        done < <(jq -j '.consumers[] | .file, "\u001f", .pattern, "\u001f", (.absent // false | tostring), "\u001f"' <<< "$fixture_raw")
     fi
 
     if [[ "$fixture_passed" == true ]]; then
@@ -1758,7 +1850,7 @@ for fixture_file in "${COMPAT_FIXTURES[@]}"; do
                 if [[ -n "$exclude_pattern" ]]; then
                     declare -a filtered_files=()
                     for tf in "${target_files[@]}"; do
-                        if ! echo "$tf" | grep -q "/$exclude_pattern/"; then
+                        if ! grep -q "/$exclude_pattern/" <<< "$tf"; then
                             filtered_files+=("$tf")
                         fi
                     done
@@ -1777,7 +1869,7 @@ for fixture_file in "${COMPAT_FIXTURES[@]}"; do
                     ri=0
                     while [[ $ri -lt $req_count ]]; do
                         req_field="$(echo "$fixture_raw" | jq -r ".required[$ri]")"
-                        if ! echo "$fm_content" | grep -qP "^\s*${req_field}\s*:"; then
+                        if ! grep -qP "^\s*${req_field}\s*:" <<< "$fm_content"; then
                             fixture_passed=false
                             rel_file="${target_file#"$REPO_ROOT"/}"
                             rel_file="${rel_file//\\//}"
@@ -1804,7 +1896,7 @@ for fixture_file in "${COMPAT_FIXTURES[@]}"; do
                     ai=0
                     while [[ $ai -lt $absent_count ]]; do
                         absent_field="$(echo "$fixture_raw" | jq -r ".absent[$ai]")"
-                        if echo "$fm_content" | grep -qP "^\s*${absent_field}\s*:"; then
+                        if grep -qP "^\s*${absent_field}\s*:" <<< "$fm_content"; then
                             fixture_passed=false
                             rel_file="${target_file#"$REPO_ROOT"/}"
                             rel_file="${rel_file//\\//}"
