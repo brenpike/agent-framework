@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.7] - 2026-07-30
+
+### Fixed
+
+- adaptation-cycle / local-reviewer: the pre-PR local review loop could not converge when the reviewer's own fixes stayed uncommitted, because the review is branch-scope against the committed HEAD — each iteration re-read pre-fix bytes off disk and re-reported findings the reviewer had already fixed. The commit-prohibition prose is now scoped to parallel wave workers, with the reviewer's fix-cycle checkpoint commits carved out as sanctioned, and the orchestrator's local review delegation must now sanction, never forbid, that checkpoint. The reviewer fails fast with a blocked result when a delegation explicitly forbids it from committing, instead of entering a loop that can never converge. The invariant is pinned by a policy fixture.
+
 ## [2.40.6] - 2026-07-29
 
 ### Added

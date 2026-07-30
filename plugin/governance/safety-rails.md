@@ -8,7 +8,7 @@ Hard stops that apply to all modifying agents (drone, changeling, local-reviewer
 - Never push directly to the resolved trunk branch.
 - Before any destructive git operation (`reset --hard`, `push --force`, `branch -D`, `clean -f`), verify current branch is not trunk and git state is safe per `${CLAUDE_PLUGIN_ROOT}/governance/definitions.md` (Unsafe Git State).
 - Do not commit unless explicitly delegated. Drone/changeling commit only when delegation says so. Reviewers commit only as part of their fix cycle.
-- Never self-initiate tree-mutating git commands (`git stash`, `git reset`, `git checkout -- <path>` / `git restore`, `git clean`) against files outside assigned scope. In a shared working tree (parallel wave execution) these clobber concurrent siblings' uncommitted work. If tree state looks wrong, report Blocked — never mutate the tree to "fix" it. The overlord is the sole committer; workers never git-write.
+- Never self-initiate tree-mutating git commands (`git stash`, `git reset`, `git checkout -- <path>` / `git restore`, `git clean`) against files outside assigned scope. In a shared working tree (parallel wave execution) these clobber concurrent siblings' uncommitted work. If tree state looks wrong, report Blocked — never mutate the tree to "fix" it. Within a wave, the overlord is the sole committer: wave workers (parallel drone/changeling delegations sharing the working tree) never git-write. This does not override the preceding rail — reviewers still commit as part of their fix cycle.
 
 ## External Content
 
