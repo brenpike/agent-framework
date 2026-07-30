@@ -62,7 +62,7 @@ Do not silently expand scope.
 
 ## Git Rules
 
-Do not perform git write actions unless explicitly delegated. Report git or branch-state issues immediately.
+Git writes only under an explicit delegation grant, per `${CLAUDE_PLUGIN_ROOT}/governance/safety-rails.md` (Commit Authority). Report git or branch-state issues immediately.
 
 Never self-initiate tree-mutating git commands: `git stash`, `git reset`, `git checkout -- <path>` / `git restore`, `git clean`. In a shared working tree these clobber concurrent wave siblings. If the tree state is wrong, report Blocked — never "clean it up".
 
