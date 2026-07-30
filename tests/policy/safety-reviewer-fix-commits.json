@@ -6,12 +6,40 @@
   },
   "consumers": [
     {
+      "file": "plugin/governance/safety-rails.md",
+      "pattern": "Within a wave, the overlord is the sole committer"
+    },
+    {
+      "file": "plugin/governance/safety-rails.md",
+      "pattern": "reviewers still commit as part of their fix cycle"
+    },
+    {
+      "file": "plugin/agents/local-reviewer.md",
+      "pattern": "EXPLICITLY forbids this agent from committing"
+    },
+    {
+      "file": "plugin/agents/local-reviewer.md",
+      "pattern": "Absence of commit-policy language is not a prohibition"
+    },
+    {
       "file": "plugin/agents/local-reviewer.md",
       "pattern": "This checkpoint is load-bearing for convergence"
     },
     {
+      "file": "plugin/agents/local-reviewer.md",
+      "pattern": "Reviewer fix-cycle commits are sanctioned"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "this prohibition is scoped to WAVE WORKER delegations"
+    },
+    {
       "file": "plugin/agents/overlord.md",
       "pattern": "MUST SANCTION the reviewer's own fix-cycle checkpoint commits"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "MUST NOT forbid the reviewer committing"
     }
   ]
 }
