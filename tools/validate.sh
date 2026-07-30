@@ -39,7 +39,7 @@ cleanup_suites_scratch() {
 
 # ── Suite invocations (CI parity — see .github/workflows/policy-check.yml) ────────
 # Each constant is the exact command CI runs, in CI order. --all replays them verbatim.
-SUITE_JSON_MANIFESTS='json-manifests'   # special: two python3 json.load parses
+SUITE_JSON_MANIFESTS='json-manifests'   # special: three python3 json.load parses
 SUITE_POLICY_CHECK='policy_check.sh --strict'
 SUITE_VALIDATE_REPORTS='validate_reports.sh --batch tests/reports/'
 SUITE_WORKFLOWS_STRICT='validate_workflows.sh --strict'
@@ -126,8 +126,16 @@ run_suite() {
   local suite="$1"
   case "$suite" in
     "$SUITE_JSON_MANIFESTS")
+      # Every committed JSON file the runtime MUST be able to load. The two plugin manifests
+      # are consumed by the plugin/marketplace loaders; .claude/settings.json is consumed by
+      # Claude Code itself at session start. A syntax error anywhere in one of them is fatal to
+      # its consumer, and no other suite parses them: policy_check's fixtures match RAW TEXT
+      # (extract_regex / substring), so a settings file that drops a comma but keeps the
+      # expected permission strings passes every text fixture while Claude Code cannot load it.
+      # This leg is that parse gate.
       python3 -c "import json; json.load(open('plugin/.claude-plugin/plugin.json'))" \
-        && python3 -c "import json; json.load(open('.claude-plugin/marketplace.json'))"
+        && python3 -c "import json; json.load(open('.claude-plugin/marketplace.json'))" \
+        && python3 -c "import json; json.load(open('.claude/settings.json'))"
       ;;
     *)
       # shellcheck disable=SC2086 # word-splitting of "script.sh --flag arg" is intentional
@@ -291,6 +299,9 @@ run_suites() {
 #   plugin/**, .claude-plugin/**, tests/policy/**, tests/plugin/**, tests/workflows/**, *.md under plugin
 #                                      -> policy_check
 #   plugin/.claude-plugin/plugin.json or .claude-plugin/marketplace.json -> json-manifests parse
+#   .claude/settings.json              -> json-manifests parse + policy_check (fixture asserts
+#                                         its rule set as raw text; only the parse leg proves
+#                                         Claude Code can still LOAD the file)
 #   tools/**                           -> FULL suite (validator bootstrap)
 #   .github/**                         -> FULL suite (CI bootstrap — the gate harness itself)
 #   outside plugin|.claude-plugin|tools|tests|.github (docs: README.md, docs/**) -> no code suites
@@ -620,18 +631,32 @@ map_path() {
     matched=1
   fi
 
-  # policy_check: .claude/settings.json. Although it lives outside every code tree (docs-only by
-  # location), policy_check's fixture tests/policy/safety-navigator-transport-rules.json asserts
-  # this file's navigator-transport permission rules in `equal` mode. Those rules MUST be spelled
-  # Edit(<pattern>): from Claude Code 2.1.210 onward a Write(<pattern>) rule is accepted by
-  # settings parsing but NEVER matched by file permission checks, so respelling Edit( as Write(
-  # silently stops suppressing the prompt while still looking correct. That set check is the only
-  # mechanical guard against the silent unmatch, so a settings-only PR must exercise it pre-PR
-  # rather than pass a green gate that ran nothing. Deliberately NOT an early return and NOT a
-  # .claude/* glob — only settings.json is fixture-asserted, and escalating all of .claude/ would
-  # burn full-suite time on files no suite tests.
+  # policy_check + json-manifests: .claude/settings.json. Although it lives outside every code
+  # tree (docs-only by location), policy_check's fixture
+  # tests/policy/safety-navigator-transport-rules.json asserts this file's navigator-transport
+  # permission rules in `equal` mode. Those rules MUST be spelled Edit(<pattern>): from Claude
+  # Code 2.1.210 onward a Write(<pattern>) rule is accepted by settings parsing but NEVER matched
+  # by file permission checks, so respelling Edit( as Write( silently stops suppressing the prompt
+  # while still looking correct. That set check is the only mechanical guard against the silent
+  # unmatch, so a settings-only PR must exercise it pre-PR rather than pass a green gate that ran
+  # nothing.
+  #
+  # policy_check alone is NOT sufficient: its fixture extracts the permission rules from RAW TEXT,
+  # so a settings file whose JSON is broken OUTSIDE the matched rules — dropping the comma after
+  # the permissions object, an unterminated string, a trailing comma — still yields the expected
+  # rule set and passes, even though Claude Code cannot LOAD the file. Nothing else parses it
+  # either: json-manifests' parses were pinned to the two plugin manifests. So route settings.json
+  # to json-manifests as well, whose leg now parses it with python3 json.load. Two suites, two
+  # distinct properties: policy_check asserts WHAT the rules say, json-manifests asserts the file
+  # is still loadable JSON.
+  #
+  # Deliberately NOT an early return and NOT a .claude/* glob — only settings.json is
+  # fixture-asserted and parse-gated, and escalating all of .claude/ would burn full-suite time on
+  # files no suite tests. settings.local.json is deliberately excluded: it is gitignored and
+  # absent in CI, so a hardcoded parse of it would fail the suite on every runner.
   if [[ "$p" == ".claude/settings.json" ]]; then
     add_selected "$SUITE_POLICY_CHECK" "$p (navigator-transport rule fixture in policy_check)"
+    add_selected "$SUITE_JSON_MANIFESTS" "$p (JSON parse gate — Claude Code must be able to load it)"
     matched=1
   fi
 
@@ -934,6 +959,25 @@ self_test() {
     echo "PASS: .claude/settings.json -> policy_check (navigator-transport rule fixture)"
   else
     echo "FAIL: .claude/settings.json did NOT route through policy_check (selected ${#SELECTED[@]} suites, full=$FORCE_FULL)"
+    fails=$((fails + 1))
+  fi
+
+  # 6d. .claude/settings.json must ALSO route through the json-manifests PARSE gate. policy_check
+  #     alone is not sufficient: its fixture matches the permission rules as RAW TEXT, so a
+  #     settings file with a JSON syntax error outside those rules keeps the expected set and
+  #     passes, even though Claude Code cannot load it. This assertion is what keeps the parse gate
+  #     wired to the route; without it, dropping the json-manifests leg would leave a green gate
+  #     that never parses the file.
+  SELECTED=(); FORCE_FULL=0; FORCE_FULL_REASON=''
+  map_path ".claude/settings.json" >/dev/null
+  hit=0
+  for entry in "${SELECTED[@]:-}"; do
+    [[ "${entry%%$'\t'*}" == "$SUITE_JSON_MANIFESTS" ]] && hit=1 && break
+  done
+  if [[ "$hit" -eq 1 ]]; then
+    echo "PASS: .claude/settings.json -> json-manifests (JSON parse gate)"
+  else
+    echo "FAIL: .claude/settings.json did NOT route through the json-manifests parse gate (selected ${#SELECTED[@]} suites, full=$FORCE_FULL)"
     fails=$((fails + 1))
   fi
 
