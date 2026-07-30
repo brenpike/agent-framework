@@ -42,6 +42,21 @@ resolve_repo_path() {
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
+# INVARIANT (#305): every unit-separator-delimited jq stream in this script is
+# MATERIALISED into a plain variable before its read loop -- never piped in via
+# process substitution. A failing producer inside `< <(...)` is invisible to the
+# reading loop's exit status, so a malformed input silently yields zero
+# iterations and leaves the assertion inert while its PASS banner still prints.
+# A plain assignment makes that same failure terminal under `set -e`, matching
+# the pre-#305 indexed-jq behaviour.
+#
+# `nosep` is the companion guard prepended to every such jq program: it refuses
+# to emit any field containing the separator, so allowlist or fixture content
+# can never shift a record's field boundaries (a shifted field could redirect a
+# presence check into an absence check). Refusal is an error, and the
+# materialisation above makes that error terminal.
+JQ_NOSEP_DEF='def nosep: tostring | if index("\u001f") then error("field contains the U+001F record separator") else . end; '
+
 load_allowlist() {
     if [[ -f "$ALLOWLIST_PATH" ]]; then
         cat "$ALLOWLIST_PATH"
@@ -62,16 +77,21 @@ declare -a ALLOWLIST_LINESPECS=()
 
 preload_allowlist() {
     local tuples
-    tuples="$(jq -r '.[] | "\(.rule)\u001f\(.path)\u001f\(if has("line") then "L\(.line)" else "W" end)"' <<< "$ALLOWLIST_JSON")" || true
+    tuples="$(jq -j "$JQ_NOSEP_DEF"'.[]
+        | (.rule|nosep), "\u001f",
+          (.path|nosep), "\u001f",
+          ((if has("line") then "L\(.line)" else "W" end)|nosep), "\u001f"' \
+        <<< "$ALLOWLIST_JSON")"
     if [[ -z "$tuples" ]]; then
         return 0
     fi
-    local record rest
-    while IFS= read -r record; do
-        ALLOWLIST_RULES+=("${record%%$'\x1f'*}")
-        rest="${record#*$'\x1f'}"
-        ALLOWLIST_PATHS+=("${rest%%$'\x1f'*}")
-        ALLOWLIST_LINESPECS+=("${rest#*$'\x1f'}")
+    local rule_f path_f spec_f
+    while IFS= read -r -d $'\x1f' rule_f \
+       && IFS= read -r -d $'\x1f' path_f \
+       && IFS= read -r -d $'\x1f' spec_f; do
+        ALLOWLIST_RULES+=("$rule_f")
+        ALLOWLIST_PATHS+=("$path_f")
+        ALLOWLIST_LINESPECS+=("$spec_f")
     done <<< "$tuples"
 }
 preload_allowlist
@@ -1479,13 +1499,17 @@ test_set_check() {
     # Expected-set values preloaded once (#305): the per-value jq spawns in
     # the extras/missing scans below become pure-bash array membership.
     local -a expected_vals=()
-    local expected_val
+    local expected_val expected_stream
+    expected_stream="$(jq -j "$JQ_NOSEP_DEF"'.[] | nosep, "\u001f"' <<< "$expected_json")"
     while IFS= read -r -d $'\x1f' expected_val; do
         expected_vals+=("$expected_val")
-    done < <(jq -j '.[] | tostring, "\u001f"' <<< "$expected_json")
+    done <<< "$expected_stream"
 
     # Process each file entry (path/mode streamed in one jq pass; #305)
-    local rel_path mode abs_path
+    local rel_path mode abs_path files_stream
+    files_stream="$(jq -j "$JQ_NOSEP_DEF"'(.files // [])[]
+        | (.path|nosep), "\u001f", ((.mode // "equal")|nosep), "\u001f"' \
+        <<< "$set_check_json")"
     while IFS= read -r -d $'\x1f' rel_path \
        && IFS= read -r -d $'\x1f' mode; do
         abs_path="$(resolve_repo_path "$rel_path")"
@@ -1575,7 +1599,11 @@ test_set_check() {
         # Optional per-element occurrence-count assertion (one jq pass per
         # file entry; #305). sort_by(.key) preserves the former keys[]
         # iteration order.
-        local count_key want got
+        local count_key want got counts_stream
+        counts_stream="$(jq -j --argjson captured "$captured_json" \
+            "$JQ_NOSEP_DEF"'(.expected_counts // {}) | to_entries | sort_by(.key) | .[]
+             | (.key|nosep), "\u001f", (.value|nosep), "\u001f", (($captured[.key] // 0)|nosep), "\u001f"' \
+            <<< "$set_check_json")"
         while IFS= read -r -d $'\x1f' count_key \
            && IFS= read -r -d $'\x1f' want \
            && IFS= read -r -d $'\x1f' got; do
@@ -1585,11 +1613,8 @@ test_set_check() {
                 add_finding 'SAFETY' "$rel_path" 0 \
                     "[$rule_name] set_check expected_counts mismatch in ${rel_path}: '$count_key' has $got occurrence(s), expected $want"
             fi
-        done < <(jq -j --argjson captured "$captured_json" \
-            '(.expected_counts // {}) | to_entries | sort_by(.key) | .[]
-             | .key, "\u001f", (.value|tostring), "\u001f", (($captured[.key] // 0)|tostring), "\u001f"' \
-            <<< "$set_check_json")
-    done < <(jq -j '(.files // [])[] | .path, "\u001f", (.mode // "equal"), "\u001f"' <<< "$set_check_json")
+        done <<< "$counts_stream"
+    done <<< "$files_stream"
 
     TEST_SET_CHECK_RESULT="$passed"
 }
@@ -1597,7 +1622,7 @@ test_set_check() {
 for fixture_file in "${SAFETY_FIXTURES[@]}"; do
     fixture_raw="$(<"$fixture_file")"
     # One jq pass for the per-fixture header fields (#305).
-    fixture_header="$(jq -r '[(.rule|tostring), (has("source")|tostring), (has("consumers")|tostring), (has("set_check")|tostring)] | join("\u001f")' <<< "$fixture_raw")"
+    fixture_header="$(jq -r "$JQ_NOSEP_DEF"'[(.rule|nosep), (has("source")|tostring), (has("consumers")|tostring), (has("set_check")|tostring)] | join("\u001f")' <<< "$fixture_raw")"
     rule_name="${fixture_header%%$'\x1f'*}"
     fixture_header="${fixture_header#*$'\x1f'}"
     has_source="${fixture_header%%$'\x1f'*}"
@@ -1646,6 +1671,9 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
     # Unit-separator-delimited so a pattern may carry any byte except the
     # separator itself (an embedded newline still parses).
     if [[ "$has_consumers" == "true" ]]; then
+        consumers_stream="$(jq -j "$JQ_NOSEP_DEF"'.consumers[]
+            | (.file|nosep), "\u001f", (.pattern|nosep), "\u001f", ((.absent // false)|nosep), "\u001f"' \
+            <<< "$fixture_raw")"
         while IFS= read -r -d $'\x1f' consumer_file_rel \
            && IFS= read -r -d $'\x1f' consumer_pattern \
            && IFS= read -r -d $'\x1f' is_absent; do
@@ -1674,7 +1702,7 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
                         "[$rule_name] Consumer pattern not found: $consumer_pattern"
                 fi
             fi
-        done < <(jq -j '.consumers[] | .file, "\u001f", .pattern, "\u001f", (.absent // false | tostring), "\u001f"' <<< "$fixture_raw")
+        done <<< "$consumers_stream"
     fi
 
     if [[ "$fixture_passed" == true ]]; then
