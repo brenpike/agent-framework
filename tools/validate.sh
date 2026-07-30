@@ -620,6 +620,21 @@ map_path() {
     matched=1
   fi
 
+  # policy_check: .claude/settings.json. Although it lives outside every code tree (docs-only by
+  # location), policy_check's fixture tests/policy/safety-navigator-transport-rules.json asserts
+  # this file's navigator-transport permission rules in `equal` mode. Those rules MUST be spelled
+  # Edit(<pattern>): from Claude Code 2.1.210 onward a Write(<pattern>) rule is accepted by
+  # settings parsing but NEVER matched by file permission checks, so respelling Edit( as Write(
+  # silently stops suppressing the prompt while still looking correct. That set check is the only
+  # mechanical guard against the silent unmatch, so a settings-only PR must exercise it pre-PR
+  # rather than pass a green gate that ran nothing. Deliberately NOT an early return and NOT a
+  # .claude/* glob — only settings.json is fixture-asserted, and escalating all of .claude/ would
+  # burn full-suite time on files no suite tests.
+  if [[ "$p" == ".claude/settings.json" ]]; then
+    add_selected "$SUITE_POLICY_CHECK" "$p (navigator-transport rule fixture in policy_check)"
+    matched=1
+  fi
+
   if [[ "$matched" -eq 1 ]]; then
     return 0
   fi
@@ -903,6 +918,22 @@ self_test() {
     echo "PASS: README.md -> policy_check (README compatibility fixtures)"
   else
     echo "FAIL: README.md did NOT route through policy_check (selected ${#SELECTED[@]} suites, full=$FORCE_FULL)"
+    fails=$((fails + 1))
+  fi
+
+  # 6c. .claude/settings.json must route through policy_check (tests/policy/
+  #     safety-navigator-transport-rules.json asserts its navigator-transport rules in equal mode),
+  #     NOT classify as docs-only/no-suite.
+  SELECTED=(); FORCE_FULL=0; FORCE_FULL_REASON=''
+  map_path ".claude/settings.json" >/dev/null
+  hit=0
+  for entry in "${SELECTED[@]:-}"; do
+    [[ "${entry%%$'\t'*}" == "$SUITE_POLICY_CHECK" ]] && hit=1 && break
+  done
+  if [[ "$hit" -eq 1 ]]; then
+    echo "PASS: .claude/settings.json -> policy_check (navigator-transport rule fixture)"
+  else
+    echo "FAIL: .claude/settings.json did NOT route through policy_check (selected ${#SELECTED[@]} suites, full=$FORCE_FULL)"
     fails=$((fails + 1))
   fi
 

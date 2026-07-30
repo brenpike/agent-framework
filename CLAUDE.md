@@ -65,7 +65,7 @@ bash tools/validate.sh --changed
 
 This resolves the merge-base against `origin/main` → `main` → `HEAD~1`, computes the changed-file set (committed diff + uncommitted working-tree changes), and runs only the suites relevant to those paths. The path→suite mapping lives in `tools/validate.sh`; docs here summarise it rather than duplicate it.
 
-**FAIL-CLOSED guarantee:** any unmapped path inside a code-bearing tree, an unresolvable base ref, or any edit to `tools/**` (validator bootstrap) escalates automatically to the full suite. Nothing relevant is ever silently skipped.
+**FAIL-CLOSED guarantee:** any unmapped path inside a code-bearing tree, an unresolvable base ref, or any edit to `tools/**` (validator bootstrap) escalates automatically to the full suite. `.claude/settings.json` routes to the policy suite because a policy fixture asserts its contents; the rest of `.claude/` stays docs-only by design. Nothing relevant is ever silently skipped.
 
 For an exhaustive local run identical to the push-to-main CI gate:
 
