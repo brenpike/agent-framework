@@ -1,0 +1,17 @@
+{
+  "rule": "Reviewer fix-cycle commits are sanctioned, never forbidden",
+  "source": {
+    "file": "plugin/governance/safety-rails.md",
+    "pattern": "Reviewers commit only as part of their fix cycle"
+  },
+  "consumers": [
+    {
+      "file": "plugin/agents/local-reviewer.md",
+      "pattern": "This checkpoint is load-bearing for convergence"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "MUST SANCTION the reviewer's own fix-cycle checkpoint commits"
+    }
+  ]
+}
