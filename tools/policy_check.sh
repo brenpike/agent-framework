@@ -157,6 +157,55 @@ get_frontmatter() {
     echo "$result"
 }
 
+# ── Timing instrumentation ──────────────────────────────────────────────────
+# Permanent per-check profiling (#305, precedent #304). Emits one
+# "[TIME] <label> <elapsed>s" line after each check block and a per-check
+# timing table immediately before the Summary block.
+
+declare -a TIMING_LABELS=()
+declare -a TIMING_SECS=()
+
+get_epoch_us() {
+    local raw="${EPOCHREALTIME:-}"
+    if [[ -n "$raw" ]]; then
+        echo "${raw//[.,]/}"
+    else
+        echo "$((SECONDS * 1000000))"
+    fi
+}
+
+format_us() {
+    local us="$1"
+    printf '%d.%03d' "$((us / 1000000))" "$(((us % 1000000) / 1000))"
+}
+
+TIMING_MARK_US="$(get_epoch_us)"
+TIMING_RUN_START_US="$TIMING_MARK_US"
+
+mark_time() {
+    local label="$1"
+    local now_us
+    now_us="$(get_epoch_us)"
+    local elapsed
+    elapsed="$(format_us "$((now_us - TIMING_MARK_US))")"
+    TIMING_MARK_US="$now_us"
+    TIMING_LABELS+=("$label")
+    TIMING_SECS+=("$elapsed")
+    echo "[TIME] $label ${elapsed}s"
+}
+
+print_timing_table() {
+    echo ''
+    echo '=== TIMING: Per-check wall time ==='
+    local i
+    for ((i = 0; i < ${#TIMING_LABELS[@]}; i++)); do
+        printf '%-20s %10ss\n' "${TIMING_LABELS[$i]}" "${TIMING_SECS[$i]}"
+    done
+    local total
+    total="$(format_us "$(($(get_epoch_us) - TIMING_RUN_START_US))")"
+    printf '%-20s %10ss\n' 'TOTAL' "$total"
+}
+
 # ── State ───────────────────────────────────────────────────────────────────
 
 CHECKS_PASSED=0
@@ -235,6 +284,8 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+mark_time 'CHECK1'
+
 # ── CHECK 2: Required files exist ──────────────────────────────────────────
 
 echo ''
@@ -269,6 +320,8 @@ if [[ "$check2_found" == false ]]; then
 else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
+
+mark_time 'CHECK2'
 
 # ── CHECK 3: Skill names exist ─────────────────────────────────────────────
 
@@ -347,6 +400,8 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+mark_time 'CHECK3'
+
 # ── CHECK 4: Agent names exist ─────────────────────────────────────────────
 
 echo ''
@@ -372,6 +427,8 @@ if [[ "$check4_found" == false ]]; then
 else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
+
+mark_time 'CHECK4'
 
 # ── CHECK 5: Unsupported frontmatter fields ────────────────────────────────
 
@@ -419,6 +476,8 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+mark_time 'CHECK5'
+
 # ── CHECK 6: Governance reference paths resolve ────────────────────────────
 
 echo ''
@@ -460,6 +519,8 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+mark_time 'CHECK6'
+
 # ── CHECK 7: Skill frontmatter completeness ────────────────────────────────
 
 echo ''
@@ -488,6 +549,8 @@ if [[ "$check7_found" == false ]]; then
 else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
+
+mark_time 'CHECK7'
 
 # ── CHECK 8: No bare governance/agents/skills path refs ────────────────────
 
@@ -519,6 +582,8 @@ if [[ "$check8_found" == false ]]; then
 else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
+
+mark_time 'CHECK8'
 
 # ── CHECK 9: Containment guard precedes guarded read in engine scripts ──────
 #
@@ -686,6 +751,8 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+mark_time 'CHECK9'
+
 # ── CHECK 10: No literal NUL byte in plugin Markdown payload ───────────────
 #
 # Packaged plugin .md files (skills, agents, governance, references) are
@@ -713,6 +780,8 @@ if [[ "$check10_found" == false ]]; then
 else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
+
+mark_time 'CHECK10'
 
 # ── CHECK 11: No bare calling-bioform name in skill body prose (P14) ────────
 #
@@ -774,6 +843,8 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+mark_time 'CHECK11'
+
 # ── CHECK 12: No bare validation-tool/manifest token in governance/agents prose ─
 #
 # Governance and agent docs are runtime-loaded instructions. Naming a concrete
@@ -834,6 +905,8 @@ if [[ "$check12_found" == false ]]; then
 else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
+
+mark_time 'CHECK12'
 
 # ── CHECK 13: P18 fail-closed shell floor ──────────────────────────────────
 #
@@ -1108,6 +1181,8 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
+mark_time 'CHECK13'
+
 # ── CHECK 14: Inert inputs-file navigator obligations ──────────────────────
 #
 # WHAT IT GUARANTEES. CHECK 9 enforces guard-before-read ONLY for engine
@@ -1244,6 +1319,8 @@ if [[ "$check14_found" == false ]]; then
 else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
+
+mark_time 'CHECK14'
 
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
@@ -1507,6 +1584,8 @@ else
     CHECKS_PASSED=$((CHECKS_PASSED + SAFETY_PASSED))
     CHECKS_FAILED=$((CHECKS_FAILED + SAFETY_FAILED))
 fi
+
+mark_time 'SAFETY'
 
 # ── COMPATIBILITY TESTS ────────────────────────────────────────────────────
 
@@ -1866,6 +1945,8 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + COMPAT_FAILED))
 fi
 
+mark_time 'COMPAT'
+
 # ── WORKFLOW FIXTURE TESTS ─────────────────────────────────────────────────
 
 echo ''
@@ -1979,6 +2060,10 @@ WF_FAILED=0
 test_workflow_fixtures
 CHECKS_PASSED=$((CHECKS_PASSED + WF_PASSED))
 CHECKS_FAILED=$((CHECKS_FAILED + WF_FAILED))
+
+mark_time 'WORKFLOW-FIXTURES'
+
+print_timing_table
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 
