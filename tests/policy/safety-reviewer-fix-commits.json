@@ -1,17 +1,44 @@
 {
   "rule": "Reviewer fix-cycle commits are sanctioned, never forbidden",
+  "description": "Commit/push authority is now a structural POSITIVE GRANT ALLOWLIST in safety-rails.md's Commit Authority subsection (COMMIT-GRANT marker lines for orchestrator, local-reviewer, github-reviewer, delegated-implementer). set_check asserts the grant SET itself (equal mode + expected_counts) so a deleted grant, an unreviewed extra grant, or a duplicated grant all fail structurally instead of requiring one more literal clause pin per review pass. The remaining consumers entries are a bounded tail: the source-of-truth sentence, one citation-anchor pin per referencing agent doc, and the small set of step-mechanics clauses that are not expressible as a grant-set member.",
+  "set_check": {
+    "extract_regex": "COMMIT-GRANT ([a-z][a-z-]*):",
+    "expected_set": [
+      "orchestrator",
+      "local-reviewer",
+      "github-reviewer",
+      "delegated-implementer"
+    ],
+    "expected_counts": {
+      "orchestrator": 1,
+      "local-reviewer": 1,
+      "github-reviewer": 1,
+      "delegated-implementer": 1
+    },
+    "files": [
+      { "path": "plugin/governance/safety-rails.md", "mode": "equal" }
+    ]
+  },
   "source": {
     "file": "plugin/governance/safety-rails.md",
-    "pattern": "Reviewers commit only as part of their fix cycle"
+    "pattern": "Commit and push authority is a POSITIVE GRANT"
   },
   "consumers": [
     {
-      "file": "plugin/governance/safety-rails.md",
-      "pattern": "Within a wave, the overlord is the sole committer"
+      "file": "plugin/agents/local-reviewer.md",
+      "pattern": "(Commit Authority)"
     },
     {
-      "file": "plugin/governance/safety-rails.md",
-      "pattern": "reviewers still commit as part of their fix cycle"
+      "file": "plugin/agents/overlord.md",
+      "pattern": "(Commit Authority)"
+    },
+    {
+      "file": "plugin/agents/drone.md",
+      "pattern": "(Commit Authority)"
+    },
+    {
+      "file": "plugin/agents/changeling.md",
+      "pattern": "(Commit Authority)"
     },
     {
       "file": "plugin/agents/local-reviewer.md",
@@ -26,20 +53,16 @@
       "pattern": "This checkpoint is load-bearing for convergence"
     },
     {
-      "file": "plugin/agents/local-reviewer.md",
-      "pattern": "Reviewer fix-cycle commits are sanctioned"
-    },
-    {
-      "file": "plugin/agents/overlord.md",
-      "pattern": "this prohibition is scoped to WAVE WORKER delegations"
-    },
-    {
       "file": "plugin/agents/overlord.md",
       "pattern": "MUST SANCTION the reviewer's own fix-cycle checkpoint commits"
     },
     {
       "file": "plugin/agents/overlord.md",
-      "pattern": "MUST NOT forbid the reviewer committing"
+      "pattern": "MUST NOT forbid"
+    },
+    {
+      "file": "plugin/agents/overlord.md",
+      "pattern": "this prohibition is scoped to WAVE WORKER delegations"
     }
   ]
 }
