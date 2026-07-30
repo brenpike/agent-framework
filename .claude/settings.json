@@ -32,7 +32,6 @@
       "Bash(gh pr checkout *)",
       "Bash(gh repo view *)",
       "Bash(grep *)",
-      "Bash(cat > .hivemind/*)",
       "Edit(.hivemind/review-loop/*)",
       "Bash(mkdir -p .hivemind/review-loop)",
       "Monitor",
