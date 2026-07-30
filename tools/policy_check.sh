@@ -1743,8 +1743,16 @@ for fixture_file in "${COMPAT_FIXTURES[@]}"; do
                     if [[ -n "$exclude_pattern" && "$dir_name" == "$exclude_pattern" ]]; then
                         continue
                     fi
-                    # Use fixed-string grep to check for the directory name
-                    if ! echo "$ref_content" | grep -qF "$dir_name"; then
+                    # Fixed-string substring test via the bash builtin, NOT `echo | grep -qF`.
+                    # `grep -q` exits on the FIRST match and closes the pipe; when the needle
+                    # matches early in a multi-KB haystack, echo's remaining writes take EPIPE
+                    # (exit 141) and `set -o pipefail` turns the MATCHING pipeline into a
+                    # non-zero status — a false "not found" for a string that IS present. That
+                    # false negative failed CI on PR #341 for `adaptation-cycle` (first skill dir,
+                    # earliest README match) alongside "echo: write error: Broken pipe". The
+                    # builtin has no pipe and no reader to exit early, so the failure mode cannot
+                    # occur; the quoted needle keeps the match literal/fixed-string.
+                    if [[ "$ref_content" != *"$dir_name"* ]]; then
                         fixture_passed=false
                         add_finding 'COMPAT' "$ref_file_rel" 0 \
                             "[$check_desc] Directory name not found in $ref_file_rel: $dir_name"
@@ -1771,7 +1779,9 @@ for fixture_file in "${COMPAT_FIXTURES[@]}"; do
                 ref_content="$(<"$ref_file_path")"
                 while IFS= read -r -d '' file_in_dir; do
                     base_name="$(basename "$file_in_dir" .md)"
-                    if ! echo "$ref_content" | grep -qF "$base_name"; then
+                    # Builtin fixed-string test — same EPIPE/pipefail false-negative class as the
+                    # dir-names-in-file arm above (see its comment).
+                    if [[ "$ref_content" != *"$base_name"* ]]; then
                         fixture_passed=false
                         add_finding 'COMPAT' "$ref_file_rel" 0 \
                             "[$check_desc] Filename not found in $ref_file_rel: $base_name"
@@ -1799,7 +1809,9 @@ for fixture_file in "${COMPAT_FIXTURES[@]}"; do
             elif [[ -f "$target_path" ]]; then
                 ref_content="$(<"$ref_file_path")"
                 file_base_name="$(basename "$target_rel")"
-                if ! echo "$ref_content" | grep -qF "$file_base_name"; then
+                # Builtin fixed-string test — same EPIPE/pipefail false-negative class as the
+                # dir-names-in-file arm above (see its comment).
+                if [[ "$ref_content" != *"$file_base_name"* ]]; then
                     fixture_passed=false
                     add_finding 'COMPAT' "$ref_file_rel" 0 \
                         "[$check_desc] $ref_file_rel does not reference $file_base_name"
