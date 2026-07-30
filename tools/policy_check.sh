@@ -52,6 +52,30 @@ load_allowlist() {
 
 ALLOWLIST_JSON="$(load_allowlist)"
 
+# Allowlist preload: one jq pass at startup into parallel bash arrays so the
+# per-finding path (test_allowlisted) spawns zero processes.
+declare -a ALLOWLIST_RULES=()
+declare -a ALLOWLIST_PATHS=()
+# INVARIANT: ALLOWLIST_LINESPECS entries are "W" (no "line" key = wildcard) or
+# "L<value>" (the entry's line rendered exactly as jq -r renders the scalar).
+declare -a ALLOWLIST_LINESPECS=()
+
+preload_allowlist() {
+    local tuples
+    tuples="$(jq -r '.[] | "\(.rule)\u001f\(.path)\u001f\(if has("line") then "L\(.line)" else "W" end)"' <<< "$ALLOWLIST_JSON")" || true
+    if [[ -z "$tuples" ]]; then
+        return 0
+    fi
+    local record rest
+    while IFS= read -r record; do
+        ALLOWLIST_RULES+=("${record%%$'\x1f'*}")
+        rest="${record#*$'\x1f'}"
+        ALLOWLIST_PATHS+=("${rest%%$'\x1f'*}")
+        ALLOWLIST_LINESPECS+=("${rest#*$'\x1f'}")
+    done <<< "$tuples"
+}
+preload_allowlist
+
 # Findings storage: parallel arrays
 declare -a FINDING_RULES=()
 declare -a FINDING_PATHS=()
@@ -64,27 +88,20 @@ test_allowlisted() {
     local fpath="$2"
     local line="$3"
 
-    local count
-    count="$(echo "$ALLOWLIST_JSON" | jq 'length')"
+    local count=${#ALLOWLIST_RULES[@]}
     local i=0
     while [[ $i -lt $count ]]; do
-        local entry_rule
-        entry_rule="$(echo "$ALLOWLIST_JSON" | jq -r ".[$i].rule")"
-        if [[ "$entry_rule" != "$rule" ]]; then
+        if [[ "${ALLOWLIST_RULES[$i]}" != "$rule" ]]; then
             i=$((i + 1))
             continue
         fi
-        local entry_path
-        entry_path="$(echo "$ALLOWLIST_JSON" | jq -r ".[$i].path")"
-        if [[ "$entry_path" != "$fpath" ]]; then
+        if [[ "${ALLOWLIST_PATHS[$i]}" != "$fpath" ]]; then
             i=$((i + 1))
             continue
         fi
-        local has_line
-        has_line="$(echo "$ALLOWLIST_JSON" | jq ".[$i] | has(\"line\")")"
-        if [[ "$has_line" == "true" ]]; then
-            local entry_line
-            entry_line="$(echo "$ALLOWLIST_JSON" | jq -r ".[$i].line")"
+        local line_spec="${ALLOWLIST_LINESPECS[$i]}"
+        if [[ "$line_spec" != "W" ]]; then
+            local entry_line="${line_spec#L}"
             if [[ "$entry_line" != "0" && "$entry_line" != "$line" ]]; then
                 i=$((i + 1))
                 continue
