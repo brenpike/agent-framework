@@ -26,7 +26,10 @@ named files; deleting it is loud." A pin CANNOT:
 
 Pretending to more than this is exactly how the Problem-2 defect shipped. When you
 write a fixture `description`, state what the pin honestly guarantees, not what you
-wish it guaranteed.
+wish it guaranteed. State it as a standing invariant in the present tense and make it
+self-contained: no issue numbers, no PR references, no "re-pin"/"this change"
+archaeology — the reader is a future author asking why this pin is claim-carrying,
+not someone reconstructing history.
 
 ## 2. Pin the claim-carrying clause
 

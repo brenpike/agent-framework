@@ -1,6 +1,6 @@
 {
   "rule": "Review remediation must commit push reply before resolve",
-  "description": "P3, #337 re-pin: the antecedent list — fix is committed, pushed, validated, and a fix-SHA reply is posted — IS this rule (the rule name is that list). Pinning only `Resolve review threads only after` left every precondition rewritable with the suite green. Honest residual: source and consumer are the same file and the same clause, so this fixture protects one sentence in one file; it asserts no cross-file coupling.",
+  "description": "P3. The antecedent list — fix is committed, pushed, validated, and a fix-SHA reply is posted — IS this rule (the rule name is that list). Pinning only `Resolve review threads only after` leaves every precondition rewritable with the suite green. Honest residual: source and consumer are the same file and the same clause, so this fixture protects one sentence in one file; it asserts no cross-file coupling.",
   "source": {
     "file": "plugin/agents/github-reviewer.md",
     "pattern": "Resolve review threads only after fix is committed, pushed, validated, and a fix-SHA reply is posted"

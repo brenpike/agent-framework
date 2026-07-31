@@ -1,6 +1,6 @@
 {
   "rule": "Validation gate",
-  "description": "P3 coupling, #337 re-pin: the open-plan-pr consumer pin carries the outcome discriminator — Blocked (`stage: validation`). WHICH report outcome forces exit 1 is the claim-carrying antecedent; without it, rekeying the exit on a different outcome left the suite green.",
+  "description": "P3 coupling. The open-plan-pr consumer pin carries the outcome discriminator — Blocked (`stage: validation`). WHICH report outcome forces exit 1 is the claim-carrying antecedent; pinning only the obligation leaves the exit rekeyable on a different outcome with the suite green.",
   "source": {
     "file": "plugin/governance/definitions.md",
     "pattern": "Execute every command listed in the project's `CLAUDE.md` validation section. No duration cap."
