@@ -1,21 +1,18 @@
 {
   "rule": "Blocked report contract",
+  "description": "P3 coupling. Each worker-agent consumer pins the REFERENCE naming the canonical section — `Blocked: Worker Report — Blocked.` — so drone and changeling must keep pointing at report-format.md's Blocked schema by its section name; deleting or renaming the pointer is loud, and the schema prose itself stays free to improve at the canonical file. cerebrate is deliberately NOT a consumer: cerebrate.md carries no reference to report-format.md, and report-format.md scopes its schemas to worker agents — cerebrate's `blocked` is result-mapping vocabulary the overlord consumes, not the worker YAML schema — so a cerebrate entry here could only ever pin generic prose that discriminates nothing.",
   "source": {
     "file": "plugin/governance/report-format.md",
     "pattern": "## Worker Report — Blocked"
   },
   "consumers": [
     {
-      "file": "plugin/agents/cerebrate.md",
-      "pattern": "Otherwise return blocked"
-    },
-    {
       "file": "plugin/agents/drone.md",
-      "pattern": "Stop and report blocked when"
+      "pattern": "Blocked: Worker Report — Blocked."
     },
     {
       "file": "plugin/agents/changeling.md",
-      "pattern": "Stop and report blocked when"
+      "pattern": "Blocked: Worker Report — Blocked."
     }
   ]
 }
