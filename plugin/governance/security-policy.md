@@ -153,7 +153,11 @@ A parallel read-guard, `hivemind_assert_ledger_contained` (also in `containment.
 
 The Write tool, authoring the fixed-literal-prefix path, is the SOLE SANCTIONED TRANSPORT for every navigator's inputs file under this pattern; the sole-enforcement statement above states what that path constraint does and does not bound.
 
-UNLESS the Write call to the fixed-literal transport path SUCCEEDS — including after an operator approves a permission prompt — the navigator MUST stop blocked, report the OBSERVED OUTCOME, and never author the inputs file by any other transport. This rule is keyed on OUTCOME, never on which cause of failure occurred: leaving the hard stop requires demonstrating a SUCCEEDED Write, not matching a listed failure mode, so a cause named nowhere below is not an exception — it lands in exactly this stop by construction. Success is also the one signature the agent can always read: it cannot observe an operator-facing harness event, but it always knows whether its own call succeeded.
+UNLESS the Write call to the fixed-literal transport path SUCCEEDS —
+including after an operator approves a permission prompt —
+the navigator MUST stop blocked,
+report the OBSERVED OUTCOME,
+and never author the inputs file by any other transport. This rule is keyed on OUTCOME, never on which cause of failure occurred: leaving the hard stop requires demonstrating a SUCCEEDED Write, not matching a listed failure mode, so a cause named nowhere below is not an exception — it lands in exactly this stop by construction. Success is also the one signature the agent can always read: it cannot observe an operator-facing harness event, but it always knows whether its own call succeeded.
 
 Authoring the inputs file by ANY shell transport — heredoc, shell redirection, `cat`/`echo`/`printf`, or an inline interpreter script such as `python3 <<'EOF'` — is FORBIDDEN. It reintroduces exactly the delimiter-injection class ADR-0017 exists to close. A transport that did not succeed is a hard stop, never a license to improvise one.
 

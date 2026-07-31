@@ -1,5 +1,6 @@
 {
   "rule": "Blocked validation blocks PR",
+  "description": "P3 coupling, #337 re-pin: the consumer pin carries the outcome discriminator — Blocked (`stage: validation`) — the antecedent that keys the open-plan-pr Do Not bullet. Pinned without it, rewriting WHICH Worker Report outcome blocks the PR left the suite green. Honest residual: the bullet is not adjacent to its `## Do Not` header, so the pin cannot carry the negation context; polarity inversion that keeps these bytes intact is outside what a presence pin can see.",
   "source": {
     "file": "plugin/governance/workflow.md",
     "pattern": "Open PR only when: plan complete, validation passed, version bump included if required, branch pushed"
@@ -7,7 +8,7 @@
   "consumers": [
     {
       "file": "plugin/skills/open-plan-pr/SKILL.md",
-      "pattern": "open PR if the Validation procedure returned the Worker Report"
+      "pattern": "open PR if the Validation procedure returned the Worker Report — Blocked (`stage: validation`)"
     }
   ]
 }
