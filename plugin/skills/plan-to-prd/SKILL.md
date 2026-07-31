@@ -136,3 +136,10 @@ The PRD specifies WHAT, never HOW. These MUST NOT appear anywhere in the PRD —
 
 2. Write the PRD to `docs/prds/<slug>.md` using the resolved slug. This file is committed and durable — do not write it to `.hivemind/`.
 3. If `docs/prds/<slug>.md` already exists, read it first and update in place rather than blindly overwriting; preserve any sections the current plan does not touch.
+
+---
+
+## Handback
+
+Writing or updating `docs/prds/<slug>.md` completes this skill's procedure. This skill
+returns control to whatever invoked it; the caller then continues from the point at which it invoked this skill.
