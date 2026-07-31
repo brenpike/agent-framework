@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.8] - 2026-07-30
+
+### Fixed
+
+- Ten skill bodies now carry a canonical handback clause, closing two ways a skill's text could hijack its calling agent's turn. A skill body loads into its caller's own context, so a skill whose final act was emitting text with nothing stating that control returns to the caller was obeyed as the caller's own terminal directive — the caller ended its turn. The worst instance was route-workflow, which stalled the orchestrator on every non-Reflex run and required a user prompt to continue. Separately, several engine skills carried an unscoped "produce zero chat text" imperative with no sentence scoping it to the skill's own procedure, so it read as governing the caller's turn and could suppress the caller's own output after the skill returned; those are now aligned to the canonical scoped form. Two skills also carried active turn-terminating language on a success path, now rescoped so "stop" unambiguously means the skill's own procedure or loop ends, not the caller's turn — blocker-path terminals, where awaiting the user is correct, were left alone. Behavior is unchanged throughout; only how the bodies read to a caller changed. No policy fixture was added: the fixture primitive iterates an explicit literal file list with no enumeration, so any expressible fixture would be a per-file pin list under which a newly added skill lacking the clause passes silently.
+
 ## [2.40.7] - 2026-07-30
 
 ### Fixed

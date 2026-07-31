@@ -196,11 +196,14 @@ rejected and the script exits with a blocker.
 
 ## Silence Discipline
 
-This is a pipeline skill:
+This is a pipeline skill. The rules below govern this skill's own procedure, not the calling
+agent's turn — the skill returns control to whatever invoked it, whether that caller runs it
+as a workflow state or as one step inside a longer procedure:
 
-- Produce zero chat text during execution. Outputs are tool calls only.
-- The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat
-  text. The final action is the Bash script call (step 3).
+- This skill's procedure produces zero chat text of its own — its steps are tool calls only.
+- The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat text.
+- The procedure ends at the step 3 Bash script call, which hands the routing data back
+  to the caller; the caller then continues from the point at which it invoked this skill.
 - Exit 0 = caller proceeds (all strains running, or all non-running strains are
   `starting`); routing data (`brood_id:`, `manifest:`, and `attach:` lines for
   running AND starting strains) is on stdout. Exit 1 = blocked; the reason is
