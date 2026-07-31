@@ -195,6 +195,15 @@ get_frontmatter() {
     echo "$result"
 }
 
+# normalize_ws TEXT
+# INVARIANT: fixture pattern matching is whitespace-normalized on both sides
+# (#337) — every [[:space:]]+ run collapses to a single space so that line
+# wrapping and indentation (incidental layout) cannot mask a pinned word
+# sequence. No other byte is altered.
+normalize_ws() {
+    printf '%s' "$1" | tr -s '[:space:]' ' '
+}
+
 # file_candidates MODE PATTERN FILE
 # Per-FILE candidate prefilter (#305): ONE grep spawn per file emits
 # "lineno:body" lines for the hot per-line loops, replacing a spawn per line.
@@ -1658,8 +1667,9 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
             add_finding 'SAFETY' "$source_file_rel" 0 \
                 "[$rule_name] Source file missing: $source_file_rel"
         else
-            source_content="$(<"$source_abs_path")"
-            if [[ "$source_content" != *"$source_pattern"* ]]; then
+            source_content_norm="$(normalize_ws "$(<"$source_abs_path")")"
+            source_pattern_norm="$(normalize_ws "$source_pattern")"
+            if [[ "$source_content_norm" != *"$source_pattern_norm"* ]]; then
                 fixture_passed=false
                 add_finding 'SAFETY' "$source_file_rel" 0 \
                     "[$rule_name] Source pattern not found: $source_pattern"
@@ -1686,17 +1696,18 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
                 continue
             fi
 
+            consumer_pattern_norm="$(normalize_ws "$consumer_pattern")"
             if [[ "$is_absent" == "true" ]]; then
                 # INVARIANT: absent checks scope to YAML frontmatter only.
-                frontmatter_content="$(get_frontmatter "$consumer_abs_path")"
-                if [[ "$frontmatter_content" == *"$consumer_pattern"* ]]; then
+                frontmatter_norm="$(normalize_ws "$(get_frontmatter "$consumer_abs_path")")"
+                if [[ "$frontmatter_norm" == *"$consumer_pattern_norm"* ]]; then
                     fixture_passed=false
                     add_finding 'SAFETY' "$consumer_file_rel" 0 \
                         "[$rule_name] Consumer frontmatter must NOT contain: $consumer_pattern"
                 fi
             else
-                consumer_content="$(<"$consumer_abs_path")"
-                if [[ "$consumer_content" != *"$consumer_pattern"* ]]; then
+                consumer_content_norm="$(normalize_ws "$(<"$consumer_abs_path")")"
+                if [[ "$consumer_content_norm" != *"$consumer_pattern_norm"* ]]; then
                     fixture_passed=false
                     add_finding 'SAFETY' "$consumer_file_rel" 0 \
                         "[$rule_name] Consumer pattern not found: $consumer_pattern"
