@@ -57,6 +57,16 @@ resolve_repo_path() {
 # materialisation above makes that error terminal.
 JQ_NOSEP_DEF='def nosep: tostring | if index("\u001f") then error("field contains the U+001F record separator") else . end; '
 
+# JQ_WSNORM_DEF (#350): jq-side mirror of normalize_ws for fixture PATTERNS,
+# applied during the extraction pass so the hot fixture loop spawns no
+# per-pattern process. The class is exactly tr's C-locale [:space:] byte set
+# (space, tab, LF, VT, FF, CR; the trailing hex escape is the vertical tab) --
+# deliberately NOT Oniguruma [[:space:]], which also matches unicode spaces
+# (e.g. U+00A0) that normalize_ws leaves untouched. The normalize-ws canary
+# fixture's newline-embedded patterns keep this mirror honest: divergence on
+# newline handling turns the suite red.
+JQ_WSNORM_DEF='def wsnorm: gsub("[ \t\r\n\f\\x0B]+"; " "); '
+
 load_allowlist() {
     if [[ -f "$ALLOWLIST_PATH" ]]; then
         cat "$ALLOWLIST_PATH"
@@ -193,6 +203,61 @@ get_frontmatter() {
         fi
     done < "$filepath"
     echo "$result"
+}
+
+# normalize_ws TEXT
+# INVARIANT: fixture pattern matching is whitespace-normalized on both sides
+# (#337) — every [[:space:]]+ run collapses to a single space so that line
+# wrapping and indentation (incidental layout) cannot mask a pinned word
+# sequence. No other byte is altered.
+normalize_ws() {
+    printf '%s' "$1" | tr -s '[:space:]' ' '
+}
+
+# ── Whitespace-normalization cache (#350) ───────────────────────────────────
+# Fixture matching normalizes the SAME file for many assertions (105 consumer
+# assertions over ~30 files spawned ~270 tr subprocesses and re-read each file
+# per assertion). Cache the normalized text once per (scope, path). The key
+# MUST carry the scope: WHOLE-file and FRONTMATTER-only normalization of the
+# SAME path are different texts, and a path-only key would corrupt the
+# frontmatter-scoped `absent` checks with whole-file content.
+declare -A NORM_WS_CACHE=()
+
+# norm_ws_cached SCOPE PATH
+# Sets NORM_WS_RESULT to the whitespace-normalized text of PATH for SCOPE
+# (whole | frontmatter), computing via normalize_ws once per (scope, path) and
+# serving every later request from the cache with zero spawns. Result is
+# returned in a global rather than by command substitution so cache hits fork
+# nothing.
+NORM_WS_RESULT=""
+norm_ws_cached() {
+    local scope="$1" path="$2"
+    local key="${scope}:${path}"
+    if [[ -z "${NORM_WS_CACHE[$key]+x}" ]]; then
+        local raw
+        if [[ "$scope" == "frontmatter" ]]; then
+            raw="$(get_frontmatter "$path")"
+        else
+            raw="$(<"$path")"
+        fi
+        NORM_WS_CACHE[$key]="$(normalize_ws "$raw")"
+    fi
+    NORM_WS_RESULT="${NORM_WS_CACHE[$key]}"
+}
+
+# frontmatter_contains_ws_norm FILE PATTERN_NORM
+# Exit 0 when FILE's YAML frontmatter, whitespace-normalized, contains the
+# already-normalized PATTERN_NORM. This is the SINGLE containment predicate for
+# frontmatter-scoped `absent` fixture checks AND for the SAFETY-CANARY
+# self-test, so removing the normalization here turns that self-test red
+# instead of silently weakening `absent` matching. (A standing green fixture
+# cannot witness this normalization: for absent semantics a raw-substring hit
+# always survives normalization, so its removal can only flip a red detection
+# to green — hence the self-test asserts the red direction.)
+frontmatter_contains_ws_norm() {
+    local file="$1" pattern_norm="$2"
+    norm_ws_cached frontmatter "$file"
+    [[ "$NORM_WS_RESULT" == *"$pattern_norm"* ]]
 }
 
 # file_candidates MODE PATTERN FILE
@@ -1647,10 +1712,18 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
         fi
     fi
 
-    # Legacy source presence check
+    # Legacy source presence check. One jq pass extracts the source fields AND
+    # the whitespace-normalized pattern (wsnorm, #350) so the loop spawns no
+    # per-pattern tr process; the raw pattern is retained for finding text.
     if [[ "$has_source" == "true" ]]; then
-        source_file_rel="$(echo "$fixture_raw" | jq -r '.source.file')"
-        source_pattern="$(echo "$fixture_raw" | jq -r '.source.pattern')"
+        source_stream="$(jq -j "$JQ_NOSEP_DEF$JQ_WSNORM_DEF"'.source
+            | (.file|nosep), "\u001f", (.pattern|nosep), "\u001f",
+              ((.pattern|wsnorm)|nosep), "\u001f"' <<< "$fixture_raw")"
+        {
+            IFS= read -r -d $'\x1f' source_file_rel
+            IFS= read -r -d $'\x1f' source_pattern
+            IFS= read -r -d $'\x1f' source_pattern_norm
+        } <<< "$source_stream"
         source_abs_path="$(resolve_repo_path "$source_file_rel")"
 
         if [[ ! -f "$source_abs_path" ]]; then
@@ -1658,8 +1731,8 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
             add_finding 'SAFETY' "$source_file_rel" 0 \
                 "[$rule_name] Source file missing: $source_file_rel"
         else
-            source_content="$(<"$source_abs_path")"
-            if [[ "$source_content" != *"$source_pattern"* ]]; then
+            norm_ws_cached whole "$source_abs_path"
+            if [[ "$NORM_WS_RESULT" != *"$source_pattern_norm"* ]]; then
                 fixture_passed=false
                 add_finding 'SAFETY' "$source_file_rel" 0 \
                     "[$rule_name] Source pattern not found: $source_pattern"
@@ -1671,11 +1744,13 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
     # Unit-separator-delimited so a pattern may carry any byte except the
     # separator itself (an embedded newline still parses).
     if [[ "$has_consumers" == "true" ]]; then
-        consumers_stream="$(jq -j "$JQ_NOSEP_DEF"'.consumers[]
-            | (.file|nosep), "\u001f", (.pattern|nosep), "\u001f", ((.absent // false)|nosep), "\u001f"' \
+        consumers_stream="$(jq -j "$JQ_NOSEP_DEF$JQ_WSNORM_DEF"'.consumers[]
+            | (.file|nosep), "\u001f", (.pattern|nosep), "\u001f",
+              ((.pattern|wsnorm)|nosep), "\u001f", ((.absent // false)|nosep), "\u001f"' \
             <<< "$fixture_raw")"
         while IFS= read -r -d $'\x1f' consumer_file_rel \
            && IFS= read -r -d $'\x1f' consumer_pattern \
+           && IFS= read -r -d $'\x1f' consumer_pattern_norm \
            && IFS= read -r -d $'\x1f' is_absent; do
             consumer_abs_path="$(resolve_repo_path "$consumer_file_rel")"
 
@@ -1688,15 +1763,14 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
 
             if [[ "$is_absent" == "true" ]]; then
                 # INVARIANT: absent checks scope to YAML frontmatter only.
-                frontmatter_content="$(get_frontmatter "$consumer_abs_path")"
-                if [[ "$frontmatter_content" == *"$consumer_pattern"* ]]; then
+                if frontmatter_contains_ws_norm "$consumer_abs_path" "$consumer_pattern_norm"; then
                     fixture_passed=false
                     add_finding 'SAFETY' "$consumer_file_rel" 0 \
                         "[$rule_name] Consumer frontmatter must NOT contain: $consumer_pattern"
                 fi
             else
-                consumer_content="$(<"$consumer_abs_path")"
-                if [[ "$consumer_content" != *"$consumer_pattern"* ]]; then
+                norm_ws_cached whole "$consumer_abs_path"
+                if [[ "$NORM_WS_RESULT" != *"$consumer_pattern_norm"* ]]; then
                     fixture_passed=false
                     add_finding 'SAFETY' "$consumer_file_rel" 0 \
                         "[$rule_name] Consumer pattern not found: $consumer_pattern"
@@ -1720,6 +1794,47 @@ else
     echo "Safety fixtures: $SAFETY_PASSED passed, $SAFETY_FAILED failed out of ${#SAFETY_FIXTURES[@]}"
     CHECKS_PASSED=$((CHECKS_PASSED + SAFETY_PASSED))
     CHECKS_FAILED=$((CHECKS_FAILED + SAFETY_FAILED))
+fi
+
+# ── SAFETY-CANARY: frontmatter-absent normalization self-test ──────────────
+# `absent: true` matching is frontmatter-scoped and whitespace-normalized on
+# both sides. NO standing green fixture can witness that normalization: for
+# absent semantics a raw-substring hit always survives normalization (raw
+# containment implies normalized containment), so removing the normalization
+# can only flip a RED detection to GREEN — never a green fixture to red. This
+# self-test therefore asserts the RED direction directly: the shipped canary
+# target's frontmatter carries a forbidden token WRAPPED across lines, which
+# only whitespace-normalized matching can see as one word sequence. If the
+# frontmatter-side normalization is removed from frontmatter_contains_ws_norm,
+# detection is lost and this check fails the run. The control assertion guards
+# the opposite failure (a predicate that claims containment of anything).
+NORMALIZE_ABSENT_CANARY_REL='tests/policy/fixtures/normalize-absent-canary.md'
+normalize_absent_canary_target="$(resolve_repo_path "$NORMALIZE_ABSENT_CANARY_REL")"
+normalize_absent_canary_pattern='normalize-absent-canary: this forbidden frontmatter token is deliberately wrapped across lines so only whitespace-normalized matching detects it'
+normalize_absent_canary_control='normalize-absent-canary: token that appears nowhere in the target'
+normalize_absent_canary_ok=true
+if [[ ! -f "$normalize_absent_canary_target" ]]; then
+    normalize_absent_canary_ok=false
+    add_finding 'SAFETY-CANARY' "$NORMALIZE_ABSENT_CANARY_REL" 0 \
+        'normalize-absent canary target missing -- the frontmatter-absent normalization self-test cannot run'
+else
+    if ! frontmatter_contains_ws_norm "$normalize_absent_canary_target" "$normalize_absent_canary_pattern"; then
+        normalize_absent_canary_ok=false
+        add_finding 'SAFETY-CANARY' "$NORMALIZE_ABSENT_CANARY_REL" 0 \
+            'frontmatter-absent matching failed to detect the wrapped canary token -- whitespace normalization on the frontmatter side of absent checks has regressed (frontmatter_contains_ws_norm in tools/policy_check.sh)'
+    fi
+    if frontmatter_contains_ws_norm "$normalize_absent_canary_target" "$normalize_absent_canary_control"; then
+        normalize_absent_canary_ok=false
+        add_finding 'SAFETY-CANARY' "$NORMALIZE_ABSENT_CANARY_REL" 0 \
+            'frontmatter-absent matching claimed containment of a token absent from the canary target -- the containment predicate is unsound'
+    fi
+fi
+if [[ "$normalize_absent_canary_ok" == true ]]; then
+    echo '[PASS] SAFETY-CANARY: frontmatter-absent normalization detects the wrapped canary token'
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    echo '[FAIL] SAFETY-CANARY: frontmatter-absent normalization self-test'
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
 mark_time 'SAFETY'

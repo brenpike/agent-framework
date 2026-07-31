@@ -104,6 +104,7 @@ CI runs via `.github/workflows/policy-check.yml` (job: `policy-check`), enforced
 - Editing `marketplace.json` `source` away from `./plugin` — breaks consumer installs.
 - Putting plugin content at repo root instead of under `plugin/` — `${CLAUDE_PLUGIN_ROOT}` will not resolve where authors expect.
 - Adding/renaming a load-bearing governance section with named consumers (or editing a `tests/policy/safety-*.json`) without adding the consumer-assertion fixture → unprotected coupling (P3).
+- Authoring a `tests/policy/safety-*.json` fixture without reading the pin-authoring contract in `tests/policy/README.md` → overclaimed or wrong-clause pins that leave the suite green through a real regression.
 
 ## Companion plugins referenced
 

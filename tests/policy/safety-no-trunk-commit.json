@@ -1,5 +1,6 @@
 {
   "rule": "No trunk commits",
+  "description": "P3 coupling. The overlord consumer pins the overlord's own trunk-safety sentence — `Never commit directly to the resolved trunk branch; never push without first confirming the current branch is not trunk.` — the claim-carrying clause of THIS rule at the consumer site. Its first clause deliberately coincides with this fixture's source pattern in safety-rails.md: that is the same rule correctly witnessed at two sites, not a foreign-pattern paste — do not 'fix' the coincidence by widening one side. Honest guarantee: deleting the trunk-commit prohibition from either file turns the suite red; a rewrite-around or meaning inversion that keeps these bytes intact is outside what a presence pin can see. The molt consumer pins its operative no-trunk preflight step — `Confirm current branch is not `trunk`` — the normative clause that enforces this rule at commit time, not the `trunk` input's parameter description, which merely defines what the input means and can stay intact after the preflight is deleted.",
   "source": {
     "file": "plugin/governance/safety-rails.md",
     "pattern": "Never commit directly to the resolved trunk branch"
@@ -7,11 +8,11 @@
   "consumers": [
     {
       "file": "plugin/agents/overlord.md",
-      "pattern": "Never begin implementation before git preflight is established"
+      "pattern": "Never commit directly to the resolved trunk branch; never push without first confirming the current branch is not trunk."
     },
     {
       "file": "plugin/skills/molt/SKILL.md",
-      "pattern": "the branch that must not be committed to directly"
+      "pattern": "Confirm current branch is not `trunk`"
     }
   ]
 }

@@ -58,7 +58,7 @@
     },
     {
       "file": "plugin/agents/overlord.md",
-      "pattern": "MUST NOT forbid"
+      "pattern": "MUST NOT forbid the reviewer committing"
     },
     {
       "file": "plugin/agents/overlord.md",

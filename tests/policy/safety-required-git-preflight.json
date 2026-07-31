@@ -1,5 +1,6 @@
 {
   "rule": "Required git preflight",
+  "description": "P3 coupling. The create-working-branch consumer pin carries the referent list `base`, `working_branch`, `classification` — the antecedent naming WHAT must not be missing. Pinning only `if any are missing` leaves the guarded input set rewritable with the suite green.",
   "source": {
     "file": "plugin/agents/overlord.md",
     "pattern": "Never begin implementation before git preflight is established"
@@ -15,7 +16,7 @@
     },
     {
       "file": "plugin/skills/create-working-branch/SKILL.md",
-      "pattern": "exit 1 with blocker if any are missing"
+      "pattern": "invent values for `base`, `working_branch`, or `classification` — exit 1 with blocker if any are missing"
     }
   ]
 }

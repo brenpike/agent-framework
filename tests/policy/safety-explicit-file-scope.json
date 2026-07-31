@@ -1,5 +1,6 @@
 {
   "rule": "Explicit file scope",
+  "description": "P3 coupling. The overlord consumer pins the imperative sentence `Delegate `with exact file scope`.` — the verb is what makes the pin discriminating, and the full sentence occurs exactly once in overlord.md, so its deletion is loud. The bare fragment `with exact file scope` appears three times in overlord.md; pinning the fragment alone would let any single occurrence vanish while another occurrence keeps the presence pin green.",
   "source": {
     "file": "plugin/governance/safety-rails.md",
     "pattern": "Do not expand scope beyond assigned files"
@@ -7,7 +8,7 @@
   "consumers": [
     {
       "file": "plugin/agents/overlord.md",
-      "pattern": "with exact file scope"
+      "pattern": "Delegate `with exact file scope`."
     },
     {
       "file": "plugin/agents/drone.md",

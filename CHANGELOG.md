@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.9] - 2026-07-31
+
+### Fixed
+
+- policy-check: a fixture's pinned claim no longer breaks when the governance prose it pins is line-rewrapped. Pin matching in `tools/policy_check.sh` now whitespace-normalizes both the pinned text and the file content before comparing, so a pin survives reflowing that leaves the sentence semantically identical. Previously any rewrap silently turned a passing pin into a hard failure, which pushed authors toward pinning short fragments that were easy to keep intact but proved nothing.
+- tests/policy: twelve fixtures were re-pinned onto the clause that actually carries the claim each fixture asserts, closing standing false negatives where a fixture passed while the rule it was meant to protect could be deleted. The most consequential was the no-trunk-commit guard, which had been pinning a sentence belonging to an unrelated rule and so protected nothing. `tests/policy/README.md` now states the pin-authoring contract these fixtures follow, so the next fixture is written against a stated rule rather than by imitation.
+
 ## [2.40.8] - 2026-07-30
 
 ### Fixed

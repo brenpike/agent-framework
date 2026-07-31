@@ -19,6 +19,8 @@ This produces two enforcement triples in this repo:
 1. **Script triple:** the script, the contract header, and a `test_*.sh` CI fixture. The test is the behavioral guarantee; the header is human-readable intent. (Precedent: `fix-history-classify.jq` paired with `test_fix_history_classify.sh`.)
 2. **Governance triple:** the governance section, its named consumer list, and a `tests/policy/safety-*.json` consumer-assertion fixture. The fixture is the coupling guarantee; the section header is human-readable intent. (Precedent: a `## Worker Self-Check` governance section consumed by `drone.md` and `changeling.md` once shipped WITHOUT a `tests/policy/safety-*.json` consumer-assertion fixture; review caught the missing-fixture gap post-hoc and the fixture was added as a follow-up.)
 
+How to author the fixture itself — what a pin can honestly claim, which clause to pin, and how to prove it bites — is governed by the pin-authoring contract in `tests/policy/README.md`.
+
 ## P4 — Extraction-home policy
 
 Pure deterministic mechanism goes to a shared committed SCRIPT, called directly via Bash. Judgment-bearing procedure that is reusable or ad-hoc-invokable goes to a SKILL. Single-use judgment stays in the agent body as narrative. (Rooted in Anthropic guidance that deterministic work belongs in executed scripts and reusable procedure belongs in skills — see Sources.)

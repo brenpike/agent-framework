@@ -1,0 +1,14 @@
+{
+  "rule": "normalize-ws-canary",
+  "description": "Standing canary: fixture matching in tools/policy_check.sh is whitespace-normalized on BOTH sides (content and pattern) in BOTH text branches (source-file matching and positive-consumer matching), and this fixture's outcome depends on every one of those four normalizations, so silently dropping any of them turns the suite red. Mechanism: the two pinned canary sentences in tests/policy/README.md (rule 5) are wrapped across lines at one point, while the patterns below embed a newline at a DIFFERENT point; the two layouts agree only after both sides collapse whitespace runs to single spaces. Dropping content-side normalization leaves the file's line breaks unmatched by the single-spaced normalized pattern; dropping pattern-side normalization leaves the embedded newline in the pattern unmatched by the file's normalized content. What this pin honestly guarantees: these word sequences exist in tests/policy/README.md and are matched through the whitespace-normalizing path — nothing about meaning. Residual, stated plainly: the frontmatter-scoped `absent` branch is NOT covered here and cannot be covered by any standing green fixture (for absent semantics a raw-substring hit always survives normalization, so dropping normalization only flips red detections to green); that branch is covered by the SAFETY-CANARY self-test in tools/policy_check.sh against tests/policy/fixtures/normalize-absent-canary.md. DO NOT reflow the canary sentences in tests/policy/README.md and DO NOT re-author these patterns onto a single line: either edit disarms the canary while leaving the suite green, which is worse than deleting the fixture outright.",
+  "source": {
+    "file": "tests/policy/README.md",
+    "pattern": "normalize-ws source canary: this sentence is\ndeliberately wrapped across lines so that only\nwhitespace-normalized matching can pin it as one word sequence."
+  },
+  "consumers": [
+    {
+      "file": "tests/policy/README.md",
+      "pattern": "normalize-ws consumer canary: this sentence is\ndeliberately wrapped across lines so that only\nwhitespace-normalized matching can pin it as one word sequence."
+    }
+  ]
+}
