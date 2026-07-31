@@ -204,6 +204,22 @@ normalize_ws() {
     printf '%s' "$1" | tr -s '[:space:]' ' '
 }
 
+# frontmatter_contains_ws_norm FILE PATTERN_NORM
+# Exit 0 when FILE's YAML frontmatter, whitespace-normalized, contains the
+# already-normalized PATTERN_NORM. This is the SINGLE containment predicate for
+# frontmatter-scoped `absent` fixture checks AND for the SAFETY-CANARY
+# self-test, so removing the normalization here turns that self-test red
+# instead of silently weakening `absent` matching. (A standing green fixture
+# cannot witness this normalization: for absent semantics a raw-substring hit
+# always survives normalization, so its removal can only flip a red detection
+# to green — hence the self-test asserts the red direction.)
+frontmatter_contains_ws_norm() {
+    local file="$1" pattern_norm="$2"
+    local frontmatter_norm
+    frontmatter_norm="$(normalize_ws "$(get_frontmatter "$file")")"
+    [[ "$frontmatter_norm" == *"$pattern_norm"* ]]
+}
+
 # file_candidates MODE PATTERN FILE
 # Per-FILE candidate prefilter (#305): ONE grep spawn per file emits
 # "lineno:body" lines for the hot per-line loops, replacing a spawn per line.
@@ -1699,8 +1715,7 @@ for fixture_file in "${SAFETY_FIXTURES[@]}"; do
             consumer_pattern_norm="$(normalize_ws "$consumer_pattern")"
             if [[ "$is_absent" == "true" ]]; then
                 # INVARIANT: absent checks scope to YAML frontmatter only.
-                frontmatter_norm="$(normalize_ws "$(get_frontmatter "$consumer_abs_path")")"
-                if [[ "$frontmatter_norm" == *"$consumer_pattern_norm"* ]]; then
+                if frontmatter_contains_ws_norm "$consumer_abs_path" "$consumer_pattern_norm"; then
                     fixture_passed=false
                     add_finding 'SAFETY' "$consumer_file_rel" 0 \
                         "[$rule_name] Consumer frontmatter must NOT contain: $consumer_pattern"
@@ -1731,6 +1746,47 @@ else
     echo "Safety fixtures: $SAFETY_PASSED passed, $SAFETY_FAILED failed out of ${#SAFETY_FIXTURES[@]}"
     CHECKS_PASSED=$((CHECKS_PASSED + SAFETY_PASSED))
     CHECKS_FAILED=$((CHECKS_FAILED + SAFETY_FAILED))
+fi
+
+# ── SAFETY-CANARY: frontmatter-absent normalization self-test ──────────────
+# `absent: true` matching is frontmatter-scoped and whitespace-normalized on
+# both sides. NO standing green fixture can witness that normalization: for
+# absent semantics a raw-substring hit always survives normalization (raw
+# containment implies normalized containment), so removing the normalization
+# can only flip a RED detection to GREEN — never a green fixture to red. This
+# self-test therefore asserts the RED direction directly: the shipped canary
+# target's frontmatter carries a forbidden token WRAPPED across lines, which
+# only whitespace-normalized matching can see as one word sequence. If the
+# frontmatter-side normalization is removed from frontmatter_contains_ws_norm,
+# detection is lost and this check fails the run. The control assertion guards
+# the opposite failure (a predicate that claims containment of anything).
+NORMALIZE_ABSENT_CANARY_REL='tests/policy/fixtures/normalize-absent-canary.md'
+normalize_absent_canary_target="$(resolve_repo_path "$NORMALIZE_ABSENT_CANARY_REL")"
+normalize_absent_canary_pattern='normalize-absent-canary: this forbidden frontmatter token is deliberately wrapped across lines so only whitespace-normalized matching detects it'
+normalize_absent_canary_control='normalize-absent-canary: token that appears nowhere in the target'
+normalize_absent_canary_ok=true
+if [[ ! -f "$normalize_absent_canary_target" ]]; then
+    normalize_absent_canary_ok=false
+    add_finding 'SAFETY-CANARY' "$NORMALIZE_ABSENT_CANARY_REL" 0 \
+        'normalize-absent canary target missing -- the frontmatter-absent normalization self-test cannot run'
+else
+    if ! frontmatter_contains_ws_norm "$normalize_absent_canary_target" "$normalize_absent_canary_pattern"; then
+        normalize_absent_canary_ok=false
+        add_finding 'SAFETY-CANARY' "$NORMALIZE_ABSENT_CANARY_REL" 0 \
+            'frontmatter-absent matching failed to detect the wrapped canary token -- whitespace normalization on the frontmatter side of absent checks has regressed (frontmatter_contains_ws_norm in tools/policy_check.sh)'
+    fi
+    if frontmatter_contains_ws_norm "$normalize_absent_canary_target" "$normalize_absent_canary_control"; then
+        normalize_absent_canary_ok=false
+        add_finding 'SAFETY-CANARY' "$NORMALIZE_ABSENT_CANARY_REL" 0 \
+            'frontmatter-absent matching claimed containment of a token absent from the canary target -- the containment predicate is unsound'
+    fi
+fi
+if [[ "$normalize_absent_canary_ok" == true ]]; then
+    echo '[PASS] SAFETY-CANARY: frontmatter-absent normalization detects the wrapped canary token'
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    echo '[FAIL] SAFETY-CANARY: frontmatter-absent normalization self-test'
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
 mark_time 'SAFETY'

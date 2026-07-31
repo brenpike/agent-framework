@@ -113,6 +113,39 @@ pattern. Reflowing the sentence back onto one line — even as a pure tidy-up wi
 wording change — removes the only standing proof of this rule and lets that
 regression ship silently. Leave the wrapping as-is.
 
+**Standing canaries for the `source` and positive-`consumers` branches.** The
+canary above depends only on the positive-consumer branch's normalization, and
+only on its content side. The fixture `tests/policy/safety-normalize-ws-canary.json`
+pins the two sentences below — the first through its `source` block, the second
+through a positive `consumers` entry — so that EVERY remaining normalization
+site whose outcome no real fixture exercises has a canary that turns red when it
+regresses. Each sentence is wrapped in THIS file at one point while the
+fixture's matching pattern embeds a newline at a DIFFERENT point, so the pin can
+only match when BOTH sides are whitespace-normalized: dropping content-side
+normalization leaves this file's line breaks unmatched by a single-spaced
+normalized pattern, and dropping pattern-side normalization leaves the pattern's
+embedded newline unmatched by this file's normalized content. Do not reflow the
+two sentences below, and do not re-author that fixture's patterns onto a single
+line — either edit silently disarms the canary while leaving the suite green.
+
+normalize-ws source canary: this sentence is deliberately wrapped
+across lines so that only whitespace-normalized matching can pin it
+as one word sequence.
+
+normalize-ws consumer canary: this sentence is deliberately wrapped
+across lines so that only whitespace-normalized matching can pin it
+as one word sequence.
+
+The frontmatter-scoped `absent` branch CANNOT be covered by a standing green
+fixture: for absent semantics, a raw-substring hit always survives
+normalization (raw containment implies normalized containment), so removing the
+frontmatter-side normalization can only flip a RED detection to GREEN — it can
+never turn a green fixture red. That branch is covered instead by the
+`SAFETY-CANARY` self-test inside `tools/policy_check.sh`, which asserts the RED
+direction against the deliberately violating target
+`tests/policy/fixtures/normalize-absent-canary.md` (a wrapped forbidden token
+in its frontmatter that only normalized matching can see).
+
 ## 6. `set_check` applicability
 
 **Invariant: enumerable membership where an ADDED member is the threat needs
