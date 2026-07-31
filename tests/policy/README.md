@@ -36,14 +36,28 @@ not someone reconstructing history.
 **Invariant: the pin must sit on the words that carry the rule's claim, so that
 rewriting the claim away turns the suite red.**
 
-In a conditional rule, the claim-carrying clause is the ANTECEDENT (the condition),
-NOT the quotable obligation that follows from it. Real incident: a rule of the shape
-"UNLESS the Write call SUCCEEDS ... the navigator MUST stop blocked ..." was pinned
-on the consequent only; the entire outcome-keying the remediation existed to
-introduce appeared in ZERO patterns repo-wide, and rewriting the source back to the
-cause-keyed form left the suite green. Before finalizing a pattern, ask: if someone
-deleted or inverted the part of the sentence that makes this rule THIS rule, would
-this pattern stop matching? If not, you pinned the wrong clause.
+The claim-carrying clause is whichever clause — or clauses — ALTERATION OF would change
+what the rule requires. In a conditional rule that is normally BOTH the discriminating
+condition and the obligation it triggers: either one pin spanning both clauses, or two
+pins, one per clause.
+
+Real incident, as the failure mode: a rule of the shape "UNLESS the Write call
+SUCCEEDS ... the navigator MUST stop blocked ..." was pinned on the consequent only;
+the entire outcome-keying the remediation existed to introduce appeared in ZERO
+patterns repo-wide, and rewriting the source back to the cause-keyed form left the
+suite green. The remedy is NOT to swap to the antecedent alone. A pin carrying only
+the condition leaves the obligation rewritable — for "if authentication fails, deny
+access," rewriting `deny access` to `allow access` keeps a condition-only pin green.
+That is the same defect mirrored, and it is no better.
+
+Before finalizing a pattern, ask of EACH clause independently: if someone deleted or
+inverted the part of the sentence that makes this rule THIS rule, would this pattern
+stop matching? Ask it once of the condition and once of the obligation. Any clause
+that answers "no" is unpinned, and you pinned the wrong clause — or too few of them.
+
+When some part of a rule genuinely cannot be carried (a negation supplied by a `## Do
+Not` heading rather than by the sentence, say), that is a residual, not a pass: name it
+plainly in the fixture `description` per rule 1.
 
 ## 3. Consumers pin the reference; the canonical file pins the claim
 
