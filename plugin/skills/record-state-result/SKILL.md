@@ -227,12 +227,16 @@ on-disk ledger is byte-unchanged.
 
 ## Silence Discipline
 
-This is a pipeline skill:
+This is a pipeline skill. The rules below govern this skill's own procedure, not the calling
+agent's turn — the skill returns control to whatever invoked it, whether that caller runs it
+as a workflow state or as one step inside a longer procedure:
 
-- Produce zero chat text during execution. Outputs are tool calls only.
+- This skill's procedure produces zero chat text of its own — its steps are tool calls only.
 - The Write tool (step 2) is a permitted NON-FINAL tool call — it emits no chat text and
   authors ONLY the inputs file (`.hivemind/runs/.record-inputs-<token>.json`). The final
   action is the Bash script call (step 3), which performs every atomic ledger write.
+- The procedure ends at the step 3 Bash script call, which hands the routing data back
+  to the caller; the caller then continues from the point at which it invoked this skill.
 - Exit 0 = caller advances to `current_state`; routing data is on stdout.
   Exit 1 = blocked; the reason is on stderr and the ledger is unchanged.
 

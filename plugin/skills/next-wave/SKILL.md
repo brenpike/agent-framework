@@ -82,10 +82,14 @@ done set covers every step.
 
 ## Silence Discipline
 
-This is a pipeline skill:
+This is a pipeline skill. The rules below govern this skill's own procedure, not the calling
+agent's turn — the skill returns control to whatever invoked it, whether that caller runs it
+as a workflow state or as one step inside a longer procedure:
 
-- Produce zero chat text during execution. Outputs are tool calls only.
+- This skill's procedure produces zero chat text of its own — its steps are tool calls only.
 - The only action is the Bash script call (step 1); the engine performs no writes.
+- The procedure ends at the step 1 Bash script call, which hands the routing data back
+  to the caller; the caller then continues from the point at which it invoked this skill.
 - Exit 0 = caller dispatches the returned `wave`; routing data is on stdout.
   Exit 1 = blocked; the reason is on stderr and nothing was mutated.
 
