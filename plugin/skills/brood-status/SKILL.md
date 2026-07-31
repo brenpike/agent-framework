@@ -95,6 +95,14 @@ The entire deterministic collection loop — multi-brood discovery, per-strain e
    ```
    where `T = global.total_broods`, `U = global.unreadable`, `N = global.complete`, `M = global.total_strains`.
 
+## Handback
+
+Rendering the dashboard and summaries (steps 2–4) completes this skill's own procedure. This
+skill returns control to whatever invoked it, and the caller then continues from the point at which it invoked this skill — for example, a caller running a persistent monitor loop
+resumes monitoring rather than treating the render as its own terminal act. When this skill
+was invoked directly by the user and the render was the whole request, the caller's next act
+is simply awaiting the user — the render is the answer, not a cue to invent further work.
+
 ## Do Not
 
 - Write to any brood manifest — this skill is read-only

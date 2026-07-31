@@ -119,6 +119,16 @@ reason: "No supported workflow fits and the request is not safely actionable."
 next: "Ask the user to clarify the desired outcome."
 ```
 
+## Silence Discipline
+
+This is a reasoning-driven skill with no committed script. The rule below governs this
+skill's own procedure, not the calling agent's turn — the skill returns control to whatever invoked it, whether that
+caller runs it as a workflow state or as one step inside a longer procedure:
+
+- The procedure ends by emitting exactly one of the routing YAML shapes above. That
+  emission hands the routing decision back to the caller as this skill's return value — it
+  is NOT the caller's terminal output and does NOT end the caller's turn; the caller then continues from the point at which it invoked this skill.
+
 ## Constraints
 
 The router MUST NOT emit any downstream responsibility:

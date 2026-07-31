@@ -62,7 +62,7 @@ Derive `<slug>` from the input — the plan file's basename, or the slug already
 5. Synthesize the handoff body from the plan plus any optional handoff-context. **Point to the plan; do not duplicate it.** Each section is a pointer or a distilled list, never a copy of the plan's prose.
 6. Write `.hivemind/handoffs/<slug>.md` using the exact section set below.
 7. Verify `.hivemind/plans/<slug>.md` exists before reporting success. If it is still missing, surface the failure — do not report a handoff that points at a nonexistent plan.
-8. Report the written path to the user and stop. Do not ask follow-up questions.
+8. Report the written path to the user. This completes this skill's own procedure — do not ask follow-up questions. The skill then returns control to whatever invoked it; the caller then continues from the point at which it invoked this skill.
 
 ---
 

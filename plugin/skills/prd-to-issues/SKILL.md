@@ -270,3 +270,10 @@ Publish only after the user approves the slicing quiz, `gh` auth is confirmed, a
 4. **Attach each created or orphan issue as a sub-issue** of the parent epic. For each **CREATE**-class slice: immediately after creation, retrieve the child's NODE ID (`gh issue view <number> -R <owner/repo> --json id --jq '.id'`), then call `attach-subissue`. For each **ATTACH-OR-REUSE**-class slice (orphan recovered from the partial-failure window): call `attach-subissue` using the orphan's NODE ID recorded by the preflight. **REUSE (already attached)**-class slices need no attach call — the preflight already confirmed their parent link.
 
 5. **Verify** each created issue with `gh issue view <number> -R <owner/repo>` if confirmation is needed, and report the published issue numbers and titles back to the caller.
+
+---
+
+## Handback
+
+Publishing the issues and reporting their numbers and titles back to the caller completes this skill's procedure. This skill
+returns control to whatever invoked it; the caller then continues from the point at which it invoked this skill.

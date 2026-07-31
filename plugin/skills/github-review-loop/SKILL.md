@@ -63,7 +63,9 @@ cycle 0 re-opens it.
 over pre-existing PR feedback before arming the Monitor. NEVER prefiltered. Handle
 return per Reviewer-return handling. Pass the return through `loop-state.sh
 cycle-decision`; arm the Monitor ONLY when `EXIT_REASON=none`. Any other
-`EXIT_REASON` is terminal — emit the terminal report and stop; do NOT arm.
+`EXIT_REASON` is terminal — emit the terminal report and end the loop here; do NOT arm the Monitor.
+"End the loop" is scoped to this skill's own procedure only — see Terminal
+report for how this skill hands control back to its caller.
 
 **4. Arm Monitor.** Arm a Monitor in the main session on:
 
@@ -147,6 +149,11 @@ and session restarts with no `.hivemind` state. Both mechanisms keep the marker 
 GitHub, strengthening the GitHub-is-the-ledger claim.
 
 ## Terminal report
+
+This skill's terminal report is its RETURN VALUE, handed back to whatever
+invoked it — it is not the caller's own terminal output, and emitting it does
+not end the caller's turn. Once emitted, this skill's procedure ends: it
+returns control to whatever invoked it, and the caller then continues from the point at which it invoked this skill, mapping `exit_reason` to the workflow transition and recording the state result.
 
 Emit exactly ONE terminal report (validated by `tools/validate_reports.sh`
 watch-pr-feedback). Fields: `Status: complete`; `PR` (Number / State / Branch /
