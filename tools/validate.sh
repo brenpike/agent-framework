@@ -302,9 +302,11 @@ run_suites() {
 #   .claude/settings.json              -> json-manifests parse + policy_check (fixture asserts
 #                                         its rule set as raw text; only the parse leg proves
 #                                         Claude Code can still LOAD the file)
+#   docs/adr/**, web/**, CLAUDE.md     -> policy_check (fixtures pin their content as raw text)
 #   tools/**                           -> FULL suite (validator bootstrap)
 #   .github/**                         -> FULL suite (CI bootstrap — the gate harness itself)
-#   outside plugin|.claude-plugin|tools|tests|.github (docs: README.md, docs/**) -> no code suites
+#   outside plugin|.claude-plugin|tools|tests|.github and not fixture-pinned above
+#     (docs/** other than docs/adr/**)  -> no code suites
 #   anything matching no rule          -> FULL suite
 
 SELECTED=()      # lines of "suite<TAB>reason"
@@ -657,6 +659,40 @@ map_path() {
   if [[ "$p" == ".claude/settings.json" ]]; then
     add_selected "$SUITE_POLICY_CHECK" "$p (navigator-transport rule fixture in policy_check)"
     add_selected "$SUITE_JSON_MANIFESTS" "$p (JSON parse gate — Claude Code must be able to load it)"
+    matched=1
+  fi
+
+  # policy_check: docs/adr/*. ADRs live outside every code tree (docs-only by location), but
+  # policy_check fixtures PIN ADR content as raw text (e.g. the permission-allowlist posture
+  # recorded in docs/adr/0010-permission-allowlist-posture.md). An ADR-only PR would otherwise
+  # select no suite and merge with PR CI green, leaving a broken pin to fire only on the
+  # push-to-main full run. Scoped to the DIRECTORY, not per-file, so a fixture pinning a
+  # different ADR is covered by construction rather than by remembering to add a rule. Deliberately
+  # NOT docs/* — only docs/adr/ is fixture-pinned, and widening would burn the suite on unpinned prose.
+  if [[ "$p" == docs/adr/* ]]; then
+    add_selected "$SUITE_POLICY_CHECK" "$p (ADR content pinned by policy_check fixture)"
+    matched=1
+  fi
+
+  # policy_check: web/*. The published web surface lives outside every code tree (docs-only by
+  # location), but policy_check fixtures PIN its content as raw text (e.g. the capability copy in
+  # web/functionality.html). A web-only PR would otherwise select no suite and merge with PR CI
+  # green, leaving a broken pin to fire only on the push-to-main full run. Scoped to the
+  # DIRECTORY, not per-file, so a fixture pinning a different web page is covered by construction.
+  if [[ "$p" == web/* ]]; then
+    add_selected "$SUITE_POLICY_CHECK" "$p (web content pinned by policy_check fixture)"
+    matched=1
+  fi
+
+  # policy_check: CLAUDE.md. Although it lives outside every code tree (docs-only by location),
+  # policy_check fixtures PIN its content as raw text (the repo-guidance contract consumed by
+  # agents working in this repo). A CLAUDE.md-only PR would otherwise select no suite and merge
+  # with PR CI green, leaving a broken pin to fire only on the push-to-main full run. Literal
+  # filename, matching the README.md leg above: only this file is fixture-pinned. CONTEXT.md is
+  # deliberately NOT routed — no fixture pins it, and routing an unpinned path would assert
+  # coverage that does not exist.
+  if [[ "$p" == "CLAUDE.md" ]]; then
+    add_selected "$SUITE_POLICY_CHECK" "$p (CLAUDE.md content pinned by policy_check fixture)"
     matched=1
   fi
 

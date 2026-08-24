@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.10] - 2026-08-24
+
+### Fixed
+
+- seed-hive: the permission template no longer seeds a permanently dead local-review grant into a consumer project's committed `.claude/settings.json`. The seeded rule, `Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)`, carried a documentation placeholder (`/path/to/`) frozen into runtime data by a single-quoted heredoc, so it was never expanded to a real home directory and matched no invocation on any machine. Because the template merge is union append-if-absent, every re-run of seed-hive re-added the dead rule, and a consumer could not clear it by re-seeding. The template now seeds no local-review provider grant at all, and a standing invariant records why: the template merges into a COMMITTED, team-shared settings file, where a machine-specific `$HOME` cache path is correct for none of the seeder's teammates. Per-contributor local-review grants belong in the gitignored `.claude/settings.local.json`, not in the seeded template. An already-seeded project keeps its stale `Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)` line until it is removed by hand — automatic removal was deliberately not implemented, since it would break the merge's never-remove invariant and could delete a rule a user had already repaired to their real home path. Re-seeding after this release will not re-add it.
+
 ## [2.40.9] - 2026-07-31
 
 ### Fixed

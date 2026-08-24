@@ -54,13 +54,15 @@ The seeded entries cover read/output helper Bash commands (`echo`, `printf`, `ca
 
 **After upgrading the plugin, re-run `/hivemind:seed-hive`.** A newer version may recommend `permissions.allow` entries your project does not have yet, and those entries are merged only when `seed-hive` runs — never automatically on upgrade. Skipping the re-run does not take away any capability — tool grants ship inside the plugin itself and load at session start — but it does leave those newer allow rules unmerged, so you will see interactive approval prompts on operations the template would otherwise have pre-approved. Re-running is always safe: the merge is idempotent and your existing entries are preserved.
 
-For prompt-free local Codex review (`hivemind:adaptation-cycle`), add your Codex cache path to the project's `.claude/settings.json` (or the gitignored `.claude/settings.local.json`):
+For prompt-free local Codex review (`hivemind:adaptation-cycle`), add your Codex cache path to the gitignored `.claude/settings.local.json` — never the tracked `.claude/settings.json`, because this entry hard-codes one machine's absolute `$HOME` path and the tracked file is shared across a team and across machines:
 
 ```json
 "Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)"
 ```
 
-Replace `/path/to/` with your actual home directory path. The `codex/*` wildcard covers all Codex CLI entry points so the entry does not need updating when Codex is upgraded.
+Replace `/path/to/` with your actual home directory path. The `codex/*` wildcard covers all Codex CLI entry points so the entry does not need updating when Codex is upgraded. `seed-hive`'s allowlist template deliberately seeds no provider grant at all — a machine-specific path cannot be templated into a committed file without becoming a permanently dead rule.
+
+**Upgrading an already-seeded project.** A project seeded by an earlier plugin version may still carry a literal `Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)` line in its committed `.claude/settings.json`. The `/path/to/` placeholder was never expanded there, so the rule matches nothing — delete it by hand. Re-running `/hivemind:seed-hive` will not re-add it; the merge is union append-if-absent and never removes, so the fix stops new and repeat seeds but does not clean up an existing file.
 
 2. Create `CLAUDE.md` with project-specific details:
    - Build/test commands
