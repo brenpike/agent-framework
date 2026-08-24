@@ -303,10 +303,12 @@ run_suites() {
 #                                         its rule set as raw text; only the parse leg proves
 #                                         Claude Code can still LOAD the file)
 #   docs/adr/**, web/**, CLAUDE.md     -> policy_check (fixtures pin their content as raw text)
+#   **/*.md, **/*.html                 -> policy_check (repo-wide CHECK 15 scan is filtered by
+#                                         FILE TYPE, so routing matches it by type)
 #   tools/**                           -> FULL suite (validator bootstrap)
 #   .github/**                         -> FULL suite (CI bootstrap — the gate harness itself)
-#   outside plugin|.claude-plugin|tools|tests|.github and not fixture-pinned above
-#     (docs/** other than docs/adr/**)  -> no code suites
+#   outside plugin|.claude-plugin|tools|tests|.github, not *.md/*.html, and not fixture-pinned
+#     above (e.g. docs/**/*.txt)        -> no code suites
 #   anything matching no rule          -> FULL suite
 
 SELECTED=()      # lines of "suite<TAB>reason"
@@ -696,6 +698,26 @@ map_path() {
     matched=1
   fi
 
+  # policy_check: EVERY *.md / *.html file, repo-wide. This leg routes by FILE TYPE rather than by
+  # path because the policy suite hosts a REPO-WIDE scan over exactly this file-type surface:
+  # policy_check's CHECK 15 (permission-engine claim containment) walks every *.md and *.html in the
+  # repo (plus plugin/**/*.sh, already covered by the plugin/* leg above). Routing by TYPE keeps the
+  # validator's coverage and the check's reach in agreement BY CONSTRUCTION, instead of by two path
+  # lists that must be kept in sync. Without it, a CHECK 15 violation authored in AGENTS.md,
+  # CONTEXT.md, docs/engineering-principles.md, docs/prds/*.md or .devcontainer/README.md selects no
+  # suite pre-PR (the FAIL-CLOSED escalation only covers unmapped paths INSIDE the code trees) and
+  # fires only on the push-to-main full run. The inverse fix — narrowing CHECK 15's find(1) scan set
+  # to match this dispatcher's path list — is the neutering vector
+  # tests/policy/safety-permission-engine-claim-containment.json names as its residual (a); fix the
+  # ROUTING, not the guard's reach. The literal README.md / CLAUDE.md / docs/adr/ / web/ legs above
+  # are RETAINED deliberately: SELECTED is de-duped so policy_check still runs exactly once, and each
+  # of those legs carries an independent fixture-pin rationale that must survive if this type-based
+  # leg is ever changed.
+  if [[ "$p" == *.md || "$p" == *.html ]]; then
+    add_selected "$SUITE_POLICY_CHECK" "$p (repo-wide *.md/*.html scan surface in policy_check)"
+    matched=1
+  fi
+
   if [[ "$matched" -eq 1 ]]; then
     return 0
   fi
@@ -957,13 +979,16 @@ self_test() {
 
   # 6. A docs-only sentinel must select NO code suite and NOT escalate. README.md is NOT a
   #    valid docs-only probe — it is routed through policy_check (its compatibility fixtures
-  #    read README.md), so use a docs/ path that no rule maps.
+  #    read README.md), so use a docs/ path that no rule maps. A *.md probe is ALSO no longer
+  #    valid: policy_check hosts a repo-wide CHECK 15 scan over every *.md/*.html file, so
+  #    map_path routes those by TYPE and docs/some-doc.md now legitimately selects policy_check.
+  #    Probe a non-.md/.html docs path so the docs-only leg itself stays testable.
   SELECTED=(); FORCE_FULL=0; FORCE_FULL_REASON=''
-  map_path "docs/some-doc.md" >/dev/null
+  map_path "docs/some-doc.txt" >/dev/null
   if [[ ${#SELECTED[@]} -eq 0 && "$FORCE_FULL" -eq 0 ]]; then
-    echo "PASS: docs/some-doc.md -> no code suites"
+    echo "PASS: docs/some-doc.txt -> no code suites"
   else
-    echo "FAIL: docs/some-doc.md selected suites (${#SELECTED[@]}) or escalated (full=$FORCE_FULL)"
+    echo "FAIL: docs/some-doc.txt selected suites (${#SELECTED[@]}) or escalated (full=$FORCE_FULL)"
     fails=$((fails + 1))
   fi
 
