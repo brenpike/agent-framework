@@ -201,8 +201,8 @@ unset __settings_merge_shared_dir
 # never-remove invariant above, and it could delete a rule a user had already repaired to point at
 # their real `$HOME` cache path.
 #
-# INVARIANT (NO-PROVIDER-GRANT): no local-review provider grant — codex, copilot, or any future
-# provider — may be added to this template. Three reasons:
+# INVARIANT (NO-PROVIDER-GRANT): no local-review provider grant — codex today, or copilot or
+# any future provider — may be added to this template. Three reasons:
 #   1. This template merges into a COMMITTED, team-shared `.claude/settings.json`, so a
 #      machine-specific `$HOME` cache path is wrong-by-construction for everyone but the seeder.
 #   2. The provider invocation is already PRE-APPROVED provider-agnostically and

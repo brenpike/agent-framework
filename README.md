@@ -60,7 +60,7 @@ For prompt-free local Codex review (`hivemind:adaptation-cycle`), add your Codex
 "Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)"
 ```
 
-Replace `/path/to/` with your actual home directory path. The `codex/*` wildcard covers all Codex CLI entry points so the entry does not need updating when Codex is upgraded. The copilot provider's grant (`Bash(copilot *)`) carries no home path, so it may live in either file. `seed-hive`'s allowlist template deliberately seeds no provider grant at all — a machine-specific path cannot be templated into a committed file without becoming a permanently dead rule.
+Replace `/path/to/` with your actual home directory path. The `codex/*` wildcard covers all Codex CLI entry points so the entry does not need updating when Codex is upgraded. `seed-hive`'s allowlist template deliberately seeds no provider grant at all — a machine-specific path cannot be templated into a committed file without becoming a permanently dead rule.
 
 **Upgrading an already-seeded project.** A project seeded by an earlier plugin version may still carry a literal `Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)` line in its committed `.claude/settings.json`. The `/path/to/` placeholder was never expanded there, so the rule matches nothing — delete it by hand. Re-running `/hivemind:seed-hive` will not re-add it; the merge is union append-if-absent and never removes, so the fix stops new and repeat seeds but does not clean up an existing file.
 
