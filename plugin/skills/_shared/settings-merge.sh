@@ -189,6 +189,30 @@ unset __settings_merge_shared_dir
 # a fix; the consumer-facing half is telling upgraders to re-seed (the upgrade-path bullet under
 # `## When to Use` in seed-hive/SKILL.md). The merge is idempotent append-if-absent, so the
 # re-seed is always safe and preserves existing entries. See issue #323.
+#
+# ONE-TIME DROP: the former `Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)` entry
+# was deleted from this template. `/path/to/` is a DOCUMENTATION PLACEHOLDER that had been frozen
+# into runtime data, and this heredoc is single-quoted, so nothing ever expanded it — the rule
+# shipped verbatim and matched NO real path on ANY machine. It was therefore unmatchable as
+# shipped, so nothing could ever have depended on it. The drop also mutates NO existing consumer
+# file: the merge is union append-if-absent and NEVER removes, so dropping the entry only stops
+# new seeds and re-seeds from adding it. An ALREADY-SEEDED consumer keeps the dead entry until a
+# human deletes it by hand. Automatic removal is DELIBERATELY NOT IMPLEMENTED — it would break the
+# never-remove invariant above, and it could delete a rule a user had already repaired to point at
+# their real `$HOME` cache path.
+#
+# INVARIANT (NO-PROVIDER-GRANT): no local-review provider grant — codex, copilot, or any future
+# provider — may be added to this template. Three reasons:
+#   1. This template merges into a COMMITTED, team-shared `.claude/settings.json`, so a
+#      machine-specific `$HOME` cache path is wrong-by-construction for everyone but the seeder.
+#   2. The provider invocation is already PRE-APPROVED provider-agnostically and
+#      `$HOME`-independently by the `hivemind:adaptation-cycle` skill's frontmatter
+#      `allowed-tools` (today `Bash(node *)`, which covers the codex invocation; a future
+#      provider's binary grant, e.g. `Bash(copilot *)`, belongs in that same frontmatter list —
+#      never here). Per ADR-0010's 2026-07-27 amendment, `allowed-tools` PRE-APPROVES a permission
+#      but never PROVISIONS a tool.
+#   3. Per-contributor grants belong in the GITIGNORED `.claude/settings.local.json`, which is
+#      exactly what `.devcontainer/postCreate.sh` already does.
 hivemind_settings_permissions_template() {
   cat <<'TEMPLATE'
 Bash(echo *)
@@ -210,7 +234,6 @@ Bash(git tag -l*)
 Bash(git tag --list*)
 Bash(git stash list)
 Bash(git stash show *)
-Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)
 Edit(.hivemind/review-loop/*)
 Edit(.hivemind/runs/.init-inputs-*.json)
 Edit(.hivemind/runs/.record-inputs-*.json)
