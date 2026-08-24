@@ -1607,6 +1607,15 @@ check15_path_allowed() {
 # Echoes the line number of every line carrying CHECK15_TOKEN. Markdown loses
 # its YAML frontmatter and fenced code blocks first; every other type is raw.
 # Both paths strip a trailing CR so CRLF storage cannot defeat the match.
+# FENCE LEXING: CommonMark permits a fence opener or closer to be indented by up
+# to THREE spaces (four makes it an indented code block, not a fence) and to use
+# either backticks or tildes, three or more of them. Recognizing only a
+# column-zero ``` opener made every INDENTED fenced example read as prose, which
+# both false-positives on a documented example and, worse, desynchronizes the
+# in/out-of-fence state for the rest of the file. The delimiter is RETAINED so a
+# closer must repeat the opener's character at no less than the opener's length
+# and carry no info string, which is what lets a longer outer fence legally
+# contain a shorter inner one.
 # INVARIANT: this stdout IS the caller's line-number stream, so the report of an
 # unterminated construct is emitted as the NON-NUMERIC CHECK15_EOF_SENTINEL line
 # and the caller must branch on it before any numeric handling.
@@ -1614,14 +1623,46 @@ check15_token_line_numbers() {
     local scan_file="$1"
     if [[ "$scan_file" == *.md ]]; then
         awk -v token="$CHECK15_TOKEN" -v eof_sentinel="$CHECK15_EOF_SENTINEL" '
-            BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
+            # Echoes the fence delimiter run opening/closing at LINE, or "" when
+            # LINE is not a fence line at all. Up to three leading spaces are
+            # stripped; a fourth leaves a space in front of the delimiter and
+            # correctly yields "" (indented code block, not a fence).
+            function fence_run(line,   rest, ch, n) {
+                rest = line
+                sub(/^ ? ? ?/, "", rest)
+                ch = substr(rest, 1, 1)
+                if (ch != "`" && ch != "~") return ""
+                n = 0
+                while (substr(rest, n + 1, 1) == ch) n++
+                if (n < 3) return ""
+                return substr(rest, 1, n)
+            }
+            # A CLOSING fence carries no info string: only whitespace may follow
+            # its delimiter run.
+            function fence_tail_blank(line, run,   rest) {
+                rest = line
+                sub(/^ ? ? ?/, "", rest)
+                return substr(rest, length(run) + 1) ~ /^[ \t]*$/
+            }
+            BEGIN { in_fm = 0; fm_done = 0; in_fence = 0; fence_char = ""; fence_len = 0 }
             { sub(/\r$/, "") }
             # YAML frontmatter: first line "---" opens, next "---" closes.
             !fm_done && NR == 1 && $0 == "---" { in_fm = 1; next }
             in_fm { if ($0 == "---") { in_fm = 0; fm_done = 1 } next }
-            # Fenced code blocks toggle on lines starting with ```.
-            /^```/ { in_fence = !in_fence; next }
-            in_fence { next }
+            # Fenced code blocks, delimiter-aware and indent-tolerant.
+            {
+                run = fence_run($0)
+                if (in_fence) {
+                    if (run != "" && substr(run, 1, 1) == fence_char && length(run) >= fence_len && fence_tail_blank($0, run)) {
+                        in_fence = 0; fence_char = ""; fence_len = 0
+                    }
+                    next
+                }
+                if (run != "") {
+                    in_fence = 1; fence_char = substr(run, 1, 1); fence_len = length(run)
+                    next
+                }
+            }
             index($0, token) > 0 { print NR }
             END {
                 if (in_fm)         { print eof_sentinel ":frontmatter" }
@@ -2000,6 +2041,50 @@ if [[ "$normalize_absent_canary_ok" == true ]]; then
     CHECKS_PASSED=$((CHECKS_PASSED + 1))
 else
     echo '[FAIL] SAFETY-CANARY: frontmatter-absent normalization self-test'
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
+# -- SAFETY-CANARY: CHECK 15 indented-fence lexing self-test ----------------
+# CHECK 15's fenced-code exemption is a LEXER, and no safety-*.json pin can
+# witness a lexer: a pin asserts word-sequence presence in a file, never which
+# lines a scan chose to report. This self-test asserts the scan OUTPUT directly
+# against a target built to exercise every fence shape the exemption claims to
+# honour -- one/two/three-space-indented openers and closers, tilde fences, a
+# longer outer fence legally containing a shorter inner one, and a four-space
+# indented code block that is deliberately NOT a fence. The target's expected
+# line is derived from its own structural end-of-line marker rather than
+# hard-coded, so the target can be extended without re-pinning a magic number.
+# The pre-fix column-zero lexer fails this assertion in BOTH directions at once:
+# it reports the indented examples as prose findings AND, having desynchronized
+# its in/out-of-fence state, hides the real prose occurrence in the file's tail
+# behind an unterminated-fence sentinel. The target lives under tests/, which
+# CHECK 15 allowlists, so its occurrences never surface as findings themselves.
+CHECK15_FENCE_CANARY_REL='tests/policy/fixtures/check15-indented-fence.md'
+CHECK15_FENCE_CANARY_MARKER='CHECK15-FENCE-CANARY-PROSE'
+check15_fence_canary_target="$(resolve_repo_path "$CHECK15_FENCE_CANARY_REL")"
+check15_fence_canary_ok=true
+if [[ ! -f "$check15_fence_canary_target" ]]; then
+    check15_fence_canary_ok=false
+    add_finding 'SAFETY-CANARY' "$CHECK15_FENCE_CANARY_REL" 0 \
+        'CHECK 15 indented-fence canary target missing -- the fence-lexing self-test cannot run'
+else
+    check15_fence_expected="$(grep -n -- "$CHECK15_FENCE_CANARY_MARKER" "$check15_fence_canary_target" | cut -d: -f1 | tr '\n' ' ')"
+    check15_fence_actual="$(check15_token_line_numbers "$check15_fence_canary_target" | tr '\n' ' ')"
+    if [[ -z "${check15_fence_expected// /}" ]]; then
+        check15_fence_canary_ok=false
+        add_finding 'SAFETY-CANARY' "$CHECK15_FENCE_CANARY_REL" 0 \
+            "CHECK 15 indented-fence canary target no longer carries its ${CHECK15_FENCE_CANARY_MARKER} marker -- the self-test has nothing to assert against; restore the marked prose occurrence"
+    elif [[ "$check15_fence_actual" != "$check15_fence_expected" ]]; then
+        check15_fence_canary_ok=false
+        add_finding 'SAFETY-CANARY' "$CHECK15_FENCE_CANARY_REL" 0 \
+            "CHECK 15 fence lexing regressed: expected the scan to report ONLY the marked prose line(s) [${check15_fence_expected% }] but it reported [${check15_fence_actual% }] -- indented or delimiter-length-aware fence handling has been lost from check15_token_line_numbers in tools/policy_check.sh"
+    fi
+fi
+if [[ "$check15_fence_canary_ok" == true ]]; then
+    echo '[PASS] SAFETY-CANARY: CHECK 15 fence lexing honours indented and nested fences'
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    echo '[FAIL] SAFETY-CANARY: CHECK 15 indented-fence lexing self-test'
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
