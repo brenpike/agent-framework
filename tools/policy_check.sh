@@ -1516,6 +1516,140 @@ fi
 
 mark_time 'CHECK14'
 
+# ── CHECK 15: Permission-engine claims are single-homed ────────────────────
+#
+# WHAT IT GUARANTEES. Claims about how the Claude Code permission engine treats
+# `allowed-tools` frontmatter versus settings.json permission entries had been
+# restated across six surfaces with no authority, and three consecutive review
+# iterations each found a DIFFERENT pair out of sync -- complete-the-known-set,
+# never closed by construction. ADR-0010's Findings section is now the SINGLE
+# AUTHORITATIVE HOME for permission-engine behavior claims; every other surface
+# operationalizes the resulting instruction or points there, and never
+# independently asserts engine behavior. CHECK 15 makes that structural: the
+# literal token below may appear only under the allowlisted surfaces. A NEW doc
+# restating engine behavior turns this suite red without anyone having to
+# notice the restatement -- which a presence-check fixture can never do (see
+# tests/policy/README.md rule 7).
+#
+# WHAT IT DOES NOT. The trigger is ONE LITERAL TOKEN, so a PARAPHRASE that never
+# spells the token -- e.g. "the skill frontmatter already grants node, so no
+# settings entry is needed" -- passes GREEN. That is a GENUINE, ACCEPTED
+# residual: the non-mechanizable residue P17 leaves to human review. Do not read
+# a green CHECK 15 as proof that no surface restates the engine, and do not
+# extend this check toward paraphrase detection.
+#
+# SCOPE. `*.md`, `*.html`, and plugin runtime shell scripts. Markdown is passed
+# through the CHECK 11/12 awk state machine, which strips YAML frontmatter and
+# fenced code blocks -- that strip is precisely what exempts every skill's
+# legitimate frontmatter capability declaration (~34 skills), which declares a
+# capability rather than asserting engine behavior. A trailing CR is normalized
+# BEFORE the frontmatter delimiters are compared: skill and governance Markdown
+# in this repo is stored CRLF (same reason CHECK 14 normalizes), and without it
+# the `---` delimiters never match and every skill leaks its frontmatter into
+# the scanned body. `.html` and plugin `.sh` are scanned RAW. Pruned trees are
+# the gitignored ones that never reach CI.
+#
+# FAIL-CLOSED (mirrors CHECK 14): if ZERO allowlisted occurrences exist
+# repo-wide the token has been renamed and this check is silently disarmed --
+# that is a finding, not a pass.
+echo ''
+echo '=== CHECK 15: Permission-engine claims are single-homed ==='
+
+CHECK15_TOKEN='allowed-tools'
+CHECK15_AUTHORITY_DOC="$REPO_ROOT/docs/adr/0010-permission-allowlist-posture.md"
+CHECK15_REMEDY="permission-engine claim token '${CHECK15_TOKEN}' outside its single authoritative home -- Claude Code permission-engine behavior is asserted ONLY in the Findings section of docs/adr/0010-permission-allowlist-posture.md; state the resulting instruction or point at ADR-0010 here instead of restating engine behavior"
+
+# Surfaces permitted to carry the token, as repo-relative prefixes. ONE ENTRY
+# PER LINE, each carrying the structural marker comment so a safety fixture can
+# pin the set with a line-scoped regex. A trailing `/` means a directory tree;
+# anything else is an exact repo-relative file path.
+CHECK15_ALLOWLIST=(
+    'docs/adr/'                             # CHECK15-ALLOW
+    'plugin/governance/security-policy.md'  # CHECK15-ALLOW
+    'CHANGELOG.md'                          # CHECK15-ALLOW
+    'tests/'                                # CHECK15-ALLOW
+    'tools/'                                # CHECK15-ALLOW
+)
+
+# check15_path_allowed REL_PATH
+# Echoes "true" when REL_PATH sits under an allowlisted prefix, "false" otherwise.
+check15_path_allowed() {
+    local rel_path="$1"
+    local allow_entry
+    for allow_entry in "${CHECK15_ALLOWLIST[@]}"; do
+        if [[ "$rel_path" == "$allow_entry"* ]]; then
+            echo "true"
+            return
+        fi
+    done
+    echo "false"
+}
+
+# check15_token_line_numbers FILE
+# Echoes the line number of every line carrying CHECK15_TOKEN. Markdown loses
+# its YAML frontmatter and fenced code blocks first; every other type is raw.
+# Both paths strip a trailing CR so CRLF storage cannot defeat the match.
+check15_token_line_numbers() {
+    local scan_file="$1"
+    if [[ "$scan_file" == *.md ]]; then
+        awk -v token="$CHECK15_TOKEN" '
+            BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
+            { sub(/\r$/, "") }
+            # YAML frontmatter: first line "---" opens, next "---" closes.
+            !fm_done && NR == 1 && $0 == "---" { in_fm = 1; next }
+            in_fm { if ($0 == "---") { in_fm = 0; fm_done = 1 } next }
+            # Fenced code blocks toggle on lines starting with ```.
+            /^```/ { in_fence = !in_fence; next }
+            in_fence { next }
+            index($0, token) > 0 { print NR }
+        ' "$scan_file"
+    else
+        awk -v token="$CHECK15_TOKEN" '
+            { sub(/\r$/, "") }
+            index($0, token) > 0 { print NR }
+        ' "$scan_file"
+    fi
+}
+
+check15_found=false
+check15_allowed_count=0
+
+while IFS= read -r -d '' scan_file; do
+    rel_scan_file="${scan_file#"$REPO_ROOT"/}"
+    file_is_allowed="$(check15_path_allowed "$rel_scan_file")"
+    while IFS= read -r token_line; do
+        [[ -z "$token_line" ]] && continue
+        if [[ "$file_is_allowed" == "true" ]]; then
+            check15_allowed_count=$((check15_allowed_count + 1))
+            continue
+        fi
+        check15_found=true
+        add_finding 'CHECK15' "$scan_file" "$token_line" "$CHECK15_REMEDY"
+    done < <(check15_token_line_numbers "$scan_file")
+done < <(find "$REPO_ROOT" \
+    \( -name '.git' -o -name '.hivemind' -o -name 'node_modules' \
+       -o -path "$REPO_ROOT/.claude/worktrees" \
+       -o -path "$REPO_ROOT/.claude/agent-memory" \) -prune -o \
+    -type f \( -name '*.md' -o -name '*.html' \
+       -o \( -name '*.sh' -a -path "$PLUGIN_ROOT/*" \) \) -print0)
+
+# FAIL-CLOSED on the trigger token itself: zero allowlisted occurrences means
+# the token was renamed repo-wide, which would silently disarm this check.
+if [[ "$check15_allowed_count" -eq 0 ]]; then
+    check15_found=true
+    add_finding 'CHECK15' "$CHECK15_AUTHORITY_DOC" 0 \
+        "Permission-engine claim scan found ZERO occurrences of '${CHECK15_TOKEN}' across every allowlisted surface -- the trigger token has been renamed, which disarms this check; retarget CHECK15_TOKEN or retire the single-home invariant deliberately"
+fi
+
+if [[ "$check15_found" == false ]]; then
+    echo "[PASS] Check 15: All $check15_allowed_count permission-engine claim occurrences sit in allowlisted surfaces homed on ADR-0010"
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
+
+mark_time 'CHECK15'
+
 # ── SAFETY REGRESSION TESTS ────────────────────────────────────────────────
 
 echo ''

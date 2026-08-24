@@ -1,0 +1,38 @@
+{
+  "rule": "local-review-grant-single-home",
+  "description": "P3 consumer-assertion: docs/adr/0010-permission-allowlist-posture.md is the single home for the local-review-provider grant posture, and exactly three surfaces carry the concrete grant literal because they serve three distinct audiences — README.md (public consumers, 2 occurrences), CLAUDE.md (this repo's contributors, 1), web/functionality.html (site visitors, 1). The source pin spans BOTH halves of the standing rule: the discriminating scope (no local-review provider grant, codex today or ANY future provider) and the obligation it triggers (may be seeded into the committed .claude/settings.json). Narrowing the scope to codex alone, or flipping the target to the gitignored .claude/settings.local.json, unpins it. The consumer pins sit on the recorded NON-FINDING in the Findings section — its designation line, and the open question together with the 'no surface may assert it until verified empirically' prohibition — so deleting the recorded open question and silently reopening the authority vacuum fails loudly. set_check is used because an ADDED grant is part of the threat model and a presence pin can only notice deletion; equal mode over the three files also fails if the literal is deleted from any one of them or if they drift apart. Working as designed, not a defect: a second Bash(node ...) grant whose text differs in any way from the expected literal, added to any of the three named files, turns this fixture RED as an extra, forcing a conscious expected_set update and review of the added grant. This fixture does NOT catch: (a) any change to the prose surrounding the literal — the placement instruction, the already-seeded cleanup note, the codex/* wildcard rationale — all are unpinned and may be reworded freely; (b) a placement POLARITY INVERSION that leaves the grant literal byte-identical, e.g. a surface rewritten to instruct seeding the grant into the committed .claude/settings.json; (c) a FOURTH surface added anywhere in the repo — files is a LITERAL list with NO glob expansion, so newly added files are invisible to it; (d) whether what any surface says is TRUE — a pin asserts word-sequence presence, never meaning; (e) a duplicate of the EXPECTED literal added to a file it already appears in — set membership dedupes, and the per-file occurrence counts (2 / 1 / 1 above) are NOT pinned because expected_counts is set_check-wide rather than per file entry, so no single value can hold for all three files. .claude/settings.json is deliberately NOT in files — it carries many project-specific Bash(...) grants, so equal mode there would be permanently red — and neither is plugin/skills/_shared/settings-merge.sh, whose ONE-TIME DROP comment is transient by name and would punish a legitimate future cleanup. Residual: the NON-FINDING designation pin embeds the recorded date, so re-dating the record trips it; the date is part of what is recorded, so that is intended.",
+  "source": {
+    "file": "docs/adr/0010-permission-allowlist-posture.md",
+    "pattern": "No local-review provider grant — `codex` today, or any future provider (a `copilot` adapter or otherwise) — may be seeded into the committed `.claude/settings.json`."
+  },
+  "consumers": [
+    {
+      "file": "docs/adr/0010-permission-allowlist-posture.md",
+      "pattern": "NON-FINDING (open question, recorded 2026-08-24)"
+    },
+    {
+      "file": "docs/adr/0010-permission-allowlist-posture.md",
+      "pattern": "Whether a skill's `allowed-tools` entry — for example `Bash(node *)` — suppresses the permission prompt for a provider binary invoked via node, including in a subagent context, is NOT established by this ADR's evidence. No surface in this repository may assert it until it is verified empirically against an installed Claude Code binary and the official permissions documentation."
+    }
+  ],
+  "set_check": {
+    "extract_regex": "(Bash\\(node [^)]*\\))",
+    "expected_set": [
+      "Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)"
+    ],
+    "files": [
+      {
+        "path": "README.md",
+        "mode": "equal"
+      },
+      {
+        "path": "CLAUDE.md",
+        "mode": "equal"
+      },
+      {
+        "path": "web/functionality.html",
+        "mode": "equal"
+      }
+    ]
+  }
+}
