@@ -276,14 +276,9 @@
           </p>
 
           <p style="color:var(--color-text-dim);margin-top:var(--space-3);max-width:680px;font-size:var(--text-sm);">
-            <strong style="color:var(--color-text);">Upgrading an already-seeded project.</strong>
-            A project seeded by an earlier plugin version may still carry a literal
-            <code>Bash(node /path/to/.claude/plugins/cache/openai-codex/codex/*)</code> line in
-            its committed <code>.claude/settings.json</code>. The <code>/path/to/</code>
-            placeholder was never expanded there, so the rule matches nothing &mdash; delete it by
-            hand. Re-running <code>/hivemind:seed-hive</code> will not re-add it; the merge is
-            union append-if-absent and never removes, so the fix stops new and repeat seeds but
-            does not clean up an existing file.
+            See the
+            <a href="https://github.com/brenpike/hivemind#per-project-setup" target="_blank" rel="noopener noreferrer">README setup section</a>
+            for the full rationale and the upgrade path for already-seeded projects.
           </p>
         </div>
 

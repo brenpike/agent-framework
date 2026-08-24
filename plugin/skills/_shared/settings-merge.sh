@@ -202,17 +202,12 @@ unset __settings_merge_shared_dir
 # their real `$HOME` cache path.
 #
 # INVARIANT (NO-PROVIDER-GRANT): no local-review provider grant — codex today, or copilot or
-# any future provider — may be added to this template. Three reasons:
+# any future provider — may be added to this template. Two reasons:
 #   1. This template merges into a COMMITTED, team-shared `.claude/settings.json`, so a
 #      machine-specific `$HOME` cache path is wrong-by-construction for everyone but the seeder.
-#   2. The provider invocation is already PRE-APPROVED provider-agnostically and
-#      `$HOME`-independently by the `hivemind:adaptation-cycle` skill's frontmatter
-#      `allowed-tools` (today `Bash(node *)`, which covers the codex invocation; a future
-#      provider's binary grant, e.g. `Bash(copilot *)`, belongs in that same frontmatter list —
-#      never here). Per ADR-0010's 2026-07-27 amendment, `allowed-tools` PRE-APPROVES a permission
-#      but never PROVISIONS a tool.
-#   3. Per-contributor grants belong in the GITIGNORED `.claude/settings.local.json`, which is
+#   2. Per-contributor grants belong in the GITIGNORED `.claude/settings.local.json`, which is
 #      exactly what `.devcontainer/postCreate.sh` already does.
+# The full rationale for this invariant lives in ADR-0010.
 hivemind_settings_permissions_template() {
   cat <<'TEMPLATE'
 Bash(echo *)

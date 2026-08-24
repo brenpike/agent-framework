@@ -138,6 +138,6 @@ To eliminate permission prompts for the local Codex review flow (`hivemind:adapt
 }
 ```
 
-Replace `/path/to/` with your actual home directory path. This file is gitignored and must be created locally by each contributor. The `/path/to/` placeholder belongs ONLY here: never copy it into the frozen seed template (`plugin/skills/_shared/settings-merge.sh`) or into the committed `.claude/settings.json`, because nothing expands it in those files and it becomes a permanently dead, unmatchable permission rule in every consumer project.
+Replace `/path/to/` with your actual home directory path. This file is gitignored and must be created locally by each contributor. Reference: ADR-0010 for the rationale on where this placeholder may and may not be copied.
 
 Periodically prune stale entries from `.claude/settings.local.json`. Common dead rules to remove: old project-name allowlist entries (e.g. `agent-framework` paths that no longer exist), malformed pseudo-Bash entries that don't match Claude Code's `Bash(...)` syntax, and version-pinned codex paths superseded by the `codex/*` wildcard. A bloated local allowlist accumulates false grants and obscures the actual permission surface.
