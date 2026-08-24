@@ -1522,14 +1522,19 @@ mark_time 'CHECK14'
 # `allowed-tools` frontmatter versus settings.json permission entries had been
 # restated across six surfaces with no authority, and three consecutive review
 # iterations each found a DIFFERENT pair out of sync -- complete-the-known-set,
-# never closed by construction. ADR-0010's Findings section is now the SINGLE
-# AUTHORITATIVE HOME for permission-engine behavior claims; every other surface
-# operationalizes the resulting instruction or points there, and never
-# independently asserts engine behavior. CHECK 15 makes that structural: the
-# literal token below may appear only under the allowlisted surfaces. A NEW doc
-# restating engine behavior turns this suite red without anyone having to
+# never closed by construction. The containment is STRUCTURAL and SCOPED: the
+# literal token below may appear only under the allowlisted surfaces, so a NEW
+# doc restating engine behavior turns this suite red without anyone having to
 # notice the restatement -- which a presence-check fixture can never do (see
-# tests/policy/README.md rule 7).
+# tests/policy/README.md rule 7). ADR-0010's Findings section is where a NEW
+# engine claim -- one not already verified and recorded on an allowlisted
+# surface -- is established and recorded FIRST; a surface outside the allowlist
+# operationalizes the resulting instruction or points there instead of
+# independently asserting engine behavior. This is NOT a claim that every
+# permission-engine statement in the repository must live in that section:
+# facts already verified and recorded on an allowlisted surface -- e.g.
+# plugin/governance/security-policy.md, ADR-0013, ADR-0018 -- stand exactly as
+# written and are not conscripted into compliance (ADR-0010, AUTHORITY bullet).
 #
 # WHAT IT DOES NOT. The trigger is ONE LITERAL TOKEN, so a PARAPHRASE that never
 # spells the token -- e.g. "the skill frontmatter already grants node, so no
@@ -1551,13 +1556,19 @@ mark_time 'CHECK14'
 #
 # FAIL-CLOSED (mirrors CHECK 14): if ZERO allowlisted occurrences exist
 # repo-wide the token has been renamed and this check is silently disarmed --
-# that is a finding, not a pass.
+# that is a finding, not a pass. Second fail-closed arm: a Markdown file whose
+# scan reaches EOF with a fence or frontmatter block still OPEN has hidden its
+# own tail from the scan (an unterminated first-line `---` hides the ENTIRE
+# file), so that too is a finding -- reported only for NON-allowlisted files,
+# where a hidden token would have been a violation.
 echo ''
 echo '=== CHECK 15: Permission-engine claims are single-homed ==='
 
 CHECK15_TOKEN='allowed-tools'
 CHECK15_AUTHORITY_DOC="$REPO_ROOT/docs/adr/0010-permission-allowlist-posture.md"
-CHECK15_REMEDY="permission-engine claim token '${CHECK15_TOKEN}' outside its single authoritative home -- Claude Code permission-engine behavior is asserted ONLY in the Findings section of docs/adr/0010-permission-allowlist-posture.md; state the resulting instruction or point at ADR-0010 here instead of restating engine behavior"
+CHECK15_REMEDY="permission-engine claim token '${CHECK15_TOKEN}' on a surface not permitted to carry it -- a NEW engine claim (one not already verified and recorded on an allowlisted surface) is established and recorded FIRST in the Findings section of docs/adr/0010-permission-allowlist-posture.md; state the resulting instruction or point at ADR-0010 here instead of restating engine behavior"
+CHECK15_EOF_SENTINEL='!CHECK15-EOF-UNTERMINATED'
+CHECK15_EOF_REMEDY="Markdown scan reached EOF with a construct still OPEN, which hides the rest of the file from this check -- an unterminated first-line '---' hides the ENTIRE file; close the construct so the tail is scanned"
 
 # Surfaces permitted to carry the token, as repo-relative prefixes. ONE ENTRY
 # PER LINE, each carrying the structural marker comment so a safety fixture can
@@ -1572,12 +1583,19 @@ CHECK15_ALLOWLIST=(
 )
 
 # check15_path_allowed REL_PATH
-# Echoes "true" when REL_PATH sits under an allowlisted prefix, "false" otherwise.
+# Echoes "true" when REL_PATH is allowlisted, "false" otherwise. A trailing `/`
+# entry matches the tree beneath it; every other entry must match EXACTLY, so
+# `CHANGELOG.md` cannot allowlist `CHANGELOG.md.bak.md`.
 check15_path_allowed() {
     local rel_path="$1"
     local allow_entry
     for allow_entry in "${CHECK15_ALLOWLIST[@]}"; do
-        if [[ "$rel_path" == "$allow_entry"* ]]; then
+        if [[ "$allow_entry" == */ ]]; then
+            if [[ "$rel_path" == "$allow_entry"* ]]; then
+                echo "true"
+                return
+            fi
+        elif [[ "$rel_path" == "$allow_entry" ]]; then
             echo "true"
             return
         fi
@@ -1589,10 +1607,13 @@ check15_path_allowed() {
 # Echoes the line number of every line carrying CHECK15_TOKEN. Markdown loses
 # its YAML frontmatter and fenced code blocks first; every other type is raw.
 # Both paths strip a trailing CR so CRLF storage cannot defeat the match.
+# INVARIANT: this stdout IS the caller's line-number stream, so the report of an
+# unterminated construct is emitted as the NON-NUMERIC CHECK15_EOF_SENTINEL line
+# and the caller must branch on it before any numeric handling.
 check15_token_line_numbers() {
     local scan_file="$1"
     if [[ "$scan_file" == *.md ]]; then
-        awk -v token="$CHECK15_TOKEN" '
+        awk -v token="$CHECK15_TOKEN" -v eof_sentinel="$CHECK15_EOF_SENTINEL" '
             BEGIN { in_fm = 0; fm_done = 0; in_fence = 0 }
             { sub(/\r$/, "") }
             # YAML frontmatter: first line "---" opens, next "---" closes.
@@ -1602,6 +1623,10 @@ check15_token_line_numbers() {
             /^```/ { in_fence = !in_fence; next }
             in_fence { next }
             index($0, token) > 0 { print NR }
+            END {
+                if (in_fm)         { print eof_sentinel ":frontmatter" }
+                else if (in_fence) { print eof_sentinel ":fence" }
+            }
         ' "$scan_file"
     else
         awk -v token="$CHECK15_TOKEN" '
@@ -1619,6 +1644,13 @@ while IFS= read -r -d '' scan_file; do
     file_is_allowed="$(check15_path_allowed "$rel_scan_file")"
     while IFS= read -r token_line; do
         [[ -z "$token_line" ]] && continue
+        if [[ "$token_line" == "$CHECK15_EOF_SENTINEL:"* ]]; then
+            [[ "$file_is_allowed" == "true" ]] && continue
+            check15_found=true
+            add_finding 'CHECK15' "$scan_file" 0 \
+                "${CHECK15_EOF_REMEDY} [unterminated: ${token_line#"$CHECK15_EOF_SENTINEL":}]"
+            continue
+        fi
         if [[ "$file_is_allowed" == "true" ]]; then
             check15_allowed_count=$((check15_allowed_count + 1))
             continue
