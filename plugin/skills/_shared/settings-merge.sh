@@ -599,7 +599,7 @@ hivemind_settings_merge() {
     #       This is PRE-EXISTING behavior, byte-comparable on the base ref (the previous
     #       implementation used the same unguarded idiom) and NEITHER introduced nor widened here.
     #       It is not a merge-safety hole: the abort precedes every write, so the caller fails
-    #       CLOSED with nothing written. It is recorded and NOT patched here on purpose — making it
+    #       CLOSED with nothing written. It is recorded (issue #355) and NOT patched here on purpose — making it
     #       total is a CONTRACT choice (normalize-and-preserve past a wrong-typed element vs route
     #       it to the existing `malformed` fail-closed status) and the closed-by-construction form
     #       of it wants a TOTAL ACCESS primitive in json-normalize.sh, whose stated single
