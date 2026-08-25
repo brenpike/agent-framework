@@ -72,12 +72,11 @@
 #   fork the rule settings-merge.sh already owns (P1 violation).
 #
 #   TWO-SIDED COUPLING: this lib owns the FILE at `.claude/hooks/caveman-ultra-subagent.sh`
-#   (create + chmod). settings-merge.sh owns the COMMAND that invokes it — the
-#   `${CLAUDE_PROJECT_DIR}`-anchored form of that SAME path
-#   (`"${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh`) written into
-#   `hooks.SubagentStart` in `.claude/settings.json`. Renaming or moving the hook path on either
-#   side requires changing the other in the SAME change, or the wired command and the scaffolded
-#   file diverge silently.
+#   (create + chmod). settings-merge.sh owns the COMMAND that invokes it — the EXEC-FORM entry
+#   `command: ${CLAUDE_PROJECT_DIR}/.claude/hooks/caveman-ultra-subagent.sh` (unquoted; `args: []`)
+#   written into `hooks.SubagentStart` in `.claude/settings.json`. Renaming or moving the hook path
+#   on either side requires changing the other in the SAME change, or the wired command and the
+#   scaffolded file diverge silently.
 #
 # DATA-BOUNDARY: the entry / section / hook content is plain TEXT written verbatim. It is never
 # interpolated into eval, source, or a jq program; the presence tests are pure-bash string
@@ -236,8 +235,9 @@ hivemind_append_env_if_absent() {
 #
 # TWO-SIDED COUPLING: this lib (via `hivemind_scaffold_hook_file`) owns the FILE at
 # `.claude/hooks/caveman-ultra-subagent.sh`. settings-merge.sh owns the COMMAND that invokes it —
-# the `${CLAUDE_PROJECT_DIR}`-anchored form of that SAME path. Renaming or moving the hook path on
-# either side requires changing the other in the SAME change.
+# the EXEC-FORM entry `command: ${CLAUDE_PROJECT_DIR}/.claude/hooks/caveman-ultra-subagent.sh`
+# (unquoted; `args: []`) for that SAME path. Renaming or moving the hook path on either side
+# requires changing the other in the SAME change.
 hivemind_caveman_hook_content() {
   cat <<'HOOK'
 #!/usr/bin/env bash
@@ -264,9 +264,9 @@ HOOK
 # wiring is OWNED BY settings-merge.sh. This lib owns the FILE + chmod only.
 #
 # TWO-SIDED COUPLING: this lib owns the FILE at `.claude/hooks/caveman-ultra-subagent.sh`.
-# settings-merge.sh owns the COMMAND, which is the `${CLAUDE_PROJECT_DIR}`-anchored form of that
-# SAME path (`"${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh`). Renaming or
-# moving either requires changing the other in the SAME change.
+# settings-merge.sh owns the COMMAND, which is the EXEC-FORM entry
+# `command: ${CLAUDE_PROJECT_DIR}/.claude/hooks/caveman-ultra-subagent.sh` (unquoted; `args: []`).
+# Renaming or moving either requires changing the other in the SAME change.
 #
 # ARGUMENTS
 #   <hook_file>  absolute path to the hook script (the entrypoint passes
