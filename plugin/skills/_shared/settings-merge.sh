@@ -76,10 +76,27 @@
 #     `already present` requires defaultLevel to ALREADY equal "ultra". Each container on the path
 #     (config object, .options) is canon_obj-normalized so a wrong-typed nested container collapses
 #     to {} before the leaf is set — a malformed nested config never crashes or clobbers.
-#   - hooks.SubagentStart — the caveman ultra-mode hook entry (caveman=yes only), add-if-absent
-#     on the SPECIFIC `.claude/hooks/caveman-ultra-subagent.sh` command, NOT on the presence of
-#     the SubagentStart key. An existing unrelated SubagentStart array is PRESERVED and the
-#     caveman entry is appended to it; `already present` requires that exact command be wired.
+#   - hooks.SubagentStart — the caveman ultra-mode hook entry (caveman=yes only). VALUE-NOT-
+#     PRESENCE classification keyed on the SCRIPT PATH, never on the presence of the SubagentStart
+#     key: an entry identity-matches when it is `{type:"command"}` AND its command string CONTAINS
+#     `.claude/hooks/caveman-ultra-subagent.sh`. The canonical command is ANCHORED —
+#     `"${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh` (see HOOK COMMAND
+#     ANCHORING below). Precedence over each `.hooks[]` entry, first match wins:
+#       1. command == the canonical anchored command  → `already present`; untouched.
+#       2. command == the LEGACY bare relative command (`.claude/hooks/caveman-ultra-subagent.sh`)
+#          → `added`, and the entry is MIGRATED IN PLACE to the canonical command. NO new report
+#          token: `added` covers the corrected case exactly as the nested-leaf pluginConfigs
+#          correction does, so the SKILL.md Output schema is unchanged.
+#       3. any OTHER command containing the script path → the user's OWN wiring: `already
+#          present`, left byte-untouched, and it still SUPPRESSES the append.
+#       4. an entry whose `.type` != "command" is an INVALID hook: ignored by both predicates,
+#          left in place, and the canonical entry is appended beside it.
+#       5. no identity match anywhere → `added`; the canonical entry is APPENDED.
+#     An existing unrelated SubagentStart array is PRESERVED, as are every sibling entry, every
+#     sibling key on a migrated entry, any `matcher` key on the wrapping element, and array order.
+#     NO-DUPLICATE-BY-CONSTRUCTION: the in-place migration runs FIRST, so by the time the append
+#     predicate runs a migrated legacy entry already contains the script path and suppresses the
+#     append — duplication is impossible by build ORDER, not by a dedupe pass.
 #   - permissions.allow — union/append-if-absent of the frozen template (seed_allowlist=yes):
 #     keep every existing entry in its original order, then append each template rule whose
 #     exact string is NOT already present. NEVER overwrite, remove, dedupe, or reorder existing
@@ -129,6 +146,12 @@
 #           // "ultra"; "added" when the leaf had to be set or corrected (parent absent, OR
 #           // parent present but defaultLevel missing / != "ultra"); "resolved no" when caveman != yes.
 #         "hooks.SubagentStart": "added" | "already present" | "resolved no"
+#           // VALUE-NOT-PRESENCE, identity keyed on the SCRIPT PATH: "already present" when a
+#           // {type:"command"} entry already carries the canonical ANCHORED command, or any other
+#           // user-authored command containing that script path; "added" when the canonical entry
+#           // had to be APPENDED *or* when a LEGACY bare-relative command was MIGRATED IN PLACE to
+#           // the anchored form — there is no separate token for the correction, exactly as for
+#           // pluginConfigs above; "resolved no" when caveman != yes.
 #       },
 #       "permissions_allow": [                   // one entry per template rule, in template
 #         { "rule": <str>, "result": "added" | "already present" },   // order; [] when
@@ -142,6 +165,34 @@
 #   approved; the conflict block is populated and `.settings.agent` is the existing value),
 #   `overwritten` (differing real value AND approved=="yes"; `.settings.agent` is the target and
 #   the conflict block is null).
+#
+# HOOK COMMAND ANCHORING (issue #352) — why the canonical SubagentStart command is
+# `"${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh` and not a bare relative path:
+#   FORM: the braces make it the DOCUMENTED Claude Code harness placeholder — the harness
+#   substitutes it before execution, so no shell is required — AND the identical text still
+#   expands from the exported environment variable when a shell does run the command. The
+#   surrounding double quotes are PART OF THE COMMAND STRING (not JSON syntax) and keep the
+#   post-substitution path safe when the project root contains spaces. The quoting is ADDITIVE to
+#   the substitution form, never an alternative to it.
+#   FAILURE MECHANISM THIS ACTUALLY REPAIRS: INTRA-SESSION WORKING-DIRECTORY DRIFT. A bare
+#   relative command is resolved against the session's CURRENT working directory at hook-fire
+#   time, so a `cd` issued through the Bash tool — or an RC attach carrying its own
+#   session_context.cwd — moves the resolution root out from under an ALREADY-REGISTERED hook and
+#   it silently stops firing. Anchoring removes that dependency on cwd entirely.
+#   FAILURE MECHANISM THIS CANNOT REPAIR (do NOT verify the fix against it): a session LAUNCHED
+#   from a subdirectory never loads the repo-root `.claude/settings.json` at all — settings
+#   discovery does not walk upward — so the hook is never REGISTERED in that session. Anchoring a
+#   command that was never read changes nothing. The issue's own reproduction steps describe THAT
+#   scenario, which is a different defect from the one repaired here.
+#   WHY NO DEFENSE IN THE HOOK SCRIPT BODY: a script-body guard against an unset/empty anchor is
+#   ineffective BY CONSTRUCTION — if the anchor expands empty, the COMMAND fails to locate the
+#   script, the script therefore never executes, and nothing written inside it can run.
+#   WHY NO `bash -c` FALLBACK WRAPPER: it would embed shell quoting into a JSON value that
+#   seed-hive writes into OTHER PEOPLE'S COMMITTED `.claude/settings.json`, and it would not fix
+#   the Windows/PowerShell variant of the same problem anyway.
+#   DRIFT NOTE (TWO-SIDED COUPLING): the path TAIL of this command must remain identical to the
+#   path `hivemind_scaffold_hook_file` (file-guard.sh) CREATES and to the path the seed-hive
+#   entrypoint passes that function. The command and the file move together or not at all.
 #
 # DEPENDENCY: jq only (POSIX + jq). No yq, no sed/awk.
 #
@@ -208,6 +259,19 @@ unset __settings_merge_shared_dir
 #   2. Per-contributor grants belong in the GITIGNORED `.claude/settings.local.json`, which is
 #      exactly what `.devcontainer/postCreate.sh` already does.
 # The full rationale for this invariant lives in ADR-0010.
+#
+# INVARIANT (NO-PATH-ANCHOR-IN-PERMISSION-RULES): the six navigator-transport rules below that
+# target `.hivemind/` paths stay RELATIVE BY DECISION. They must NOT be anchored the way the
+# SubagentStart hook command is (see HOOK COMMAND ANCHORING in the header) — the two surfaces are
+# not analogous:
+#   1. Permission rules perform NO `${...}` expansion. An anchored rule is matched LITERALLY, so
+#      it would only ever match a directory actually NAMED `${CLAUDE_PROJECT_DIR}` — it would
+#      silently grant nothing while looking correct.
+#   2. A leading `/` is no better: it anchors to the SESSION's ORIGINAL cwd, not to the project
+#      root, so it does not express "relative to the project" either.
+#   3. `Bash(...)` rules match command TEXT, not filesystem paths, so a path anchor is meaningless
+#      in them by construction.
+# ADR-0010 carries the full rationale. Do not "fix" these rules by anchoring them.
 hivemind_settings_permissions_template() {
   cat <<'TEMPLATE'
 Bash(echo *)
@@ -338,11 +402,24 @@ hivemind_settings_merge() {
     # correcting and must classify "added", NOT "already present" — this is value-not-presence.
     def enabled_true($k): canon_obj($settings.enabledPlugins) | (.[$k] == true);
 
-    # The caveman SubagentStart hook entry, mirroring SKILL.md step 10d structure.
+    # ── caveman SubagentStart hook identity constants (PROGRAM TEXT, not --arg) ──
+    # SINGLE LITERAL: the hook script path is written ONCE in this program; every site that needs
+    # it — the classification pass, the append predicate, and the written value — routes through
+    # these two bindings. They are FIXED program constants, not runtime values, so the
+    # DATA-BOUNDARY rule above (which governs DYNAMIC values only) does not require a --arg here.
+    #   $hook_rel — the relative script path. It is BOTH the identity substring that every
+    #               recognised command must contain AND, verbatim, the LEGACY command that an
+    #               earlier seed wrote and that this merge now migrates in place.
+    #   $hook_cmd — the canonical ANCHORED command written today. Its leading/trailing `"` are
+    #               part of the COMMAND STRING, not JSON syntax. Why the quoted braced form, and
+    #               what the anchoring does and does NOT repair: HOOK COMMAND ANCHORING, header.
+    ".claude/hooks/caveman-ultra-subagent.sh" as $hook_rel
+    | ("\"${CLAUDE_PROJECT_DIR}\"/" + $hook_rel) as $hook_cmd
+
     # Every container-typed key is normalized at binding time so a wrong-typed existing value
     # collapses to its canonical empty container ({} / []) here, once, for both classification and
     # build. permissions.allow normalizes its parent object first, then the allow array.
-    ($settings) as $s
+    | ($settings) as $s
     | canon_obj($s.enabledPlugins) as $ep
     | canon_obj($s.permissions) as $perm
     | (canon_arr($perm.allow)) as $existing_allow
@@ -402,9 +479,22 @@ hivemind_settings_merge() {
        elif ((canon_obj($s.pluginConfigs) | canon_obj(.["caveman@caveman"]) | canon_obj(.options).defaultLevel) == "ultra")
          then "already present"
        else "added" end) as $c_pcfg
+    # SubagentStart hook classification — VALUE-NOT-PRESENCE, identity keyed on the SCRIPT PATH.
+    # "already present" requires a `{type:"command"}` entry whose command CONTAINS $hook_rel and is
+    # NOT the legacy bare command: that covers the canonical anchored command and any other wiring
+    # the user authored around the same script, both of which are left untouched. The LEGACY bare
+    # command is deliberately EXCLUDED here — the build migrates it in place, so it must report
+    # `added` (the corrected case shares the `added` token with the append case; no new token).
+    # An entry with a matching command but `.type` != "command" is an INVALID hook: it matches
+    # neither this predicate nor the append predicate. The `.command` type guard keeps a
+    # non-string command (null/number/object) from aborting contains().
     | (if $caveman != "yes" then "resolved no"
        elif (canon_arr(canon_obj($s.hooks).SubagentStart)
-            | any(canon_arr(.hooks) | any(.type == "command" and .command == ".claude/hooks/caveman-ultra-subagent.sh")))
+            | any(canon_arr(.hooks)
+                 | any(.type == "command"
+                       and (.command | type) == "string"
+                       and (.command | contains($hook_rel))
+                       and .command != $hook_rel)))
          then "already present"
        else "added" end) as $c_hook
 
@@ -433,22 +523,44 @@ hivemind_settings_merge() {
               | .["caveman@caveman"] = (canon_obj(.["caveman@caveman"])
                   | .options = (canon_obj(.options) | .defaultLevel = "ultra")))
        else . end)
-    # caveman SubagentStart hook (add-if-absent on the SPECIFIC {type:"command", command} entry, NOT
-    # on the presence of the SubagentStart key OR on the command alone): an existing unrelated
-    # SubagentStart array is PRESERVED and the caveman entry is APPENDED to it. Already-present
-    # requires an entry with BOTH .type == "command" AND that exact command wired — a command-matching
-    # entry with a missing/wrong .type is an INVALID hook, so it does NOT count as present and the
-    # canonical {type:"command", command} entry is appended beside it (the wrong-typed entry is left
-    # in place). Re-merge of the canonical entry stays byte-stable and idempotent.
+    # caveman SubagentStart hook (appended entry shape mirrors seed-hive/SKILL.md step 10d) —
+    # TWO-PASS build, and the ORDER is what makes duplication
+    # impossible BY CONSTRUCTION rather than by a dedupe pass:
+    #   (a) MIGRATE: every `{type:"command"}` entry whose command equals the LEGACY bare relative
+    #       command is rewritten IN PLACE to the canonical anchored command. Only `.command` is
+    #       assigned, so every sibling key on that entry, its sibling entries in the `.hooks` array,
+    #       any `matcher` key on the wrapping SubagentStart element, and array ORDER all survive.
+    #       The map runs ONLY when `.hooks` IS an array — a wrong-typed `.hooks` is left exactly as
+    #       the user had it rather than being clobbered by the normalizer.
+    #   (b) APPEND-IF-ABSENT: the canonical entry is appended only when, AFTER (a), no
+    #       `{type:"command"}` entry whose command CONTAINS $hook_rel exists. This predicate needs
+    #       no legacy exclusion (unlike the classification predicate above): pass (a) has already
+    #       turned every legacy entry into the canonical one, so a migrated entry suppresses the
+    #       append and no duplicate can be created.
+    # An existing unrelated SubagentStart array is PRESERVED and the caveman entry APPENDED to it.
+    # An entry with a matching command but `.type` != "command" is an INVALID hook: it is neither
+    # migrated nor counted as present, it is left in place, and the canonical entry is appended
+    # beside it. PRESERVE-EXISTING over dedupe: a consumer who had wired BOTH the legacy and the
+    # canonical command keeps two entries (both canonical after (a)) — this merge never removes an
+    # entry the user authored. Re-merge of the canonical entry stays byte-stable and idempotent.
     | (if $caveman == "yes"
        then .hooks = (canon_obj(.hooks)
-              | canon_arr(.SubagentStart) as $existing_subagent
-              | if ($existing_subagent
-                     | any(canon_arr(.hooks) | any(.type == "command" and .command == ".claude/hooks/caveman-ultra-subagent.sh")))
-                then .
-                else .SubagentStart = ($existing_subagent + [ { hooks: [ {
+              | (canon_arr(.SubagentStart)
+                 | map(if (.hooks | type) == "array"
+                       then .hooks = [ .hooks[]
+                              | if (.type == "command" and .command == $hook_rel)
+                                then .command = $hook_cmd
+                                else . end ]
+                       else . end)) as $migrated_subagent
+              | if ($migrated_subagent
+                     | any(canon_arr(.hooks)
+                          | any(.type == "command"
+                                and (.command | type) == "string"
+                                and (.command | contains($hook_rel)))))
+                then .SubagentStart = $migrated_subagent
+                else .SubagentStart = ($migrated_subagent + [ { hooks: [ {
                        type: "command",
-                       command: ".claude/hooks/caveman-ultra-subagent.sh"
+                       command: $hook_cmd
                      } ] } ]) end)
        else . end)
     # permissions.allow union (seed_allowlist = yes): preserve sibling permissions keys.

@@ -63,12 +63,21 @@
 #
 # THE HOOK SCAFFOLD IS NOT A LINE GUARD (different op, lives here for cohesion):
 #   `hivemind_scaffold_hook_file` is a CREATE-IF-ABSENT file scaffold for the caveman
-#   SubagentStart hook (SKILL.md step 10a-c): create the hook file with the EXACT fixed content
-#   if absent + set the executable bit (report `created`); if it exists, report `already present`
-#   and leave content untouched. It does NOT wire the hook into `.claude/settings.json` —
-#   step 10d's `hooks.SubagentStart` settings wiring is OWNED BY settings-merge.sh (which already
-#   emits that key in its OUTPUT CONTRACT). This lib creates the FILE + chmod ONLY; duplicating
-#   the settings wiring here would fork the rule settings-merge.sh already owns (P1 violation).
+#   SubagentStart hook: create the hook file with the EXACT fixed content (from
+#   `hivemind_caveman_hook_content`, the single source of that content) if absent + set the
+#   executable bit (report `created`); if it exists, report `already present` and leave content
+#   untouched. It does NOT wire the hook into `.claude/settings.json` — that `hooks.SubagentStart`
+#   settings wiring is OWNED BY settings-merge.sh (which already emits that key in its OUTPUT
+#   CONTRACT). This lib creates the FILE + chmod ONLY; duplicating the settings wiring here would
+#   fork the rule settings-merge.sh already owns (P1 violation).
+#
+#   TWO-SIDED COUPLING: this lib owns the FILE at `.claude/hooks/caveman-ultra-subagent.sh`
+#   (create + chmod). settings-merge.sh owns the COMMAND that invokes it — the
+#   `${CLAUDE_PROJECT_DIR}`-anchored form of that SAME path
+#   (`"${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh`) written into
+#   `hooks.SubagentStart` in `.claude/settings.json`. Renaming or moving the hook path on either
+#   side requires changing the other in the SAME change, or the wired command and the scaffolded
+#   file diverge silently.
 #
 # DATA-BOUNDARY: the entry / section / hook content is plain TEXT written verbatim. It is never
 # interpolated into eval, source, or a jq program; the presence tests are pure-bash string
@@ -215,14 +224,20 @@ hivemind_append_env_if_absent() {
 }
 
 # hivemind_caveman_hook_content
-# Emit the EXACT fixed content of the caveman SubagentStart hook script (SKILL.md step 10b), as
-# the SINGLE DATA source for that content (P1). The scaffold function writes this verbatim; any
-# caller that needs to display or test the content reads it through this function. Pure: no side
-# effects, no exit, reads no input.
+# Emit the EXACT fixed content of the caveman SubagentStart hook script, as the SINGLE DATA
+# source for that content (P1). The scaffold function writes this verbatim; any caller that needs
+# to display or test the content reads it through this function. Pure: no side effects, no exit,
+# reads no input.
 #
-# INVARIANT: this content is byte-for-byte the hook body in seed-hive/SKILL.md step 10b. The hook
-# itself prints a SubagentStart hook JSON payload on stdout; do not edit either side without
-# updating the other in the same change.
+# INVARIANT: THIS function is the single source of the hook script's content — there is no
+# SKILL.md copy to keep in sync; every caller (scaffold, tests, docs) reads the body through this
+# function rather than re-deriving it. The hook itself prints a SubagentStart hook JSON payload on
+# stdout.
+#
+# TWO-SIDED COUPLING: this lib (via `hivemind_scaffold_hook_file`) owns the FILE at
+# `.claude/hooks/caveman-ultra-subagent.sh`. settings-merge.sh owns the COMMAND that invokes it —
+# the `${CLAUDE_PROJECT_DIR}`-anchored form of that SAME path. Renaming or moving the hook path on
+# either side requires changing the other in the SAME change.
 hivemind_caveman_hook_content() {
   cat <<'HOOK'
 #!/usr/bin/env bash
@@ -239,14 +254,19 @@ HOOK
 }
 
 # hivemind_scaffold_hook_file <hook_file>
-# CREATE-IF-ABSENT scaffold for the caveman SubagentStart hook script (SKILL.md step 10a-c). When
-# <hook_file> does NOT exist: write the EXACT fixed content (from hivemind_caveman_hook_content),
-# set the executable bit (`chmod +x`), and report `created`. When it ALREADY exists: report
-# `already present` and leave its content UNTOUCHED (SKILL.md step 10c). The parent directory is
-# created if needed (mirroring SKILL.md step 10a's `mkdir -p .claude/hooks/`).
+# CREATE-IF-ABSENT scaffold for the caveman SubagentStart hook script. When <hook_file> does NOT
+# exist: write the EXACT fixed content (from hivemind_caveman_hook_content), set the executable
+# bit (`chmod +x`), and report `created`. When it ALREADY exists: report `already present` and
+# leave its content UNTOUCHED. The parent directory is created if needed (`mkdir -p
+# .claude/hooks/`).
 #
 # This function does NOT wire `hooks.SubagentStart` into `.claude/settings.json`; that settings
-# wiring (SKILL.md step 10d) is OWNED BY settings-merge.sh. This lib owns the FILE + chmod only.
+# wiring is OWNED BY settings-merge.sh. This lib owns the FILE + chmod only.
+#
+# TWO-SIDED COUPLING: this lib owns the FILE at `.claude/hooks/caveman-ultra-subagent.sh`.
+# settings-merge.sh owns the COMMAND, which is the `${CLAUDE_PROJECT_DIR}`-anchored form of that
+# SAME path (`"${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh`). Renaming or
+# moving either requires changing the other in the SAME change.
 #
 # ARGUMENTS
 #   <hook_file>  absolute path to the hook script (the entrypoint passes

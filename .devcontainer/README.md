@@ -135,7 +135,7 @@ This is the canonical step that writes all plugin configuration — caveman enab
 What it writes to `.claude/settings.json` (tracked):
 - `enabledPlugins["hivemind@brenpike"]`, `enabledPlugins["caveman@caveman"]`, `enabledPlugins["codex@openai-codex"]`, `enabledPlugins["claude-mem@thedotmack"]`
 - `pluginConfigs["caveman@caveman"].options.defaultLevel = "ultra"`
-- `hooks.SubagentStart` entry pointing to `.claude/hooks/caveman-ultra-subagent.sh`
+- `hooks.SubagentStart` entry pointing to `"${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh`
 - `permissions.allow` — merged recommended least-privilege allowlist (read/output helpers + scoped git reads)
 
 What it writes outside `.claude/settings.json`:
