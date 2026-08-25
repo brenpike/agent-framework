@@ -88,8 +88,11 @@
 #          wrapping element, and array ORDER survive. The map runs ONLY when `.hooks` IS an array;
 #          a wrong-typed `.hooks` is left exactly as the user had it.
 #       2. APPEND-IF-ABSENT. The canonical entry is appended only when, AFTER pass 1, no entry
-#          satisfies CANONICAL IDENTITY: `.type == "command"` AND `(.args|type) == "array"` AND
-#          `.command == <canonical command>` — EXACT equality. `contains()` appears nowhere.
+#          satisfies CANONICAL IDENTITY: `.type == "command"` AND `.args == []` AND
+#          `.command == <canonical command>` — EXACT VALUE equality on ALL THREE fields, none of
+#          them judged by TYPE. `contains()` appears nowhere. A non-empty or malformed `args`
+#          (`[null]`, `[1]`, `["--x"]`) is therefore NOT the canonical entry: it is user-authored
+#          variation, left byte-untouched, and it does NOT suppress the append.
 #     An entry hivemind did NOT author is never removed or rewritten. An entry whose `.type` !=
 #     "command" is an INVALID hook: neither migrated nor counted as present, left in place, and the
 #     canonical entry is appended beside it. An existing unrelated SubagentStart array is PRESERVED.
@@ -202,9 +205,12 @@
 #       there is no quoting bug for a later pass to find. This is why the fix changes the PRIMITIVE
 #       (the command string stops being an unparsed shell payload) instead of adding another
 #       escaping rule to the same string.
-#     * Identity is EXACT EQUALITY on an exec-form entry — `.type == "command"` AND
-#       `(.args|type) == "array"` AND `.command == <canonical command>` — never substring
-#       containment. The substring FALSE-POSITIVE class is gone for seeded wiring: `echo <path>`,
+#     * Identity is EXACT VALUE EQUALITY on an exec-form entry — `.type == "command"` AND
+#       `.args == []` AND `.command == <canonical command>` — never substring containment, and
+#       never a type test standing in for a value. Because the identity key is exactly the value
+#       this file WRITES, "which nearby shapes also count as ours" is UNREPRESENTABLE — there is no
+#       loosely-judged field left for a later pass to tighten one accepted value at a time.
+#       The substring FALSE-POSITIVE class is gone for seeded wiring: `echo <path>`,
 #       `/some/other/project/<path>`, and `true # <path>` no longer count as "hivemind's hook is
 #       wired". `contains()` MUST NOT reappear anywhere in this block.
 #   FROZEN AUTHORED-SHELL-COMMAND LIST: migration matches ONLY the two shell-form commands hivemind
@@ -584,12 +590,19 @@ hivemind_settings_merge() {
     #       is the gate, and the list is closed by our own git history, so this pass can only ever
     #       touch wiring hivemind itself wrote.
     #   (b) APPEND-IF-ABSENT: the canonical entry is appended only when, AFTER (a), no entry
-    #       satisfies CANONICAL IDENTITY — `.type == "command"` AND `(.args|type) == "array"` AND
-    #       `.command == $hook_cmd`. Pass (a) has already converted every authored shell-form entry
-    #       to exactly that shape, so a migrated entry suppresses the append and no duplicate can be
-    #       created. GIVEN AN OBJECT ENTRY, `.args|type` and `.command == $hook_cmd` are total over
-    #       every VALUE those two fields can hold, so no malformed `command`/`args` VALUE can abort
-    #       this predicate.
+    #       satisfies CANONICAL IDENTITY — `.type == "command"` AND `.args == []` AND
+    #       `.command == $hook_cmd`. All THREE conjuncts are EXACT VALUE equality against what this
+    #       file EMITS; not one field is judged by TYPE. That is what makes identity closed by
+    #       construction rather than a set of accepted shapes: there is no remaining field whose
+    #       "close enough" values a later pass could enumerate. In particular `args: [null]`,
+    #       `args: [1]`, or any non-empty `args` is NOT the canonical entry — it is user-authored
+    #       variation, so it is left BYTE-UNTOUCHED and does NOT suppress the append (same accepted
+    #       DELIBERATE DROP, and same failure direction, as the user-authored shell wrapper below).
+    #       Pass (a) has already converted every authored shell-form entry to exactly the canonical
+    #       shape (it assigns `.args = []`), so a migrated entry suppresses the append and no
+    #       duplicate can be created. GIVEN AN OBJECT ENTRY, `.args == []` and
+    #       `.command == $hook_cmd` are total over every VALUE those two fields can hold, so no
+    #       malformed `command`/`args` VALUE can abort this predicate.
     #   SCOPE LIMIT of that totality claim (it is about the two FIELD VALUES, NOT about the entry):
     #       neither pass type-guards the ELEMENT it indexes. A NON-OBJECT element — a scalar or an
     #       array sitting directly in `SubagentStart[]` (indexed by the `(.hooks|type)` test in pass
@@ -629,7 +642,7 @@ hivemind_settings_merge() {
               | if ($migrated_subagent
                      | any(canon_arr(.hooks)
                           | any(.type == "command"
-                                and (.args | type) == "array"
+                                and .args == []
                                 and .command == $hook_cmd)))
                 then .SubagentStart = $migrated_subagent
                 else .SubagentStart = ($migrated_subagent + [ { hooks: [ $hook_entry ] } ]) end)

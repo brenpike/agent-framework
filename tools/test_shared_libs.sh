@@ -1938,14 +1938,16 @@ assert_eq "settings:cave-hook-wrongtype-class" "added" \
 assert_eq "settings:cave-hook-wrongtype-count" "2" \
   "$(printf '%s' "$sm_wrongtype" | jq -r '.settings.hooks.SubagentStart | length')" "wrong-typed entry left in place + canonical entry appended"
 assert_eq "settings:cave-hook-wrongtype-canonical-present" "true" \
-  "$(printf '%s' "$sm_wrongtype" | jq -r --arg c "$SM_HOOK_CANON" '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and (.args | type) == "array" and .command == $c)] | length > 0')" "a {type:\"command\", ANCHORED caveman command, args:[]} exec-form entry now exists"
+  "$(printf '%s' "$sm_wrongtype" | jq -r --arg c "$SM_HOOK_CANON" '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and .args == [] and .command == $c)] | length > 0')" "a {type:\"command\", ANCHORED caveman command, args:[]} exec-form entry now exists"
 assert_eq "settings:cave-hook-wrongtype-left-in-place" "foo|$SM_HOOK_LEGACY|null" \
   "$(printf '%s' "$sm_wrongtype" | jq -r '.settings.hooks.SubagentStart[0].hooks[0] | "\(.type)|\(.command)|\(.args)"')" "wrong-typed entry NOT migrated (migrate pass is .type-gated) and left byte-identical — no args key grown"
 
 # 12c-bis3. HOOK COMMAND ANCHORING (issue #352) — the STRUCTURAL IDENTITY contract. Identity is
-# EXACT EQUALITY on an EXEC-FORM entry — `.type == "command"` AND `(.args|type) == "array"` AND
-# `.command == SM_HOOK_CANON` — never substring containment. Precedence, per `.hooks[]` element:
-#   1. exec-form canonical entry (command == CANON, args present) → already present, untouched
+# EXACT VALUE EQUALITY on an EXEC-FORM entry — `.type == "command"` AND `.args == []` AND
+# `.command == SM_HOOK_CANON` — never substring containment, and never a TYPE test standing in for
+# a value (see (d1): a type-tested `args` admitted unexecutable `[null]`/`[1]` entries as ours).
+# Precedence, per `.hooks[]` element:
+#   1. exec-form canonical entry (command == CANON, args == []) → already present, untouched
 #   2. shell-form entry (NO `args` key) whose STRING `.command` is a MEMBER of the frozen
 #      authored list {LEGACY bare, QUOTED anchored}          → added, MIGRATED IN PLACE to exec form
 #   3. any other command — including one that merely CONTAINS the script path → NOT identity,
@@ -2067,6 +2069,44 @@ assert_eq "settings:cave-hook-custom-idem-class" "already present" \
 assert_eq "settings:cave-hook-custom-idem-count" "2" \
   "$(printf '%s' "$sm_custom_twice" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge appends nothing further — the extra entry is bounded at one"
 
+# (d1) CLOSED LOOSELY-JUDGED-FIELD CLASS — identity is EXACT VALUE equality on `args`, not a TYPE
+# test. Under the earlier `(.args | type) == "array"` conjunct, an entry carrying the canonical
+# command with ANY array `args` counted as ours. That admitted `args: [null]` and `args: [1]`,
+# which the verified schema (`args: z.array(z.string()).optional()`, ADR-0028) cannot execute: the
+# merge reported `already present`, left the unexecutable entry in place, and SUPPRESSED the valid
+# canonical append — the same silently-never-wired failure the substring class produced, reached
+# through a different loosely-judged field.
+# `args == []` is the emitted canonical value, so no field of the identity key is judged by type
+# and there is no remaining "acceptable shape" set for a later pass to enumerate one value at a
+# time. A well-formed but NON-EMPTY `args` is covered here on purpose: it is user-authored
+# variation, not our entry, and takes the SAME accepted deliberate drop as the (d) wrapper — left
+# byte-untouched, one extra entry, once, hook fires twice rather than never.
+# Non-vacuous: under the type-test conjunct all three of these classified `already present` with
+# count 1, so every class and count assertion below fails there.
+sm_argsvar_i=0
+for sm_argsvar_args in '[null]' '[1]' '["--x"]'
+do
+  sm_argsvar_i=$((sm_argsvar_i + 1))
+  sm_pre_argsvar="$(jq -nc --arg c "$SM_HOOK_CANON" --argjson a "$sm_argsvar_args" '{hooks:{SubagentStart:[{hooks:[{type:"command",command:$c,args:$a}]}]}}')"
+  sm_argsvar="$(hivemind_settings_merge "$sm_pre_argsvar" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+  assert_eq "settings:cave-hook-argsvar-$sm_argsvar_i-class" "added" \
+    "$(printf '%s' "$sm_argsvar" | jq -r '.keys["hooks.SubagentStart"]')" "canonical command with args $sm_argsvar_args is NOT identity → added"
+  assert_eq "settings:cave-hook-argsvar-$sm_argsvar_i-count" "2" \
+    "$(printf '%s' "$sm_argsvar" | jq -r '.settings.hooks.SubagentStart | length')" "args $sm_argsvar_args no longer suppresses the canonical append"
+  assert_eq "settings:cave-hook-argsvar-$sm_argsvar_i-untouched" "$sm_argsvar_args" \
+    "$(printf '%s' "$sm_argsvar" | jq -c '.settings.hooks.SubagentStart[0].hooks[0].args')" "pre-existing args $sm_argsvar_args left byte-untouched (never rewritten)"
+  assert_eq "settings:cave-hook-argsvar-$sm_argsvar_i-appended" "$SM_HOOK_CANON" \
+    "$(printf '%s' "$sm_argsvar" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "canonical exec-form entry appended beside args $sm_argsvar_args"
+  assert_eq "settings:cave-hook-argsvar-$sm_argsvar_i-appended-args" "[]" \
+    "$(printf '%s' "$sm_argsvar" | jq -c '.settings.hooks.SubagentStart[1].hooks[0].args')" "appended entry beside args $sm_argsvar_args carries the canonical args:[]"
+  # The bound: ONE extra entry, ONCE — the canonical entry now present suppresses every re-merge.
+  sm_argsvar_twice="$(hivemind_settings_merge "$(printf '%s' "$sm_argsvar" | jq -c '.settings')" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+  assert_eq "settings:cave-hook-argsvar-$sm_argsvar_i-idem-class" "already present" \
+    "$(printf '%s' "$sm_argsvar_twice" | jq -r '.keys["hooks.SubagentStart"]')" "re-merge beside args $sm_argsvar_args → already present"
+  assert_eq "settings:cave-hook-argsvar-$sm_argsvar_i-idem-count" "2" \
+    "$(printf '%s' "$sm_argsvar_twice" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge appends nothing further — bounded at one extra entry"
+done
+
 # (d2) CLOSED SUBSTRING FALSE-POSITIVE CLASS — the three shapes the reviewer REPRODUCED. Under the
 # previous substring-identity implementation each of these CONTAINED the script path, so each
 # classified `already present` and SUPPRESSED the append: the project's hook was NEVER WIRED, and
@@ -2130,7 +2170,7 @@ assert_eq "settings:cave-hook-dup-legacy-class" "added" \
 assert_eq "settings:cave-hook-dup-legacy-count" "2" \
   "$(printf '%s' "$sm_dup_legacy" | jq -r '.settings.hooks.SubagentStart | length')" "no append, and no dedupe (accepted: merge never removes a user entry)"
 assert_eq "settings:cave-hook-dup-legacy-both-migrated" "2" \
-  "$(printf '%s' "$sm_dup_legacy" | jq -r --arg c "$SM_HOOK_CANON" '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and (.args | type) == "array" and .command == $c)] | length')" "BOTH legacy entries rewritten to the canonical exec form"
+  "$(printf '%s' "$sm_dup_legacy" | jq -r --arg c "$SM_HOOK_CANON" '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and .args == [] and .command == $c)] | length')" "BOTH legacy entries rewritten to the canonical exec form"
 assert_eq "settings:cave-hook-dup-legacy-no-bare-left" "0" \
   "$(printf '%s' "$sm_dup_legacy" | jq -r --arg l "$SM_HOOK_LEGACY" '[.settings.hooks.SubagentStart[].hooks[] | select(.command == $l)] | length')" "no bare legacy command survives the migration"
 
@@ -2149,7 +2189,7 @@ assert_eq "settings:cave-hook-mixed-class" "added" \
 assert_eq "settings:cave-hook-mixed-count" "2" \
   "$(printf '%s' "$sm_mixed" | jq -r '.settings.hooks.SubagentStart | length')" "the present canonical entry suppresses the append — no duplicate"
 assert_eq "settings:cave-hook-mixed-both-canonical" "2" \
-  "$(printf '%s' "$sm_mixed" | jq -r --arg c "$SM_HOOK_CANON" '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and (.args | type) == "array" and .command == $c)] | length')" "the legacy entry IS migrated — both entries are now exec form"
+  "$(printf '%s' "$sm_mixed" | jq -r --arg c "$SM_HOOK_CANON" '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and .args == [] and .command == $c)] | length')" "the legacy entry IS migrated — both entries are now exec form"
 assert_eq "settings:cave-hook-mixed-no-bare-left" "0" \
   "$(printf '%s' "$sm_mixed" | jq -r --arg l "$SM_HOOK_LEGACY" '[.settings.hooks.SubagentStart[].hooks[] | select(.command == $l)] | length')" "no bare legacy command survives beside the canonical entry"
 sm_mixed_settings="$(printf '%s' "$sm_mixed" | jq -c '.settings')"

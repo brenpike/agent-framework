@@ -52,8 +52,12 @@ This retires the split of concerns that caused the cluster: the harness owns arg
 An existing entry is the canonical hook if and only if ALL of:
 
 - `.type == "command"`, AND
-- `(.args | type) == "array"`, AND
+- `.args == []`, AND
 - `.command` EXACTLY EQUALS the canonical command string.
+
+All three conjuncts are EXACT VALUE equality against what seed-hive EMITS. No field is judged by TYPE. An earlier form of this predicate tested `(.args | type) == "array"`, which admitted `args: [null]` and `args: [1]` as "the canonical entry" even though the schema above requires every element to be a string — so a malformed, unexecutable entry reported as present and suppressed the valid append. Type-testing one field of an identity key is the same defect shape as substring-matching another: it accepts a FAMILY of shapes rather than the one value we wrote.
+
+A consequence, accepted deliberately and on the same terms as the user-authored shell wrapper below: an entry carrying the canonical command with any non-empty `args` (including a well-formed `args: ["--x"]`) is user-authored variation, not our entry. It is left byte-untouched and does NOT suppress the append, so such a project gains one additional entry, once. The failure direction is a context hook that fires twice — visible, harmless, bounded, idempotent — rather than a hook that is silently never wired.
 
 Plus a FROZEN authored-shell-command migration list — the two shell-form commands hivemind itself wrote:
 
@@ -65,6 +69,7 @@ That list is CLOSED BY OUR OWN GIT HISTORY. It enumerates commands this project 
 **What this makes impossible** (per the **Closed-by-Construction Acceptance Test** — the answer names eliminated classes, not newly handled cases):
 
 - **The substring false-positive class.** Substring containment is no longer the key, so a value that merely CONTAINS the path can no longer report the hook as present. The reviewer reproduced `echo <path>`, `/some/other/project/<path>`, and `true # <path>` all reporting "already present" and suppressing the append — meaning the project's hook was never wired, silently. Under exact-equality-on-a-structural-shape, a command that is not the canonical command is not a match, whatever it contains.
+- **The loosely-judged-field class.** Every conjunct of the identity key is now exact equality against an EMITTED value, so there is no field left whose "acceptable" values could be enumerated one reviewer comment at a time (`args` an array → array of strings → non-empty array of strings → ...). The key is the value we write, so "which nearby shapes also count as ours" is UNREPRESENTABLE rather than answered case by case.
 - **The shell-parse class.** Nothing the merge writes is ever handed to a shell, so trailing `;`, `sh -c '...'`, unbraced variables, PowerShell `$env:` spellings, and spaces or backticks in the project root become UNREPRESENTABLE rather than handled. There is no parse to get wrong, so there is no next quoting finding to file.
 
 ### 3. Derive the report from the mutation
