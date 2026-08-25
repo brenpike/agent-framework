@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.12] - 2026-08-25
+
+### Fixed
+
+- seed-hive: a settings file whose `hooks.SubagentStart` array holds a non-object element — a bare string, number, boolean, or array, rather than a hook-entry object — no longer aborts the seed run. Such an element is now left byte-untouched, is never mistaken for hivemind's own hook entry, and no longer blocks the canonical hook entry from being wired into the array. The triggering input is the consumer's own already-invalid settings file; the previous behavior failed closed, aborting before writing so nothing was corrupted, but the consequence was that seeding could not complete at all against that file. Already-seeded projects receive this fix only when `hivemind:seed-hive` is re-run there.
+
 ## [2.40.11] - 2026-08-25
 
 ### Fixed
