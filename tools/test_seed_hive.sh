@@ -19,6 +19,9 @@
 #   4. all-companions-no path → correct reduced Output (caveman/claude_mem/codex skipped).
 #   5. detect phase reports companion facts (manifest installed/absent, cache fallback, none).
 #   6. headless-resolved inputs (inputs file fully specifies yes/no) drive a complete seed.
+#   7. caveman SubagentStart hook command is ANCHORED and PROVABLY resolves to the scaffolded
+#      hook file (drift guard), and a legacy bare-relative entry migrates IN PLACE — reported
+#      `added`, exactly one entry, canonical command, byte-stable on re-run.
 #
 # Usage:
 #   ./tools/test_seed_hive.sh
@@ -307,6 +310,16 @@ else
   failed "guard-nul:byte-unchanged" "NUL-bearing settings.json was mutated (expected byte-exact fixture)"
 fi
 
+# ── caveman SubagentStart hook identity constants (shared by Case 4 + Case 4m) ───
+# Mirrors the single-literal bindings in plugin/skills/_shared/settings-merge.sh: the relative
+# script path, the LEGACY bare-relative command an earlier seed wrote, and the canonical ANCHORED
+# command written today. The surrounding double quotes in COMMAND_CANONICAL are part of the
+# COMMAND STRING (they quote the expanded ${CLAUDE_PROJECT_DIR} for the shell), not JSON syntax.
+HOOK_REL=".claude/hooks/caveman-ultra-subagent.sh"
+HOOK_PLACEHOLDER='${CLAUDE_PROJECT_DIR}'
+COMMAND_LEGACY="$HOOK_REL"
+COMMAND_CANONICAL="\"$HOOK_PLACEHOLDER\"/$HOOK_REL"
+
 # ── Case 4: all-companions-no reduced Output (already covered by Case 1) + caveman yes ──
 echo '=== Case 4: caveman=yes seed — envrc + hook + pluginConfigs written ==='
 ROOT4="$(new_project caveman)"
@@ -352,6 +365,57 @@ assert_eq "caveman:envrc-content" "export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$R
 [ -x "$ROOT4/.claude/hooks/caveman-ultra-subagent.sh" ] \
   && pass "caveman:hook-exec" "hook file is executable" \
   || failed "caveman:hook-exec" "hook file not executable"
+# (a) The WIRED command is the anchored form, not a bare relative path (issue #352). A relative
+# hook command resolves against the subagent's cwd, so it silently no-ops outside the repo root.
+CAVE_CMD4="$(jq -r '.hooks.SubagentStart[0].hooks[0].command' "$ROOT4/.claude/settings.json" 2>/dev/null)"
+assert_eq "caveman:hook-command" "$COMMAND_CANONICAL" "$CAVE_CMD4" "wired SubagentStart command is the anchored form"
+# (b) DRIFT GUARD — close the path/command drift class MECHANICALLY rather than by matching two
+# hand-written literals: substitute this project root for the ${CLAUDE_PROJECT_DIR} placeholder,
+# strip the double quotes that are part of the command string, and require the resulting real
+# filesystem path to EXIST and be EXECUTABLE. That proves the wired command points at the file the
+# scaffold actually created. Non-vacuous: rename the hook script on ONE side only (scaffold path in
+# seed-hive.sh, or $hook_rel in settings-merge.sh) and this resolves to a nonexistent path → FAIL
+# here, instead of shipping a settings.json wired to a script that is not there.
+CAVE_HOOK_PATH4="${CAVE_CMD4//\"/}"
+CAVE_HOOK_PATH4="${CAVE_HOOK_PATH4/"$HOOK_PLACEHOLDER"/$ROOT4}"
+if [ -x "$CAVE_HOOK_PATH4" ]; then
+  pass "caveman:hook-command-resolves" "wired command resolves to the scaffolded executable hook ('$CAVE_HOOK_PATH4')"
+else
+  failed "caveman:hook-command-resolves" "wired command resolves to '$CAVE_HOOK_PATH4', which is not an existing executable file"
+fi
+
+# ── Case 4m: LEGACY relative hook entry migrates IN PLACE through the entrypoint ──
+# A project seeded by an EARLIER plugin version carries the bare relative command. Re-seeding with
+# caveman=yes must REWRITE that entry in place to the anchored command — reported with the EXISTING
+# `added` token (STEP-001 introduced no new report token) — and must NEVER append a second entry
+# beside it. Non-vacuous: pre-fix the merge keyed hook presence on any command containing the
+# script path, so the legacy entry classified `already present` and the unanchored command stayed
+# wired; a naive append-on-mismatch instead yields two entries and flips the duplicate assertions.
+echo '=== Case 4m: legacy relative hook entry — migrated in place, no duplicate ==='
+ROOT4M="$(new_project caveman-legacy)"
+mkdir -p "$ROOT4M/.claude"
+jq -nc --arg cmd "$COMMAND_LEGACY" \
+  '{hooks:{SubagentStart:[{hooks:[{type:"command",command:$cmd}]}]}}' > "$ROOT4M/.claude/settings.json"
+INPUTS4M="$(jq -nc --arg r "$ROOT4M" '{
+  project_root: $r, caveman: "yes", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT4M="$(run_apply "$ROOT4M" "$INPUTS4M")"
+assert_eq "cavemigrate:exit" "0" "$?" "legacy-migration seed exit"
+assert_contains "cavemigrate:status"   "status: complete" "$OUT4M"
+assert_contains "cavemigrate:hookwire" "- hooks.SubagentStart in settings.json: added" "$OUT4M"
+assert_eq "cavemigrate:no-duplicate" "1" \
+  "$(jq -r '.hooks.SubagentStart | length' "$ROOT4M/.claude/settings.json" 2>/dev/null)" "SubagentStart holds exactly one entry"
+assert_eq "cavemigrate:single-command" "1" \
+  "$(jq -r --arg rel "$HOOK_REL" '[.hooks.SubagentStart[].hooks[] | select((.command | type) == "string" and (.command | contains($rel)))] | length' \
+     "$ROOT4M/.claude/settings.json" 2>/dev/null)" "exactly one command wired to the hook script"
+assert_eq "cavemigrate:command" "$COMMAND_CANONICAL" \
+  "$(jq -r '.hooks.SubagentStart[0].hooks[0].command' "$ROOT4M/.claude/settings.json" 2>/dev/null)" "legacy command rewritten in place to the anchored form"
+# Re-run: the migrated entry is already canonical → `already present`, settings byte-stable.
+SETTINGS4M_BEFORE="$(cat "$ROOT4M/.claude/settings.json")"
+OUT4M2="$(run_apply "$ROOT4M" "$INPUTS4M")"
+assert_contains "cavemigrate:rerun-status"   "status: complete" "$OUT4M2"
+assert_contains "cavemigrate:rerun-hookwire" "- hooks.SubagentStart in settings.json: already present" "$OUT4M2"
+assert_eq "cavemigrate:rerun-byte-stable" "$SETTINGS4M_BEFORE" \
+  "$(cat "$ROOT4M/.claude/settings.json")" "settings byte-stable across migration re-run"
 
 # ── Case 5: detect phase — manifest installed/absent, cache fallback, none ───────
 echo '=== Case 5: detect phase reports companion facts ==='

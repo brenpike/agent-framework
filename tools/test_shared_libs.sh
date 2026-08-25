@@ -1820,6 +1820,17 @@ TEMPLATE
 assert_eq "settings:template-content-order" "$SM_EXPECTED_TEMPLATE" \
   "$(cat "$SM_LIB_TEMPLATE")" "frozen template emits the expected 25 rules in order"
 
+# ── caveman SubagentStart hook identity constants under test (issue #352) ──
+# SM_HOOK_LEGACY — the bare relative command an EARLIER seed wrote. It is also the identity
+#                  SUBSTRING every recognised caveman hook command must contain.
+# SM_HOOK_CANON  — the canonical ANCHORED command written today. The `"` characters around
+#                  ${CLAUDE_PROJECT_DIR} are PART of the command STRING, not JSON/shell syntax;
+#                  single-quoted here so the shell never expands the brace form.
+# Both are passed into jq filters via --arg (never spliced into filter text) so the shell and
+# jq agree on the exact bytes under assertion.
+SM_HOOK_LEGACY='.claude/hooks/caveman-ultra-subagent.sh'
+SM_HOOK_CANON='"${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh'
+
 # Merge helper: run the merge and capture the JSON result for jq assertions.
 # Usage: sm_result="$(hivemind_settings_merge "$settings" "$agent" caveman mem codex allow)"
 # then: assert_eq <case> <expected> "$(printf '%s' "$sm_result" | jq -r '<filter>')" <msg>
@@ -1856,8 +1867,8 @@ assert_eq "settings:cave-on-value" "true" \
   "$(printf '%s' "$sm_companions" | jq -r '.settings.enabledPlugins["caveman@caveman"]')" "caveman enabledPlugin = true"
 assert_eq "settings:cave-pcfg-level" "ultra" \
   "$(printf '%s' "$sm_companions" | jq -r '.settings.pluginConfigs["caveman@caveman"].options.defaultLevel')" "caveman pluginConfig defaultLevel = ultra"
-assert_eq "settings:cave-hook-cmd" ".claude/hooks/caveman-ultra-subagent.sh" \
-  "$(printf '%s' "$sm_companions" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "SubagentStart hook command wired"
+assert_eq "settings:cave-hook-cmd" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_companions" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "SubagentStart hook command wired (project-root ANCHORED)"
 assert_eq "settings:cave-hook-type" "command" \
   "$(printf '%s' "$sm_companions" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].type')" "SubagentStart hook type = command"
 assert_eq "settings:mem-on-value" "true" \
@@ -1886,8 +1897,8 @@ assert_eq "settings:cave-hook-existing-count" "2" \
   "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart | length')" "existing SubagentStart entry preserved + caveman appended"
 assert_eq "settings:cave-hook-existing-preserved" ".claude/hooks/other.sh" \
   "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "existing unrelated hook command preserved at index 0"
-assert_eq "settings:cave-hook-existing-appended" ".claude/hooks/caveman-ultra-subagent.sh" \
-  "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "caveman hook appended at index 1"
+assert_eq "settings:cave-hook-existing-appended" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_existing_hook" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "canonical anchored caveman hook appended at index 1"
 sm_existing_hook_settings="$(printf '%s' "$sm_existing_hook" | jq -c '.settings')"
 sm_existing_hook_twice="$(hivemind_settings_merge "$sm_existing_hook_settings" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
 assert_eq "settings:cave-hook-existing-idem-class" "already present" \
@@ -1897,26 +1908,125 @@ assert_eq "settings:cave-hook-existing-idem-count" "2" \
 
 # 12c-bis2. caveman hook PRESENT-PREDICATE TYPE-CHECK (Codex P1 @ settings-merge.sh:411): an existing
 # SubagentStart entry whose `.command` MATCHES the caveman hook but whose `.type` is missing/wrong is an
-# INVALID hook. The present-predicate is now conjunctive (.type == "command" AND .command == "..."), so a
-# command-matching-but-wrong-typed entry classifies `added` and the canonical {type:"command", command}
-# entry is APPENDED beside it (the wrong-typed entry is LEFT in place). Non-vacuous: the prior command-only
-# predicate matched the wrong-typed entry → `already present`, appended nothing (length stays 1, no
-# canonical-typed entry), so both the class and the count/typed-entry assertions below would fail.
+# INVALID hook. It matches NEITHER the classification predicate NOR the migrate pass (both are gated on
+# `.type == "command"`), so a wrong-typed entry carrying the LEGACY command classifies `added`, is LEFT
+# IN PLACE UNMIGRATED, and the canonical anchored {type:"command", command} entry is APPENDED beside it.
+# Non-vacuous: the prior command-only predicate matched the wrong-typed entry → `already present`,
+# appended nothing (length stays 1, no canonical-typed entry); and the pre-#352 append wrote the BARE
+# command, so the class, the count, the anchored-entry, and the left-in-place assertions all fail.
 sm_pre_wrongtype='{"hooks":{"SubagentStart":[{"hooks":[{"type":"foo","command":".claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
 sm_wrongtype="$(hivemind_settings_merge "$sm_pre_wrongtype" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
 assert_eq "settings:cave-hook-wrongtype-class" "added" \
-  "$(printf '%s' "$sm_wrongtype" | jq -r '.keys["hooks.SubagentStart"]')" "command matches but .type wrong → invalid hook → added"
+  "$(printf '%s' "$sm_wrongtype" | jq -r '.keys["hooks.SubagentStart"]')" "legacy command but .type wrong → invalid hook → added"
 assert_eq "settings:cave-hook-wrongtype-count" "2" \
   "$(printf '%s' "$sm_wrongtype" | jq -r '.settings.hooks.SubagentStart | length')" "wrong-typed entry left in place + canonical entry appended"
 assert_eq "settings:cave-hook-wrongtype-canonical-present" "true" \
-  "$(printf '%s' "$sm_wrongtype" | jq -r '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and .command == ".claude/hooks/caveman-ultra-subagent.sh")] | length > 0')" "a {type:\"command\", caveman command} entry now exists"
-# Idempotency regression guard: a correctly-typed canonical entry re-merged stays `already present`, no duplicate.
-sm_pre_canon='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":".claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
+  "$(printf '%s' "$sm_wrongtype" | jq -r --arg c "$SM_HOOK_CANON" '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and .command == $c)] | length > 0')" "a {type:\"command\", ANCHORED caveman command} entry now exists"
+assert_eq "settings:cave-hook-wrongtype-left-in-place" "foo|$SM_HOOK_LEGACY" \
+  "$(printf '%s' "$sm_wrongtype" | jq -r '.settings.hooks.SubagentStart[0].hooks[0] | "\(.type)|\(.command)"')" "wrong-typed entry NOT migrated (migrate pass is .type-gated) and left byte-identical"
+
+# 12c-bis3. HOOK COMMAND ANCHORING (issue #352) — the classification contract keyed on the SCRIPT
+# PATH. Precedence, first match wins, per `.hooks[]` element:
+#   1. {type:"command", command == CANONICAL}                  → already present, untouched
+#   2. {type:"command", command == LEGACY bare}                → added, REWRITTEN IN PLACE to canonical
+#   3. {type:"command", command CONTAINS the script path,
+#      neither canonical nor legacy}                           → already present, UNTOUCHED
+#   4. entry whose .type != "command"                          → ignored by both predicates (12c-bis2)
+#   5. no identity match anywhere                              → added, canonical APPENDED
+# There is NO new report token: a rewrite reports `added`, sharing the token with the append case.
+
+# (a) MIGRATION: a legacy bare command is rewritten IN PLACE — no duplicate, no append. Sibling keys
+# on the hook entry and SubagentStart array ORDER both survive (only `.command` is assigned).
+# Non-vacuous: pre-#352 the predicate matched the legacy command EXACTLY, so the class was
+# `already present` and the command was never rewritten — the class and command assertions fail.
+sm_pre_legacy='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":".claude/hooks/other.sh"}]},{"hooks":[{"type":"command","command":".claude/hooks/caveman-ultra-subagent.sh","timeout":30}]}]}}'
+sm_legacy="$(hivemind_settings_merge "$sm_pre_legacy" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-migrate-class" "added" \
+  "$(printf '%s' "$sm_legacy" | jq -r '.keys["hooks.SubagentStart"]')" "legacy bare command → corrected in place → added"
+assert_eq "settings:cave-hook-migrate-count" "2" \
+  "$(printf '%s' "$sm_legacy" | jq -r '.settings.hooks.SubagentStart | length')" "migration rewrites in place — no duplicate appended"
+assert_eq "settings:cave-hook-migrate-cmd" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_legacy" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "legacy command rewritten to the anchored form"
+assert_eq "settings:cave-hook-migrate-sibling-key" "30" \
+  "$(printf '%s' "$sm_legacy" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].timeout')" "sibling key on the migrated hook entry preserved"
+assert_eq "settings:cave-hook-migrate-order" ".claude/hooks/other.sh" \
+  "$(printf '%s' "$sm_legacy" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "SubagentStart array order preserved (unrelated entry still at index 0)"
+
+# (b) MIGRATION IDEMPOTENCY: re-merging the migrated output classifies `already present`, adds
+# nothing, and is byte-stable. Non-vacuous on the command assertion: pre-#352 the (unmigrated)
+# re-merge output still carried the bare command.
+sm_legacy_settings="$(printf '%s' "$sm_legacy" | jq -c '.settings')"
+sm_legacy_twice="$(hivemind_settings_merge "$sm_legacy_settings" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-migrate-idem-class" "already present" \
+  "$(printf '%s' "$sm_legacy_twice" | jq -r '.keys["hooks.SubagentStart"]')" "re-merge of migrated settings → already present"
+assert_eq "settings:cave-hook-migrate-idem-count" "2" \
+  "$(printf '%s' "$sm_legacy_twice" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge of migrated settings adds nothing"
+assert_eq "settings:cave-hook-migrate-idem-cmd" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_legacy_twice" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "migrated command stays anchored across re-merge"
+assert_eq "settings:cave-hook-migrate-idem-bytes" "$(printf '%s' "$sm_legacy" | jq -cS '.settings')" \
+  "$(printf '%s' "$sm_legacy_twice" | jq -cS '.settings')" "migrated settings are byte-stable under re-merge"
+
+# (c) ALREADY-ANCHORED: the canonical entry is recognised, untouched, and never duplicated.
+# Non-vacuous: pre-#352 the predicate demanded EXACT equality with the bare command, so the
+# anchored entry did not match → `added` + an appended second entry (class, count, and byte
+# assertions all fail).
+sm_pre_canon='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
 sm_canon_idem="$(hivemind_settings_merge "$sm_pre_canon" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
 assert_eq "settings:cave-hook-canon-idem-class" "already present" \
-  "$(printf '%s' "$sm_canon_idem" | jq -r '.keys["hooks.SubagentStart"]')" "correctly-typed canonical entry re-merged → already present"
+  "$(printf '%s' "$sm_canon_idem" | jq -r '.keys["hooks.SubagentStart"]')" "canonical anchored entry re-merged → already present"
 assert_eq "settings:cave-hook-canon-idem-count" "1" \
   "$(printf '%s' "$sm_canon_idem" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge of canonical entry does not duplicate"
+assert_eq "settings:cave-hook-canon-idem-bytes" "$(printf '%s' "$sm_pre_canon" | jq -cS '.hooks')" \
+  "$(printf '%s' "$sm_canon_idem" | jq -cS '.settings.hooks')" "already-anchored hooks block is byte-stable (no-op)"
+
+# (d) USER-CUSTOM FORM: a command that CONTAINS the script path but is neither canonical nor legacy
+# (here, invoked through `bash`) is the user's own wiring. It suppresses the append by IDENTITY, not
+# by exact text, and is left UNTOUCHED — this merge never rewrites a command it did not write.
+# Non-vacuous: pre-#352 exact-equality matching missed this entry entirely → `added` + append
+# (class and count assertions fail).
+sm_pre_custom='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":"bash \"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
+sm_custom="$(hivemind_settings_merge "$sm_pre_custom" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-custom-class" "already present" \
+  "$(printf '%s' "$sm_custom" | jq -r '.keys["hooks.SubagentStart"]')" "user-custom command containing the script path → already present"
+assert_eq "settings:cave-hook-custom-count" "1" \
+  "$(printf '%s' "$sm_custom" | jq -r '.settings.hooks.SubagentStart | length')" "identity match suppresses the append (no canonical entry added)"
+assert_eq "settings:cave-hook-custom-untouched" 'bash "${CLAUDE_PROJECT_DIR}"/.claude/hooks/caveman-ultra-subagent.sh' \
+  "$(printf '%s' "$sm_custom" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "user-custom command left byte-untouched (neither migrated nor replaced)"
+
+# (e) SIBLING PRESERVATION: a SubagentStart element carrying a `matcher` key and a SECOND unrelated
+# hook alongside the legacy caveman entry. ONLY the caveman `.command` is rewritten; the matcher, the
+# unrelated hook, and the intra-array order all survive. Non-vacuous: pre-#352 the caveman command
+# was never rewritten, so the anchored-command assertion fails.
+sm_pre_siblings='{"hooks":{"SubagentStart":[{"matcher":"*","hooks":[{"type":"command","command":".claude/hooks/other.sh"},{"type":"command","command":".claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
+sm_siblings="$(hivemind_settings_merge "$sm_pre_siblings" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-siblings-class" "added" \
+  "$(printf '%s' "$sm_siblings" | jq -r '.keys["hooks.SubagentStart"]')" "legacy entry beside siblings → corrected in place → added"
+assert_eq "settings:cave-hook-siblings-count" "1" \
+  "$(printf '%s' "$sm_siblings" | jq -r '.settings.hooks.SubagentStart | length')" "no SubagentStart element appended"
+assert_eq "settings:cave-hook-siblings-matcher" "*" \
+  "$(printf '%s' "$sm_siblings" | jq -r '.settings.hooks.SubagentStart[0].matcher')" "matcher key on the wrapping element preserved"
+assert_eq "settings:cave-hook-siblings-hooks-count" "2" \
+  "$(printf '%s' "$sm_siblings" | jq -r '.settings.hooks.SubagentStart[0].hooks | length')" "intra-element hooks array length unchanged"
+assert_eq "settings:cave-hook-siblings-unrelated" ".claude/hooks/other.sh" \
+  "$(printf '%s' "$sm_siblings" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "unrelated sibling hook untouched and still at index 0"
+assert_eq "settings:cave-hook-siblings-migrated" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_siblings" | jq -r '.settings.hooks.SubagentStart[0].hooks[1].command')" "only the caveman command rewritten, order preserved"
+
+# (f) TWO LEGACY ENTRIES: both are rewritten to canonical and nothing is appended.
+# DELIBERATE ACCEPTED BEHAVIOR, pinned here: pre-existing duplicates are NOT deduped, because this
+# merge never REMOVES an entry the user authored (PRESERVE-EXISTING beats dedupe). The only
+# consequence is the hook firing twice, which is harmless for a context-injection hook.
+# Non-vacuous: pre-#352 neither entry was rewritten, so both anchored-command assertions fail.
+sm_pre_dup_legacy='{"hooks":{"SubagentStart":[{"hooks":[{"type":"command","command":".claude/hooks/caveman-ultra-subagent.sh"}]},{"hooks":[{"type":"command","command":".claude/hooks/caveman-ultra-subagent.sh"}]}]}}'
+sm_dup_legacy="$(hivemind_settings_merge "$sm_pre_dup_legacy" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-dup-legacy-class" "added" \
+  "$(printf '%s' "$sm_dup_legacy" | jq -r '.keys["hooks.SubagentStart"]')" "two legacy entries → corrected in place → added"
+assert_eq "settings:cave-hook-dup-legacy-count" "2" \
+  "$(printf '%s' "$sm_dup_legacy" | jq -r '.settings.hooks.SubagentStart | length')" "no append, and no dedupe (accepted: merge never removes a user entry)"
+assert_eq "settings:cave-hook-dup-legacy-both-migrated" "2" \
+  "$(printf '%s' "$sm_dup_legacy" | jq -r --arg c "$SM_HOOK_CANON" '[.settings.hooks.SubagentStart[].hooks[] | select(.type == "command" and .command == $c)] | length')" "BOTH legacy entries rewritten to the anchored command"
+assert_eq "settings:cave-hook-dup-legacy-no-bare-left" "0" \
+  "$(printf '%s' "$sm_dup_legacy" | jq -r --arg l "$SM_HOOK_LEGACY" '[.settings.hooks.SubagentStart[].hooks[] | select(.command == $l)] | length')" "no bare legacy command survives the migration"
 
 # 12c-ter. caveman pluginConfigs NESTED-LEAF merge: the contract value is
 # pluginConfigs["caveman@caveman"].options.defaultLevel == "ultra", NOT the mere presence of the
@@ -2250,8 +2360,8 @@ assert_eq "settings:wrongtype-hooks-status" "ok" \
   "$(printf '%s' "$sm_hooks_string" | jq -r '.status')" "hooks as string → canonical {} → status ok (no jq abort)"
 assert_eq "settings:wrongtype-hooks-class" "added" \
   "$(printf '%s' "$sm_hooks_string" | jq -r '.keys["hooks.SubagentStart"]')" "wrong-typed hooks → SubagentStart hook added"
-assert_eq "settings:wrongtype-hooks-cmd" ".claude/hooks/caveman-ultra-subagent.sh" \
-  "$(printf '%s' "$sm_hooks_string" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "caveman hook command seeded over canonical empty"
+assert_eq "settings:wrongtype-hooks-cmd" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_hooks_string" | jq -r '.settings.hooks.SubagentStart[0].hooks[0].command')" "anchored caveman hook command seeded over canonical empty"
 
 # permissions WRONG-TYPED (array) with seed_allowlist=yes → canon_obj → {} → permissions.allow seeded.
 sm_perm_array="$(hivemind_settings_merge '{"permissions":["x"]}' 'hivemind:overlord' 'no' 'no' 'no' 'yes')"
