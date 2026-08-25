@@ -25,6 +25,10 @@
 #      pre-states (the legacy bare-relative command and the unreleased quoted-anchored one)
 #      migrate IN PLACE to exec form — reported `added`, exactly one entry, canonical command,
 #      byte-stable on re-run.
+#   8. apply EXITS 0 and emits the Output block even on a NON-CONFORMING SubagentStart pre-state
+#      (a bare string element) — the documented SKILL.md contract that a status is a REPORTED
+#      outcome, never a script error; the non-conforming element is preserved and the canonical
+#      entry appended beside it.
 #
 # Usage:
 #   ./tools/test_seed_hive.sh
@@ -466,6 +470,47 @@ OUT4Q2="$(run_apply "$ROOT4Q" "$INPUTS4Q")"
 assert_contains "cavequoted:rerun-hookwire" "- hooks.SubagentStart in settings.json: already present" "$OUT4Q2"
 assert_eq "cavequoted:rerun-byte-stable" "$SETTINGS4Q_BEFORE" \
   "$(cat "$ROOT4Q/.claude/settings.json")" "settings byte-stable across quoted-anchored migration re-run"
+
+# ── Case 4s: NON-CONFORMING SubagentStart element — apply still exits 0 with an Output block ──
+# End-to-end pin of the documented apply contract (SKILL.md `## Output`: apply exits 0 even when it
+# reports a status — the outcome is REPORTED, never a script error) against a hostile-shaped
+# pre-state: a bare STRING sitting directly in `.hooks.SubagentStart[]`. STEP-001's `canon_elem`
+# makes every element access in the caveman SubagentStart block TOTAL, so the non-conforming element
+# is never migrated, never counted present, and always PRESERVED, while the canonical exec-form
+# entry is appended beside it.
+# Non-vacuous (verified empirically against a pre-STEP-001 copy of settings-merge.sh): the untotal
+# element access aborted the jq program, whose exit 5 propagated through the entrypoint's
+# `set -euo pipefail` and killed the script BEFORE the write block — apply exited 5 with raw jq
+# stderr and NO Output block at all, flipping every assertion below.
+# The apply emitter writes the CONTENTS of the SKILL.md `## Output` block (the heading itself is
+# markdown structure in SKILL.md, not emitted text), so Output-block presence is keyed on its
+# structural section labels, matching the Case 1 / Case 3 idiom.
+echo '=== Case 4s: non-conforming SubagentStart element — exit 0, Output block, element preserved ==='
+ROOT4S="$(new_project caveman-nonconforming)"
+mkdir -p "$ROOT4S/.claude"
+printf '%s' '{"hooks":{"SubagentStart":["x"]}}' > "$ROOT4S/.claude/settings.json"
+INPUTS4S="$(jq -nc --arg r "$ROOT4S" '{
+  project_root: $r, caveman: "yes", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT4S="$(run_apply "$ROOT4S" "$INPUTS4S")"
+RC4S=$?
+assert_eq "cavescalar:exit" "0" "$RC4S" "non-conforming element is a reported outcome, not a script error"
+assert_contains "cavescalar:status"      "status: complete" "$OUT4S"
+assert_contains "cavescalar:out-project" "project_root:" "$OUT4S"
+assert_contains "cavescalar:out-target"  "target_file:" "$OUT4S"
+assert_contains "cavescalar:out-keys"    "keys_applied:" "$OUT4S"
+assert_contains "cavescalar:hookwire"    "- hooks.SubagentStart in settings.json: added" "$OUT4S"
+# The non-conforming element is PRESERVED verbatim at its original position.
+assert_eq "cavescalar:preserved" "x" \
+  "$(jq -r '.hooks.SubagentStart[0]' "$ROOT4S/.claude/settings.json" 2>/dev/null)" "non-conforming element preserved at SubagentStart[0]"
+assert_eq "cavescalar:appended" "2" \
+  "$(jq -r '.hooks.SubagentStart | length' "$ROOT4S/.claude/settings.json" 2>/dev/null)" "canonical entry appended beside the preserved element"
+assert_eq "cavescalar:single-command" "1" \
+  "$(jq -r --arg rel "$HOOK_REL" '[.hooks.SubagentStart[] | select(type == "object") | .hooks[]? | select((.command | type) == "string" and (.command | contains($rel)))] | length' \
+     "$ROOT4S/.claude/settings.json" 2>/dev/null)" "exactly one command wired to the hook script"
+assert_eq "cavescalar:command" "$COMMAND_CANONICAL" \
+  "$(jq -r '.hooks.SubagentStart[1].hooks[0].command' "$ROOT4S/.claude/settings.json" 2>/dev/null)" "appended entry carries the exec-form command"
+assert_eq "cavescalar:args" "[]" \
+  "$(jq -c '.hooks.SubagentStart[1].hooks[0].args' "$ROOT4S/.claude/settings.json" 2>/dev/null)" "appended entry carries args: [] (selects exec form)"
 
 # ── Case 5: detect phase — manifest installed/absent, cache fallback, none ───────
 echo '=== Case 5: detect phase reports companion facts ==='

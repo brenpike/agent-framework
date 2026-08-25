@@ -606,8 +606,19 @@ map_path() {
   # is the integration oracle that drives detect/apply end-to-end against tmp project roots, so an
   # edit to the entrypoint must trigger it or seed-hive regressions go untested under --changed.
   # (The four _shared libs it composes already route to test_shared_libs via the _shared/*.sh rule
-  # below — their unit oracle; tools/test_seed_hive.sh itself is covered by the tools/** leg.)
-  if [[ "$p" == plugin/skills/seed-hive/scripts/* ]]; then
+  # below — their unit oracle. settings-merge.sh is the exception: see the settings-merge.sh note
+  # immediately below — it ALSO routes here, so test_shared_libs is not its sole oracle. Rule below
+  # is the sole oracle for the other three. tools/test_seed_hive.sh itself is covered by the
+  # tools/** leg.)
+  # Also settings-merge.sh: test_seed_hive.sh pins the documented exit-0-with-Output contract for
+  # `seed-hive apply` against a settings file holding a non-object hook element — a regression in
+  # settings-merge.sh's element-access path. test_shared_libs alone does not exercise that contract,
+  # so a settings-merge.sh-only edit must ALSO trigger test_seed_hive or that pin never fires under
+  # `--changed` (same precedent as containment.sh -> test_engine + test_brood_compat and
+  # ledger-engine-io.sh -> test_engine above: a _shared lib routed to more than one behavior oracle
+  # because test_shared_libs alone does not cover a contract owned elsewhere).
+  if [[ "$p" == plugin/skills/seed-hive/scripts/* \
+     || "$p" == plugin/skills/_shared/settings-merge.sh ]]; then
     add_selected "$SUITE_TEST_SEED_HIVE" "$p (seed-hive entrypoint)"
     matched=1
   fi
