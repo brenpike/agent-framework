@@ -92,6 +92,18 @@ The codex-companion node entry is REMOVED from the `seed-hive` permissions templ
 - **This REINFORCES Decision #3.** Decision #3 excludes `Bash(node *)` from the seeded allowlist for arbitrary-code-execution reasons. Removing a provider-specific `node` grant from the seed keeps that exclusion whole.
 - **Append-if-absent consequence.** Because merge semantics are union-only (never remove, never reorder), already-seeded consumers RETAIN the dead entry until they delete it by hand. Automatic removal is DELIBERATELY not implemented: it would break the never-remove invariant recorded in **Amendment — 2026-05-29**, and it could delete a rule a user had already repaired to their real `$HOME`.
 
+## Amendment — 2026-08-25
+
+While fixing issue #352 (the seeded caveman `SubagentStart` hook command was cwd-relative), a sibling finding surfaced: the six seeded `Edit(.hivemind/...)` permission-template rules share the same relative-path shape as the hook command fixed there, and come from the same seeding template. This amendment records the investigation as a **NON-FINDING (recorded 2026-08-25)**: investigated, deliberately scoped out of that fix, decision made below.
+
+- **Observation.** The six seeded `Edit(.hivemind/...)` rules carry the same relative-path shape as the hook command fixed in #352, and come from the same template.
+- **Why the impact is materially lower.** Permission allow rules are PROMPT PRE-APPROVAL ONLY, with no deny semantics: an absent or non-matching rule yields an interactive prompt, never a refusal (`${CLAUDE_PLUGIN_ROOT}/governance/security-policy.md`). A relative `Edit(.hivemind/...)` rule that fails to match from a different invocation cwd degrades to the same interactive prompt a consumer would see with no rule at all — it neither silently denies the edit nor silently grants anything it should not.
+- **Why no correct anchoring primitive exists.**
+  - Permission-rule patterns perform NO `${...}` expansion. An anchored rule built on `${CLAUDE_PROJECT_DIR}` would not have the variable resolved; it would instead match only a literal directory named `${CLAUDE_PROJECT_DIR}` on disk, which does not exist, and would therefore silently grant NOTHING — strictly worse than the current spurious prompt, because the failure carries no visible signal.
+  - A leading `/` anchors to the session's ORIGINAL cwd, not the project root, so it does not correct the relative-path shape either — it only relocates which cwd the match depends on.
+  - `Bash(...)` rule content is matched as command TEXT, never resolved as a path. A `Bash` rule whose command text happens to redirect into `.hivemind/` is a different class of entry entirely and must be left alone; treating it as a path-anchored rule and rewriting it would not change what it matches.
+- **Decision.** The six `Edit(.hivemind/...)` rules stay relative. No fix is required or planned for this NON-FINDING.
+
 ---
 
 ## Naming update (2026-05-27)

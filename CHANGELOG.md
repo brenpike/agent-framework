@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [2.40.11] - 2026-08-25
+
+### Fixed
+
+- seed-hive: the caveman `SubagentStart` hook command it writes is now anchored to the project root, `${CLAUDE_PROJECT_DIR}/.claude/hooks/caveman-ultra-subagent.sh`, instead of a cwd-relative path. The real trigger was never a session launched from a subdirectory — it was intra-session working-directory drift, a `cd` run through the Bash tool, or a remote-control attach carrying its own session cwd, any of which broke a relative hook path after the session started. A session launched from a subdirectory is explicitly not fixed by this change: settings discovery does not walk upward, so the repo-root `settings.json` is never loaded and the hook is never registered at all in that case; a reader retesting the original issue's reproduction steps from a subdirectory should expect the same non-registration, not a regression. The hook entry is now written in Claude Code's exec form — a `command` field holding the unquoted path plus an `args: []` array — so the command is spawned directly, with no shell parsing it and no quoting required; this exec form requires Claude Code 2.1.139 or newer. A bare-relative hook entry written by an earlier seed migrates in place, with no duplicate appended, and re-seeding is idempotent and self-correcting. A user's own shell-form wrapper invoking the same script is left byte-untouched, but no longer suppresses the canonical entry — such a project gains one additional entry, once; this is a deliberate trade, not an oversight. Already-seeded projects receive this fix only when `hivemind:seed-hive` is re-run there.
+
 ## [2.40.10] - 2026-08-24
 
 ### Fixed
