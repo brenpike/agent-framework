@@ -2199,6 +2199,140 @@ assert_eq "settings:cave-hook-mixed-idem-class" "already present" \
 assert_eq "settings:cave-hook-mixed-idem-count" "2" \
   "$(printf '%s' "$sm_mixed_twice" | jq -r '.settings.hooks.SubagentStart | length')" "re-merge of the repaired mixed state adds nothing"
 
+# (h) ELEMENT-POSITION TOTALITY (issue #355) — this is an EXHAUSTION, not a list of handled shapes.
+# READ THIS BEFORE ADDING A ROW: the sweep below is not a growable collection of "shapes we've seen
+# in the wild". jq's type domain is CLOSED — every JSON value is exactly one of null / boolean /
+# number / string / array / object, and there is no seventh type — so enumerating every one of those
+# types at a given element position EXHAUSTS that position. There is no untested value left to add,
+# and a future review comment naming one more malformed element (`"hooks":{"SubagentStart":[3.14]}`,
+# `[""]`, `[false]`, …) is ALREADY covered by the type it inhabits. Do not append a row for it.
+#   THE TWO POSITIONS ARE ALSO EXHAUSTIVE, at the CURRENT nesting depth. The caveman SubagentStart
+# build reads untyped elements at exactly two positions: `SubagentStart[]` (the wrapping element) and
+# `SubagentStart[].hooks[]` (the hook entry). Types × positions = the whole element-access surface,
+# which is what makes the contract "every element access is total" a CHECKED claim here rather than
+# an assertion of faith.
+#   WHAT WOULD ACTUALLY INVALIDATE THIS: not a new VALUE — a new POSITION. If the merge ever grows a
+# THIRD nesting level of untyped element access, this sweep stops being exhaustive, because the
+# position axis gained a point. The correct response then is a new sweep DIMENSION (that position ×
+# the same closed type domain), NOT one more row bolted onto this one. Same for a second hook event
+# name read the same way.
+#   The eight values below are the six jq types, with array and object each sampled EMPTY and
+# NON-EMPTY, because empty containers are the values most likely to slip through a truthiness- or
+# length-based guard while a non-empty one is caught (or vice versa).
+#   NON-VACUITY, MEASURED (not assumed) — the pre-STEP-001 library was extracted and every pre-state
+# below run through it. 10 of the 16 sweep rows abort the jq program outright pre-fix (rc=5, EMPTY
+# output, so `.status` reads as the empty string and every assertion here fails): boolean, number,
+# string, empty array and non-empty array, at BOTH positions. The remaining 6 rows — null, {} and
+# {"a":1} at both positions — were ALREADY total before the fix, because jq permits field access on
+# null and on any object, and their pre/post outputs are byte-identical. Those 6 are deliberately
+# KEPT: they are the closure rows that prove the totality change did not regress the type-domain
+# points that already worked, and dropping them would break the exhaustion argument above, which is
+# the whole value of this block. Both named reproducers and the mixed case below are in the
+# aborting-pre-fix set.
+
+# (h1) The two reproducers from issue #355, pinned BY NAME so the issue's exact shapes stay locked
+# independently of the sweep's own sampling of the string type.
+sm_pre_355_outer='{"hooks":{"SubagentStart":["x"]}}'
+sm_355_outer="$(hivemind_settings_merge "$sm_pre_355_outer" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-355-repro-outer-status" "ok" \
+  "$(printf '%s' "$sm_355_outer" | jq -r '.status')" "#355 reproducer 1 (bare string in SubagentStart[]) merges instead of aborting jq"
+assert_eq "settings:cave-hook-355-repro-outer-class" "added" \
+  "$(printf '%s' "$sm_355_outer" | jq -r '.keys["hooks.SubagentStart"]')" "#355 reproducer 1 → added (the non-conforming element is never counted present)"
+assert_eq "settings:cave-hook-355-repro-outer-preserved" '"x"' \
+  "$(printf '%s' "$sm_355_outer" | jq -cS '.settings.hooks.SubagentStart[0]')" "#355 reproducer 1 leaves \"x\" byte-identical at its original index"
+assert_eq "settings:cave-hook-355-repro-outer-appended" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_355_outer" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "#355 reproducer 1 appends the canonical exec-form entry beside \"x\""
+assert_eq "settings:cave-hook-355-repro-outer-args" "[]" \
+  "$(printf '%s' "$sm_355_outer" | jq -c '.settings.hooks.SubagentStart[1].hooks[0].args')" "#355 reproducer 1 appended entry carries args:[] (exec form)"
+
+sm_pre_355_inner='{"hooks":{"SubagentStart":[{"hooks":["x"]}]}}'
+sm_355_inner="$(hivemind_settings_merge "$sm_pre_355_inner" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-355-repro-inner-status" "ok" \
+  "$(printf '%s' "$sm_355_inner" | jq -r '.status')" "#355 reproducer 2 (bare string in SubagentStart[].hooks[]) merges instead of aborting jq"
+assert_eq "settings:cave-hook-355-repro-inner-class" "added" \
+  "$(printf '%s' "$sm_355_inner" | jq -r '.keys["hooks.SubagentStart"]')" "#355 reproducer 2 → added"
+assert_eq "settings:cave-hook-355-repro-inner-preserved" '"x"' \
+  "$(printf '%s' "$sm_355_inner" | jq -cS '.settings.hooks.SubagentStart[0].hooks[0]')" "#355 reproducer 2 leaves the inner \"x\" byte-identical inside its OWN .hooks array"
+assert_eq "settings:cave-hook-355-repro-inner-appended" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_355_inner" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "#355 reproducer 2 appends the canonical entry as a NEW SubagentStart element"
+assert_eq "settings:cave-hook-355-repro-inner-args" "[]" \
+  "$(printf '%s' "$sm_355_inner" | jq -c '.settings.hooks.SubagentStart[1].hooks[0].args')" "#355 reproducer 2 appended entry carries args:[] (exec form)"
+
+# (h2) THE SWEEP: closed jq type domain × both element positions. Per row: the merge completes
+# (rc 0, status ok), classifies `added`, leaves the non-conforming element byte-identical at its
+# original index, appends the canonical exec-form entry with args:[], and a RE-MERGE of that output
+# settles to `already present` with no second append (totality must not cost idempotency).
+# The pre-state is built with jq --argjson and the expected preserved bytes are re-emitted by jq
+# from the SAME value text, so the comparison is on canonical serialization of one source value.
+for sm_elem_pos in outer inner; do
+  sm_elem_i=0
+  for sm_elem_val in 'null' 'true' '1' '"s"' '[]' '["x"]' '{}' '{"a":1}'; do
+    sm_elem_i=$((sm_elem_i + 1))
+    if [ "$sm_elem_pos" = "outer" ]; then
+      sm_elem_pre="$(jq -nc --argjson v "$sm_elem_val" '{hooks:{SubagentStart:[$v]}}')"
+      sm_elem_path='.settings.hooks.SubagentStart[0]'
+    else
+      sm_elem_pre="$(jq -nc --argjson v "$sm_elem_val" '{hooks:{SubagentStart:[{hooks:[$v]}]}}')"
+      sm_elem_path='.settings.hooks.SubagentStart[0].hooks[0]'
+    fi
+    # Case names are indexed (not derived from the value text) because two distinct sweep values
+    # would otherwise slug to the same name; the value itself rides in every assertion message.
+    sm_elem_case="settings:cave-hook-elem-$sm_elem_pos-$sm_elem_i"
+    sm_elem_res="$(hivemind_settings_merge "$sm_elem_pre" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+    sm_elem_rc=$?
+    assert_eq "$sm_elem_case-rc" "0" "$sm_elem_rc" \
+      "[$sm_elem_pos element $sm_elem_val] merge exits 0 (pre-#355 the untyped access aborted jq at rc=5)"
+    assert_eq "$sm_elem_case-status" "ok" \
+      "$(printf '%s' "$sm_elem_res" | jq -r '.status')" "[$sm_elem_pos element $sm_elem_val] status ok"
+    assert_eq "$sm_elem_case-class" "added" \
+      "$(printf '%s' "$sm_elem_res" | jq -r '.keys["hooks.SubagentStart"]')" "[$sm_elem_pos element $sm_elem_val] never counted present → added"
+    assert_eq "$sm_elem_case-preserved" "$(jq -ncS --argjson v "$sm_elem_val" '$v')" \
+      "$(printf '%s' "$sm_elem_res" | jq -cS "$sm_elem_path")" "[$sm_elem_pos element $sm_elem_val] preserved byte-identical at its original index"
+    assert_eq "$sm_elem_case-appended" "$SM_HOOK_CANON" \
+      "$(printf '%s' "$sm_elem_res" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" "[$sm_elem_pos element $sm_elem_val] canonical exec-form entry appended"
+    assert_eq "$sm_elem_case-appended-args" "[]" \
+      "$(printf '%s' "$sm_elem_res" | jq -c '.settings.hooks.SubagentStart[1].hooks[0].args')" "[$sm_elem_pos element $sm_elem_val] appended entry carries args:[]"
+    sm_elem_twice="$(hivemind_settings_merge "$(printf '%s' "$sm_elem_res" | jq -c '.settings')" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+    assert_eq "$sm_elem_case-idem-class" "already present" \
+      "$(printf '%s' "$sm_elem_twice" | jq -r '.keys["hooks.SubagentStart"]')" "[$sm_elem_pos element $sm_elem_val] re-merge → already present"
+    assert_eq "$sm_elem_case-idem-count" "2" \
+      "$(printf '%s' "$sm_elem_twice" | jq -r '.settings.hooks.SubagentStart | length')" "[$sm_elem_pos element $sm_elem_val] re-merge appends nothing further"
+  done
+done
+
+# (h3) MIXED, at BOTH levels at once: a scalar sits beside a MIGRATABLE legacy entry at the outer
+# position ("junk") and at the inner position (7 and "z"). Totality must not become inertness — the
+# scalars are skipped, but the legacy entry beside them is still migrated IN PLACE to exec form, the
+# `matcher`/`timeout` siblings survive, intra-array ORDER survives, and the successful migration
+# suppresses the append (length stays 2 / inner length stays 3). Non-vacuous: this whole pre-state
+# aborts the pre-STEP-001 library at rc=5.
+sm_pre_elem_mixed='{"hooks":{"SubagentStart":["junk",{"matcher":"m","timeout":30,"hooks":[7,{"type":"command","command":".claude/hooks/caveman-ultra-subagent.sh"},"z"]}]}}'
+sm_elem_mixed="$(hivemind_settings_merge "$sm_pre_elem_mixed" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+assert_eq "settings:cave-hook-elem-mixed-status" "ok" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -r '.status')" "scalars at BOTH element levels beside a legacy entry → merge completes"
+assert_eq "settings:cave-hook-elem-mixed-class" "added" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -r '.keys["hooks.SubagentStart"]')" "the in-place migration IS a mutation → added"
+assert_eq "settings:cave-hook-elem-mixed-count" "2" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -r '.settings.hooks.SubagentStart | length')" "migration fired → append suppressed → no third element"
+assert_eq "settings:cave-hook-elem-mixed-outer-scalar" '"junk"' \
+  "$(printf '%s' "$sm_elem_mixed" | jq -cS '.settings.hooks.SubagentStart[0]')" "outer scalar sibling preserved byte-identical at index 0"
+assert_eq "settings:cave-hook-elem-mixed-matcher" "m" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -r '.settings.hooks.SubagentStart[1].matcher')" "matcher on the migrated element preserved"
+assert_eq "settings:cave-hook-elem-mixed-timeout" "30" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -r '.settings.hooks.SubagentStart[1].timeout')" "unrelated sibling key (timeout) preserved"
+assert_eq "settings:cave-hook-elem-mixed-hooks-count" "3" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -r '.settings.hooks.SubagentStart[1].hooks | length')" "inner hooks array length unchanged (nothing dropped, nothing inserted)"
+assert_eq "settings:cave-hook-elem-mixed-inner-scalar-0" "7" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -cS '.settings.hooks.SubagentStart[1].hooks[0]')" "inner scalar 7 preserved byte-identical, still at index 0"
+assert_eq "settings:cave-hook-elem-mixed-migrated" "$SM_HOOK_CANON" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -r '.settings.hooks.SubagentStart[1].hooks[1].command')" "migration still fires PAST a scalar sibling, in place at index 1"
+assert_eq "settings:cave-hook-elem-mixed-migrated-args" "[]" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -c '.settings.hooks.SubagentStart[1].hooks[1].args')" "migrated entry gains args:[] (exec form)"
+assert_eq "settings:cave-hook-elem-mixed-inner-scalar-2" '"z"' \
+  "$(printf '%s' "$sm_elem_mixed" | jq -cS '.settings.hooks.SubagentStart[1].hooks[2]')" "inner scalar \"z\" preserved byte-identical AFTER the migrated entry (order survives)"
+assert_eq "settings:cave-hook-elem-mixed-no-bare-left" "0" \
+  "$(printf '%s' "$sm_elem_mixed" | jq -r --arg l "$SM_HOOK_LEGACY" '[.settings.hooks.SubagentStart[] | select(type == "object") | .hooks[]? | select(type == "object" and .command == $l)] | length')" "no bare legacy command survives beside the scalars"
+
 # 12c-ter. caveman pluginConfigs NESTED-LEAF merge: the contract value is
 # pluginConfigs["caveman@caveman"].options.defaultLevel == "ultra", NOT the mere presence of the
 # parent "caveman@caveman" key. A parent config object present WITHOUT (or with a non-"ultra")
@@ -3611,7 +3745,12 @@ echo '=== root-cluster class-locking matrix: seed-hive merge-predicate-gap regre
 #   (6) settings-merge enabledPlugins — present-but-false value-equality → classified `added` AND corrected to `true`
 #   (7) BOTH settings-merge + claude-mem — multi-document JSON STREAM rejected via the shared json-normalize.sh
 #       single-document gate (settings-merge → `malformed`; claude-mem → `skipped (malformed json)`, byte-unchanged)
-# This single test asserts ALL SEVEN together as the NAMED root-cluster lock so a future single-SITE
+#   (8) settings-merge hook ELEMENTS — every jq type at both element positions → merge stays `ok`, element
+#       preserved, canonical entry appended. This is the ELEMENT-POSITION extension of clause (5): (5) locks a
+#       wrong-typed CONTAINER collapsing to its canonical empty, (8) locks a wrong-typed ELEMENT reading as its
+#       canonical empty object — the same normalization law applied at the other kind of position, which is why
+#       it belongs on THIS matrix rather than a parallel one.
+# This single test asserts ALL EIGHT together as the NAMED root-cluster lock so a future single-SITE
 # regression (reverting just one predicate / one approach-level fix / either single-document gate) trips
 # it. It is NON-VACUOUS: each clause below fails independently if its corresponding site fix reverts, so
 # no one site can silently regress while the others hold.
@@ -3692,8 +3831,33 @@ mx_stream_status="$(PATH="$CM_CLEAN_PATH" hivemind_claude_mem_provision_path "$m
 [ "$mx_stream_status" = "skipped (malformed json)" ] || { mx_fail=1; echo "  matrix-7 FAIL: claude-mem stream status=$mx_stream_status (want skipped malformed json)"; }
 [ "$mx_stream_before" = "$(cat "$mx_stream_file")" ] || { mx_fail=1; echo "  matrix-7 FAIL: claude-mem stream file was clobbered"; }
 
+# Matrix clause (8) [#355 STEP-002]: ELEMENT-POSITION TOTALITY — the element-position extension of clause
+# (5). Clause (5) proves a wrong-typed CONTAINER key collapses to its canonical empty before any predicate
+# runs; this clause proves the SAME law reaches ELEMENT positions, where a non-conforming element reads as
+# the canonical empty object (canon_elem) and is therefore never migrated, never counted present, and always
+# preserved. Swept across jq's CLOSED type domain at BOTH element positions the merge reads — `SubagentStart[]`
+# and `SubagentStart[].hooks[]` — so the lock covers the whole element-access surface, not sampled shapes.
+# Reverts-as: dropping canon_elem from any one element access aborts the jq program on a non-object element
+# (rc=5) → `.status` reads empty, the element vanishes with the output, and no canonical entry is appended.
+for mx_elem_pos in outer inner; do
+  for mx_elem_val in 'null' 'true' '1' '"s"' '[]' '["x"]' '{}' '{"a":1}'; do
+    if [ "$mx_elem_pos" = "outer" ]; then
+      mx_elem_pre="$(jq -nc --argjson v "$mx_elem_val" '{hooks:{SubagentStart:[$v]}}')"
+      mx_elem_path='.settings.hooks.SubagentStart[0]'
+    else
+      mx_elem_pre="$(jq -nc --argjson v "$mx_elem_val" '{hooks:{SubagentStart:[{hooks:[$v]}]}}')"
+      mx_elem_path='.settings.hooks.SubagentStart[0].hooks[0]'
+    fi
+    mx_elem_res="$(hivemind_settings_merge "$mx_elem_pre" 'hivemind:overlord' 'yes' 'no' 'no' 'no')"
+    mx_elem_status="$(printf '%s' "$mx_elem_res" | jq -r '.status')"
+    [ "$mx_elem_status" = "ok" ] || { mx_fail=1; echo "  matrix-8 FAIL: $mx_elem_pos element $mx_elem_val status=$mx_elem_status (want ok)"; }
+    [ "$(printf '%s' "$mx_elem_res" | jq -cS "$mx_elem_path")" = "$(jq -ncS --argjson v "$mx_elem_val" '$v')" ] || { mx_fail=1; echo "  matrix-8 FAIL: $mx_elem_pos element $mx_elem_val not preserved byte-identical"; }
+    [ "$(printf '%s' "$mx_elem_res" | jq -r '.settings.hooks.SubagentStart[1].hooks[0].command')" = "$SM_HOOK_CANON" ] || { mx_fail=1; echo "  matrix-8 FAIL: canonical entry not appended past $mx_elem_pos element $mx_elem_val"; }
+  done
+done
+
 if [ "$mx_fail" -eq 0 ]; then
-  pass "matrix:root-cluster-class-lock" "all seven merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered + prose-preservation append-under + wrong-typed-container normalizes to ok + present-false enabledPlugin value-equality corrected to true + multi-doc-stream rejected by both settings-merge[malformed] and claude-mem[skipped malformed, byte-unchanged])"
+  pass "matrix:root-cluster-class-lock" "all eight merge-predicate-gap site fixes hold (heading-only append + agent:\"\"→added + non-string CLAUDE_CODE_PATH never clobbered + prose-preservation append-under + wrong-typed-container normalizes to ok + present-false enabledPlugin value-equality corrected to true + multi-doc-stream rejected by both settings-merge[malformed] and claude-mem[skipped malformed, byte-unchanged] + every jq type at both hook ELEMENT positions stays ok with the element preserved and the canonical entry appended)"
 else
   failed "matrix:root-cluster-class-lock" "a seed-hive merge-predicate-gap site fix regressed (see matrix-N FAIL lines above)"
 fi
