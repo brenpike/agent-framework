@@ -96,6 +96,14 @@
 #     An entry hivemind did NOT author is never removed or rewritten. An entry whose `.type` !=
 #     "command" is an INVALID hook: neither migrated nor counted as present, left in place, and the
 #     canonical entry is appended beside it. An existing unrelated SubagentStart array is PRESERVED.
+#     TOTAL ELEMENT ACCESS (issue #355): EVERY ELEMENT POSITION this block reads — a SubagentStart
+#     element, an entry inside its `.hooks` array, and any element position a future nesting level
+#     adds — is read through `canon_elem` (`canon_obj(.)`), the element-position member of the SAME
+#     canon_* law. Every element access is total. A non-conforming element is never migrated, never
+#     counted present, and always preserved. A non-object element ("x", 1, true, ["x"]) reads as
+#     `{}`, so every field test on it is false; `canon_elem` is a READ-VIEW ONLY and is NEVER the
+#     value written back, so the ORIGINAL element survives byte-unchanged. This is NOT a new
+#     contract — it is the wrong-`.type` rule above, made TOTAL.
 #     NO-DUPLICATE-BY-CONSTRUCTION: pass 1 runs FIRST, so a migrated entry already satisfies
 #     CANONICAL IDENTITY and suppresses the append — duplication is impossible by build ORDER, not
 #     by a dedupe pass.
@@ -121,9 +129,13 @@
 #     empty — so a malformed container NEVER aborts the jq program (no crash → no empty `.status` →
 #     no seed abort) and NEVER clobbers a real value. ONE normalizer routes every container site,
 #     classification AND build (so the report and the written settings share one canonical shape);
-#     there is no per-key type branch. A CORRECTLY-typed container is returned untouched, so
-#     correctly-typed inputs are byte-identical to the pre-normalization behavior. This guard is
-#     NESTED-only: the top-level non-object pre-check (status "malformed") still runs first.
+#     there is no per-key type branch. The law is NOT confined to KEY positions: EVERY ELEMENT
+#     POSITION the merge reads is normalized by the SAME law through `canon_elem` (`canon_obj(.)`),
+#     so a non-object element reads as `{}` — never migrated, never counted present, always
+#     preserved — instead of aborting the program. Key positions and element positions are ONE law,
+#     not two. A CORRECTLY-typed container is returned untouched, so correctly-typed inputs are
+#     byte-identical to the pre-normalization behavior. This guard is NESTED-only: the top-level
+#     non-object pre-check (status "malformed") still runs first.
 #
 # MALFORMED / EMPTY INPUT (SKILL.md step 4: "otherwise treat existing settings as {}"):
 #   an EMPTY settings string is treated as `{}` (the absent-file case the caller passes through).
@@ -213,6 +225,16 @@
 #       The substring FALSE-POSITIVE class is gone for seeded wiring: `echo <path>`,
 #       `/some/other/project/<path>`, and `true # <path>` no longer count as "hivemind's hook is
 #       wired". `contains()` MUST NOT reappear anywhere in this block.
+#     * Every element access is total. A non-conforming element is never migrated, never counted
+#       present, and always preserved. EVERY element position is read through `canon_elem`
+#       (`canon_obj(.)`), so "a malformed element aborts the merge before anything is written" is
+#       UNREPRESENTABLE — for EVERY element position, present and future, not for an enumerated
+#       pair of them. A second class dies with it: a non-object element can never satisfy the
+#       identity predicate above, so it can never suppress the canonical append. This is
+#       deliberately NOT a per-site `type == "object"` guard: with `canon_elem` the guard count is
+#       a function of the data's NESTING DEPTH (2, fixed by the settings schema), NOT of the NUMBER
+#       OF FIELD READS (unbounded, and it grows every time someone adds a conjunct). Guard-per-read
+#       is complete-the-known-set — the discriminator that already failed twice on this surface.
 #   FROZEN AUTHORED-SHELL-COMMAND LIST: migration matches ONLY the two shell-form commands hivemind
 #   ITSELF ever wrote — the bare relative path (released at 2.40.10) and the double-quoted anchored
 #   path (added on this branch at the unreleased 2.40.11). The list is CLOSED BY OUR OWN GIT
@@ -263,6 +285,14 @@
 # top-level non-object pre-check (status "malformed") still runs FIRST; only NESTED container keys are
 # shape-normalized here. A CORRECTLY-typed container is returned untouched, so correctly-typed inputs
 # are byte-identical to before.
+# THE SAME LAW COVERS ELEMENT POSITIONS (issue #355): the chokepoint is not container KEYS only.
+# EVERY ELEMENT POSITION the merge reads is normalized by the same law through the local
+# `def canon_elem: canon_obj(.);` — the TOTAL OBJECT VIEW of an element, and a READ-VIEW ONLY (never
+# the value written back). Every element access is total: a non-conforming element is never migrated,
+# never counted present, and always preserved. `canon_elem` is named into the `canon_*` family
+# deliberately — it is the element-position member of ONE law, not a second mechanism — and it stays
+# LOCAL to this program rather than moving into json-normalize.sh: rule-of-three is UNMET (see the
+# P23 placement evidence at the SubagentStart build below, and ADR-0028's element-access amendment).
 
 # ── self-location + sibling-lib source (SOURCE-OR-DIE) ──────────────────────────
 # THIS file is itself a SOURCED lib (no shebang); BASH_SOURCE[0] still resolves to this file's own
@@ -444,6 +474,15 @@ hivemind_settings_merge() {
     # canon_obj(f) → f when f is an object, else {}; canon_arr(f) → f when an array, else [].
     # These collapse a wrong-typed container to its canonical empty BEFORE any predicate runs.
     '"$canon_defs"'
+    # ── total ELEMENT view: the element-position member of the SAME canon_* law ───
+    # CONTRACT: every element access is total. A non-conforming element is never migrated, never
+    # counted present, and always preserved. canon_elem is the TOTAL OBJECT VIEW of an element (a
+    # non-object reads as {}, so every field test on it is false). It is a READ-VIEW ONLY: it is
+    # NEVER the value written back, so the ORIGINAL element survives byte-unchanged through the
+    # `else . end` branches. Named into the canon_* family on purpose — key positions and element
+    # positions are ONE law. Kept LOCAL (rule-of-three unmet); the P23 placement evidence sits at
+    # the SubagentStart build below.
+    def canon_elem: canon_obj(.);
     # ── helpers ──────────────────────────────────────────────────────────────────
     # getpath-safe presence test for a nested key, run over the SHAPE-normalized enabledPlugins
     # object so a wrong-typed enabledPlugins (array/string/etc.) collapses to {} instead of
@@ -603,21 +642,37 @@ hivemind_settings_merge() {
     #       duplicate can be created. GIVEN AN OBJECT ENTRY, `.args == []` and
     #       `.command == $hook_cmd` are total over every VALUE those two fields can hold, so no
     #       malformed `command`/`args` VALUE can abort this predicate.
-    #   SCOPE LIMIT of that totality claim (it is about the two FIELD VALUES, NOT about the entry):
-    #       neither pass type-guards the ELEMENT it indexes. A NON-OBJECT element — a scalar or an
-    #       array sitting directly in `SubagentStart[]` (indexed by the `(.hooks|type)` test in pass
-    #       (a)) or in a `.hooks[]` array (indexed by the `.type`/`.command`/`.args` tests in both
-    #       passes) aborts the jq program before either predicate is reached. Reproduced:
-    #       `{"hooks":{"SubagentStart":["x"]}}` and `{"hooks":{"SubagentStart":[{"hooks":["x"]}]}}`.
-    #       This is PRE-EXISTING behavior, byte-comparable on the base ref (the previous
-    #       implementation used the same unguarded idiom) and NEITHER introduced nor widened here.
-    #       It is not a merge-safety hole: the abort precedes every write, so the caller fails
-    #       CLOSED with nothing written. It is recorded (issue #355) and NOT patched here on purpose — making it
-    #       total is a CONTRACT choice (normalize-and-preserve past a wrong-typed element vs route
-    #       it to the existing `malformed` fail-closed status) and the closed-by-construction form
-    #       of it wants a TOTAL ACCESS primitive in json-normalize.sh, whose stated single
-    #       responsibility this is. Do NOT close it by sprinkling per-site `type == "object"`
-    #       guards: that is complete-the-known-set, the exact shape this header argues against.
+    #   TOTAL ELEMENT ACCESS (issue #355) — the totality claim now covers the ELEMENT itself, not
+    #       only the two FIELD VALUES. EVERY ELEMENT ACCESS IS TOTAL. A NON-CONFORMING ELEMENT IS
+    #       NEVER MIGRATED, NEVER COUNTED PRESENT, AND ALWAYS PRESERVED. Both passes read their
+    #       element through `canon_elem` (`canon_obj(.)`) — the TOTAL OBJECT VIEW of an element, and
+    #       a READ-VIEW ONLY: it is never the value written back. A non-object element (a scalar or
+    #       an array sitting directly in `SubagentStart[]`, or inside a `.hooks[]` array) reads as
+    #       `{}`, so every field test below is false, the migrate branch cannot fire, the identity
+    #       predicate cannot be satisfied, and `else . end` writes the ORIGINAL element back. That
+    #       makes preservation STRUCTURAL — there is no added preserve case. Formerly-aborting
+    #       inputs now merge cleanly: `{"hooks":{"SubagentStart":["x"]}}` and
+    #       `{"hooks":{"SubagentStart":[{"hooks":["x"]}]}}`.
+    #       NOT A NEW CONTRACT: this file already applies exactly this rule to a wrong-`.type`
+    #       entry — neither migrated nor counted present, left in place, canonical entry appended
+    #       beside it. This change makes that existing rule TOTAL. The rejected alternative was
+    #       routing a wrong-typed element to the `malformed` fail-closed status: that invents a new
+    #       failure path for input the merge can simply walk past.
+    #   WHY NOT A PER-SITE `type == "object"` GUARD: with `canon_elem` the guard count is a function
+    #       of the NESTING DEPTH of the data (2, fixed by the settings schema), NOT of the NUMBER OF
+    #       FIELD READS (unbounded, and it grows every time someone adds a conjunct). Guard-per-read
+    #       is complete-the-known-set — the exact discriminator that failed twice before on this
+    #       same surface. Do NOT reintroduce per-site guards.
+    #   WHY LOCAL, NOT A SHARED PRIMITIVE (P23 placement evidence; rule-of-three UNMET):
+    #       `canon_obj`/`canon_arr` have exactly ONE functional consumer — THIS file
+    #       (`claude-mem-path.sh` names them in prose comments only, with no call). The
+    #       unguarded-element idiom exists NOWHERE ELSE under `plugin/`. The nearest relative,
+    #       `plugin/skills/next-wave/scripts/next-wave.sh`, FILTERS non-conforming elements
+    #       (`select(type == "string")`) where this file must PRESERVE them — a DIFFERENT kernel,
+    #       so P9 says do not fold them. A shared primitive would ship with one consumer.
+    #       `canon_elem` is nonetheless named into the `canon_*` family deliberately: it is the
+    #       element-position member of the SAME law, and renaming it out of that family would weaken
+    #       the one-law claim the header makes. See ADR-0028 (element-access amendment).
     # An existing unrelated SubagentStart array is PRESERVED and the caveman entry APPENDED to it.
     # An entry whose `.type` != "command" is an INVALID hook: neither migrated nor counted as
     # present, left in place, canonical entry appended beside it. A USER-AUTHORED shell wrapper
@@ -629,9 +684,10 @@ hivemind_settings_merge() {
     | (if $caveman == "yes"
        then .hooks = (canon_obj(.hooks)
               | (canon_arr(.SubagentStart)
-                 | map(if (.hooks | type) == "array"
+                 | map(if (canon_elem | .hooks | type) == "array"
                        then .hooks = [ .hooks[]
-                              | if (.type == "command"
+                              | if (canon_elem
+                                    | .type == "command"
                                     and (has("args") | not)
                                     and (.command | type) == "string"
                                     and (.command as $c
@@ -640,8 +696,10 @@ hivemind_settings_merge() {
                                 else . end ]
                        else . end)) as $migrated_subagent
               | if ($migrated_subagent
-                     | any(canon_arr(.hooks)
-                          | any(.type == "command"
+                     | any(canon_elem
+                          | canon_arr(.hooks)
+                          | any(canon_elem
+                                | .type == "command"
                                 and .args == []
                                 and .command == $hook_cmd)))
                 then .SubagentStart = $migrated_subagent
