@@ -19,9 +19,12 @@
 #   4. all-companions-no path → correct reduced Output (caveman/claude_mem/codex skipped).
 #   5. detect phase reports companion facts (manifest installed/absent, cache fallback, none).
 #   6. headless-resolved inputs (inputs file fully specifies yes/no) drive a complete seed.
-#   7. caveman SubagentStart hook command is ANCHORED and PROVABLY resolves to the scaffolded
-#      hook file (drift guard), and a legacy bare-relative entry migrates IN PLACE — reported
-#      `added`, exactly one entry, canonical command, byte-stable on re-run.
+#   7. caveman SubagentStart hook entry is EXEC (argv) FORM — an UNQUOTED anchored `command`
+#      (`${CLAUDE_PROJECT_DIR}/<hook_rel>`) plus `args: []`, the key that selects exec form —
+#      and PROVABLY resolves to the scaffolded hook file (drift guard). Both authored SHELL-form
+#      pre-states (the legacy bare-relative command and the unreleased quoted-anchored one)
+#      migrate IN PLACE to exec form — reported `added`, exactly one entry, canonical command,
+#      byte-stable on re-run.
 #
 # Usage:
 #   ./tools/test_seed_hive.sh
@@ -310,15 +313,20 @@ else
   failed "guard-nul:byte-unchanged" "NUL-bearing settings.json was mutated (expected byte-exact fixture)"
 fi
 
-# ── caveman SubagentStart hook identity constants (shared by Case 4 + Case 4m) ───
+# ── caveman SubagentStart hook identity constants (shared by Cases 4 / 4m / 4q) ───
 # Mirrors the single-literal bindings in plugin/skills/_shared/settings-merge.sh: the relative
-# script path, the LEGACY bare-relative command an earlier seed wrote, and the canonical ANCHORED
-# command written today. The surrounding double quotes in COMMAND_CANONICAL are part of the
-# COMMAND STRING (they quote the expanded ${CLAUDE_PROJECT_DIR} for the shell), not JSON syntax.
+# script path, the TWO authored SHELL-form commands earlier seeds wrote (both migration inputs),
+# and the canonical EXEC-FORM command written today. COMMAND_CANONICAL is UNQUOTED because under
+# exec form the substituted string reaches execve verbatim — a surrounding `"` would become a
+# literal path byte. The double quotes in COMMAND_QUOTED_ANCHORED are part of that older COMMAND
+# STRING (they quoted the expansion for the shell branch), not JSON syntax.
+# Every constant below is SINGLE-QUOTED at the placeholder so ${CLAUDE_PROJECT_DIR} is never
+# shell-expanded by this runner.
 HOOK_REL=".claude/hooks/caveman-ultra-subagent.sh"
 HOOK_PLACEHOLDER='${CLAUDE_PROJECT_DIR}'
 COMMAND_LEGACY="$HOOK_REL"
-COMMAND_CANONICAL="\"$HOOK_PLACEHOLDER\"/$HOOK_REL"
+COMMAND_QUOTED_ANCHORED="\"$HOOK_PLACEHOLDER\"/$HOOK_REL"
+COMMAND_CANONICAL="$HOOK_PLACEHOLDER/$HOOK_REL"
 
 # ── Case 4: all-companions-no reduced Output (already covered by Case 1) + caveman yes ──
 echo '=== Case 4: caveman=yes seed — envrc + hook + pluginConfigs written ==='
@@ -365,19 +373,23 @@ assert_eq "caveman:envrc-content" "export CAVEMAN_DEFAULT_MODE=ultra" "$(cat "$R
 [ -x "$ROOT4/.claude/hooks/caveman-ultra-subagent.sh" ] \
   && pass "caveman:hook-exec" "hook file is executable" \
   || failed "caveman:hook-exec" "hook file not executable"
-# (a) The WIRED command is the anchored form, not a bare relative path (issue #352). A relative
-# hook command resolves against the subagent's cwd, so it silently no-ops outside the repo root.
+# (a) The WIRED entry is EXEC (argv) form (issue #352): an UNQUOTED anchored command plus an
+# `args` array. A relative hook command resolves against the subagent's cwd, so it silently no-ops
+# outside the repo root; and without `args` the engine takes the SHELL branch, where the harness
+# does NOT substitute ${CLAUDE_PROJECT_DIR} per element. `args: []` is what selects exec form.
 CAVE_CMD4="$(jq -r '.hooks.SubagentStart[0].hooks[0].command' "$ROOT4/.claude/settings.json" 2>/dev/null)"
-assert_eq "caveman:hook-command" "$COMMAND_CANONICAL" "$CAVE_CMD4" "wired SubagentStart command is the anchored form"
+assert_eq "caveman:hook-command" "$COMMAND_CANONICAL" "$CAVE_CMD4" "wired SubagentStart command is the anchored exec-form command"
+assert_eq "caveman:hook-args" "[]" \
+  "$(jq -c '.hooks.SubagentStart[0].hooks[0].args' "$ROOT4/.claude/settings.json" 2>/dev/null)" "wired SubagentStart entry carries args: [] (selects exec form)"
 # (b) DRIFT GUARD — close the path/command drift class MECHANICALLY rather than by matching two
-# hand-written literals: substitute this project root for the ${CLAUDE_PROJECT_DIR} placeholder,
-# strip the double quotes that are part of the command string, and require the resulting real
-# filesystem path to EXIST and be EXECUTABLE. That proves the wired command points at the file the
-# scaffold actually created. Non-vacuous: rename the hook script on ONE side only (scaffold path in
-# seed-hive.sh, or $hook_rel in settings-merge.sh) and this resolves to a nonexistent path → FAIL
-# here, instead of shipping a settings.json wired to a script that is not there.
-CAVE_HOOK_PATH4="${CAVE_CMD4//\"/}"
-CAVE_HOOK_PATH4="${CAVE_HOOK_PATH4/"$HOOK_PLACEHOLDER"/$ROOT4}"
+# hand-written literals: substitute this project root for the ${CLAUDE_PROJECT_DIR} placeholder and
+# require the resulting real filesystem path to EXIST and be EXECUTABLE. That proves the wired
+# command points at the file the scaffold actually created. (No quote-stripping step: the exec-form
+# command carries no quotes — under execve a `"` would be a literal path byte.) Non-vacuous: rename
+# the hook script on ONE side only (scaffold path in seed-hive.sh, or $hook_rel in
+# settings-merge.sh) and this resolves to a nonexistent path → FAIL here, instead of shipping a
+# settings.json wired to a script that is not there.
+CAVE_HOOK_PATH4="${CAVE_CMD4/"$HOOK_PLACEHOLDER"/$ROOT4}"
 if [ -x "$CAVE_HOOK_PATH4" ]; then
   pass "caveman:hook-command-resolves" "wired command resolves to the scaffolded executable hook ('$CAVE_HOOK_PATH4')"
 else
@@ -385,12 +397,13 @@ else
 fi
 
 # ── Case 4m: LEGACY relative hook entry migrates IN PLACE through the entrypoint ──
-# A project seeded by an EARLIER plugin version carries the bare relative command. Re-seeding with
-# caveman=yes must REWRITE that entry in place to the anchored command — reported with the EXISTING
-# `added` token (STEP-001 introduced no new report token) — and must NEVER append a second entry
-# beside it. Non-vacuous: pre-fix the merge keyed hook presence on any command containing the
-# script path, so the legacy entry classified `already present` and the unanchored command stayed
-# wired; a naive append-on-mismatch instead yields two entries and flips the duplicate assertions.
+# A project seeded by an EARLIER plugin version carries the bare relative SHELL-form command (no
+# `args` key). Re-seeding with caveman=yes must REWRITE that entry in place to the EXEC-FORM
+# command + `args: []` — reported with the EXISTING `added` token (STEP-001 introduced no new
+# report token) — and must NEVER append a second entry beside it. Non-vacuous: pre-fix the merge
+# keyed hook presence on any command containing the script path, so the legacy entry classified
+# `already present` and the unanchored shell-form command stayed wired; a naive append-on-mismatch
+# instead yields two entries and flips the duplicate assertions.
 echo '=== Case 4m: legacy relative hook entry — migrated in place, no duplicate ==='
 ROOT4M="$(new_project caveman-legacy)"
 mkdir -p "$ROOT4M/.claude"
@@ -408,7 +421,9 @@ assert_eq "cavemigrate:single-command" "1" \
   "$(jq -r --arg rel "$HOOK_REL" '[.hooks.SubagentStart[].hooks[] | select((.command | type) == "string" and (.command | contains($rel)))] | length' \
      "$ROOT4M/.claude/settings.json" 2>/dev/null)" "exactly one command wired to the hook script"
 assert_eq "cavemigrate:command" "$COMMAND_CANONICAL" \
-  "$(jq -r '.hooks.SubagentStart[0].hooks[0].command' "$ROOT4M/.claude/settings.json" 2>/dev/null)" "legacy command rewritten in place to the anchored form"
+  "$(jq -r '.hooks.SubagentStart[0].hooks[0].command' "$ROOT4M/.claude/settings.json" 2>/dev/null)" "legacy command rewritten in place to the exec-form command"
+assert_eq "cavemigrate:args" "[]" \
+  "$(jq -c '.hooks.SubagentStart[0].hooks[0].args' "$ROOT4M/.claude/settings.json" 2>/dev/null)" "migrated entry gained args: [] (selects exec form)"
 # Re-run: the migrated entry is already canonical → `already present`, settings byte-stable.
 SETTINGS4M_BEFORE="$(cat "$ROOT4M/.claude/settings.json")"
 OUT4M2="$(run_apply "$ROOT4M" "$INPUTS4M")"
@@ -416,6 +431,41 @@ assert_contains "cavemigrate:rerun-status"   "status: complete" "$OUT4M2"
 assert_contains "cavemigrate:rerun-hookwire" "- hooks.SubagentStart in settings.json: already present" "$OUT4M2"
 assert_eq "cavemigrate:rerun-byte-stable" "$SETTINGS4M_BEFORE" \
   "$(cat "$ROOT4M/.claude/settings.json")" "settings byte-stable across migration re-run"
+
+# ── Case 4q: UNRELEASED quoted-anchored hook entry migrates IN PLACE ──────────────
+# The second authored SHELL-form pre-state: `"${CLAUDE_PROJECT_DIR}"/<hook_rel>` with NO `args` key,
+# written by an unreleased intermediate revision. It is anchored but still shell-form, so the engine
+# takes the shell branch and never substitutes the placeholder per element. Re-seeding must rewrite
+# it IN PLACE to the UNQUOTED exec-form command + `args: []`, with no duplicate entry appended.
+# Non-vacuous: if the merge's authored-command list carried only the bare-relative literal, this
+# entry would fail canonical identity, get NO migration, and be APPENDED beside — flipping the
+# duplicate and command assertions below.
+echo '=== Case 4q: unreleased quoted-anchored hook entry — migrated in place, no duplicate ==='
+ROOT4Q="$(new_project caveman-quoted)"
+mkdir -p "$ROOT4Q/.claude"
+jq -nc --arg cmd "$COMMAND_QUOTED_ANCHORED" \
+  '{hooks:{SubagentStart:[{hooks:[{type:"command",command:$cmd}]}]}}' > "$ROOT4Q/.claude/settings.json"
+INPUTS4Q="$(jq -nc --arg r "$ROOT4Q" '{
+  project_root: $r, caveman: "yes", claude_mem: "no", codex: "no", seed_allowlist: "yes" }')"
+OUT4Q="$(run_apply "$ROOT4Q" "$INPUTS4Q")"
+assert_eq "cavequoted:exit" "0" "$?" "quoted-anchored migration seed exit"
+assert_contains "cavequoted:status"   "status: complete" "$OUT4Q"
+assert_contains "cavequoted:hookwire" "- hooks.SubagentStart in settings.json: added" "$OUT4Q"
+assert_eq "cavequoted:no-duplicate" "1" \
+  "$(jq -r '.hooks.SubagentStart | length' "$ROOT4Q/.claude/settings.json" 2>/dev/null)" "SubagentStart holds exactly one entry"
+assert_eq "cavequoted:single-command" "1" \
+  "$(jq -r --arg rel "$HOOK_REL" '[.hooks.SubagentStart[].hooks[] | select((.command | type) == "string" and (.command | contains($rel)))] | length' \
+     "$ROOT4Q/.claude/settings.json" 2>/dev/null)" "exactly one command wired to the hook script"
+assert_eq "cavequoted:command" "$COMMAND_CANONICAL" \
+  "$(jq -r '.hooks.SubagentStart[0].hooks[0].command' "$ROOT4Q/.claude/settings.json" 2>/dev/null)" "quoted-anchored command rewritten in place to the unquoted exec-form command"
+assert_eq "cavequoted:args" "[]" \
+  "$(jq -c '.hooks.SubagentStart[0].hooks[0].args' "$ROOT4Q/.claude/settings.json" 2>/dev/null)" "migrated entry gained args: [] (selects exec form)"
+# Re-run: the migrated entry is already canonical → `already present`, settings byte-stable.
+SETTINGS4Q_BEFORE="$(cat "$ROOT4Q/.claude/settings.json")"
+OUT4Q2="$(run_apply "$ROOT4Q" "$INPUTS4Q")"
+assert_contains "cavequoted:rerun-hookwire" "- hooks.SubagentStart in settings.json: already present" "$OUT4Q2"
+assert_eq "cavequoted:rerun-byte-stable" "$SETTINGS4Q_BEFORE" \
+  "$(cat "$ROOT4Q/.claude/settings.json")" "settings byte-stable across quoted-anchored migration re-run"
 
 # ── Case 5: detect phase — manifest installed/absent, cache fallback, none ───────
 echo '=== Case 5: detect phase reports companion facts ==='
