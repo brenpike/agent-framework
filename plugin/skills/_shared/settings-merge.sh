@@ -587,8 +587,24 @@ hivemind_settings_merge() {
     #       satisfies CANONICAL IDENTITY — `.type == "command"` AND `(.args|type) == "array"` AND
     #       `.command == $hook_cmd`. Pass (a) has already converted every authored shell-form entry
     #       to exactly that shape, so a migrated entry suppresses the append and no duplicate can be
-    #       created. `.args|type` and `== $hook_cmd` are total over every JSON value, so no type
-    #       guard is needed and no malformed command can abort the predicate.
+    #       created. GIVEN AN OBJECT ENTRY, `.args|type` and `.command == $hook_cmd` are total over
+    #       every VALUE those two fields can hold, so no malformed `command`/`args` VALUE can abort
+    #       this predicate.
+    #   SCOPE LIMIT of that totality claim (it is about the two FIELD VALUES, NOT about the entry):
+    #       neither pass type-guards the ELEMENT it indexes. A NON-OBJECT element — a scalar or an
+    #       array sitting directly in `SubagentStart[]` (indexed by the `(.hooks|type)` test in pass
+    #       (a)) or in a `.hooks[]` array (indexed by the `.type`/`.command`/`.args` tests in both
+    #       passes) aborts the jq program before either predicate is reached. Reproduced:
+    #       `{"hooks":{"SubagentStart":["x"]}}` and `{"hooks":{"SubagentStart":[{"hooks":["x"]}]}}`.
+    #       This is PRE-EXISTING behavior, byte-comparable on the base ref (the previous
+    #       implementation used the same unguarded idiom) and NEITHER introduced nor widened here.
+    #       It is not a merge-safety hole: the abort precedes every write, so the caller fails
+    #       CLOSED with nothing written. It is recorded and NOT patched here on purpose — making it
+    #       total is a CONTRACT choice (normalize-and-preserve past a wrong-typed element vs route
+    #       it to the existing `malformed` fail-closed status) and the closed-by-construction form
+    #       of it wants a TOTAL ACCESS primitive in json-normalize.sh, whose stated single
+    #       responsibility this is. Do NOT close it by sprinkling per-site `type == "object"`
+    #       guards: that is complete-the-known-set, the exact shape this header argues against.
     # An existing unrelated SubagentStart array is PRESERVED and the caveman entry APPENDED to it.
     # An entry whose `.type` != "command" is an INVALID hook: neither migrated nor counted as
     # present, left in place, canonical entry appended beside it. A USER-AUTHORED shell wrapper
